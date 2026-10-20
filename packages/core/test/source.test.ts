@@ -1,0 +1,240 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { ArraySource } from "../src/array-source.ts";
+import { RowCache } from "../src/cache.ts";
+import { parseProtocolRequest } from "../src/protocol.ts";
+import { RemoteSource } from "../src/remote-source.ts";
+import type { TableSource } from "../src/source.ts";
+import type { RowRequest } from "../src/types.ts";
+
+function people() {
+  return new ArraySource({
+    columns: ["name", "age", "city"],
+    rows: [
+      ["Ada", 36, "London"],
+      ["Grace", 85, "New York"],
+      ["Linus", null, "Helsinki"],
+      ["Barbara", 81, "Boston"],
+      ["Ken", 81, ""],
+    ],
+  });
+}
+
+test("array source infers types and sorts with blanks last", async () => {
+  const source = people();
+  const info = await source.info();
+  assert.deepEqual(
+    info.columns.map((column) => column.type),
+    ["string", "integer", "string"],
+  );
+  for (const direction of ["asc", "desc"] as const) {
+    const view = await source.createView({ sort: [{ column: 1, direction }] });
+    const rows = await source.readRows({ view: view.id, start: 0, end: 5, columns: [0, 1] });
+    assert.equal(rows.columns[1][4], null, "blank last");
+    assert.deepEqual(
+      rows.columns[0].slice(0, 4),
+      direction === "asc" ? ["Ada", "Barbara", "Ken", "Grace"] : ["Grace", "Barbara", "Ken", "Ada"],
+    );
+    assert.equal(rows.rowIds?.length, 5);
+  }
+});
+
+test("array source filters, searches, summarizes and finds", async () => {
+  const source = people();
+  const filtered = await source.createView({
+    filters: [
+      { type: "compare", column: 1, op: "ge", value: 80 },
+      { type: "values", column: 2, values: ["Boston", null] },
+    ],
+  });
+  const rows = await source.readRows({ view: filtered.id, start: 0, end: 10, columns: [0] });
+  assert.deepEqual(rows.columns[0], ["Barbara", "Ken"]);
+  const searched = await source.createView({ search: "LIN" });
+  assert.equal(searched.rowCount, 1);
+  const text = await source.createView({ filters: [{ type: "text", column: 2, op: "startsWith", value: "new" }] });
+  assert.equal(text.rowCount, 1);
+  const summary = await source.aggregate({ view: null, ranges: [{ start: 0, end: 5, columns: [0, 1] }] });
+  assert.deepEqual(summary, { count: 9, numericCount: 4, sum: 283, min: 36, max: 85, average: 70.75 });
+  const stats = await source.columnStats(null, 1);
+  assert.equal(stats.nulls, 1);
+  assert.equal(stats.distinct, 3);
+  assert.equal(stats.max, 85);
+  const distinct = await source.distinctValues({ view: null, column: 1 });
+  assert.deepEqual(distinct.values[0], { value: 81, count: 2 });
+  const found = await source.find({ view: null, text: "o", columns: [0, 2], row: 0, column: 0, direction: 1 });
+  assert.deepEqual(found, { row: 0, column: 1 });
+  const wrapped = await source.find({ view: null, text: "ada", columns: [0, 2], row: 3, column: 0, direction: 1 });
+  assert.deepEqual(wrapped, { row: 0, column: 0 });
+});
+
+class CountingSource implements TableSource {
+  readonly requests: RowRequest[] = [];
+  constructor(private readonly rows: number) {}
+  async info() {
+    return people().info();
+  }
+  async createView() {
+    return { id: null, rowCount: this.rows, query: {} };
+  }
+  async readRows(request: RowRequest, signal?: AbortSignal) {
+    this.requests.push(request);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    if (signal?.aborted) throw new DOMException("aborted", "AbortError");
+    return {
+      start: request.start,
+      end: request.end,
+      columns: request.columns.map((column) =>
+        Array.from({ length: request.end - request.start }, (_, index) => (request.start + index) * 10 + column),
+      ),
+    };
+  }
+}
+
+test("row cache loads visible blocks first and serves values", async () => {
+  const source = new CountingSource(10_000);
+  const cache = new RowCache(source, { blockRows: 100, blockColumns: 2, concurrency: 2 });
+  cache.setView(null, 10_000, 10_000, 3);
+  let changes = 0;
+  cache.onChange(() => changes++);
+  cache.want(500, 540, [0, 2]);
+  assert.deepEqual(
+    source.requests.map((request) => [request.start, request.columns]),
+    [
+      [500, [0, 1]],
+      [500, [2]],
+    ],
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.ok(changes > 0);
+  assert.equal(cache.value(520, 2), 5202);
+  assert.equal(cache.value(9000, 0), undefined);
+  // Prefetch reaches one screen (at least one block) around the visible rows.
+  assert.ok(source.requests.some((request) => request.start === 400));
+  assert.ok(source.requests.some((request) => request.start === 600));
+});
+
+test("row cache respects readable rows while loading and refetches cut blocks", async () => {
+  const source = new CountingSource(1000);
+  const cache = new RowCache(source, { blockRows: 100 });
+  cache.setView(null, 1000, 150, 1);
+  cache.want(0, 300, [0]);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(cache.value(149, 0), 1490);
+  assert.equal(cache.value(150, 0), undefined);
+  assert.deepEqual(
+    source.requests.map((request) => [request.start, request.end]),
+    [
+      [0, 100],
+      [100, 150],
+    ],
+  );
+  cache.setView(null, 1000, 1000, 1);
+  cache.want(0, 300, [0]);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(cache.value(250, 0), 2500);
+  assert.ok(source.requests.some((request) => request.start === 100 && request.end === 200));
+});
+
+test("row cache reads ranges in chunks for copying", async () => {
+  const source = new CountingSource(100_000);
+  const cache = new RowCache(source);
+  cache.setView(null, 100_000, 100_000, 3);
+  const values = await cache.read(10, 1500, [2, 0]);
+  assert.equal(values[0].length, 1490);
+  assert.equal(values[0][0], 102);
+  assert.equal(values[1][1489], 14990);
+});
+
+test("protocol requests are validated", () => {
+  assert.deepEqual(parseProtocolRequest({ op: "rows", table: "t", view: null, start: 0, end: 10, columns: [1, 2] }), {
+    op: "rows",
+    table: "t",
+    view: null,
+    start: 0,
+    end: 10,
+    columns: [1, 2],
+  });
+  assert.throws(() => parseProtocolRequest({ op: "rows", table: "t", start: 5, end: 1, columns: [] }));
+  assert.throws(() => parseProtocolRequest({ op: "drop" }));
+  assert.throws(() =>
+    parseProtocolRequest({ op: "view", table: "t", query: { filters: [{ type: "sql", column: 0 }] } }),
+  );
+  assert.throws(() => parseProtocolRequest({ op: "rows", table: "t", start: -1, end: 1, columns: [] }));
+  const view = parseProtocolRequest({
+    op: "view",
+    table: "t",
+    query: {
+      sort: [{ column: 1, direction: "desc" }],
+      filters: [{ type: "values", column: 0, values: [1, null] }],
+      search: " ",
+    },
+  });
+  assert.deepEqual(view, {
+    op: "view",
+    table: "t",
+    query: {
+      sort: [{ column: 1, direction: "desc" }],
+      filters: [{ type: "values", column: 0, values: [1, null], exclude: false }],
+    },
+  });
+});
+
+test("remote source reopens tables and recreates views the server forgot", async () => {
+  const backend = people();
+  let table = "t1";
+  let forgetViews = false;
+  const viewsOnServer = new Set<string>();
+  const calls: string[] = [];
+  const fakeFetch = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    calls.push(body.op);
+    const reply = (status: number, payload: unknown) => new Response(JSON.stringify(payload), { status });
+    if (body.op === "info") return reply(200, { result: { table, ...(await backend.info()) } });
+    if (body.table !== table) return reply(404, { error: { code: "table_not_found", message: "gone" } });
+    if (body.op === "view") {
+      const view = await backend.createView(body.query);
+      if (view.id) viewsOnServer.add(view.id);
+      return reply(200, { result: view });
+    }
+    if (body.op === "rows") {
+      if (body.view && (forgetViews || !viewsOnServer.has(body.view))) {
+        forgetViews = false;
+        return reply(404, { error: { code: "view_not_found", message: "gone" } });
+      }
+      return reply(200, { result: await backend.readRows(body) });
+    }
+    return reply(400, { error: { code: "invalid_request", message: "?" } });
+  }) as typeof fetch;
+  const source = new RemoteSource({ endpoint: "/api", ref: "a.csv", fetch: fakeFetch });
+  await source.info();
+  const view = await source.createView({ sort: [{ column: 0, direction: "asc" }] });
+  assert.ok(view.id);
+  forgetViews = true;
+  const rows = await source.readRows({ view: view.id, start: 0, end: 2, columns: [0] });
+  assert.deepEqual(rows.columns[0], ["Ada", "Barbara"]);
+  table = "t2";
+  const again = await source.readRows({ view: view.id, start: 0, end: 1, columns: [0] });
+  assert.deepEqual(again.columns[0], ["Ada"]);
+  assert.ok(calls.filter((op) => op === "info").length >= 2);
+});
+
+test("remote source keeps a shared open request alive when one caller gives up", async () => {
+  const backend = people();
+  let infoCalls = 0;
+  const fakeFetch = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    if (body.op === "info") infoCalls++;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    if (init.signal?.aborted) throw new DOMException("aborted", "AbortError");
+    return new Response(JSON.stringify({ result: { table: "t1", ...(await backend.info()) } }));
+  }) as typeof fetch;
+  const source = new RemoteSource({ endpoint: "/api", ref: "a.csv", fetch: fakeFetch });
+  // Like React StrictMode: the first effect starts loading and is cleaned up at once, the second one waits.
+  const first = new AbortController();
+  const abandoned = source.info(first.signal);
+  first.abort();
+  await assert.rejects(abandoned, (error: Error) => error.name === "AbortError");
+  const info = await source.info();
+  assert.equal(info.status, "ready");
+  assert.equal(infoCalls, 1, "the request already in flight is reused");
+});

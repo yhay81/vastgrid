@@ -1,0 +1,34 @@
+{
+  "name": "vastgrid-monorepo",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/core",
+    "packages/react",
+    "packages/duckdb",
+    "examples/playground"
+  ],
+  "scripts": {
+    "build": "tsc -b packages/core packages/duckdb packages/react && node scripts/copy-assets.mjs",
+    "clean": "rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo",
+    "typecheck": "tsc -b packages/core packages/duckdb packages/react && tsc -p examples/playground --noEmit",
+    "test": "node --conditions=vastgrid-source --import tsx --test packages/*/test/*.test.ts",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "dev": "npm run dev -w vastgrid-playground",
+    "bench": "node --conditions=vastgrid-source --import tsx packages/duckdb/bench/run.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "vastgrid-playground",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsc -b ../../packages/core ../../packages/duckdb && NODE_OPTIONS='--conditions=vastgrid-source --import tsx' vite",
+    "build": "vite build",
+    "generate": "node --conditions=vastgrid-source --import tsx scripts/generate.ts"
+  },
+  "dependencies": {
+    "vastgrid-core": "0.1.0",
+    "vastgrid-duckdb": "0.1.0",
+    "vastgrid": "0.1.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.1.2",
+    "vite": "8.3.4",
+    "tsx": "4.23.15"
+  }
+}
