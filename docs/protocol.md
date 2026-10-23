@@ -74,7 +74,9 @@ again, so that clients can retry.
 A `CellValue` is `string | number | boolean | null`. Numbers that JSON cannot carry exactly (64-bit
 integers beyond 2^53, decimals, `NaN`, `Infinity`) are strings. Dates and times are ISO-like strings
 (`2024-01-31`, `2024-01-31 12:34:56`). Nested and binary values are their text representation. Text
-longer than `textLimit` (default 2,000 characters) ends with `…`.
+longer than `textLimit` (default 2,000 characters) ends with `…`. Servers send at most 1,000,000
+characters for a cell (`MAX_TEXT_LIMIT` in `vastgrid-core`); clients ask for that much to read whole
+values.
 
 ### `ViewQuery`
 
@@ -95,9 +97,12 @@ type Filter =
 
 ## Error codes
 
+`ErrorCodes` in `vastgrid-core` has a constant for each of these codes.
+
 | Code | Status | Meaning |
 | --- | --- | --- |
 | `invalid_request` | 400 | The request does not match the protocol. |
+| `method_not_allowed` | 405 | The request is not a `POST`. |
 | `table_not_found` | 404 | Unknown table handle. Reopen with `info`. |
 | `view_not_found` | 404 | Unknown view. Create it again. |
 | `not_ready` | 409 | The table is still loading. |
@@ -106,6 +111,8 @@ type Filter =
 | `query_failed` | 422 | A filter value does not fit the column (for example text compared with a number). |
 | `unsupported_format` | 415 | Not a table file. |
 | `not_found` | 404 | The file does not exist. |
+| `not_file` | 400 | The path is not a file (for example a folder). |
 | `not_allowed` | 403 | The file, or the folder of an export, is outside the folders the server may use (links are followed). |
 | `export_disabled` | 403 | The host did not enable exports. |
+| `disposed` | 503 | The server closed its table engine (for example while it shuts down). |
 | `internal_error` | 500 | Anything else. |

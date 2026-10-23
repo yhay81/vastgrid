@@ -1,4 +1,11 @@
-import type { CellValue, ColumnType, Filter, SortKey } from "vastgrid-core";
+import {
+  type CellValue,
+  type ColumnType,
+  type Filter,
+  isNumericType,
+  isTemporalType,
+  type SortKey,
+} from "vastgrid-core";
 
 /** A column as DuckDB sees it: the quoted identifier and its DuckDB type name. */
 export interface SqlColumn {
@@ -77,18 +84,6 @@ export function columnTypeOf(sqlType: string): ColumnType {
   return "unknown";
 }
 
-const numericTypes = new Set<ColumnType>(["integer", "bigint", "float", "decimal"]);
-
-export function isNumeric(column: SqlColumn) {
-  return numericTypes.has(column.type);
-}
-
-export function isTemporal(column: SqlColumn) {
-  return (
-    column.type === "date" || column.type === "timestamp" || column.type === "timestamptz" || column.type === "time"
-  );
-}
-
 /**
  * The expression that reads a column for the grid. Types that JavaScript cannot hold exactly
  * (decimals, 128-bit integers, dates, nested values) are converted to their text in DuckDB, and long
@@ -150,19 +145,19 @@ export class Parameters {
 /** A comparison value cast to the column's type (numbers keep their own type to allow 2.5 against integers). */
 function typedValue(column: SqlColumn, value: string | number | boolean, params: Parameters) {
   const placeholder = params.add(value);
-  if (isNumeric(column)) {
+  if (isNumericType(column.type)) {
     if (typeof value === "number") return `CAST(${placeholder} AS DOUBLE)`;
     return column.type === "float" || column.type === "integer"
       ? `CAST(${placeholder} AS DOUBLE)`
       : `CAST(${placeholder} AS ${column.sqlType})`;
   }
   if (column.type === "boolean") return `CAST(${placeholder} AS BOOLEAN)`;
-  if (isTemporal(column)) return `CAST(${placeholder} AS ${column.sqlType})`;
+  if (isTemporalType(column.type)) return `CAST(${placeholder} AS ${column.sqlType})`;
   return `CAST(${placeholder} AS VARCHAR)`;
 }
 
 function comparedExpression(column: SqlColumn) {
-  return isNumeric(column) || column.type === "boolean" || isTemporal(column)
+  return isNumericType(column.type) || column.type === "boolean" || isTemporalType(column.type)
     ? quoteIdentifier(column.name)
     : textExpression(column);
 }
@@ -185,7 +180,7 @@ export function filterExpression(filter: Filter, columns: readonly SqlColumn[], 
       const parts: string[] = [];
       const values = filter.values.filter((value) => value !== null);
       if (values.length > 0) {
-        if (isNumeric(column) || column.type === "boolean") {
+        if (isNumericType(column.type) || column.type === "boolean") {
           const list = values.map((value) => typedValue(column, value as string | number | boolean, params));
           parts.push(`${quoteIdentifier(column.name)} IN (${list.join(", ")})`);
         } else {

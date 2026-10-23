@@ -36,6 +36,12 @@ export interface TableSource {
   close?(): void | Promise<void>;
 }
 
+/**
+ * A `textLimit` that reads whole values, for copies and the cell inspector. Engines send at most this
+ * many characters for a cell, also when a request asks for more.
+ */
+export const MAX_TEXT_LIMIT = 1_000_000;
+
 /** An error reported by a table source. `code` is stable and meant for programs; `message` is for people. */
 export class SourceError extends Error {
   readonly code: string;
@@ -57,7 +63,12 @@ export function abortError() {
   return new DOMException("The operation was aborted.", "AbortError");
 }
 
-/** Whether a query changes the table at all. */
+/** Whether a query leaves the table as it is: no sort, filters or search. */
 export function isEmptyQuery(query: ViewQuery) {
-  return !query.sort?.length && !query.filters?.length && !query.search?.trim();
+  return !query.sort?.length && !filtersRows(query);
+}
+
+/** Whether a query leaves out rows (with filters or a search) rather than only sorting them. */
+export function filtersRows(query: ViewQuery) {
+  return Boolean(query.filters?.length || query.search?.trim());
 }

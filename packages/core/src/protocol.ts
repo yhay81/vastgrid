@@ -49,17 +49,41 @@ export interface ProtocolError {
   message: string;
 }
 
-/** Error codes with a defined meaning for clients. */
+/** Error codes with a defined meaning for clients, as listed in `docs/protocol.md`. */
 export const ErrorCodes = {
+  /** The request does not match the protocol. */
+  invalidRequest: "invalid_request",
+  /** The request is not a `POST`. */
+  methodNotAllowed: "method_not_allowed",
   /** The table handle is unknown (expired or closed). Reopen with `info`. */
   tableNotFound: "table_not_found",
   /** The view handle is unknown. Recreate the view. */
   viewNotFound: "view_not_found",
   /** The table is still loading and cannot answer this yet. */
   notReady: "not_ready",
-  invalidRequest: "invalid_request",
-  /** The operation was cancelled by a newer request. */
+  /**
+   * The client went away, or the server closed the table while the request ran (for example because the
+   * file changed).
+   */
   cancelled: "cancelled",
+  /** The file could not be read; the message explains why. */
+  loadFailed: "load_failed",
+  /** A filter value does not fit the column (for example text compared with a number). */
+  queryFailed: "query_failed",
+  /** Not a table file. */
+  unsupportedFormat: "unsupported_format",
+  /** The file does not exist. */
+  notFound: "not_found",
+  /** The path is not a file (for example a folder). */
+  notFile: "not_file",
+  /** The file, or the folder of an export, is outside the folders the server may use (links are followed). */
+  notAllowed: "not_allowed",
+  /** The host did not enable exports. */
+  exportDisabled: "export_disabled",
+  /** The server closed its table engine (for example while it shuts down). */
+  disposed: "disposed",
+  /** Anything else. */
+  internalError: "internal_error",
 } as const;
 
 const operations = new Set<ProtocolOperation>([

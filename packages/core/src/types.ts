@@ -121,7 +121,10 @@ export interface RowRequest {
   end: number;
   /** Schema column indexes to read. */
   columns: number[];
-  /** Longest text to return per cell; longer text ends with "…". Engines apply their own default. */
+  /**
+   * Longest text to return per cell; longer text ends with "…". Engines apply their own default and send
+   * at most `MAX_TEXT_LIMIT` characters.
+   */
   textLimit?: number;
 }
 

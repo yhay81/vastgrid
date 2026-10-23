@@ -1,4 +1,6 @@
-import { isNumericType, numericValue, plainText } from "./format.js";
+import { isNumericType } from "./column-type.js";
+import { numericValue, plainText } from "./format.js";
+import { ErrorCodes } from "./protocol.js";
 import { abortError, isEmptyQuery, SourceError, type TableSource } from "./source.js";
 import type {
   AggregateRequest,
@@ -142,7 +144,7 @@ export class ArraySource implements TableSource {
   private view(id: string | null): View | null {
     if (id === null) return null;
     const view = this.views.get(id);
-    if (!view) throw new SourceError("view_not_found", "The view no longer exists.", 404);
+    if (!view) throw new SourceError(ErrorCodes.viewNotFound, "The view no longer exists.", 404);
     return view;
   }
 

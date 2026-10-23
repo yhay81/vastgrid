@@ -1,4 +1,4 @@
-import type { TableSource } from "./source.js";
+import { MAX_TEXT_LIMIT, type TableSource } from "./source.js";
 import type { CellValue } from "./types.js";
 
 export interface RowCacheOptions {
@@ -15,9 +15,6 @@ export interface RowCacheOptions {
 }
 
 export type BlockState = "queued" | "loading" | "ready" | "error";
-
-/** `textLimit` for copies, which need whole values: as much text as servers send for a cell. */
-const WHOLE_TEXT = 1_000_000;
 
 /** Rows `[start, end)` of the columns `[firstColumn, firstColumn + columns.length)`. */
 export class CacheBlock {
@@ -344,7 +341,7 @@ export class RowCache {
     for (let from = start; from < end; from += chunk) {
       const to = Math.min(end, from + chunk);
       const block = await this.source.readRows(
-        { view, start: from, end: to, columns: [...columns], textLimit: WHOLE_TEXT },
+        { view, start: from, end: to, columns: [...columns], textLimit: MAX_TEXT_LIMIT },
         signal,
       );
       block.columns.forEach((values, index) => {

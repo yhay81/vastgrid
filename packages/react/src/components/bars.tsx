@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { filtersRows } from "vastgrid-core";
 import type { GridController } from "../controller.js";
 import { countFormat, filterLabel, numberFormat } from "../labels.js";
 import type { Messages } from "../messages.js";
@@ -31,7 +32,7 @@ export function Toolbar({
   const filters = query.filters ?? [];
   const sort = query.sort ?? [];
   const total = controller.totalRows;
-  const filtered = controller.view.id !== null && (filters.length > 0 || Boolean(query.search?.trim()));
+  const filtered = controller.view.id !== null && filtersRows(query);
   let rows: string;
   if (controller.info?.status === "loading") {
     const progress = controller.info.progress;
@@ -108,7 +109,7 @@ export function Toolbar({
           </span>
         );
       })}
-      {(filters.length > 0 || Boolean(query.search?.trim())) && (
+      {filtersRows(query) && (
         <button type="button" className="vg-button vg-button--small" onClick={() => controller.clearFilters()}>
           {messages.clearFilters}
         </button>

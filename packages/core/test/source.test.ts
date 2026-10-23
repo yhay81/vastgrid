@@ -4,7 +4,7 @@ import { ArraySource } from "../src/array-source.ts";
 import { RowCache } from "../src/cache.ts";
 import { parseProtocolRequest } from "../src/protocol.ts";
 import { RemoteSource } from "../src/remote-source.ts";
-import type { TableSource } from "../src/source.ts";
+import { filtersRows, isEmptyQuery, type TableSource } from "../src/source.ts";
 import type { RowRequest } from "../src/types.ts";
 
 function people() {
@@ -390,4 +390,15 @@ test("row cache reads copies whole and from the view they started in", async () 
   assert.ok(source.requests.length > 1);
   assert.ok(source.requests.every((request) => request.view === "sorted"));
   assert.equal(values[2][99_999], "x".repeat(3000));
+});
+
+test("a query that only sorts keeps every row; filters and a search leave rows out", () => {
+  const sort = [{ column: 0, direction: "asc" as const }];
+  assert.equal(isEmptyQuery({}), true);
+  assert.equal(isEmptyQuery({ sort: [], filters: [], search: "  " }), true);
+  assert.equal(isEmptyQuery({ sort }), false);
+  assert.equal(filtersRows({ sort }), false);
+  assert.equal(filtersRows({ search: "  " }), false);
+  assert.equal(filtersRows({ search: "Tokyo" }), true);
+  assert.equal(filtersRows({ filters: [{ type: "blank", column: 0, blank: true }] }), true);
 });

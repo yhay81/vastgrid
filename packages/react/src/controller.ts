@@ -4,9 +4,12 @@ import {
   type ColumnSchema,
   type ColumnStats,
   type DistinctValues,
+  ErrorCodes,
   type Filter,
   isAbortError,
+  isEmptyQuery,
   isNumericType,
+  MAX_TEXT_LIMIT,
   plainText,
   RowCache,
   ScrollAxis,
@@ -106,15 +109,6 @@ function codeOf(error: unknown) {
 /** Whether a loaded value may be text that the source cut for display (it then ends with "…"). */
 function mayBeCut(value: CellValue) {
   return typeof value === "string" && value.endsWith("…");
-}
-
-function hasQuery(query: ViewQuery) {
-  return Boolean(query.sort?.length || query.filters?.length || query.search?.trim());
-}
-
-/** Filters on one column (the grid edits one filter per column). */
-export function filterColumn(filter: Filter) {
-  return filter.column;
 }
 
 /**
@@ -339,7 +333,7 @@ export class GridController {
       this.view = { id: null, rowCount: info.rowCount ?? info.readableRows, query: {} };
     }
     this.updateLayout();
-    if (info.status === "ready" && (reset || previous?.status !== "ready") && hasQuery(this.query)) {
+    if (info.status === "ready" && (reset || previous?.status !== "ready") && !isEmptyQuery(this.query)) {
       void this.setQuery(this.query);
     }
     this.emit();
@@ -602,7 +596,7 @@ export class GridController {
     const state = this.visible[col];
     if (!state) return null;
     const block = await this.source.readRows(
-      { view: this.view.id, start: row, end: row + 1, columns: [state.index], textLimit: 1_000_000 },
+      { view: this.view.id, start: row, end: row + 1, columns: [state.index], textLimit: MAX_TEXT_LIMIT },
       signal,
     );
     return block.columns[0]?.[0] ?? null;
@@ -705,7 +699,7 @@ export class GridController {
       this.viewError = messageOf(error);
       // The server is loading the table again (it closed it, for example because the file changed):
       // follow that load, which applies the query once the table is ready.
-      if (codeOf(error) === "not_ready") this.reload();
+      if (codeOf(error) === ErrorCodes.notReady) this.reload();
     }
     this.emit();
     this.requestRender();
@@ -720,7 +714,7 @@ export class GridController {
     try {
       return await this.source.createView(query, signal);
     } catch (error) {
-      if (signal.aborted || codeOf(error) !== "cancelled") throw error;
+      if (signal.aborted || codeOf(error) !== ErrorCodes.cancelled) throw error;
       return this.source.createView(query, signal);
     }
   }

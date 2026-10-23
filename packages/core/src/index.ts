@@ -1,14 +1,8 @@
 export { ArraySource, type ArraySourceOptions } from "./array-source.js";
 export { type BlockState, CacheBlock, RowCache, type RowCacheOptions } from "./cache.js";
 export { toHtmlTable, toMarkdownTable, toTsv } from "./clipboard.js";
-export {
-  type FormatOptions,
-  isNumericType,
-  isTemporalType,
-  numericValue,
-  plainText,
-  ValueFormatter,
-} from "./format.js";
+export { isNumericType, isTemporalType } from "./column-type.js";
+export { type FormatOptions, numericValue, plainText, ValueFormatter } from "./format.js";
 export { ColumnLayout } from "./layout.js";
 export {
   ErrorCodes,
@@ -29,5 +23,13 @@ export {
   SelectionModel,
   type SelectMode,
 } from "./selection.js";
-export { abortError, isAbortError, isEmptyQuery, SourceError, type TableSource } from "./source.js";
+export {
+  abortError,
+  filtersRows,
+  isAbortError,
+  isEmptyQuery,
+  MAX_TEXT_LIMIT,
+  SourceError,
+  type TableSource,
+} from "./source.js";
 export type * from "./types.js";

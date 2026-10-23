@@ -1,3 +1,4 @@
+import { isNumericType } from "./column-type.js";
 import type { CellValue, ColumnType } from "./types.js";
 
 export interface FormatOptions {
@@ -9,17 +10,6 @@ export interface FormatOptions {
   maxLength?: number;
   /** Group digits (1,234,567). Defaults to `true`. */
   grouping?: boolean;
-}
-
-const numericTypes = new Set<ColumnType>(["integer", "bigint", "float", "decimal"]);
-
-/** Whether values of the type are numbers (right-aligned, summable). */
-export function isNumericType(type: ColumnType) {
-  return numericTypes.has(type);
-}
-
-export function isTemporalType(type: ColumnType) {
-  return type === "date" || type === "time" || type === "timestamp" || type === "timestamptz";
 }
 
 /** Converts a cell value to a JS number when it represents one (numbers, numeric strings of numeric columns). */

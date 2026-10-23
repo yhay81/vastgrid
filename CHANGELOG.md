@@ -47,6 +47,13 @@ Fixes.
   with a Retry button; when the server is loading the table again, the grid follows that load and then
   applies the view. The grid used to stay "Building view" with the sort shown but not applied.
 
+Additions.
+
+- `vastgrid-core`: `ErrorCodes` names every error code of the protocol, also `method_not_allowed`,
+  `not_file` and `disposed`, which servers already answered and the protocol document now lists.
+  `filtersRows(query)` tells whether a query leaves out rows rather than only sorting them, and
+  `MAX_TEXT_LIMIT` is the `textLimit` that reads whole values.
+
 ## 0.1.0 — 2026-10-20
 
 First release.

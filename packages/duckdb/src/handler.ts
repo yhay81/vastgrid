@@ -31,7 +31,7 @@ export async function handleTableRequest(body: unknown, options: TableHandlerOpt
     if (error instanceof SourceError) throw error;
     // Errors caused by the request's values are reported, without the server's folders and SQL.
     const message = engine.clientMessage(error);
-    if (queryErrors.test(message)) throw new SourceError("query_failed", message, 422);
+    if (queryErrors.test(message)) throw new SourceError(ErrorCodes.queryFailed, message, 422);
     throw error;
   }
 }
@@ -62,7 +62,7 @@ async function answer(
     case "find":
       return engine.get(request.table).find(request, signal);
     case "export": {
-      if (!options.resolveTarget) throw new SourceError("export_disabled", "Exporting is not enabled.", 403);
+      if (!options.resolveTarget) throw new SourceError(ErrorCodes.exportDisabled, "Exporting is not enabled.", 403);
       const target = await options.resolveTarget(request.target);
       return engine.get(request.table).exportView(request, target, signal);
     }
@@ -88,10 +88,10 @@ export function errorBody(error: unknown, onError?: (error: unknown) => void): {
   }
   const message = error instanceof Error ? error.message : String(error);
   if (queryErrors.test(message)) {
-    return { status: 422, body: { error: { code: "query_failed", message } } };
+    return { status: 422, body: { error: { code: ErrorCodes.queryFailed, message } } };
   }
   onError?.(error);
-  return { status: 500, body: { error: { code: "internal_error", message: "The table server failed." } } };
+  return { status: 500, body: { error: { code: ErrorCodes.internalError, message: "The table server failed." } } };
 }
 
 function json(status: number, body: unknown) {
@@ -109,7 +109,7 @@ function json(status: number, body: unknown) {
 export function createTableHandler(options: TableHandlerOptions) {
   return async (request: Request): Promise<Response> => {
     if (request.method !== "POST") {
-      return json(405, { error: { code: "method_not_allowed", message: "Use POST." } });
+      return json(405, { error: { code: ErrorCodes.methodNotAllowed, message: "Use POST." } });
     }
     let body: unknown;
     try {

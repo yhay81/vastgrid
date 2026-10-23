@@ -14,7 +14,11 @@ import {
   type ExportResult,
   type FindRequest,
   type FindResult,
+  filtersRows,
   isEmptyQuery,
+  isNumericType,
+  isTemporalType,
+  MAX_TEXT_LIMIT,
   type RowBlock,
   type RowRequest,
   type SelectionSummary,
@@ -27,8 +31,6 @@ import { convertToUtf8, detectEncoding } from "./encoding.js";
 import {
   columnTypeOf,
   filterExpression,
-  isNumeric,
-  isTemporal,
   orderTerms,
   Parameters,
   quoteIdentifier,
@@ -112,7 +114,7 @@ function errorMessage(error: unknown) {
 }
 
 function notAllowed() {
-  return new SourceError("not_allowed", "The path is outside the folders this server may use.", 403);
+  return new SourceError(ErrorCodes.notAllowed, "The path is outside the folders this server may use.", 403);
 }
 
 function isInterrupt(error: unknown) {
@@ -283,19 +285,20 @@ export class TableEngine {
    * (after following links) is inside the allowed directories are opened.
    */
   async open(filePath: string, format?: TableFormat): Promise<OpenTable> {
-    if (this.disposed) throw new SourceError("disposed", "The table engine was closed.", 503);
+    if (this.disposed) throw new SourceError(ErrorCodes.disposed, "The table engine was closed.", 503);
     const requested = path.resolve(filePath);
     const fileFormat = format ?? tableFormatOf(requested);
-    if (!fileFormat) throw new SourceError("unsupported_format", "This file is not a supported table format.", 415);
+    if (!fileFormat)
+      throw new SourceError(ErrorCodes.unsupportedFormat, "This file is not a supported table format.", 415);
     // The engine reads some files itself (to detect and convert their encoding), and a link can point
     // anywhere: the file is opened by its real location, which must be inside the allowed directories.
     if (!this.allows(requested)) throw notAllowed();
     const absolute = await realpath(requested).catch((error: NodeJS.ErrnoException) => {
-      throw error.code === "ENOENT" ? new SourceError("not_found", "The file does not exist.", 404) : error;
+      throw error.code === "ENOENT" ? new SourceError(ErrorCodes.notFound, "The file does not exist.", 404) : error;
     });
     if (!this.allows(absolute)) throw notAllowed();
     const info = await stat(absolute);
-    if (!info.isFile()) throw new SourceError("not_file", "Only files can be opened as tables.", 400);
+    if (!info.isFile()) throw new SourceError(ErrorCodes.notFile, "Only files can be opened as tables.", 400);
     const revision = `${info.size}:${Math.round(info.mtimeMs)}`;
     // Until its failure is reported, a failed table is returned as it is: reopening it right away would
     // answer every poll of a loading table with a new load, so clients would never see the error.
@@ -394,8 +397,6 @@ const POSITION_COLUMN = "__vg_position";
 const LOOKUP_BATCH = 2048;
 /** Cells (rows × columns) one `rows` request may read: the answer is built in memory. */
 const MAX_CELLS = 1_000_000;
-/** The longest text sent for a cell, also when a request asks for more. */
-const MAX_TEXT = 1_000_000;
 /** Names the engine uses in its queries; a file's column with one of them gets another name in SQL. */
 const RESERVED_NAMES = new Set(["rowid", ROW_COLUMN, POSITION_COLUMN]);
 
@@ -692,7 +693,8 @@ export class OpenTable {
   }
 
   private requireReady() {
-    if (this.status === "error") throw new SourceError("load_failed", this.error ?? "The file could not be read.", 422);
+    if (this.status === "error")
+      throw new SourceError(ErrorCodes.loadFailed, this.error ?? "The file could not be read.", 422);
     if (this.status !== "ready") throw new SourceError(ErrorCodes.notReady, "The table is still loading.", 409);
   }
 
@@ -721,7 +723,7 @@ export class OpenTable {
   private unorderedRelation(view: View | null): string {
     if (!view || view.kind === "rows") return this.relationOf(view).from;
     // A view that only sorts has the same rows as the table.
-    if (!view.query.filters?.length && !view.query.search?.trim()) return this.relation;
+    if (!filtersRows(view.query)) return this.relation;
     return `(SELECT b.* FROM ${this.relation} b SEMI JOIN ${quoteIdentifier(view.name)} w ON b.${this.position} = w.${quoteIdentifier(ROW_COLUMN)})`;
   }
 
@@ -742,7 +744,7 @@ export class OpenTable {
     if ((request.end - request.start) * request.columns.length > MAX_CELLS) {
       throw new SourceError(ErrorCodes.invalidRequest, "Read at most a million cells at a time.", 400);
     }
-    const limit = Math.min(Math.max(1, request.textLimit ?? this.engine.options.textLimit), MAX_TEXT);
+    const limit = Math.min(Math.max(1, request.textLimit ?? this.engine.options.textLimit), MAX_TEXT_LIMIT);
     if (this.status === "loading") {
       // While loading, the beginning of the file is served from the preview.
       const preview = this.preview;
@@ -920,8 +922,8 @@ export class OpenTable {
     const exact = rows <= 2_000_000;
     return this.engine.work.run(() =>
       this.engine.withConnection(signal, async (connection) => {
-        const numeric = isNumeric(column);
-        const temporal = isTemporal(column) && column.type !== "time";
+        const numeric = isNumericType(column.type);
+        const temporal = isTemporalType(column.type) && column.type !== "time";
         const value = numeric ? `CAST(${id} AS DOUBLE)` : temporal ? `epoch(${id})` : null;
         const parts = [
           "count(*)",
@@ -1000,7 +1002,7 @@ export class OpenTable {
       : "";
     // Values are counted and sent whole (up to the longest text of a cell), so that a value picked from
     // the list as a filter matches its rows.
-    const expression = selectExpression(column, MAX_TEXT);
+    const expression = selectExpression(column, MAX_TEXT_LIMIT);
     const sql = `SELECT ${expression} AS value, count(*) AS n FROM ${from} ${where} GROUP BY ${quoteIdentifier(column.name)} ORDER BY n DESC, value NULLS FIRST LIMIT ${limit + 1}`;
     return this.engine.work.run(() =>
       this.engine.withConnection(signal, async (connection) => {
@@ -1031,7 +1033,7 @@ export class OpenTable {
           for (const column of columns) {
             const id = quoteIdentifier(column.name);
             parts.push(column.type === "string" ? `count_if(${id} <> '')` : `count(${id})`);
-            if (isNumeric(column)) {
+            if (isNumericType(column.type)) {
               parts.push(
                 `count(${id})`,
                 `sum(CAST(${id} AS DOUBLE))`,
@@ -1046,7 +1048,7 @@ export class OpenTable {
           let at = 0;
           for (const column of columns) {
             count += Number(row[at++] ?? 0);
-            if (!isNumeric(column)) continue;
+            if (!isNumericType(column.type)) continue;
             const numbers = Number(row[at++] ?? 0);
             const total = row[at++];
             const low = row[at++];
