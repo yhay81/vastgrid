@@ -478,7 +478,7 @@ test("errors sent to clients leave out the server's folders and SQL", async () =
   assert.doesNotMatch(notANumber.message, /LINE \d+:|SELECT/);
   const missingFolder = await post({ op: "export", table, view: null, format: "csv", target: "missing/out.csv" });
   assert.equal(missingFolder.code, "query_failed");
-  assert.match(missingFolder.message, /"missing\//);
+  assert.match(missingFolder.message, /"missing[/\\]/);
   assert.ok(!missingFolder.message.includes(workspace), missingFolder.message);
 });
 
