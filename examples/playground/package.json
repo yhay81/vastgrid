@@ -8,9 +8,9 @@
     "generate": "node --conditions=vastgrid-source --import tsx scripts/generate.ts"
   },
   "dependencies": {
-    "vastgrid-core": "0.1.0",
-    "vastgrid-duckdb": "0.1.0",
-    "vastgrid": "0.1.0",
+    "vastgrid-core": "0.1.1",
+    "vastgrid-duckdb": "0.1.1",
+    "vastgrid": "0.1.1",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
