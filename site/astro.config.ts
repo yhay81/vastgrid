@@ -37,6 +37,7 @@ function stageDocs(): AstroIntegration {
 }
 
 const site = "https://vastgrid.yhay81.com";
+const serverConditions = ["vastgrid-source", "module", "node", "development|production"];
 
 export default defineConfig({
   site,
@@ -102,7 +103,12 @@ export default defineConfig({
   ],
   vite: {
     // Use the TypeScript sources of the packages, as the playground does, so that the site shows the code it
-    // is built with and needs no build of the packages first. The rest are Vite's default client conditions.
+    // is built with and needs no build of the packages first. The rest are Vite's default conditions, for the
+    // browser and for the server environments that render the pages (they import the grid's modules too).
     resolve: { conditions: ["vastgrid-source", "module", "browser", "development|production"] },
+    environments: {
+      ssr: { resolve: { conditions: serverConditions } },
+      prerender: { resolve: { conditions: serverConditions } },
+    },
   },
 });
