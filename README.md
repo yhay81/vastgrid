@@ -123,7 +123,7 @@ rows.
 | `toolbar` | `boolean` | `true` | Shows the search box, active filters and row count. |
 | `statusBar` | `boolean` | `true` | Shows the active cell and the selection summary. |
 | `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. |
-| `copyLimit` | `number` | `1000000` | Cells that can be copied at once. |
+| `copyLimit` | `number` | `1000000` | Cells that can be copied at once, over all selected ranges. |
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
 | `className`, `style` | | | Added to the root element (`.vg-root`). |
 | `aria-label` | `string` | `messages.gridLabel` | The grid's name for screen readers. |
@@ -200,7 +200,7 @@ flowchart LR
 | Arrows · Page Up/Down · Home/End | Move the active cell |
 | ⌘/Ctrl + arrows · ⌘/Ctrl + Home/End | Jump to the first or last row or column |
 | Shift + any of the above · Shift + click | Extend the selection |
-| ⌘/Ctrl + click | Add a range |
+| ⌘/Ctrl + click | Add a range (ranges with the same rows or the same columns copy together) |
 | Tab / Enter (with Shift: backwards) | Move within the selection |
 | Shift + Space · Ctrl + Space · ⌘/Ctrl + A | Select the row · the column · everything |
 | ⌘/Ctrl + C · ⌘/Ctrl + Shift + C | Copy · copy with headers |

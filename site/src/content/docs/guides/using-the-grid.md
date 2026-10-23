@@ -32,14 +32,21 @@ shows the row's position in the file.
 | Alt + ↓ | Column menu (sort, filter, statistics, freeze, hide) |
 | F2 · double click | Show the full value of the cell |
 | Shift + F10 · context menu key · right click | Cell menu (copy, filter to value, sort) |
-| Escape | Close a menu or panel |
+| Escape | Close a menu or panel, or cancel a copy that is still reading |
 
 ## Copying
 
 ⌘/Ctrl + C copies the selection as tab-separated text and as an HTML table, so pasting into a
 spreadsheet or a document keeps the cells. ⌘/Ctrl + Shift + C adds the column names, and the cell menu
 also copies as a Markdown table. Copies hold whole values, also of cells that are cut short on screen.
-At most `copyLimit` cells (1,000,000 by default) are copied at once.
+At most `copyLimit` cells (1,000,000 by default) are copied at once, counted over all ranges.
+
+Several ranges are copied together as Excel does. Ranges with the same rows are placed side by side, and
+ranges with the same columns one below the other. Either way the cells keep the order of the grid (rows
+of the view, columns as they are shown, without hidden columns), the gaps between the ranges are left
+out, and cells where ranges overlap are copied once. Other ranges cannot be copied together, and the grid
+says so instead of copying. Cells that are not loaded yet are read first; Escape cancels a copy that is
+still reading.
 
 ## Sorting
 

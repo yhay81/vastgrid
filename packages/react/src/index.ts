@@ -1,6 +1,7 @@
 export * from "vastgrid-core";
 export {
   type ColumnState,
+  CopyRangesError,
   CopyTooLargeError,
   GridController,
   type GridOptions,

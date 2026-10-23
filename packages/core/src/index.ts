@@ -18,6 +18,8 @@ export { MAX_NATIVE_SCROLL, ScrollAxis } from "./scroll.js";
 export {
   type CellPosition,
   type CellRange,
+  type CopyLayout,
+  copyLayout,
   rangeContains,
   rangeSize,
   SelectionModel,

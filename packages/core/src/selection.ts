@@ -295,3 +295,39 @@ export class SelectionModel {
     return this.activeCell;
   }
 }
+
+/** The cells that a copy of several ranges writes: rows of the view and display columns, both in order. */
+export interface CopyLayout {
+  /** Row spans (`end` exclusive), sorted and without overlaps. */
+  rows: { start: number; end: number }[];
+  /** Display columns, sorted and without duplicates. */
+  cols: number[];
+}
+
+/**
+ * How ranges are copied together, following Excel: ranges with the same rows are placed side by side,
+ * and ranges with the same columns one below the other, in display order and with the gaps between
+ * them left out. Overlapping cells are copied once. Other combinations cannot be copied together and
+ * give null.
+ */
+export function copyLayout(ranges: readonly CellRange[]): CopyLayout | null {
+  const first = ranges[0];
+  if (!first) return { rows: [], cols: [] };
+  if (ranges.every((range) => range.top === first.top && range.bottom === first.bottom)) {
+    const cols = new Set<number>();
+    for (const range of ranges) for (let col = range.left; col <= range.right; col++) cols.add(col);
+    return { rows: [{ start: first.top, end: first.bottom + 1 }], cols: [...cols].sort((a, b) => a - b) };
+  }
+  if (ranges.every((range) => range.left === first.left && range.right === first.right)) {
+    const rows: { start: number; end: number }[] = [];
+    for (const range of [...ranges].sort((a, b) => a.top - b.top)) {
+      const last = rows.at(-1);
+      if (last && range.top <= last.end) last.end = Math.max(last.end, range.bottom + 1);
+      else rows.push({ start: range.top, end: range.bottom + 1 });
+    }
+    const cols: number[] = [];
+    for (let col = first.left; col <= first.right; col++) cols.push(col);
+    return { rows, cols };
+  }
+  return null;
+}
