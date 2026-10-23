@@ -151,13 +151,15 @@ export interface ColumnStats {
   distinctApproximate?: boolean;
   min?: CellValue;
   max?: CellValue;
+  /** Mean of finite numeric values. */
   mean?: number | null;
+  /** Sample standard deviation of finite numeric values. */
   stddev?: number | null;
-  /** 25th, 50th and 75th percentiles, when numeric or temporal. */
+  /** 25th, 50th and 75th percentiles, when numeric or temporal; non-finite values are excluded. */
   quantiles?: CellValue[] | null;
   minLength?: number | null;
   maxLength?: number | null;
-  /** Bins over the numeric value (temporal columns use epoch seconds). */
+  /** Bins over finite numeric values (temporal columns use epoch seconds). */
   histogram?: HistogramBin[] | null;
   /** Most common values. */
   top?: { value: CellValue; count: number }[] | null;

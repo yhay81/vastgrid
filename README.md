@@ -187,7 +187,7 @@ flowchart LR
   away and drops the least recently used blocks.
 - **Engine.** Delimited and JSON files become DuckDB tables in a database file of the session; the first
   1,000 rows are served from a preview while the file loads. Parquet files are read in place by row
-  position. Encodings DuckDB cannot read (Shift_JIS, EUC-JP) are converted first. Sorting and filtering
+  position. Shift_JIS, EUC-JP and BOM-marked UTF-16 (both byte orders) are converted to UTF-8 first. Sorting and filtering
   build a view: a sorted copy for tables up to 20M rows (2 ms windows), or only the order of the rows
   for larger ones (seconds instead of minutes, and a fraction of the temporary space).
 - **Protocol.** `RemoteSource` speaks a small JSON protocol (see [docs/protocol.md](docs/protocol.md)).

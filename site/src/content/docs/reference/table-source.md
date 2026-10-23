@@ -162,6 +162,10 @@ inspector.
 
 ## Statistics, values and the selection
 
+`vastgrid-duckdb` excludes `NaN` and infinities from the mean, standard deviation, quartiles and histogram. The mean,
+standard deviation and quartiles are `null` when no finite values exist; the histogram is omitted.
+Row, null and distinct counts still describe the whole column.
+
 ```ts
 interface ColumnStats {
   column: number;

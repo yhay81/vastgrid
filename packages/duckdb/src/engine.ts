@@ -623,7 +623,7 @@ export class OpenTable {
     const target = this.engine.tempPath(`${this.engine.createId("convert")}.csv`);
     this.tempFiles.push(target);
     await convertToUtf8(this.path, target, encoding);
-    if (encoding !== "utf-8") this.notes.push(`encoding:${encoding}`);
+    if (encoding !== "utf-8") this.notes.push(`encoding:${encoding.startsWith("utf-16") ? "utf-16" : encoding}`);
     return target;
   }
 
@@ -925,6 +925,7 @@ export class OpenTable {
         const numeric = isNumericType(column.type);
         const temporal = isTemporalType(column.type) && column.type !== "time";
         const value = numeric ? `CAST(${id} AS DOUBLE)` : temporal ? `epoch(${id})` : null;
+        const finite = value ? ` FILTER (WHERE isfinite(${value}))` : "";
         const parts = [
           "count(*)",
           `count(*) - count(${id})`,
@@ -934,11 +935,11 @@ export class OpenTable {
         ];
         if (value) {
           parts.push(
-            `avg(${value})`,
-            `stddev_samp(${value})`,
-            `CAST(approx_quantile(${id}, [0.25, 0.5, 0.75]) AS VARCHAR[])`,
+            `avg(${value})${finite}`,
+            `stddev_samp(${value})${finite}`,
+            `CAST(approx_quantile(${id}, [0.25, 0.5, 0.75])${finite} AS VARCHAR[])`,
           );
-          parts.push(`min(${value})`, `max(${value})`);
+          parts.push(`min(${value})${finite}`, `max(${value})${finite}`);
         } else if (column.type === "string") {
           parts.push(`min(length(${id}))`, `max(length(${id}))`);
         }

@@ -132,7 +132,7 @@ The format is chosen by the file's extension:
   in 0.15 s and is fully loaded in 5.3 s.
 - **Parquet files** are read in place by row position, with no load: a 1.4 GB file of 100 million rows
   opens in 20 ms.
-- **Encodings** that DuckDB cannot read, Shift_JIS and EUC-JP, are detected and converted to UTF-8
+- **Encodings** including Shift_JIS, EUC-JP and BOM-marked UTF-16 (both byte orders) are detected and converted to UTF-8
   first. The table's `notes` then say `encoding:shift_jis`, and the grid's status bar shows it. Columns whose values do
   not fit one type are read as text (`all_varchar`), and invalid UTF-8 is replaced
   (`invalid_utf8_replaced`).
