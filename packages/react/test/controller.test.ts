@@ -517,3 +517,26 @@ test("a copy of several ranges can be canceled, and a failed read is reported", 
   await assert.rejects(grid.copySelection({}), /disk read failed/);
   grid.dispose();
 });
+
+test("a saved query, find and the selection summary follow what the source can do", async () => {
+  const source = lettered();
+  const info = source.info.bind(source);
+  source.info = async (signal?: AbortSignal) => {
+    const result = await info(signal);
+    const capabilities = { ...result.capabilities, sort: false, filter: false, aggregate: false, find: false };
+    return { ...result, capabilities };
+  };
+  const grid = new GridController(source, { ...options });
+  grid.applyState({ version: 1, query: { sort: [{ column: 0, direction: "desc" }], search: "a1" } });
+  grid.start();
+  await until(() => grid.info?.status === "ready" && !grid.viewPending);
+  // The sort is left out; the search, which the source can run, stays.
+  assert.deepEqual(grid.query, { search: "a1" });
+  assert.equal(grid.viewError, null);
+  assert.equal(await grid.find("a1", 1, false), false);
+  grid.selection.select({ row: 0, col: 0 });
+  grid.selection.select({ row: 0, col: 1 }, "extend");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(grid.summary, null);
+  grid.dispose();
+});

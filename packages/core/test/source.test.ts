@@ -560,3 +560,43 @@ test("info requests carry read options, validated, and remote sources send them"
   assert.equal(info.sheet, "Q1");
   assert.deepEqual(bodies, [{ op: "info", ref: "book.xlsx", read: { sheet: "Q1" } }]);
 });
+
+test("remote source recreates a view that was ready without a preview", async () => {
+  const backend = people();
+  const requests: Record<string, unknown>[] = [];
+  let next = 1;
+  let known = new Set<string>();
+  const fakeFetch = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    requests.push(body);
+    const reply = (status: number, payload: unknown) => new Response(JSON.stringify(payload), { status });
+    if (body.op === "info") return reply(200, { result: { table: "t1", ...(await backend.info()) } });
+    if (body.op === "view") {
+      const id = `s${next++}`;
+      known.add(id);
+      const building = body.preview === true;
+      return reply(200, {
+        result: {
+          id,
+          rowCount: 5,
+          query: body.query,
+          status: building ? "building" : "ready",
+          readableRows: building ? 2 : 5,
+        },
+      });
+    }
+    if (!known.has(body.view)) return reply(404, { error: { code: "view_not_found", message: "gone" } });
+    if (body.op === "status")
+      return reply(200, { result: { id: body.view, rowCount: 5, query: {}, status: "ready", readableRows: 5 } });
+    return reply(200, { result: await backend.readRows({ view: null, start: 0, end: 1, columns: [0] }) });
+  }) as typeof fetch;
+  const source = new RemoteSource({ endpoint: "/api", ref: "a.csv", fetch: fakeFetch });
+  const view = await source.createView({ sort: [{ column: 1, direction: "desc" }] }, undefined, { preview: true });
+  assert.equal(view.status, "building");
+  assert.equal((await source.viewInfo(view.id as string)).status, "ready");
+  // The server forgets the view after it was ready: it comes back whole, not as a preview.
+  known = new Set();
+  await source.readRows({ view: view.id, start: 3, end: 4, columns: [0] });
+  const recreated = requests.filter((request) => request.op === "view").at(-1);
+  assert.equal(recreated?.preview, undefined);
+});

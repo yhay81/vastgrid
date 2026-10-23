@@ -23,6 +23,7 @@ import {
   SelectionModel,
   type SelectionSummary,
   type SortDirection,
+  type TableCapabilities,
   type TableInfo,
   type TableSource,
   toHtmlTable,
@@ -140,6 +141,17 @@ function codeOf(error: unknown) {
 
 function sameQuery(a: ViewQuery, b: ViewQuery) {
   return a === b || JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** The parts of a query that a source with these capabilities can run. */
+function supportedQuery(query: ViewQuery, capabilities: TableCapabilities): ViewQuery {
+  const { sort, filters, search, ...rest } = query;
+  return {
+    ...rest,
+    ...(sort && capabilities.sort ? { sort } : {}),
+    ...(filters && capabilities.filter ? { filters } : {}),
+    ...(search && capabilities.search ? { search } : {}),
+  };
 }
 
 /** Whether two display settings are the same. Functions are compared by identity. */
@@ -859,7 +871,7 @@ export class GridController {
     this.summaryAbort?.abort();
     const ranges = this.selectionRanges();
     const cells = ranges.reduce((total, range) => total + (range.end - range.start) * range.columns.length, 0);
-    if (cells <= 1 || !this.source.aggregate || this.info?.status !== "ready") {
+    if (cells <= 1 || !this.source.aggregate || this.info?.status !== "ready" || !this.info.capabilities.aggregate) {
       this.summary = null;
       this.summaryPending = false;
       return;
@@ -1021,6 +1033,9 @@ export class GridController {
       this.emit();
       return;
     }
+    // A saved query may ask for what this source cannot do; those parts are left out.
+    query = supportedQuery(query, this.info.capabilities);
+    this.query = query;
     const controller = new AbortController();
     this.viewAbort = controller;
     this.viewPending = true;
@@ -1414,7 +1429,7 @@ export class GridController {
     this.findText = text;
     this.findCaseSensitive = caseSensitive;
     this.requestRender();
-    if (!text || !this.source.find) return false;
+    if (!text || !this.source.find || !this.info?.capabilities.find) return false;
     // Find walks the whole view.
     if (this.viewBuilding) throw new ViewBuildingError();
     const active = this.selection.active;

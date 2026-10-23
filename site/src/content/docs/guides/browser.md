@@ -44,7 +44,7 @@ effect, as above, so that it is closed when the file changes or the grid unmount
 | Opening | Parquet: reads the footer. Text: counts the rows once, in 4 MiB chunks; the first rows show while it counts. | `HEAD` for the size, then the footer |
 | Rows | The row groups or blocks of 1,024 lines the grid shows | The byte ranges of the row groups and columns the grid shows |
 | Sort, filters, search, statistics, value lists, find | Yes, in the worker | Off: they would download the whole file. `fullScan: true` turns them on. |
-| Selection summary | Yes | Yes (reads only the selected rows) |
+| Selection summary | Yes | No (a whole column would download the whole file) |
 | Export | No | No |
 
 The grid enables only what `info().capabilities` says, so with a URL the sort and filter menus stay off.

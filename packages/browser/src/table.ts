@@ -51,8 +51,8 @@ export interface BrowserTableOptions extends Omit<HttpOptions, "fetch"> {
   chunkBytes?: number;
   /**
    * Whether operations that read the whole table are offered: sorting, filters, search, statistics, value
-   * lists and find. Default `true` for local files and `false` for URLs, where they would download the
-   * whole file; the selection summary reads only the selected rows and is always offered.
+   * lists, find and the selection summary (selecting a whole column reads all of its rows). Default
+   * `true` for local files and `false` for URLs, where they would download the whole file.
    */
   fullScan?: boolean;
   /** Longest text sent for a cell unless a request asks otherwise (default 2000). */
@@ -253,7 +253,7 @@ export class BrowserTable implements TableSource {
       search: scan,
       stats: scan,
       distinct: scan,
-      aggregate: ready,
+      aggregate: scan,
       find: scan,
       export: false,
     };

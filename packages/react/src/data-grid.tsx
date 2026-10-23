@@ -722,7 +722,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           }, 0);
           return;
         } else if (primary && event.key.toLowerCase() === "f") {
-          setFindOpen(true);
+          if (c.info?.capabilities.find) setFindOpen(true);
         } else if (event.shiftKey && event.key === "F10") {
           setOverlay({
             kind: "contextMenu",

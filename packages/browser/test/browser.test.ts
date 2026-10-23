@@ -453,7 +453,7 @@ test("a Parquet URL is read in byte ranges, without downloading the whole file",
     assert.equal(info.byteSize, size);
     assert.equal(info.revision, '"1"');
     assert.equal(info.capabilities.sort, false, "sorting a URL would download all of it");
-    assert.equal(info.capabilities.aggregate, true);
+    assert.equal(info.capabilities.aggregate, false, "a whole column would download all of it");
     const block = await table.readRows({ view: null, start: 55_000, end: 55_003, columns: [0, 2] });
     assert.deepEqual(block.columns, [
       [55000, 55001, 55002],

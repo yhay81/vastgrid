@@ -212,7 +212,9 @@ export class RemoteSource implements TableSource {
     const fields: Operation<"view"> = { query, ...(preview ? { preview } : {}) };
     const created = await this.call<ViewInfo>("view", fields, signal);
     if (created.id !== null) {
-      this.queries.set(created.id, { query, preview });
+      // Only a view that is still building is recreated as a preview: one the grid already follows as
+      // ready must come back ready, or rows past the preview would fail with `not_ready`.
+      this.queries.set(created.id, { query, preview: preview && created.status === "building" });
       this.aliases.set(created.id, created.id);
     }
     return created;
@@ -221,6 +223,8 @@ export class RemoteSource implements TableSource {
   /** The view's state on the server. A view the server forgot is created again under the same id. */
   async viewInfo(view: string, signal?: AbortSignal): Promise<ViewInfo> {
     const result = await this.call<ViewInfo>("status", { view } satisfies Operation<"status">, signal);
+    const known = this.queries.get(view);
+    if (known && result.status !== "building") known.preview = false;
     return { ...result, id: view };
   }
 
