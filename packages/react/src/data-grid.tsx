@@ -13,7 +13,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { type CellValue, plainText, type TableSource, type ViewQuery } from "vastgrid-core";
+import { type CellValue, type GridState, plainText, type TableSource, type ViewQuery } from "vastgrid-core";
 import { StatusBar, Toolbar } from "./components/bars.js";
 import { CellInspector } from "./components/cell-inspector.js";
 import { ColumnsPanel } from "./components/columns-panel.js";
@@ -22,6 +22,7 @@ import { FindBar } from "./components/find-bar.js";
 import { type Anchor, type MenuItem, MenuList, Popover } from "./components/popover.js";
 import { StatsPanel } from "./components/stats-panel.js";
 import { CopyTooLargeError, GridController, type Hit } from "./controller.js";
+import type { GridCellEvent, GridColumnsEvent, GridSelectionEvent } from "./events.js";
 import { countFormat, numberFormat } from "./labels.js";
 import { type Messages, messagesFor } from "./messages.js";
 import { CanvasRenderer } from "./renderer.js";
@@ -51,6 +52,24 @@ export interface DataGridProps {
   /** Cells that can be copied at once. Defaults to 1,000,000. */
   copyLimit?: number;
   onQueryChange?: (query: ViewQuery) => void;
+  /** Called when the selection or the active cell changes, by the user or by the app. */
+  onSelectionChange?: (event: GridSelectionEvent) => void;
+  /** Called when the columns' width, order, visibility or freezing change. */
+  onColumnsChange?: (event: GridColumnsEvent) => void;
+  /** Called when a cell is clicked, or Space is pressed on the active cell. */
+  onCellClick?: (event: GridCellEvent) => void;
+  /**
+   * Called when a cell is double-clicked, or F2 is pressed on the active cell. `event.preventDefault()`
+   * keeps the cell inspector closed.
+   */
+  onCellDoubleClick?: (event: GridCellEvent) => void;
+  /**
+   * Settings applied when a grid starts (for each new `source`), for example from `getState()` saved
+   * earlier. They apply once the table's columns are known.
+   */
+  initialState?: GridState;
+  /** Called with `getState()` when the query or the column settings change. */
+  onStateChange?: (state: GridState) => void;
   className?: string;
   style?: CSSProperties;
   "aria-label"?: string;
@@ -61,6 +80,10 @@ export interface DataGridHandle {
   reload(): void;
   getQuery(): ViewQuery;
   setQuery(query: ViewQuery): void;
+  /** The query and column settings, as JSON to save (see `GridState`). */
+  getState(): GridState;
+  /** Applies a saved state; returns false when it is not one. Before the columns are known, it waits for them. */
+  applyState(state: GridState): boolean;
   /** Scrolls to a row of the current view and makes it active. */
   goToRow(row: number): void;
   readonly controller: GridController;
@@ -77,7 +100,8 @@ type Overlay =
   | { kind: "columns"; anchor: Anchor };
 
 type Drag =
-  | { kind: "cells" | "rows" | "cols"; pointerId: number; x: number; y: number }
+  | { kind: "cells"; pointerId: number; x: number; y: number; row: number; col: number; moved: boolean }
+  | { kind: "rows" | "cols"; pointerId: number; x: number; y: number }
   | { kind: "resize"; pointerId: number; col: number; startX: number; startWidth: number }
   | { kind: "move"; pointerId: number; col: number; x: number; y: number; moved: boolean };
 
@@ -139,20 +163,20 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
 
   // One controller per source. Options that can change later are applied in effects below.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the other options are applied without recreating the grid.
-  const controller = useMemo(
-    () =>
-      new GridController(source, {
-        rowHeight: rowHeight ?? 24,
-        headerHeight: headerHeight ?? 32,
-        locale: resolvedLocale,
-        nullText,
-        frozenColumns,
-        minColumnWidth: 36,
-        maxAutoWidth: 360,
-        copyLimit,
-      }),
-    [source],
-  );
+  const controller = useMemo(() => {
+    const grid = new GridController(source, {
+      rowHeight: rowHeight ?? 24,
+      headerHeight: headerHeight ?? 32,
+      locale: resolvedLocale,
+      nullText,
+      frozenColumns,
+      minColumnWidth: 36,
+      maxAutoWidth: 360,
+      copyLimit,
+    });
+    if (props.initialState) grid.applyState(props.initialState);
+    return grid;
+  }, [source]);
   useSyncExternalStore(controller.subscribe, controller.getVersion, controller.getVersion);
 
   const count = useMemo(() => countFormat(resolvedLocale), [resolvedLocale]);
@@ -242,6 +266,20 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     controller.reload();
   }, [reloadKey, controller]);
 
+  // Event props are read when an event happens, so that new functions on each render need no new subscription.
+  const handlers = useRef(props);
+  handlers.current = props;
+  useEffect(() => {
+    const stops = [
+      controller.onSelectionChange((event) => handlers.current.onSelectionChange?.(event)),
+      controller.onColumnsChange((event) => handlers.current.onColumnsChange?.(event)),
+      controller.onStateChange((state) => handlers.current.onStateChange?.(state)),
+    ];
+    return () => {
+      for (const stop of stops) stop();
+    };
+  }, [controller]);
+
   const lastQuery = useRef(controller.query);
   useEffect(() => {
     if (lastQuery.current !== controller.query) {
@@ -257,6 +295,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       reload: () => controller.reload(),
       getQuery: () => controller.query,
       setQuery: (query) => void controller.setQuery(query),
+      getState: () => controller.getState(),
+      applyState: (state) => controller.applyState(state),
       goToRow: (row) => {
         controller.selection.select({ row, col: controller.selection.active.col });
         controller.selectionChanged({ row, col: controller.selection.active.col });
@@ -337,7 +377,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     const row = c.rowAt(clampedY);
     if (drag.kind === "rows" && row >= 0) c.selection.selectRows(row, row, "extend");
     else if (drag.kind === "cols" && col >= 0) c.selection.selectCols(col, col, "extend");
-    else if (drag.kind === "cells" && row >= 0 && col >= 0) c.selection.select({ row, col }, "extend");
+    else if (drag.kind === "cells" && row >= 0 && col >= 0) {
+      c.selection.select({ row, col }, "extend");
+      drag.moved = drag.moved || row !== drag.row || col !== drag.col;
+    }
     c.selectionChanged();
   }
 
@@ -397,7 +440,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     switch (hit.zone) {
       case "cell":
         c.selection.select({ row: hit.row, col: hit.col }, mode);
-        dragRef.current = { kind: "cells", pointerId: event.pointerId, x, y };
+        dragRef.current = { kind: "cells", pointerId: event.pointerId, x, y, row: hit.row, col: hit.col, moved: false };
         break;
       case "header":
         if (mode === "replace" && c.selection.colSelected(hit.col)) {
@@ -467,8 +510,20 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     if (scroller) scroller.style.cursor = "";
     const c = controller;
     if (drag.kind === "resize") {
-      c.resizing = -1;
-      c.requestRender();
+      c.finishResize();
+    } else if (drag.kind === "cells") {
+      // A click: pressed and released on the same cell.
+      const { x, y } = local(event);
+      const hit = c.hitTest(x, y);
+      if (
+        event.type === "pointerup" &&
+        !drag.moved &&
+        hit.zone === "cell" &&
+        hit.row === drag.row &&
+        hit.col === drag.col
+      ) {
+        props.onCellClick?.(c.cellEvent(hit.row, hit.col, "pointer", event));
+      }
     } else if (drag.kind === "move") {
       const target = c.columnAt(local(event).x);
       if (drag.moved && target >= 0 && target !== drag.col) {
@@ -496,7 +551,11 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       controller.autoFit(hit.resize);
       controller.emit();
     } else if (hit.zone === "cell") {
-      setOverlay({ kind: "inspector", row: hit.row, col: hit.col, anchor: cellAnchor(hit.row, hit.col) });
+      const cellEvent = controller.cellEvent(hit.row, hit.col, "pointer", event);
+      props.onCellDoubleClick?.(cellEvent);
+      if (!cellEvent.defaultPrevented) {
+        setOverlay({ kind: "inspector", row: hit.row, col: hit.col, anchor: cellAnchor(hit.row, hit.col) });
+      }
     }
   }
 
@@ -574,16 +633,26 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       case " ":
         if (event.shiftKey) c.selection.selectRows(c.selection.active.row, c.selection.active.row);
         else if (event.ctrlKey) c.selection.selectCols(c.selection.active.col, c.selection.active.col);
-        else return;
+        else if (props.onCellClick && !event.altKey && !event.metaKey && c.rowCount > 0 && c.visible.length > 0) {
+          // Space clicks the active cell. Without onCellClick, it is left to the browser as before.
+          props.onCellClick(c.cellEvent(c.selection.active.row, c.selection.active.col, "keyboard", event));
+          break;
+        } else return;
         c.selectionChanged();
         break;
-      case "F2":
+      case "F2": {
+        if (c.rowCount > 0 && c.visible.length > 0) {
+          const cellEvent = c.cellEvent(c.selection.active.row, c.selection.active.col, "keyboard", event);
+          props.onCellDoubleClick?.(cellEvent);
+          if (cellEvent.defaultPrevented) break;
+        }
         setOverlay({
           kind: "inspector",
           ...c.selection.active,
           anchor: cellAnchor(c.selection.active.row, c.selection.active.col),
         });
         break;
+      }
       case "Escape":
         if (findOpen) setFindOpen(false);
         else if (!c.selection.single) {

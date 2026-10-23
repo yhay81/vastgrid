@@ -6,12 +6,16 @@ import {
   type DistinctValues,
   ErrorCodes,
   type Filter,
+  GRID_STATE_VERSION,
+  type GridState,
   isAbortError,
   isEmptyQuery,
   isNumericType,
   MAX_TEXT_LIMIT,
+  parseGridState,
   plainText,
   RowCache,
+  resolveGridState,
   ScrollAxis,
   SelectionModel,
   type SelectionSummary,
@@ -25,6 +29,13 @@ import {
   type ViewInfo,
   type ViewQuery,
 } from "vastgrid-core";
+import type {
+  GridCell,
+  GridCellEvent,
+  GridColumnsChangeReason,
+  GridColumnsEvent,
+  GridSelectionEvent,
+} from "./events.js";
 
 export interface GridOptions {
   rowHeight: number;
@@ -106,6 +117,10 @@ function codeOf(error: unknown) {
   return error instanceof Error && "code" in error ? error.code : undefined;
 }
 
+function sameQuery(a: ViewQuery, b: ViewQuery) {
+  return a === b || JSON.stringify(a) === JSON.stringify(b);
+}
+
 /** Whether a loaded value may be text that the source cut for display (it then ends with "…"). */
 function mayBeCut(value: CellValue) {
   return typeof value === "string" && value.endsWith("…");
@@ -158,6 +173,23 @@ export class GridController {
   private sizer: HTMLElement | null = null;
   private readonly stateListeners = new Set<() => void>();
   private readonly renderListeners = new Set<() => void>();
+  private readonly selectionListeners = new Set<(event: GridSelectionEvent) => void>();
+  private readonly columnsListeners = new Set<(event: GridColumnsEvent) => void>();
+  private readonly gridStateListeners = new Set<(state: GridState) => void>();
+  /** A state applied before the table's columns were known, and the query it was applied over. */
+  private pendingState: { state: GridState; query: ViewQuery } | null = null;
+  /** The last change of the column settings not yet reported. */
+  private columnChange: GridColumnsChangeReason | null = null;
+  /** Increments on every change of the column settings that the state keeps. */
+  private columnsRevision = 0;
+  /** Increments when the visible columns or their order change. */
+  private visibleRevision = 0;
+  private visibleKey = "";
+  /** What the last events reported, so that unchanged values are not reported again. */
+  private reported: { selection: string; query: ViewQuery; columns: number };
+  /** A column's width changed while its edge is dragged. */
+  private resized = false;
+  private activeRowId: number | null = 0;
   private lifecycle = new AbortController();
   private viewAbort: AbortController | null = null;
   private summaryAbort: AbortController | null = null;
@@ -177,11 +209,14 @@ export class GridController {
       this.requestRender();
       const active = this.selection.active;
       const value = this.value(active.row, active.col);
-      if (value !== this.activeValue) {
+      const rowId = this.rowId(active.row);
+      if (value !== this.activeValue || rowId !== this.activeRowId) {
         this.activeValue = value;
+        this.activeRowId = rowId;
         this.emit();
       }
     });
+    this.reported = { selection: this.selectionKey(), query: this.query, columns: 0 };
   }
 
   /** Changes the locale and the text for blanks. */
@@ -213,7 +248,74 @@ export class GridController {
 
   emit() {
     this.version++;
+    this.report();
     for (const listener of this.stateListeners) listener();
+  }
+
+  /** Calls `listener` when the selection changes (see `GridSelectionEvent`). */
+  onSelectionChange(listener: (event: GridSelectionEvent) => void) {
+    this.selectionListeners.add(listener);
+    return () => {
+      this.selectionListeners.delete(listener);
+    };
+  }
+
+  /** Calls `listener` when the user or the app changes the columns' width, order, visibility or freezing. */
+  onColumnsChange(listener: (event: GridColumnsEvent) => void) {
+    this.columnsListeners.add(listener);
+    return () => {
+      this.columnsListeners.delete(listener);
+    };
+  }
+
+  /** Calls `listener` with `getState()` when the query or the column settings change. */
+  onStateChange(listener: (state: GridState) => void) {
+    this.gridStateListeners.add(listener);
+    return () => {
+      this.gridStateListeners.delete(listener);
+    };
+  }
+
+  /** Sends the events of the changes since the last report. */
+  private report() {
+    const reason = this.columnChange;
+    if (reason) {
+      this.columnChange = null;
+      if (this.columnsListeners.size > 0) {
+        const event = this.columnsEvent(reason);
+        for (const listener of this.columnsListeners) listener(event);
+      }
+    }
+    const selection = this.selectionKey();
+    if (selection !== this.reported.selection) {
+      this.reported.selection = selection;
+      if (this.selectionListeners.size > 0) {
+        const event = this.selectionEvent();
+        for (const listener of this.selectionListeners) listener(event);
+      }
+    }
+    if (this.query !== this.reported.query || this.columnsRevision !== this.reported.columns) {
+      this.reported.query = this.query;
+      this.reported.columns = this.columnsRevision;
+      if (this.gridStateListeners.size > 0) {
+        const state = this.getState();
+        for (const listener of this.gridStateListeners) listener(state);
+      }
+    }
+  }
+
+  private selectionKey() {
+    const { active, ranges } = this.selection;
+    const list = ranges.map(
+      (range) =>
+        `${range.top},${range.left},${range.bottom},${range.right},${range.allRows ? 1 : 0}${range.allCols ? 1 : 0}`,
+    );
+    return `${this.view.id}|${this.visibleRevision}|${active.row},${active.col},${this.rowId(active.row)}|${list.join(";")}`;
+  }
+
+  private columnsChanged(reason: GridColumnsChangeReason) {
+    this.columnChange = reason;
+    this.columnsRevision++;
   }
 
   requestRender() {
@@ -266,6 +368,9 @@ export class GridController {
     this.cache.clear();
     this.stateListeners.clear();
     this.renderListeners.clear();
+    this.selectionListeners.clear();
+    this.columnsListeners.clear();
+    this.gridStateListeners.clear();
   }
 
   private async poll(signal: AbortSignal) {
@@ -320,6 +425,7 @@ export class GridController {
           return column < 0 ? [] : [{ ...filter, column }];
         });
         this.query = { ...this.query, ...(sort ? { sort } : {}), ...(filters ? { filters } : {}) };
+        this.columnsChanged("schema");
       }
       // Settings follow their columns by name, also when the file's columns moved.
       const old = new Map(this.columns.map((column) => [previous?.columns[column.index]?.name ?? "", column]));
@@ -336,6 +442,13 @@ export class GridController {
         };
       });
       if (!previous) this.frozen = Math.min(this.options.frozenColumns, this.columns.length);
+      const pending = this.pendingState;
+      if (pending && info.columns.length > 0) {
+        this.pendingState = null;
+        const query = this.applyColumns(pending.state);
+        // A query set after the state wins over the state's.
+        if (query && this.query === pending.query) this.query = query;
+      }
       this.autoSized = this.columns.every((column) => column.sized);
       this.viewAbort?.abort();
       this.view = { id: null, rowCount: info.rowCount ?? info.readableRows, query: {} };
@@ -392,6 +505,81 @@ export class GridController {
     return Math.max(0, this.height - this.options.headerHeight);
   }
 
+  /**
+   * A row's position in the original table: the row itself without sort and filters; in a view, the
+   * position read with the row, or null while it is not loaded.
+   */
+  rowId(row: number): number | null {
+    if (this.view.id === null) return row;
+    return this.cache.rowId(row) ?? null;
+  }
+
+  /** The coordinates of a cell given by its view row and visible column. */
+  cell(row: number, col: number): GridCell {
+    return { row, rowId: this.rowId(row), col, column: this.visible[col]?.index ?? -1 };
+  }
+
+  /** An event for a click or double click on a cell, or for the key that does the same. */
+  cellEvent(
+    row: number,
+    col: number,
+    trigger: GridCellEvent["trigger"],
+    keys: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean },
+  ): GridCellEvent {
+    let prevented = false;
+    return {
+      ...this.cell(row, col),
+      value: this.value(row, col),
+      trigger,
+      shiftKey: keys.shiftKey,
+      ctrlKey: keys.ctrlKey,
+      metaKey: keys.metaKey,
+      altKey: keys.altKey,
+      preventDefault() {
+        prevented = true;
+      },
+      get defaultPrevented() {
+        return prevented;
+      },
+    };
+  }
+
+  selectionEvent(): GridSelectionEvent {
+    const active = this.selection.active;
+    return {
+      active: this.cell(active.row, active.col),
+      ranges: this.selection.ranges.map((range) => ({
+        top: range.top,
+        bottom: range.bottom,
+        left: range.left,
+        right: range.right,
+        columns: this.visible.slice(range.left, range.right + 1).map((column) => column.index),
+        allRows: range.allRows === true,
+        allCols: range.allCols === true,
+      })),
+    };
+  }
+
+  columnsEvent(reason: GridColumnsChangeReason): GridColumnsEvent {
+    let col = 0;
+    return {
+      reason,
+      columns: this.columns.map((state) => {
+        const position = state.hidden ? -1 : col++;
+        return {
+          column: state.index,
+          name: this.schema[state.index]?.name ?? "",
+          col: position,
+          width: state.width,
+          hidden: state.hidden,
+          sized: state.sized,
+          frozen: position >= 0 && position < this.frozen,
+        };
+      }),
+      frozenColumns: this.frozen,
+    };
+  }
+
   /** Row labels: the position in the original table for views, otherwise the row number. */
   rowLabel(row: number) {
     if (this.view.id === null) return row + 1;
@@ -401,6 +589,11 @@ export class GridController {
 
   updateLayout() {
     this.visible = this.columns.filter((column) => !column.hidden);
+    const visibleKey = this.visible.map((column) => column.index).join(",");
+    if (visibleKey !== this.visibleKey) {
+      this.visibleKey = visibleKey;
+      this.visibleRevision++;
+    }
     this.frozen = Math.min(this.frozen, this.visible.length);
     this.layout = new ColumnLayout(this.visible.map((column) => column.width));
     this.frozenWidth = this.layout.left(this.frozen);
@@ -786,18 +979,43 @@ export class GridController {
 
   // ----- columns -----
 
-  private changeColumns() {
+  private changeColumns(reason: GridColumnsChangeReason | null) {
+    if (reason) this.columnsChanged(reason);
     this.updateLayout();
     this.selectionChanged();
   }
 
+  /**
+   * Sets a column's width. While the user drags the column's edge (`resizing`), the change is reported
+   * once, by `finishResize()`.
+   */
   resizeColumn(col: number, width: number) {
     const state = this.visible[col];
     if (!state) return;
-    state.width = Math.max(this.options.minColumnWidth, Math.round(width));
+    const next = Math.max(this.options.minColumnWidth, Math.round(width));
+    if (next === state.width && state.sized) return;
+    state.width = next;
     state.sized = true;
     this.updateLayout();
     this.requestRender();
+    if (this.resizing >= 0) {
+      this.resized = true;
+    } else {
+      this.columnsChanged("resize");
+      this.emit();
+    }
+  }
+
+  /** Ends dragging a column's edge. */
+  finishResize() {
+    if (this.resizing < 0) return;
+    this.resizing = -1;
+    this.requestRender();
+    if (this.resized) {
+      this.resized = false;
+      this.columnsChanged("resize");
+      this.emit();
+    }
   }
 
   hideColumn(col: number) {
@@ -805,26 +1023,29 @@ export class GridController {
     if (!state || this.visible.length <= 1) return;
     state.hidden = true;
     if (col < this.frozen) this.frozen--;
-    this.changeColumns();
+    this.changeColumns("visibility");
   }
 
   setColumnHidden(index: number, hidden: boolean) {
     const state = this.columns.find((column) => column.index === index);
-    if (!state) return;
+    if (!state || state.hidden === hidden) return;
     if (hidden && this.visible.length <= 1) return;
     state.hidden = hidden;
-    this.changeColumns();
+    this.changeColumns("visibility");
   }
 
   showAllColumns() {
+    const changed = this.columns.some((column) => column.hidden);
     for (const column of this.columns) column.hidden = false;
-    this.changeColumns();
+    this.changeColumns(changed ? "visibility" : null);
   }
 
   freezeUpTo(col: number) {
-    this.frozen = Math.max(0, Math.min(col + 1, this.visible.length));
+    const frozen = Math.max(0, Math.min(col + 1, this.visible.length));
+    const changed = frozen !== this.frozen;
+    this.frozen = frozen;
     this.scrollToVirtual(0, null);
-    this.changeColumns();
+    this.changeColumns(changed ? "freeze" : null);
   }
 
   /** Moves a visible column before another visible column. */
@@ -836,7 +1057,78 @@ export class GridController {
     const at = list.indexOf(target);
     list.splice(from < to ? at + 1 : at, 0, moving);
     this.columns = list;
-    this.changeColumns();
+    this.changeColumns("move");
+  }
+
+  // ----- state -----
+
+  /**
+   * The grid's settings as JSON that can be saved: the query and the columns' order, set widths,
+   * visibility and freezing. The selection and the scroll position are not part of it. Before the
+   * table's columns are known, it is the state applied meanwhile, as it was given, or only the query.
+   */
+  getState(): GridState {
+    if (this.schema.length === 0) return this.pendingState?.state ?? { version: GRID_STATE_VERSION, query: this.query };
+    return {
+      version: GRID_STATE_VERSION,
+      schema: this.schema.map((column) => column.name),
+      query: this.query,
+      columns: this.columns.map((state) => ({
+        name: this.schema[state.index]?.name ?? "",
+        ...(state.sized ? { width: state.width } : {}),
+        ...(state.hidden ? { hidden: true } : {}),
+      })),
+      frozenColumns: this.frozen,
+    };
+  }
+
+  /**
+   * Applies a saved state (see `GridState`); parts it leaves out keep their current settings. Values
+   * from storage are checked with `parseGridState`. Before the table's columns are known, the state is
+   * kept and applied when they arrive. Returns false when the value is not a state this version reads.
+   */
+  applyState(state: GridState): boolean {
+    const parsed = parseGridState(state);
+    if (!parsed) return false;
+    if (this.schema.length === 0) {
+      this.pendingState = { state: parsed, query: this.query };
+      return true;
+    }
+    this.pendingState = null;
+    const query = this.applyColumns(parsed);
+    this.updateLayout();
+    this.autoSize();
+    if (query && !sameQuery(query, this.query)) void this.setQuery(query);
+    this.selectionChanged();
+    return true;
+  }
+
+  /** Applies a state's column settings and returns its query mapped onto the table's columns. */
+  private applyColumns(state: GridState) {
+    const resolved = resolveGridState(
+      state,
+      this.schema.map((column) => column.name),
+    );
+    if (resolved.columns) {
+      const current = new Map(this.columns.map((column) => [column.index, column]));
+      const listed = resolved.columns.flatMap(({ index, width, hidden }): ColumnState[] => {
+        const column = current.get(index);
+        if (!column) return [];
+        current.delete(index);
+        if (width !== undefined) {
+          return [{ index, hidden, sized: true, width: Math.max(this.options.minColumnWidth, Math.round(width)) }];
+        }
+        const type = this.schema[index]?.type;
+        const automatic = column.sized ? ((type && defaultWidths[type]) ?? 150) : column.width;
+        return [{ index, hidden, sized: false, width: automatic }];
+      });
+      this.columns = [...listed, ...this.columns.filter((column) => current.has(column.index))];
+      if (this.columns.length > 0 && this.columns.every((column) => column.hidden)) this.columns[0].hidden = false;
+      this.autoSized = this.columns.every((column) => column.sized);
+    }
+    if (resolved.frozenColumns !== undefined) this.frozen = resolved.frozenColumns;
+    if (resolved.columns || resolved.frozenColumns !== undefined) this.columnsChanged("state");
+    return resolved.query;
   }
 
   /** Width that fits the header and the loaded values of a column. */

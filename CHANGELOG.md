@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- `vastgrid`: `onSelectionChange`, `onColumnsChange`, `onCellClick` and `onCellDoubleClick` report the
+  selection, changes of the columns' width, order, visibility and freezing, and clicks on cells (Space
+  and F2 from the keyboard; `preventDefault()` keeps the cell inspector closed). Events give a cell's row
+  in the view, its row in the original table and its column both in display order and in the schema,
+  and are sent only for changes, not for scrolling or drawing. The controller offers the same events.
+- `vastgrid`: `getState()`, `applyState(state)`, `initialState` and `onStateChange` save and restore the
+  query and the columns' order, set widths, visibility and freezing as versioned JSON. Columns are kept
+  by name, so a state applies after the file's columns changed; a state applied before the table has
+  loaded waits for its columns.
+- `vastgrid-core`: `GridState`, `parseGridState` (checks values from storage and reads a saved
+  `ViewQuery` as a state), `resolveGridState` and `parseViewQuery`.
+
 ## 0.1.1 — 2026-10-23
 
 Fixes.

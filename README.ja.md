@@ -117,11 +117,31 @@ const source = new ArraySource({
 | `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。 |
 | `copyLimit` | `number` | `1000000` | 一度にコピーできるセルの数。 |
 | `onQueryChange` | `(query: ViewQuery) => void` | | 並べ替え・絞り込み・検索が変わったときに呼ばれます。 |
+| `onSelectionChange` | `(event: GridSelectionEvent) => void` | | 選択範囲かアクティブなセルが変わったときに呼ばれます。 |
+| `onColumnsChange` | `(event: GridColumnsEvent) => void` | | 列の幅・順序・表示・固定が変わったときに呼ばれます。 |
+| `onCellClick`、`onCellDoubleClick` | `(event: GridCellEvent) => void` | | セルのクリック（または Space）とダブルクリック（または F2）で呼ばれます。ダブルクリックで `preventDefault()` を呼ぶと、セルの詳細を開きません。 |
+| `initialState` | `GridState` | | グリッドを作るときに、表の列がわかった時点で適用する設定。 |
+| `onStateChange` | `(state: GridState) => void` | | クエリーか列の設定が変わったときに、その設定を渡して呼ばれます。 |
 | `className`、`style` | | | ルートの要素（`.vg-root`）に付けます。 |
 | `aria-label` | `string` | `messages.gridLabel` | スクリーンリーダー向けのグリッドの名前。 |
 
-ref からは `DataGridHandle` を使えます。`focus()`、`reload()`、`getQuery()`、`setQuery(query)`、`goToRow(row)`、
-グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()` などの診断用）があります。
+ref からは `DataGridHandle` を使えます。`focus()`、`reload()`、`getQuery()`、`setQuery(query)`、`getState()`、
+`applyState(state)`、`goToRow(row)`、グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()`
+などの診断用）があります。
+
+イベントは、セルのビューでの行 `row`、元の表での行 `rowId`、表示中の列の位置 `col`、表の列の番号 `column` を渡し、
+変更があったときだけ呼ばれます（スクロールや描画では呼ばれません）。`GridState` は、クエリーと列の順序・決めた幅・
+表示・固定を列名で記録した、バージョン付きの JSON で、保存先はアプリが選べます。詳しくは
+[DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#イベント)を参照してください。
+
+```tsx
+<DataGrid
+  source={source}
+  initialState={saved}
+  onStateChange={(state) => localStorage.setItem("grid", JSON.stringify(state))}
+  onSelectionChange={({ active }) => showDetail(active.rowId)}
+/>
+```
 
 ```tsx
 const grid = useRef<DataGridHandle>(null);

@@ -26,6 +26,12 @@ import "vastgrid/styles.css";
 | `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。 |
 | `copyLimit` | `number` | `1000000` | 一度にコピーできるセルの数。 |
 | `onQueryChange` | `(query: ViewQuery) => void` | | 並べ替え・絞り込み・検索が変わったときに呼ばれます。 |
+| `onSelectionChange` | `(event: GridSelectionEvent) => void` | | 選択範囲かアクティブなセルが変わったときに呼ばれます。[イベント](#イベント)を参照してください。 |
+| `onColumnsChange` | `(event: GridColumnsEvent) => void` | | 列の幅・順序・表示・固定が変わったときに呼ばれます。 |
+| `onCellClick` | `(event: GridCellEvent) => void` | | セルをクリックしたとき、またはアクティブなセルで Space を押したときに呼ばれます。 |
+| `onCellDoubleClick` | `(event: GridCellEvent) => void` | | セルをダブルクリックしたとき、または F2 を押したときに呼ばれます。`event.preventDefault()` でセルの詳細を開かないようにできます。 |
+| `initialState` | `GridState` | | グリッドを作るときに、表の列がわかった時点で適用する設定。[設定の保存](#設定の保存)を参照してください。 |
+| `onStateChange` | `(state: GridState) => void` | | クエリーか列の設定が変わったときに、その設定を渡して呼ばれます。 |
 | `className`、`style` | | | ルートの要素（`.vg-root`）に付けます。 |
 | `aria-label` | `string` | `messages.gridLabel` | スクリーンリーダー向けのグリッドの名前。 |
 
@@ -39,6 +45,8 @@ ref からは `DataGridHandle` を使えます。
 | `reload()` | `reloadKey` を変えたときと同じように、表を読み直します。 |
 | `getQuery()` | 現在の `ViewQuery`（並べ替え・絞り込み・検索）。 |
 | `setQuery(query)` | `ViewQuery` を適用し、現在のものを置き換えます。表の準備ができる前に呼ぶと、準備ができたときに適用します。 |
+| `getState()` | クエリーと列の設定。保存用の `GridState` です。 |
+| `applyState(state)` | 保存した `GridState` を適用します。このバージョンで読めない値なら `false` を返します。 |
 | `goToRow(row)` | 現在のビューのその行までスクロールし、アクティブにします。 |
 | `controller` | グリッドの状態（選択範囲、列の配置、ビュー）を持つ `GridController`。 |
 | `renderer` | `CanvasRenderer`。`renderer.timings()` などの診断に使います。グリッドがマウントされるまでは `null`。 |
@@ -57,6 +65,85 @@ grid.current?.setQuery({ sort: [{ column: 2, direction: "desc" }], search: "Toky
 
 クエリーの列は、表示の位置ではなく表の列（`TableInfo.columns`）の番号なので、保存したクエリーは、列を動かしたり隠したりしたあとも同じ意味を持ちます。絞り込みの書き方は [`ViewQuery`](/ja/reference/table-source/#viewquery) を参照してください。
 
+## イベント
+
+イベントの props は、利用者による変更とアプリによる変更（`setQuery`、`applyState`）を、1 回の変更につき 1 回知らせます。スクロール・マウスの移動・描画では呼ばれません。React を使わない場合は、`controller.onSelectionChange`、`onColumnsChange`、`onStateChange` で同じイベントを受け取れます。いずれも登録を解除する関数を返します。
+
+セルの位置は、次の 3 種類で表します。
+
+| 項目 | 意味 |
+| --- | --- |
+| `row` | 現在のビューでの位置（0 から）。並べ替えと絞り込みのあとの、表示されている行です。 |
+| `rowId` | 元の表での位置（0 から）。並べ替えも絞り込みもなければ `row` と同じです。ビューでは行と一緒に届くので、その行を読み込むまでは `null` で、届いたときに `onSelectionChange` がもう一度呼ばれます。 |
+| `col` | 表示されている列の中での位置（表示順）。列を動かしたり隠したりすると変わります。 |
+| `column` | 表の列（`TableInfo.columns`）の番号で、`ViewQuery` と同じものです。列を動かしたり隠したりしても変わりません。 |
+
+- `GridSelectionEvent`：`active` はアクティブなセル（`row`、`rowId`、`col`、`column`）、`ranges` は選択範囲の一覧です。範囲ごとに `top`、`bottom`、`left`、`right`（両端を含む、ビューの行と表示中の列の位置）、`columns`（その列の表の番号）、列全体・行全体の選択を表す `allRows`・`allCols` があります。表の列が初めて届いたとき（アクティブなセルに列ができたとき）、新しいビューでアクティブなセルが先頭の行に移ったとき、列を動かしたり隠したりしてアクティブなセルの列が変わったときにも呼ばれます。
+- `GridColumnsEvent`：`reason`（`"resize"`、`"move"`、`"visibility"`、`"freeze"`、状態を適用したときの `"state"`、表を読み直して列が変わったときの `"schema"`）、`columns`（全列を表示順に。`column`、`name`、`col`（隠した列は -1）、`width`、`hidden`、`sized`、`frozen`）、`frozenColumns` です。列の端をドラッグしたときは、ドラッグを終えたときに 1 回だけ知らせます。グリッドが自動で合わせた幅は知らせません。
+- `GridCellEvent`：セルの位置、読み込み済みの値 `value`（読み込む前は `undefined`）、`trigger`（`"pointer"` か `"keyboard"`）、修飾キー、`preventDefault()` です。クリックは、同じセルで押して離したときです。DOM と同じく、ダブルクリックの前にはクリックが 2 回届きます。アクティブなセルでの Space は、`onCellClick` があるときだけクリックとして扱います（ないときはこれまでどおりブラウザーに任せます）。F2 はダブルクリックとして扱います。
+
+```tsx
+<DataGrid
+  source={source}
+  onSelectionChange={({ active }) => setDetail(active.rowId)}
+  onCellDoubleClick={(event) => {
+    event.preventDefault(); // セルの詳細の代わりに
+    openRecord(event.rowId);
+  }}
+/>
+```
+
+## 設定の保存
+
+`getState()` は、グリッドの設定を JSON で返します。クエリーと、列の順序・利用者が決めた幅・表示・固定です。選択範囲とスクロール位置は含みません（残すときは `onSelectionChange` と `goToRow` を使ってください）。保存先はアプリが決めます。
+
+```tsx
+function read(text: string | null) {
+  try {
+    return text ? JSON.parse(text) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// ファイルごとに localStorage へ:
+<DataGrid
+  source={source}
+  initialState={read(localStorage.getItem(`grid:${file}`))}
+  onStateChange={(state) => localStorage.setItem(`grid:${file}`, JSON.stringify(state))}
+/>;
+
+// URL に入れて、リンクから同じ表示を開けるようにする:
+<DataGrid
+  source={source}
+  initialState={read(new URLSearchParams(location.search).get("grid"))}
+  onStateChange={(state) => {
+    const url = new URL(location.href);
+    url.searchParams.set("grid", JSON.stringify(state));
+    history.replaceState(null, "", url);
+  }}
+/>;
+```
+
+```json
+{
+  "version": 1,
+  "schema": ["id", "name", "price"],
+  "query": { "sort": [{ "column": 2, "direction": "desc" }] },
+  "columns": [{ "name": "name", "width": 220 }, { "name": "id", "hidden": true }, { "name": "price" }],
+  "frozenColumns": 1
+}
+```
+
+- 列は名前で覚えます。`schema` は保存したときの列名の一覧で、クエリーの列の番号はこれを指します。適用するときは、名前で表の列に対応させます。同じ名前の列が複数あるときは、n 番目どうしを対応させます。
+- 状態に載っていない表の列（あとからファイルに足された列など）は、今の設定のまま、載っている列のあとに並びます。表にもうない列・並べ替えのキー・絞り込みは捨てます。固定していた列がなくなっても、ほかの列を代わりに固定しません。少なくとも 1 列は表示したままにします。
+- 幅は、利用者が決めた列だけ保存します。それ以外の列は、値に合わせてもう一度幅を決めます。
+- `version` 以外の項目はどれも省略できます。状態を適用すると、含まれている項目だけを変えます。`onQueryChange` や `getQuery()` で保存した `ViewQuery` も、そのクエリーを持つ状態として読みます。
+- `applyState`（と `initialState`）は表を読み込む前でも使えます。状態は列がわかるまで、クエリーは表の準備ができるまで待ってから適用します。その間に `setQuery` で設定したクエリーは、状態のクエリーより優先します。
+- 保存先から読んだ値は検査します。正しくない項目は除き、このパッケージより新しい `version` の状態は受け付けません（`applyState` は `false` を返します）。`vastgrid-core` の `parseGridState(value)` で、検査だけを行えます。今後の版では、設定を省略できる項目として足していき、既存の項目の意味が変わるときだけ `version` を上げて、古い状態を変換します。
+
+`onStateChange` は、`initialState` を含め、状態を適用したときにも呼ばれます。
+
 `renderer.timings()` は、直近に描いた 120 フレームについて `{ frames, average, slowest }`（時間はミリ秒）を返します。[デモ](/ja/demo/)では、これをツールバーに表示しています。
 
 ## エクスポート
@@ -66,6 +153,8 @@ grid.current?.setQuery({ sort: [{ column: 2, direction: "desc" }], search: "Toky
 | エクスポート | 説明 |
 | --- | --- |
 | `DataGrid`、`DataGridProps`、`DataGridHandle` | コンポーネントと、その props と ref の型。 |
+| `GridCell`、`GridCellEvent`、`GridSelectionEvent`、`GridSelectionRange`、`GridColumnsEvent`、`GridColumn`、`GridColumnsChangeReason` | [イベント](#イベント)の型。 |
+| `GridState`、`GridColumnSetting`、`parseGridState(value)`、`resolveGridState(state, names)`、`GRID_STATE_VERSION` | `vastgrid-core` の、[保存する設定](#設定の保存)。 |
 | `en`、`ja`、`Messages`、`messagesFor(locale)` | 組み込みの文言と、ロケールに合わせてグリッドが選ぶ組。 |
 | `GridController`、`CanvasRenderer` | グリッドの状態とキャンバスの描画。ref から使います。 |
 | `GridOptions`、`ColumnState`、`Hit`、`HitZone` | コントローラーの設定、列の状態、当たり判定の型。 |

@@ -3,6 +3,14 @@ export { type BlockState, CacheBlock, RowCache, type RowCacheOptions } from "./c
 export { toHtmlTable, toMarkdownTable, toTsv } from "./clipboard.js";
 export { isNumericType, isTemporalType } from "./column-type.js";
 export { type FormatOptions, numericValue, plainText, ValueFormatter } from "./format.js";
+export {
+  GRID_STATE_VERSION,
+  type GridColumnSetting,
+  type GridState,
+  parseGridState,
+  type ResolvedGridState,
+  resolveGridState,
+} from "./grid-state.js";
 export { ColumnLayout } from "./layout.js";
 export {
   ErrorCodes,
@@ -12,6 +20,7 @@ export {
   type ProtocolOperation,
   type ProtocolRequest,
   parseProtocolRequest,
+  parseViewQuery,
 } from "./protocol.js";
 export { RemoteSource, type RemoteSourceOptions } from "./remote-source.js";
 export { MAX_NATIVE_SCROLL, ScrollAxis } from "./scroll.js";
