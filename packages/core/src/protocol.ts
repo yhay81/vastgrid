@@ -106,7 +106,10 @@ function view(value: unknown): string | null {
 
 function indexes(value: unknown, name: string, maxLength = 100_000): number[] {
   if (!Array.isArray(value) || value.length > maxLength) fail(`${name} must be an array`);
-  return value.map((item, position) => index(item, `${name}[${position}]`));
+  const result = value.map((item, position) => index(item, `${name}[${position}]`));
+  // Repeating a column only multiplies the work a request asks for.
+  if (new Set(result).size !== result.length) fail(`${name} must not repeat a column`);
+  return result;
 }
 
 function cellValue(value: unknown, name: string): CellValue {

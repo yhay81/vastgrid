@@ -1,4 +1,4 @@
-import { ErrorCodes, isInvalidRequest, parseProtocolRequest, SourceError } from "vastgrid-core";
+import { ErrorCodes, isInvalidRequest, type ProtocolRequest, parseProtocolRequest, SourceError } from "vastgrid-core";
 import type { TableEngine } from "./engine.js";
 
 export interface TableHandlerOptions {
@@ -25,6 +25,23 @@ async function engineOf(options: TableHandlerOptions) {
 export async function handleTableRequest(body: unknown, options: TableHandlerOptions, signal?: AbortSignal) {
   const request = parseProtocolRequest(body);
   const engine = await engineOf(options);
+  try {
+    return await answer(request, engine, options, signal);
+  } catch (error) {
+    if (error instanceof SourceError) throw error;
+    // Errors caused by the request's values are reported, without the server's folders and SQL.
+    const message = engine.clientMessage(error);
+    if (queryErrors.test(message)) throw new SourceError("query_failed", message, 422);
+    throw error;
+  }
+}
+
+async function answer(
+  request: ProtocolRequest,
+  engine: TableEngine,
+  options: TableHandlerOptions,
+  signal?: AbortSignal,
+) {
   switch (request.op) {
     case "info": {
       const table = await engine.open(await options.resolve(request.ref));

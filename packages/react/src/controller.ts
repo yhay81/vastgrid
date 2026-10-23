@@ -98,6 +98,11 @@ function messageOf(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** The stable `code` of a source's error (see `SourceError`), if it has one. */
+function codeOf(error: unknown) {
+  return error instanceof Error && "code" in error ? error.code : undefined;
+}
+
 function hasQuery(query: ViewQuery) {
   return Boolean(query.sort?.length || query.filters?.length || query.search?.trim());
 }
@@ -673,7 +678,7 @@ export class GridController {
     this.emit();
     this.requestRender();
     try {
-      const view = await this.source.createView(query, controller.signal);
+      const view = await this.createView(query, controller.signal);
       if (controller.signal.aborted || this.disposed) return;
       this.view = view;
       this.viewPending = false;
@@ -683,13 +688,30 @@ export class GridController {
       this.scrollToVirtual(null, 0);
       this.scheduleSummary();
     } catch (error) {
-      if (controller.signal.aborted || isAbortError(error)) return;
-      if (error instanceof Error && "code" in error && (error as { code: string }).code === "cancelled") return;
+      // Only this grid's own cancellation (a newer query replaced this one) is silent.
+      if (controller.signal.aborted) return;
       this.viewPending = false;
       this.viewError = messageOf(error);
+      // The server is loading the table again (it closed it, for example because the file changed):
+      // follow that load, which applies the query once the table is ready.
+      if (codeOf(error) === "not_ready") this.reload();
     }
     this.emit();
     this.requestRender();
+  }
+
+  /**
+   * Creates a view, asking once more when the source cancelled it without being asked to: a server
+   * cancels the build when it closes the table (for example because the file changed), and the next
+   * request opens the table again.
+   */
+  private async createView(query: ViewQuery, signal: AbortSignal) {
+    try {
+      return await this.source.createView(query, signal);
+    } catch (error) {
+      if (signal.aborted || codeOf(error) !== "cancelled") throw error;
+      return this.source.createView(query, signal);
+    }
   }
 
   sortBy(col: number, direction: SortDirection, add = false) {

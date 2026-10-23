@@ -10,13 +10,15 @@ Every request is a `POST` of a JSON object to one endpoint, with `content-type: 
 
 - Success: status `200` and `{ "result": … }`.
 - Failure: an error status and `{ "error": { "code": "…", "message": "…" } }`. `code` is stable and meant
-  for programs; `message` is for people and may be localized by the host.
+  for programs; `message` is for people and may be localized by the host. Messages name files without
+  the server's folders.
 
 ## Coordinates
 
 - `row` is a position in a view (0-based). The table itself is the view `null`.
 - `column` is an index into the table schema (`columns` of `info`), never a display position, so that
-  hiding or reordering columns in the UI does not change what is asked for.
+  hiding or reordering columns in the UI does not change what is asked for. A list of `columns` names
+  each column at most once.
 - Ranges are `[start, end)`.
 
 ## Handles
@@ -40,6 +42,9 @@ that changed gets a new handle and a new `revision`.
 | `export` | `table`, `view`, `format` (`csv`, `tsv`, `parquet`, `json`), optional `columns`, `target` | `{ target, rows }` |
 | `close` | `table` | `null` |
 
+A `rows` request reads at most 1,000,000 rows and 1,000,000 cells (rows × columns); read more in parts.
+View requests on one table are answered one at a time and never cancel each other.
+
 ### `TableInfo`
 
 ```ts
@@ -58,7 +63,9 @@ that changed gets a new handle and a new `revision`.
 }
 ```
 
-Clients poll `info` while `status` is `loading` and only read rows below `readableRows`.
+Clients poll `info` while `status` is `loading` and only read rows below `readableRows`. When the load
+fails, `info` answers `status: "error"` with the reason in `error`; the `info` after that loads the file
+again, so that clients can retry.
 
 ### Values
 
@@ -92,7 +99,7 @@ type Filter =
 | `table_not_found` | 404 | Unknown table handle. Reopen with `info`. |
 | `view_not_found` | 404 | Unknown view. Create it again. |
 | `not_ready` | 409 | The table is still loading. |
-| `cancelled` | 409 / 499 | A newer request replaced this one, or the client went away. |
+| `cancelled` | 409 / 499 | The client went away, or the server closed the table while the request ran (for example because the file changed). |
 | `load_failed` | 422 | The file could not be read; `message` explains why. |
 | `query_failed` | 422 | A filter value does not fit the column (for example text compared with a number). |
 | `unsupported_format` | 415 | Not a table file. |

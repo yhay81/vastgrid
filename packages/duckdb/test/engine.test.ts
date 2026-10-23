@@ -418,3 +418,141 @@ test("engines delete their session files, also those left by ended processes", a
   await instance.dispose();
   assert.deepEqual(await fs.readdir(base), []);
 });
+
+test("reports a failed load to clients polling it before loading the file again", async () => {
+  // A JSON Lines file whose last line was cut off, for example a log still being written. Its beginning
+  // reads well, so a preview is served while it loads.
+  const file = path.join(workspace, "cut.jsonl");
+  const lines = Array.from({ length: 30_000 }, (_, index) => `{"a": ${index}}`);
+  await writeFile(file, `${lines.join("\n")}\n{"a": `);
+  // Clients poll `info` while a table loads, and every `info` opens the file.
+  let table = await engine.open(file);
+  const first = table.id;
+  for (let poll = 0; poll < 100 && table.info().status === "loading"; poll++) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    table = await engine.open(file);
+  }
+  assert.equal(table.info().status, "error");
+  assert.equal(table.id, first, "polling does not load the file again");
+  assert.equal(table.info().readableRows, 0, "the preview is not offered once the load failed");
+  await assert.rejects(
+    table.readRows({ view: null, start: 0, end: 1, columns: [0] }),
+    (error: Error & { code?: string }) => error.code === "load_failed",
+  );
+  // The error names the file but not the server's folders, nor the SQL that read it.
+  const error = table.info().error ?? "";
+  assert.match(error, /cut\.jsonl/);
+  assert.ok(!error.includes(workspace), error);
+  assert.doesNotMatch(error, /LINE \d+:|read_json/);
+  // Once the failure has been reported, opening the file again retries it.
+  const retry = await engine.open(file);
+  assert.notEqual(retry.id, first);
+  await retry.whenReady();
+  assert.equal(retry.info().status, "error");
+});
+
+test("errors sent to clients leave out the server's folders and SQL", async () => {
+  const handler = createTableHandler({
+    engine,
+    resolve: (ref) => path.join(workspace, ref),
+    resolveTarget: (target) => path.join(workspace, target),
+  });
+  const post = async (body: unknown) => {
+    const response = await handler(new Request("http://local/api", { method: "POST", body: JSON.stringify(body) }));
+    const { error } = (await response.json()) as { error?: { code: string; message: string } };
+    return { status: response.status, code: error?.code, message: error?.message ?? "" };
+  };
+  const table = (await open("fruit.csv")).id;
+  const notANumber = await post({
+    op: "view",
+    table,
+    query: { filters: [{ type: "compare", column: 2, op: "gt", value: "abc" }] },
+  });
+  assert.equal(notANumber.status, 422);
+  assert.equal(notANumber.code, "query_failed");
+  assert.match(notANumber.message, /^Conversion Error: Could not convert string 'abc'/);
+  assert.doesNotMatch(notANumber.message, /LINE \d+:|SELECT/);
+  const missingFolder = await post({ op: "export", table, view: null, format: "csv", target: "missing/out.csv" });
+  assert.equal(missingFolder.code, "query_failed");
+  assert.match(missingFolder.message, /"missing\//);
+  assert.ok(!missingFolder.message.includes(workspace), missingFolder.message);
+});
+
+test("view requests on one table do not cancel each other", async () => {
+  const table = await open("fruit.csv");
+  // Two grids, or two people, ask for different views of the same file at the same time.
+  const [byName, byPrice] = await Promise.all([
+    table.createView({ sort: [{ column: 1, direction: "desc" }] }),
+    table.createView({ sort: [{ column: 2, direction: "desc" }] }),
+  ]);
+  assert.ok(byName.id && byPrice.id);
+  assert.notEqual(byName.id, byPrice.id);
+  // A request that waited behind a build of the same query gets that view.
+  const query = { filters: [{ type: "blank" as const, column: 5, blank: false }] };
+  const [first, second] = await Promise.all([table.createView(query), table.createView(query)]);
+  assert.equal(first.id, second.id);
+  assert.equal(first.rowCount, 4);
+});
+
+test("a view request cancelled while it waits for its turn builds nothing", async () => {
+  const table = await open("fruit.csv");
+  // Two long operations hold the slots for building views and statistics.
+  let release = () => {};
+  const busy = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const holders = [engine.work.run(() => busy), engine.work.run(() => busy)];
+  const request = new AbortController();
+  const cancelled = assert.rejects(
+    table.createView({ filters: [{ type: "text", column: 1, op: "contains", value: "an" }] }, request.signal),
+    (error: Error & { code?: string }) => error.code === "cancelled",
+  );
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  request.abort();
+  release();
+  await Promise.all([...holders, cancelled]);
+});
+
+test("a request cancelled while it waits for a connection runs nothing", async () => {
+  // Six requests hold every pooled connection.
+  let release = () => {};
+  const busy = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const holders = Array.from({ length: 6 }, () => engine.withConnection(undefined, () => busy));
+  const request = new AbortController();
+  let ran = false;
+  const waiting = assert.rejects(
+    engine.withConnection(request.signal, async () => {
+      ran = true;
+    }),
+    (error: Error & { code?: string }) => error.code === "cancelled",
+  );
+  request.abort();
+  release();
+  await Promise.all([...holders, waiting]);
+  assert.equal(ran, false);
+});
+
+test("limits the cells one rows request reads", async () => {
+  const table = await open("fruit.csv");
+  await assert.rejects(
+    table.readRows({ view: null, start: 0, end: 500_001, columns: [0, 1] }),
+    (error: Error & { code?: string }) => error.code === "invalid_request" && /cells/.test(error.message),
+  );
+  const rows = await table.readRows({ view: null, start: 0, end: 500_000, columns: [0, 1] });
+  assert.equal(rows.end, 5);
+});
+
+test("requests that open a changed file at the same time share one new table", async () => {
+  const file = path.join(workspace, "shared.csv");
+  await writeFile(file, "x\n1\n");
+  const old = await open("shared.csv");
+  await writeFile(file, "x\n1\n2\n");
+  await utimes(file, new Date(), new Date(Date.now() + 5000));
+  const [first, second] = await Promise.all([engine.open(file), engine.open(file)]);
+  assert.notEqual(first.id, old.id);
+  assert.equal(first.id, second.id);
+  await first.whenReady();
+  assert.equal(first.info().rowCount, 2);
+});

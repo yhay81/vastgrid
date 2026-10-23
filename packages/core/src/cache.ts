@@ -1,4 +1,4 @@
-import { isAbortError, type TableSource } from "./source.js";
+import type { TableSource } from "./source.js";
 import type { CellValue } from "./types.js";
 
 export interface RowCacheOptions {
@@ -64,6 +64,7 @@ export class RowCache {
   private inFlight = 0;
   private clock = 0;
   private notifyScheduled = false;
+  private retryTimer: ReturnType<typeof setTimeout> | undefined;
   private viewId: string | null = null;
   private rows = 0;
   private readable = 0;
@@ -127,6 +128,7 @@ export class RowCache {
   /** Drops every block and cancels every request. */
   clear() {
     this.generation++;
+    clearTimeout(this.retryTimer);
     for (const block of this.blocks.values()) block.controller?.abort();
     this.blocks.clear();
     this.rowIdsByBlock.clear();
@@ -299,13 +301,18 @@ export class RowCache {
         this.notify();
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted || isAbortError(error)) return;
+        // Only this block's own cancellation is silent. Anything else, also an AbortError from work
+        // the source shared with a cancelled request, marks the block failed so that it is retried.
+        if (controller.signal.aborted) return;
         if (generation !== this.generation || this.blocks.get(block.key) !== block) return;
         block.state = "error";
         block.error = error;
         block.failedAt = Date.now();
         for (const listener of this.errorListeners) listener(error);
         this.notify();
+        // Tell the listeners again once the block may be retried, so that a grid asks for it by itself.
+        clearTimeout(this.retryTimer);
+        this.retryTimer = setTimeout(() => this.notify(), this.retryDelay + 10);
       })
       .finally(() => {
         block.controller = null;
@@ -327,7 +334,8 @@ export class RowCache {
   ): Promise<CellValue[][]> {
     const result: CellValue[][] = columns.map(() => []);
     if (columns.length === 0 || end <= start) return result;
-    const chunk = Math.max(500, Math.floor(200_000 / columns.length));
+    // About 200,000 cells per request, also for wide tables: servers limit the cells of one request.
+    const chunk = Math.max(1, Math.floor(200_000 / columns.length));
     for (let from = start; from < end; from += chunk) {
       const to = Math.min(end, from + chunk);
       const block = await this.source.readRows(

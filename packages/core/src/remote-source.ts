@@ -141,17 +141,21 @@ export class RemoteSource implements TableSource {
     if (view === null) return null;
     const alias = this.aliases.get(view);
     if (alias) return alias;
-    return this.recreate(view, signal);
+    return abortable(this.recreate(view), signal);
   }
 
-  private recreate(view: string, signal?: AbortSignal): Promise<string> {
+  /**
+   * Creates a view the server forgot again. Like `open`, concurrent callers share one request that is
+   * not tied to any caller's signal: a block that scrolled away does not cancel it for the others.
+   */
+  private recreate(view: string): Promise<string> {
     let pending = this.recreating.get(view);
     if (!pending) {
       const query = this.queries.get(view);
       if (!query) return Promise.reject(new SourceError(ErrorCodes.viewNotFound, "The view no longer exists.", 404));
       pending = (async () => {
-        const table = await this.tableHandle(signal);
-        const created = await this.post<ViewInfo>({ op: "view", table, query }, signal);
+        const table = await this.tableHandle();
+        const created = await this.post<ViewInfo>({ op: "view", table, query });
         if (created.id === null)
           throw new SourceError(ErrorCodes.viewNotFound, "The view could not be recreated.", 404);
         this.aliases.set(view, created.id);

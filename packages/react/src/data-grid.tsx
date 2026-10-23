@@ -799,6 +799,13 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   else if (c.viewError) overlayMessage = c.viewError;
   else if (!c.info || (c.info.status === "loading" && c.readableRows === 0)) overlayMessage = messages.loading;
   else if (c.rowCount === 0 && !c.viewPending) overlayMessage = messages.noRows;
+  // Retrying reads the table again after a load error, and builds the view again after a view error.
+  const retry =
+    c.loadError || c.info?.status === "error"
+      ? () => controller.reload()
+      : c.viewError
+        ? () => void controller.setQuery(controller.query)
+        : null;
 
   return (
     <div ref={rootRef} className={`vg-root${className ? ` ${className}` : ""}`} style={style} data-status={c.status}>
@@ -889,8 +896,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
             role={c.loadError || c.viewError || c.info?.status === "error" ? "alert" : "status"}
           >
             <span>{overlayMessage}</span>
-            {(c.loadError || c.info?.status === "error") && (
-              <button type="button" className="vg-button" onClick={() => controller.reload()}>
+            {retry && (
+              <button type="button" className="vg-button" onClick={retry}>
                 {messages.retry}
               </button>
             )}

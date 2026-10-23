@@ -143,6 +143,12 @@ test("row cache reads ranges in chunks for copying", async () => {
   assert.equal(values[0].length, 1490);
   assert.equal(values[0][0], 102);
   assert.equal(values[1][1489], 14990);
+  // Wide tables are read in fewer rows per request, so that no request asks for too many cells.
+  const wide = Array.from({ length: 2000 }, (_, index) => index);
+  source.requests.length = 0;
+  const columns = await cache.read(0, 300, wide);
+  assert.equal(columns[1999][299], 299 * 10 + 1999);
+  assert.ok(source.requests.every((request) => (request.end - request.start) * request.columns.length <= 200_000));
 });
 
 test("protocol requests are validated", () => {
@@ -160,6 +166,10 @@ test("protocol requests are validated", () => {
     parseProtocolRequest({ op: "view", table: "t", query: { filters: [{ type: "sql", column: 0 }] } }),
   );
   assert.throws(() => parseProtocolRequest({ op: "rows", table: "t", start: -1, end: 1, columns: [] }));
+  assert.throws(
+    () => parseProtocolRequest({ op: "rows", table: "t", start: 0, end: 1, columns: [3, 3, 3] }),
+    /must not repeat a column/,
+  );
   const view = parseProtocolRequest({
     op: "view",
     table: "t",
@@ -237,4 +247,80 @@ test("remote source keeps a shared open request alive when one caller gives up",
   const info = await source.info();
   assert.equal(info.status, "ready");
   assert.equal(infoCalls, 1, "the request already in flight is reused");
+});
+
+test("remote source recreates a forgotten view for callers that still wait when another gives up", async () => {
+  const backend = people();
+  const viewsOnServer = new Set<string>();
+  let onViewRequest: (() => void) | null = null;
+  const fakeFetch = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    const reply = (status: number, payload: unknown) => new Response(JSON.stringify(payload), { status });
+    if (body.op === "info") return reply(200, { result: { table: "t1", ...(await backend.info()) } });
+    if (body.op === "view") {
+      onViewRequest?.();
+      // Sorting a large table takes a while.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      if (init.signal?.aborted) throw new DOMException("aborted", "AbortError");
+      const view = await backend.createView(body.query);
+      if (view.id) viewsOnServer.add(view.id);
+      return reply(200, { result: view });
+    }
+    if (body.view && !viewsOnServer.has(body.view)) {
+      return reply(404, { error: { code: "view_not_found", message: "gone" } });
+    }
+    return reply(200, { result: await backend.readRows(body) });
+  }) as typeof fetch;
+  const source = new RemoteSource({ endpoint: "/api", ref: "a.csv", fetch: fakeFetch });
+  const view = await source.createView({ sort: [{ column: 0, direction: "asc" }] });
+  assert.ok(view.id);
+  // The server restarts and forgets the view. A block asks for rows and starts recreating it; a second
+  // block joins; then the first block scrolls away and gives up.
+  viewsOnServer.clear();
+  const recreating = new Promise<void>((resolve) => {
+    onViewRequest = resolve;
+  });
+  const scrolledAway = new AbortController();
+  const abandoned = source.readRows({ view: view.id, start: 0, end: 1, columns: [0] }, scrolledAway.signal);
+  await recreating;
+  const waiting = source.readRows({ view: view.id, start: 1, end: 2, columns: [0] }, new AbortController().signal);
+  scrolledAway.abort();
+  await assert.rejects(abandoned, (error: Error) => error.name === "AbortError");
+  assert.deepEqual((await waiting).columns[0], ["Barbara"]);
+});
+
+test("row cache retries a block that failed with a cancellation it did not ask for", async () => {
+  let failures = 1;
+  const source = new CountingSource(100);
+  const readRows = source.readRows.bind(source);
+  // A source that shares work between requests can reject a request with another one's AbortError.
+  source.readRows = async (request, signal) => {
+    if (failures-- > 0) throw new DOMException("aborted", "AbortError");
+    return readRows(request, signal);
+  };
+  const cache = new RowCache(source, { blockRows: 100, retryDelay: 0 });
+  cache.setView(null, 100, 100, 1);
+  cache.want(0, 10, [0]);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(cache.blockAt(0, 0)?.state, "error", "the block does not stay loading without a request");
+  cache.want(0, 10, [0]);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(cache.value(5, 0), 50);
+});
+
+test("row cache asks for failed blocks again by itself", async () => {
+  let failures = 1;
+  const source = new CountingSource(100);
+  const readRows = source.readRows.bind(source);
+  source.readRows = async (request, signal) => {
+    if (failures-- > 0) throw new Error("The connection was lost.");
+    return readRows(request, signal);
+  };
+  const cache = new RowCache(source, { blockRows: 100, retryDelay: 20 });
+  cache.setView(null, 100, 100, 1);
+  // Like a grid, ask for the visible rows whenever the cache changes, and not otherwise.
+  cache.onChange(() => cache.want(0, 10, [0]));
+  cache.want(0, 10, [0]);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(cache.value(5, 0), 50);
 });

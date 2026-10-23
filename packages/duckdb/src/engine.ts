@@ -234,6 +234,11 @@ export class TableEngine {
   ): Promise<T> {
     if (signal?.aborted) throw new SourceError(ErrorCodes.cancelled, "The request was cancelled.", 499);
     const connection = await this.acquire();
+    if (signal?.aborted) {
+      // Cancelled while it waited for a connection: an abort listener added now would never fire.
+      this.release(connection);
+      throw new SourceError(ErrorCodes.cancelled, "The request was cancelled.", 499);
+    }
     const interrupt = () => connection.interrupt();
     signal?.addEventListener("abort", interrupt, { once: true });
     try {
@@ -259,7 +264,8 @@ export class TableEngine {
 
   /**
    * Opens a file, or returns the table already open for it when the file has not changed. A file
-   * that changed (size or modification time) is opened again as a new table.
+   * that changed (size or modification time) is opened again as a new table, and so is a file whose
+   * load failed once `info()` has reported the failure (a retry).
    */
   async open(filePath: string, format?: TableFormat): Promise<OpenTable> {
     if (this.disposed) throw new SourceError("disposed", "The table engine was closed.", 503);
@@ -269,12 +275,19 @@ export class TableEngine {
     const info = await stat(absolute);
     if (!info.isFile()) throw new SourceError("not_file", "Only files can be opened as tables.", 400);
     const revision = `${info.size}:${Math.round(info.mtimeMs)}`;
-    const existing = this.byPath.get(absolute);
-    if (existing && existing.revision === revision && existing.status !== "error") {
+    // Until its failure is reported, a failed table is returned as it is: reopening it right away would
+    // answer every poll of a loading table with a new load, so clients would never see the error.
+    const reusable = (table: OpenTable) => table.revision === revision && !table.failureReported;
+    let existing = this.byPath.get(absolute);
+    if (existing && !reusable(existing)) {
+      await this.close(existing.id);
+      // Another request may have opened the file again while the old table was closing.
+      existing = this.byPath.get(absolute);
+    }
+    if (existing && reusable(existing)) {
       existing.touch();
       return existing;
     }
-    if (existing) await this.close(existing.id);
     const table = new OpenTable(this, this.createId("t"), absolute, fileFormat, revision, info.size);
     this.tables.set(table.id, table);
     this.byPath.set(absolute, table);
@@ -321,6 +334,20 @@ export class TableEngine {
   tempPath(name: string) {
     return path.join(this.options.tempDirectory, name);
   }
+
+  /**
+   * The text of an error for clients: without the SQL that DuckDB quotes (`LINE 1: …`), and with the
+   * engine's folders left out of paths, so that responses do not show how the server is laid out.
+   */
+  clientMessage(error: unknown) {
+    const folders = [this.options.tempDirectory, ...this.options.allowedDirectories]
+      .map((folder) => (folder.endsWith(path.sep) ? folder : `${folder}${path.sep}`))
+      .filter((folder) => folder !== path.parse(folder).root)
+      .sort((a, b) => b.length - a.length);
+    let message = errorMessage(error).replace(/\n\s*LINE \d+:[\s\S]*$/, "");
+    for (const folder of folders) message = message.replaceAll(folder, "");
+    return message.trim();
+  }
 }
 
 interface View {
@@ -343,12 +370,16 @@ const ROW_COLUMN = "__vg_row";
 const POSITION_COLUMN = "__vg_position";
 /** Positions looked up per query when reading a view that holds only positions. */
 const LOOKUP_BATCH = 2048;
+/** Cells (rows × columns) one `rows` request may read: the answer is built in memory. */
+const MAX_CELLS = 1_000_000;
 
 /** One open file. Created by `TableEngine.open`. */
 export class OpenTable {
   status: TableInfo["status"] = "loading";
   progress: number | null = null;
   error: string | undefined;
+  /** Set once `info()` has reported a failed load: `TableEngine.open` then loads the file again. */
+  failureReported = false;
   readonly notes: string[] = [];
   columns: SqlColumn[] = [];
   rowCount: number | null = null;
@@ -362,7 +393,6 @@ export class OpenTable {
   private loadConnection: DuckDBConnection | null = null;
   private viewConnection: DuckDBConnection | null = null;
   private viewQueue: Promise<unknown> = Promise.resolve();
-  private building: { cancelled: boolean } | null = null;
   private readonly tempFiles: string[] = [];
   private readonly objects: string[] = [];
   private clock = 0;
@@ -386,7 +416,10 @@ export class OpenTable {
     this.ready = this.load().catch((error: unknown) => {
       if (this.disposed) return;
       this.status = "error";
-      this.error = errorMessage(error);
+      // Clients see the file's name only; converted copies of the file stand for the file itself.
+      let message = errorMessage(error);
+      for (const file of [...this.tempFiles, this.path]) message = message.replaceAll(file, path.basename(this.path));
+      this.error = this.engine.clientMessage(message);
       this.engine.options.log?.(`Could not open ${this.path}`, error);
     });
   }
@@ -398,10 +431,12 @@ export class OpenTable {
 
   info(): TableInfo {
     const ready = this.status === "ready";
+    if (this.status === "error") this.failureReported = true;
     return {
       columns: this.columns.map((column) => ({ name: column.name, type: column.type, sourceType: column.sqlType })),
       rowCount: ready ? this.rowCount : null,
-      readableRows: ready ? (this.rowCount ?? 0) : (this.preview?.rows ?? 0),
+      // The preview is served while loading only: a table that failed has no rows to read.
+      readableRows: ready ? (this.rowCount ?? 0) : this.status === "loading" ? (this.preview?.rows ?? 0) : 0,
       status: this.status,
       progress: this.progress,
       ...(this.error ? { error: this.error } : {}),
@@ -634,6 +669,9 @@ export class OpenTable {
   }
 
   async readRows(request: RowRequest & { textLimit?: number }, signal?: AbortSignal): Promise<RowBlock> {
+    if ((request.end - request.start) * request.columns.length > MAX_CELLS) {
+      throw new SourceError(ErrorCodes.invalidRequest, "Read at most a million cells at a time.", 400);
+    }
     const limit = Math.min(Math.max(1, request.textLimit ?? this.engine.options.textLimit), 1_000_000);
     if (this.status === "loading") {
       // While loading, the beginning of the file is served from the preview.
@@ -727,31 +765,30 @@ export class OpenTable {
   }
 
   /**
-   * Creates a sorted or filtered view. Views are built one at a time per table; a newer request
-   * cancels the one being built (its caller receives `cancelled`).
+   * Creates a sorted or filtered view, or returns the view of the same query. Views are built one at a
+   * time per table. Requests never cancel each other, since several grids or people may share the
+   * table: a request is cancelled by its own signal (its caller then receives `cancelled`).
    */
   async createView(query: ViewQuery, signal?: AbortSignal): Promise<ViewInfo> {
     this.requireReady();
     if (isEmptyQuery(query)) return { id: null, rowCount: this.rowCount ?? 0, query: {} };
-    const same = [...this.views.values()].find((view) => JSON.stringify(view.query) === JSON.stringify(query));
-    if (same) {
-      same.used = ++this.clock;
-      return { id: same.id, rowCount: same.rowCount, query: same.query };
-    }
-    if (this.building) {
-      this.building.cancelled = true;
-      this.viewConnection?.interrupt();
-    }
-    const token = { cancelled: false };
-    this.building = token;
-    const run = this.viewQueue.then(() => this.buildView(query, token, signal));
+    const same = this.sameView(query);
+    if (same) return same;
+    // A request that waited behind a build of the same query gets that view.
+    const run = this.viewQueue.then(() => this.sameView(query) ?? this.buildView(query, signal));
     this.viewQueue = run.catch(() => undefined);
     return run;
   }
 
-  private async buildView(query: ViewQuery, token: { cancelled: boolean }, signal?: AbortSignal): Promise<ViewInfo> {
-    if (token.cancelled || signal?.aborted)
-      throw new SourceError(ErrorCodes.cancelled, "A newer view replaced this one.", 409);
+  private sameView(query: ViewQuery): ViewInfo | null {
+    const key = JSON.stringify(query);
+    const view = [...this.views.values()].find((item) => JSON.stringify(item.query) === key);
+    if (!view) return null;
+    view.used = ++this.clock;
+    return { id: view.id, rowCount: view.rowCount, query: view.query };
+  }
+
+  private async buildView(query: ViewQuery, signal?: AbortSignal): Promise<ViewInfo> {
     const engine = this.engine;
     return engine.work.run(async () => {
       const params = new Parameters();
@@ -767,12 +804,15 @@ export class OpenTable {
       const interrupt = () => connection.interrupt();
       signal?.addEventListener("abort", interrupt, { once: true });
       try {
+        // A request cancelled while it waited for its turn builds nothing.
+        if (this.disposed || signal?.aborted)
+          throw new SourceError(ErrorCodes.cancelled, "The view request was cancelled.", 409);
         await connection.run(sql, params.values);
         const count = await connection.runAndReadAll(`SELECT count(*) FROM ${quoteIdentifier(name)}`);
         const rowCount = Number(count.getRowsJS()[0][0]);
-        if (token.cancelled || this.disposed) {
+        if (this.disposed) {
           await connection.run(`DROP TABLE IF EXISTS ${quoteIdentifier(name)}`);
-          throw new SourceError(ErrorCodes.cancelled, "A newer view replaced this one.", 409);
+          throw new SourceError(ErrorCodes.cancelled, "The view request was cancelled.", 409);
         }
         const id = engine.createId("v");
         this.views.set(id, { id, name, rowCount, query, used: ++this.clock, kind });
@@ -780,11 +820,10 @@ export class OpenTable {
         return { id, rowCount, query };
       } catch (error) {
         await connection.run(`DROP TABLE IF EXISTS ${quoteIdentifier(name)}`).catch(() => undefined);
-        if (isInterrupt(error)) throw new SourceError(ErrorCodes.cancelled, "A newer view replaced this one.", 409);
+        if (isInterrupt(error)) throw new SourceError(ErrorCodes.cancelled, "The view request was cancelled.", 409);
         throw error;
       } finally {
         signal?.removeEventListener("abort", interrupt);
-        if (this.building === token) this.building = null;
         this.viewConnection = null;
         connection.closeSync();
       }
@@ -1057,7 +1096,6 @@ export class OpenTable {
   async dispose() {
     if (this.disposed) return;
     this.disposed = true;
-    if (this.building) this.building.cancelled = true;
     // Loads and view builds notice `disposed` and drop what they create after this point.
     this.loadConnection?.interrupt();
     this.viewConnection?.interrupt();
