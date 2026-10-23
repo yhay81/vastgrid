@@ -7,10 +7,11 @@
  * measured in this process (DuckDB through @duckdb/node-api), without the HTTP layer.
  */
 import { existsSync } from "node:fs";
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, readdir, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DuckDBInstance } from "@duckdb/node-api";
+import type { SortKey } from "vastgrid-core";
 import { type OpenTable, TableEngine } from "../src/engine.ts";
 
 const args = new Map(
@@ -89,6 +90,102 @@ async function windows(table: OpenTable, view: string | null, rows: number, labe
   record(`${label}: 256 rows × ${columns.length} columns, 95th percentile`, percentile(times, 0.95));
 }
 
+/** Bytes of the files in a folder and its subfolders. */
+async function folderSize(folder: string) {
+  let total = 0;
+  const entries = await readdir(folder, { recursive: true, withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    total += await stat(path.join(entry.parentPath, entry.name)).then(
+      (info) => info.size,
+      () => 0,
+    );
+  }
+  return total;
+}
+
+/**
+ * Runs `task` while sampling the memory DuckDB holds (`duckdb_memory()`) and the size of the engine's
+ * temporary folder (database file and spilled data), and returns their peaks above where they started.
+ */
+async function sampled<T>(engine: TableEngine, task: (peaks: () => { memory: number; disk: number }) => Promise<T>) {
+  const folder = engine.options.tempDirectory;
+  const memory = () =>
+    engine.withConnection(undefined, async (connection) =>
+      Number((await connection.runAndReadAll("SELECT sum(memory_usage_bytes) FROM duckdb_memory()")).getRowsJS()[0][0]),
+    );
+  const baseMemory = await memory();
+  const baseDisk = await folderSize(folder);
+  let peakMemory = baseMemory;
+  let peakDisk = baseDisk;
+  let running = true;
+  const sampler = (async () => {
+    while (running) {
+      const [used, disk] = await Promise.all([memory(), folderSize(folder)]);
+      peakMemory = Math.max(peakMemory, used);
+      peakDisk = Math.max(peakDisk, disk);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  })();
+  const peaks = () => ({ memory: peakMemory - baseMemory, disk: peakDisk - baseDisk });
+  try {
+    const result = await task(peaks);
+    return { result, ...peaks() };
+  } finally {
+    running = false;
+    await sampler;
+  }
+}
+
+const megabytes = (bytes: number) => `${Math.max(0, bytes / 1024 ** 2).toFixed(0)} MB`;
+
+/**
+ * Sorts a Parquet file once waiting for the whole view (as before previews) and once with a preview,
+ * each in a new engine so that nothing is reused, and records the time to the first rows, the time
+ * until the view is ready, and the peaks of DuckDB's memory and of the temporary folder until then.
+ */
+async function sortPreview(file: string, sort: SortKey[], label: string) {
+  for (const preview of [false, true]) {
+    const engine = await TableEngine.create({
+      allowedDirectories: [directory],
+      tempDirectory: path.join(os.tmpdir(), "vastgrid-bench"),
+    });
+    try {
+      const table = await engine.open(file);
+      await table.whenReady();
+      const columns = table.columns.map((_, index) => index);
+      let first = 0;
+      let early = { memory: 0, disk: 0 };
+      const {
+        result: complete,
+        memory,
+        disk,
+      } = await sampled(engine, async (peaks) => {
+        const started = performance.now();
+        const view = await table.createView({ sort }, undefined, { preview });
+        await table.readRows({ view: view.id, start: 0, end: 256, columns });
+        first = performance.now() - started;
+        early = peaks();
+        while (table.viewInfo(view.id).status === "building") await new Promise((resolve) => setTimeout(resolve, 10));
+        return performance.now() - started;
+      });
+      const mode = preview ? "with preview" : "whole view first";
+      record(`${label}, ${mode}: first 256 rows shown`, first);
+      record(
+        `${label}, ${mode}: peak DuckDB memory / temporary space until then`,
+        `${megabytes(early.memory)} / ${megabytes(early.disk)}`,
+      );
+      record(`${label}, ${mode}: view ready`, complete);
+      record(
+        `${label}, ${mode}: peak DuckDB memory / temporary space until ready`,
+        `${megabytes(memory)} / ${megabytes(disk)}`,
+      );
+    } finally {
+      await engine.dispose();
+    }
+  }
+}
+
 const files = await generate();
 const engine = await TableEngine.create({
   allowedDirectories: [directory],
@@ -158,6 +255,18 @@ try {
 } finally {
   await engine.dispose();
 }
+
+// ----- Sorting a large Parquet file with and without a preview -----
+await sortPreview(files.parquet, [{ column: 3, direction: "desc" }], "Parquet sort by a number column");
+await sortPreview(files.parquet, [{ column: 1, direction: "asc" }], "Parquet sort by a text column");
+await sortPreview(
+  files.parquet,
+  [
+    { column: 2, direction: "asc" },
+    { column: 5, direction: "desc" },
+  ],
+  "Parquet sort by text, then time",
+);
 
 const cpu = os.cpus()[0]?.model ?? "unknown CPU";
 console.log(

@@ -21,7 +21,7 @@ import { FilterPanel } from "./components/filter-panel.js";
 import { FindBar } from "./components/find-bar.js";
 import { type Anchor, type MenuItem, MenuList, Popover } from "./components/popover.js";
 import { StatsPanel } from "./components/stats-panel.js";
-import { CopyTooLargeError, GridController, type Hit } from "./controller.js";
+import { CopyTooLargeError, GridController, type Hit, ViewBuildingError } from "./controller.js";
 import { countFormat, numberFormat } from "./labels.js";
 import { type Messages, messagesFor } from "./messages.js";
 import { CanvasRenderer } from "./renderer.js";
@@ -310,6 +310,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         announce(messages.copied(count(result.cells)));
       } catch (error) {
         if (error instanceof CopyTooLargeError) announce(messages.copyTooLarge(count(error.limit)));
+        else if (error instanceof ViewBuildingError) announce(messages.waitForSort);
         else announce(messages.copyFailed);
       }
     },
@@ -692,7 +693,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       },
       {
         label: messages.statistics,
-        disabled: !ready || !capabilities?.stats,
+        disabled: !ready || !capabilities?.stats || !c.statsAvailable,
         onSelect: () => setOverlay({ kind: "stats", col, anchor: headerAnchor(col) }),
       },
       {
@@ -822,7 +823,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           }}
         />
       )}
-      {(c.viewPending || c.info?.status === "loading") && (
+      {(c.viewPending || c.viewBuilding || c.info?.status === "loading") && (
         <div
           className="vg-progress"
           role="progressbar"
@@ -832,8 +833,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           aria-valuenow={c.info?.progress ? Math.round(c.info.progress * 100) : undefined}
         >
           <span
-            style={c.info?.progress && !c.viewPending ? { width: `${Math.round(c.info.progress * 100)}%` } : undefined}
-            data-indeterminate={c.viewPending || !c.info?.progress || undefined}
+            style={
+              c.info?.progress && !c.viewPending && !c.viewBuilding
+                ? { width: `${Math.round(c.info.progress * 100)}%` }
+                : undefined
+            }
+            data-indeterminate={c.viewPending || c.viewBuilding || !c.info?.progress || undefined}
           />
         </div>
       )}

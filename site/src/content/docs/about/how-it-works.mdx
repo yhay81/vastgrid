@@ -43,7 +43,9 @@ characters); copies and the cell inspector read whole values.
   row position, with no load. Encodings DuckDB cannot read (Shift_JIS, EUC-JP) are converted first.
 - **Views.** Sorting and filtering build a view: a sorted copy for tables up to 20M rows, so that a
   window of rows takes 2 ms, or only the order of the rows for larger ones, which takes seconds instead
-  of minutes to build and a fraction of the temporary space.
+  of minutes to build and a fraction of the temporary space. A sort of 1M rows or more first reads its
+  first 1,000 rows with a top-N query, in the order of the finished view, and shows them while the rest
+  of the view is built in the background.
 - **Isolation.** The engine allows DuckDB to read only the folders you name, by their real location,
   and then disables changing that. All SQL is generated; values are always parameters.
 - **Protocol.** `RemoteSource` speaks a small [JSON protocol](/reference/protocol/) with the server. It

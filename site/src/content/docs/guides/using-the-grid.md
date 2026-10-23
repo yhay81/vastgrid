@@ -48,6 +48,12 @@ ascending or descending. "Then sort ascending" and "Then sort descending" add th
 key, for a sort by several columns; the headers then number the keys. Blank cells go last in both
 directions, as in spreadsheets.
 
+When the source can show a sort before it is finished (the DuckDB server does for tables of 1M rows or
+more), the first rows appear right away and the toolbar says "Sorting… showing the first 1,000 of …
+rows". You can scroll and select everywhere; the rows further down show as loading until the sort is
+done, and then appear without the first rows moving. Until then, copying past the first rows and find
+tell you to wait, the selection summary shows "…", and the statistics of a filtered view are off.
+
 ## Filtering and searching
 
 - **By value.** "Filter…" in the column menu lists the column's values with their counts, most common

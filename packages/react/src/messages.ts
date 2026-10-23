@@ -5,6 +5,10 @@ export interface Messages {
   loadingRows: (loaded: string) => string;
   loadingProgress: (percent: string) => string;
   buildingView: string;
+  /** A sorted view shows its first rows while the rest is sorted. */
+  sortingRows: (readable: string, total: string) => string;
+  /** Copying or finding past the rows of a view that is still sorting. */
+  waitForSort: string;
   noRows: string;
   error: string;
   retry: string;
@@ -116,6 +120,8 @@ export const en: Messages = {
   loadingRows: (loaded) => `Loading… ${loaded} rows ready`,
   loadingProgress: (percent) => `Loading ${percent}`,
   buildingView: "Sorting and filtering…",
+  sortingRows: (readable, total) => `Sorting… showing the first ${readable} of ${total} rows`,
+  waitForSort: "Available once sorting is done.",
   noRows: "No rows",
   error: "The table could not be shown.",
   retry: "Retry",
@@ -254,6 +260,8 @@ export const ja: Messages = {
   loadingRows: (loaded) => `読み込んでいます… ${loaded} 行を表示できます`,
   loadingProgress: (percent) => `読み込み中 ${percent}`,
   buildingView: "並べ替え・絞り込みをしています…",
+  sortingRows: (readable, total) => `並べ替えています… ${total} 行のうち先頭の ${readable} 行を表示中`,
+  waitForSort: "並べ替えが終わると使えます。",
   noRows: "行がありません",
   error: "表を表示できませんでした。",
   retry: "再試行",

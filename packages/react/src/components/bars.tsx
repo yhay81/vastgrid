@@ -40,6 +40,8 @@ export function Toolbar({
       progress !== null && progress !== undefined && progress > 0
         ? messages.loadingProgress(`${Math.round(progress * 100)}%`)
         : messages.loadingRows(count(controller.readableRows));
+  } else if (controller.viewBuilding) {
+    rows = messages.sortingRows(count(controller.readableRows), count(controller.rowCount));
   } else if (filtered && total !== null) {
     rows = messages.rowsOf(count(controller.rowCount), count(total));
   } else {

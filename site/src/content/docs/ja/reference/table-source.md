@@ -13,8 +13,13 @@ description: TableSource のインターフェース、ArraySource と RemoteSou
 interface TableSource {
   /** 最初の呼び出しで表を開き、現在の状態を返す。`status` が `loading` の間は繰り返し呼ばれる。 */
   info(signal?: AbortSignal): Promise<TableInfo>;
-  /** 並べ替え・絞り込みしたビューを作る。空のクエリーでは表そのもの（`id: null`）を返す。 */
-  createView(query: ViewQuery, signal?: AbortSignal): Promise<ViewInfo>;
+  /**
+   * 並べ替え・絞り込みしたビューを作る。空のクエリーでは表そのもの（`id: null`）を返す。
+   * `options.preview` を付けると、作っている途中のビュー（`status: "building"`）を返すことがある。
+   */
+  createView(query: ViewQuery, signal?: AbortSignal, options?: { preview?: boolean }): Promise<ViewInfo>;
+  /** ビューの現在の状態。`status` が `building` の間は繰り返し呼ばれる。 */
+  viewInfo?(view: string, signal?: AbortSignal): Promise<ViewInfo>;
   readRows(request: RowRequest, signal?: AbortSignal): Promise<RowBlock>;
   columnStats?(view: string | null, column: number, signal?: AbortSignal): Promise<ColumnStats>;
   distinctValues?(request: DistinctRequest, signal?: AbortSignal): Promise<DistinctValues>;
@@ -127,11 +132,16 @@ type Filter =
   | { type: "blank"; column: number; blank: boolean };
 
 interface ViewInfo {
-  id: string | null; // null は元の順番の表
-  rowCount: number;
+  id: string | null;      // null は元の順番の表
+  rowCount: number;       // 作っている途中でも、ビュー全体の行数
   query: ViewQuery;
+  status?: "building" | "ready" | "error"; // ないときは ready
+  readableRows?: number;  // 先頭から、いま読める行数。ないときは rowCount
+  error?: string;         // 作れなかった理由
 }
 ```
+
+グリッドはビューを `{ preview: true }` 付きで求めます。ソースは、すべての行を並べ終える前に並べ替えに答えてもかまいません。そのときは `status: "building"` と、先頭の `readableRows` 行を返します。この行は、完成したビューの先頭の行と同じでなければなりません（同じ値の行は、表での位置の順にします）。グリッドはそれをすぐに表示し、`viewInfo` を繰り返し呼び（ないときは、オプションなしの `createView` をもう一度呼んで待ちます）、ビューが `ready` になると残りの行を読めるようにします。それまでは、`readableRows` より先の行は読み込み中と表示します。選択とスクロールはすべての行でできますが、その先の行を含むコピーと選択範囲の集計、検索、絞り込んだビューの統計は、完成を待ちます。オプションを無視するソースは、ビューが完成してから答えれば十分です。
 
 ## 行
 

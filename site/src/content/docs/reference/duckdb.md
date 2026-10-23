@@ -27,6 +27,9 @@ clients and files; create one per process.
 | `maxTables` | `4` | Tables kept open; the least recently used ones are closed beyond this. |
 | `maxViews` | `2` | Sorted or filtered views kept per table. |
 | `materializeRows` | `20000000` | Above this many rows, views hold the order of the rows instead of a sorted copy. |
+| `viewPreviewMinRows` | `1000000` | Sorts of tables with at least this many rows show their first rows before the whole view is built (see below). |
+| `viewPreviewRows` | `1000` | Rows of such a sort that are readable before the view is ready. |
+| `abandonedViewTimeout` | `3000` | A background build stops when another view of the table waits and nobody asked for this one for this many milliseconds. |
 | `previewRows` | `1000` | Rows readable while a delimited or JSON file is still loading. |
 | `textLimit` | `2000` | Longest text sent for a cell by default. |
 | `log` | | `(message, error?) => void`, for problems that are not caused by a request. |

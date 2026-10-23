@@ -6,6 +6,7 @@ export {
   type GridOptions,
   type Hit,
   type HitZone,
+  ViewBuildingError,
 } from "./controller.js";
 export { DataGrid, type DataGridHandle, type DataGridProps } from "./data-grid.js";
 export { en, ja, type Messages, messagesFor } from "./messages.js";

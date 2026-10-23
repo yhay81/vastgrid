@@ -6,7 +6,6 @@ description: What is planned for vastgrid.
 - A browser-only engine (DuckDB-WASM or hyparquet in a worker) for apps without a server.
 - Editing cells, with CSV write-back that keeps untouched rows byte for byte.
 - Formula columns.
-- Showing the first rows of a sort of 100M+ rows while the rest is ordered.
 - Excel (`.xlsx`) input.
 
 Ideas and use cases are welcome in [the issues](https://github.com/yhay81/vastgrid/issues). Open one

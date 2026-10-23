@@ -86,6 +86,9 @@ app.post("/api/table", express.json({ limit: "1mb" }), async (request, response)
 | `maxTables` | `4` | Tables kept open; the least recently used ones are closed beyond this. |
 | `maxViews` | `2` | Sorted or filtered views kept per table. |
 | `materializeRows` | `20000000` | Tables with more rows get views that hold only the order of the rows instead of a sorted copy (see below). |
+| `viewPreviewMinRows` | `1000000` | Sorts of tables with at least this many rows show their first rows before the whole view is built (see below). |
+| `viewPreviewRows` | `1000` | Rows of such a sort that are readable before the view is ready. |
+| `abandonedViewTimeout` | `3000` | A background build stops when another view of the table waits and nobody asked for this one for this many milliseconds. |
 | `previewRows` | `1000` | Rows readable while a delimited or JSON file is still loading. |
 | `textLimit` | `2000` | Longest text sent for a cell by default. |
 | `log` | | Receives problems that are not caused by a request, for your logs. |
@@ -146,6 +149,15 @@ view is a sorted copy of the table, so it scrolls as fast as the table: about 2 
 larger tables the view holds only the order of the rows; it is built an order of magnitude faster and
 needs a fraction of the temporary space, and reading each block of rows from it takes 0.1–0.2 s for a
 100M-row Parquet file. See [Performance](/about/performance/).
+
+For tables of `viewPreviewMinRows` rows or more (1M by default), a sort requested by the grid answers as
+soon as its first `viewPreviewRows` rows are known, with a top-N query that is far faster than ordering
+every row; the rest of the view is built in the background. The grid shows those rows with "Sorting…" in
+the toolbar, polls the view, and shows the remaining rows once it is ready. The first rows are in the order
+of the finished view, ties broken by the position in the file, so nothing moves when it is done. Until
+then, copies and selection summaries past the first rows, find, exports and the statistics of filtered
+views wait. Builds run one at a time per table; a build that nobody polls any more stops when another
+view waits (`abandonedViewTimeout`), so that changing the sort quickly does not queue up stale work.
 
 ## Deployment
 

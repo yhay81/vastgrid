@@ -33,7 +33,8 @@ that changed gets a new handle and a new `revision`.
 | `op` | Fields | Result |
 | --- | --- | --- |
 | `info` | `ref` (what to open, in the host's terms), optional `table` | `TableInfo` plus `table` |
-| `view` | `table`, `query` | `{ id, rowCount, query }` (`id: null` for an empty query) |
+| `view` | `table`, `query`, optional `preview` | `ViewInfo`: `{ id, rowCount, query, status, readableRows, error? }` (`id: null` for an empty query) |
+| `status` | `table`, `view` | `ViewInfo` of a view, for polling while it is `building` |
 | `rows` | `table`, `view`, `start`, `end`, `columns`, optional `textLimit` | `{ start, end, columns: CellValue[][], rowIds }` |
 | `stats` | `table`, `view`, `column` | `ColumnStats` |
 | `distinct` | `table`, `view`, `column`, optional `search`, `limit` | `{ values: { value, count }[], truncated }` |
@@ -43,7 +44,7 @@ that changed gets a new handle and a new `revision`.
 | `close` | `table` | `null` |
 
 A `rows` request reads at most 1,000,000 rows and 1,000,000 cells (rows × columns); read more in parts.
-View requests on one table are answered one at a time and never cancel each other. `distinct` counts
+View requests on one table are built one at a time and never cancel each other. `distinct` counts
 whole values and sends them whole (up to 1,000,000 characters), so that a value from its list works in
 a `values` filter.
 
@@ -68,6 +69,40 @@ a `values` filter.
 Clients poll `info` while `status` is `loading` and only read rows below `readableRows`. When the load
 fails, `info` answers `status: "error"` with the reason in `error`; the `info` after that loads the file
 again, so that clients can retry.
+
+### `ViewInfo` and previews of sorts
+
+```ts
+{
+  id: string | null;
+  rowCount: number;            // rows in the view, also while it is building
+  query: ViewQuery;
+  status?: "building" | "ready" | "error";   // absent means ready
+  readableRows?: number;       // rows readable now, from the start of the view; absent means rowCount
+  error?: string;              // why the build failed, with status "error"
+}
+```
+
+A `view` request waits until the view is ready. With `preview: true`, a server may answer a sort sooner,
+with `status: "building"`: the first `readableRows` rows are known and already in their final order, and
+the rest is built in the background. Rules:
+
+- The rows of a view are in the order of `sort`, ties broken by the rows' positions in the table, so
+  that a view of a query always has the same order, the rows of a preview are the first rows of the
+  finished view, and a view recreated after the server forgot it has the same rows.
+- Clients poll `status` (or send the same `view` request again) while `status` is `building`, and only
+  read rows below `readableRows`. `rows` at or past `readableRows` answers `not_ready`; a range that
+  starts below it ends there.
+- While a view is building, `stats` and `distinct` work for a view that only sorts (it has the rows of
+  the table) and answer `not_ready` for one that filters or searches; `aggregate` works for ranges below
+  `readableRows`; `find` and `export` answer `not_ready`.
+- A view that is ready keeps its `id`. A server may stop a build that nobody follows (no request for
+  the view for a while) when another view of the table waits for its turn, and forget the view: `status`
+  then answers `view_not_found`, and asking for the view again starts over. A build that fails gives
+  `status: "error"`; the next `view` request for the query builds it again.
+- `vastgrid-duckdb` previews sorts of tables with at least `viewPreviewMinRows` rows (1M by default) and
+  makes the first `viewPreviewRows` rows (1,000) readable first. Servers that do not preview answer
+  `view` requests with `preview` as before, once the view is ready.
 
 ### Values
 
@@ -105,7 +140,7 @@ type Filter =
 | `method_not_allowed` | 405 | The request is not a `POST`. |
 | `table_not_found` | 404 | Unknown table handle. Reopen with `info`. |
 | `view_not_found` | 404 | Unknown view. Create it again. |
-| `not_ready` | 409 | The table is still loading. |
+| `not_ready` | 409 | The table is still loading, or the view is still building and cannot answer this yet. |
 | `cancelled` | 409 / 499 | The client went away, or the server closed the table while the request ran (for example because the file changed). |
 | `load_failed` | 422 | The file could not be read; `message` explains why. |
 | `query_failed` | 422 | A filter value does not fit the column (for example text compared with a number). |

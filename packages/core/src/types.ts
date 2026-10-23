@@ -106,11 +106,34 @@ export interface ViewQuery {
   search?: string;
 }
 
+/**
+ * `building`: the view is still being built and only its first `readableRows` rows can be read; they
+ * are already in their final order. `ready`: every row can be read. `error`: the build failed (see
+ * `error`); the first `readableRows` rows can still be read.
+ */
+export type ViewStatus = "building" | "ready" | "error";
+
 /** A sorted or filtered view of a table. `id: null` is the table in its original order. */
 export interface ViewInfo {
   id: string | null;
+  /** Rows in the view, also while it is building. */
   rowCount: number;
   query: ViewQuery;
+  /** Absent means `ready`. */
+  status?: ViewStatus;
+  /** Rows that can be read now, from the start of the view. Absent means `rowCount`. */
+  readableRows?: number;
+  /** Why the build failed, when `status` is `error`. */
+  error?: string;
+}
+
+export interface ViewOptions {
+  /**
+   * Accept a view that is still building: the source may answer as soon as the first rows of the
+   * view are known (`status: "building"`), and finish the view in the background. Without it the
+   * answer waits until the view is ready.
+   */
+  preview?: boolean;
 }
 
 export interface RowRequest {

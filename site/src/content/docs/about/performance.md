@@ -26,6 +26,26 @@ The sorted Parquet file has 100M rows, above `materializeRows`, so its view hold
 rows: it is built in 1.9 s, and each block of rows is read from the file in that order. A table below the
 limit gets a sorted copy instead, which reads as fast as the table itself.
 
+### First rows of a sort
+
+The grid accepts a preview of a sort, so for tables of 1M rows or more the server first reads the first
+1,000 rows with a top-N query and builds the rest of the view in the background. The same benchmark
+compares it with waiting for the whole view, in a new engine each time (memory is what DuckDB holds, of
+its default 4 GB limit; temporary space is the growth of the engine's folder). The machine was busy with
+other work, so times vary by about ±30%.
+
+| Parquet, 100M rows | First 256 rows shown | View ready | Memory / temporary space until the first rows |
+| --- | ---: | ---: | ---: |
+| Sort by a number column, whole view first | 1.9 s | 1.9 s | 1,963 MB / 407 MB |
+| … with a preview | 0.8 s | 2.6 s | 127 MB / 0 MB |
+| Sort by a text column, whole view first | 4.9 s | 4.9 s | 3,816 MB / 1,047 MB |
+| … with a preview | 0.9 s | 6.4 s | 134 MB / 0 MB |
+| Sort by text, then time, whole view first | 5.9 s | 5.9 s | 3,815 MB / 1,447 MB |
+| … with a preview | 1.0 s | 6.7 s | 135 MB / 0 MB |
+
+The first rows appear in under a second whatever the sort; the view is ready about 0.6–1.5 s later than
+without a preview, the time of the top-N query, and needs the same memory and temporary space as before.
+
 The benchmark is in
 [`packages/duckdb/bench/run.ts`](https://github.com/yhay81/vastgrid/blob/main/packages/duckdb/bench/run.ts)
 and generates its own files.

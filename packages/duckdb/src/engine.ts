@@ -25,7 +25,9 @@ import {
   SourceError,
   type TableInfo,
   type ViewInfo,
+  type ViewOptions,
   type ViewQuery,
+  type ViewStatus,
 } from "vastgrid-core";
 import { convertToUtf8, detectEncoding } from "./encoding.js";
 import {
@@ -68,6 +70,20 @@ export interface TableEngineOptions {
    * (about 0.1–0.2 s per block for a 100M-row Parquet file instead of 10–20 ms). Defaults to 20M.
    */
   materializeRows?: number;
+  /**
+   * Sorts of tables with at least this many rows answer requests that accept a preview
+   * (`ViewOptions.preview`) as soon as the first `viewPreviewRows` rows of the view are known, and
+   * build the rest in the background. Defaults to 1M.
+   */
+  viewPreviewMinRows?: number;
+  /** Rows of a sorted view that are readable before the view is ready. Defaults to 1000. */
+  viewPreviewRows?: number;
+  /**
+   * A background build is stopped when another view of the table waits for its turn and no request
+   * asked for this view (its status, rows or anything else) for this many milliseconds, so that
+   * views nobody follows any more do not hold up the next one. Defaults to 3000.
+   */
+  abandonedViewTimeout?: number;
   /** Rows read for display while a delimited or JSON file is still loading. */
   previewRows?: number;
   /** Longest text sent for a cell by default. */
@@ -213,6 +229,9 @@ export class TableEngine {
       maxTables: options.maxTables ?? 4,
       maxViews: options.maxViews ?? 2,
       materializeRows: options.materializeRows ?? 20_000_000,
+      viewPreviewMinRows: options.viewPreviewMinRows ?? 1_000_000,
+      viewPreviewRows: Math.max(1, Math.floor(options.viewPreviewRows ?? 1000)),
+      abandonedViewTimeout: options.abandonedViewTimeout ?? 3000,
       previewRows: options.previewRows ?? 1000,
       textLimit: options.textLimit ?? 2000,
       log: options.log,
@@ -377,12 +396,46 @@ export class TableEngine {
 
 interface View {
   id: string;
+  /** The table that reads go to. While building, it holds the first `readable` rows with every column. */
   name: string;
   rowCount: number;
   query: ViewQuery;
   used: number;
   /** `rows`: the view's table holds every column in view order. `positions`: only the rows' positions in the table. */
   kind: "rows" | "positions";
+  status: ViewStatus;
+  /** Rows that can be read, from the start of the view. */
+  readable: number;
+  error?: string;
+  /** When a request last asked for the view (`Date.now()`). */
+  touched: number;
+  /** Requests waiting until the view is ready. */
+  waiters: number;
+  /** Settles when the view is ready, failed or was dropped. */
+  done: Promise<void>;
+  settle: (error?: unknown) => void;
+  /** Tables to drop with the view. */
+  tables: string[];
+  dropped: boolean;
+  /** Stops the running build. */
+  interrupt: (() => void) | null;
+}
+
+function cancelledView() {
+  return new SourceError(ErrorCodes.cancelled, "The view request was cancelled.", 409);
+}
+
+/** Waits for `promise`, but rejects with `cancelled` (and calls `onCancel`) as soon as `signal` aborts. */
+function settledOrCancelled<T>(promise: Promise<T>, signal?: AbortSignal, onCancel?: () => void): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const cancel = () => {
+      onCancel?.();
+      reject(cancelledView());
+    };
+    if (signal?.aborted) return cancel();
+    signal?.addEventListener("abort", cancel, { once: true });
+    promise.then(resolve, reject).finally(() => signal?.removeEventListener("abort", cancel));
+  });
 }
 
 interface Preview {
@@ -436,6 +489,13 @@ export class OpenTable {
   private loadConnection: DuckDBConnection | null = null;
   private viewConnection: DuckDBConnection | null = null;
   private viewQueue: Promise<unknown> = Promise.resolve();
+  /** Requests and builds waiting for their turn in `viewQueue`. */
+  private queuedBuilds = 0;
+  /** Previews being computed, by query, so that the same request at the same time shares one. */
+  private readonly previews = new Map<
+    string,
+    { promise: Promise<View>; controller: AbortController; waiting: number }
+  >();
   private readonly tempFiles: string[] = [];
   private readonly objects: string[] = [];
   private clock = 0;
@@ -703,7 +763,14 @@ export class OpenTable {
     const view = this.views.get(id);
     if (!view) throw new SourceError(ErrorCodes.viewNotFound, "The view no longer exists.", 404);
     view.used = ++this.clock;
+    view.touched = Date.now();
     return view;
+  }
+
+  /** Refuses operations that need every row of a view while it is not ready. */
+  private requireBuilt(view: View | null) {
+    if (view && view.status !== "ready")
+      throw new SourceError(ErrorCodes.notReady, "The view is still being built.", 409);
   }
 
   /**
@@ -721,9 +788,10 @@ export class OpenTable {
 
   /** The rows of a view in any order, for statistics. */
   private unorderedRelation(view: View | null): string {
+    // A view that only sorts has the same rows as the table, also while it is building.
+    if (view && !filtersRows(view.query)) return this.relation;
+    this.requireBuilt(view);
     if (!view || view.kind === "rows") return this.relationOf(view).from;
-    // A view that only sorts has the same rows as the table.
-    if (!filtersRows(view.query)) return this.relation;
     return `(SELECT b.* FROM ${this.relation} b SEMI JOIN ${quoteIdentifier(view.name)} w ON b.${this.position} = w.${quoteIdentifier(ROW_COLUMN)})`;
   }
 
@@ -767,7 +835,11 @@ export class OpenTable {
     this.requireReady();
     const view = this.view(request.view);
     const total = view ? view.rowCount : (this.rowCount ?? 0);
-    const end = Math.min(request.end, total);
+    // A view that is building serves its first rows only, like a table that is loading.
+    if (view && request.start >= view.readable && request.start < total) {
+      throw new SourceError(ErrorCodes.notReady, "These rows of the view are still being sorted.", 409);
+    }
+    const end = Math.min(request.end, view ? view.readable : total);
     const start = Math.min(request.start, end);
     if (request.end - request.start > 1_000_000) {
       throw new SourceError(ErrorCodes.invalidRequest, "Read at most a million rows at a time.", 400);
@@ -840,76 +912,292 @@ export class OpenTable {
    * Creates a sorted or filtered view, or returns the view of the same query. Views are built one at a
    * time per table. Requests never cancel each other, since several grids or people may share the
    * table: a request is cancelled by its own signal (its caller then receives `cancelled`).
+   *
+   * With `options.preview`, a sort of a large table answers once its first rows are known (in the
+   * order of the finished view: ties are broken by the position in the table), with
+   * `status: "building"`; the view is finished in the background, and `viewInfo` tells when it is ready.
    */
-  async createView(query: ViewQuery, signal?: AbortSignal): Promise<ViewInfo> {
+  async createView(query: ViewQuery, signal?: AbortSignal, options?: ViewOptions): Promise<ViewInfo> {
     this.requireReady();
     if (isEmptyQuery(query)) return { id: null, rowCount: this.rowCount ?? 0, query: {} };
-    const same = this.sameView(query);
-    if (same) return same;
-    // A request that waited behind a build of the same query gets that view.
-    const run = this.viewQueue.then(() => this.sameView(query) ?? this.buildView(query, signal));
-    this.viewQueue = run.catch(() => undefined);
-    return run;
+    const key = JSON.stringify(query);
+    const preview =
+      options?.preview === true &&
+      Boolean(query.sort?.length) &&
+      (this.rowCount ?? 0) >= this.engine.options.viewPreviewMinRows;
+    let view = this.sameView(key);
+    if (!view && preview) view = await this.startPreview(query, key, signal);
+    if (!view) {
+      // A request that waited behind a build of the same query gets that view.
+      this.queuedBuilds++;
+      const run = this.viewQueue.then(() => {
+        this.queuedBuilds--;
+        return this.sameView(key) ?? this.buildView(query, signal);
+      });
+      this.viewQueue = run.catch(() => undefined);
+      view = await run;
+    }
+    if (options?.preview) return this.infoOf(view);
+    return this.whenBuilt(view, signal);
   }
 
-  private sameView(query: ViewQuery): ViewInfo | null {
-    const key = JSON.stringify(query);
+  /** The state of a view, for clients that poll a view while it is building. */
+  viewInfo(id: string | null): ViewInfo {
+    this.requireReady();
+    const view = this.view(id);
+    return view ? this.infoOf(view) : { id: null, rowCount: this.rowCount ?? 0, query: {} };
+  }
+
+  private infoOf(view: View): ViewInfo {
+    return {
+      id: view.id,
+      rowCount: view.rowCount,
+      query: view.query,
+      status: view.status,
+      readableRows: view.readable,
+      ...(view.error ? { error: view.error } : {}),
+    };
+  }
+
+  /** The view of the same query. A view whose build failed is dropped, so that the query is built again. */
+  private sameView(key: string): View | null {
     const view = [...this.views.values()].find((item) => JSON.stringify(item.query) === key);
     if (!view) return null;
+    if (view.status === "error") {
+      void this.dropViews([view]);
+      return null;
+    }
     view.used = ++this.clock;
-    return { id: view.id, rowCount: view.rowCount, query: view.query };
+    view.touched = Date.now();
+    return view;
   }
 
-  private async buildView(query: ViewQuery, signal?: AbortSignal): Promise<ViewInfo> {
-    const engine = this.engine;
-    return engine.work.run(async () => {
-      const params = new Parameters();
-      const where = this.where(query, params);
-      const order = [...orderTerms(query.sort ?? [], this.columns), this.position];
-      const name = engine.createId("vg_v");
-      // Large tables keep only the order: sorting every column of 100M rows takes minutes and gigabytes.
-      const kind: View["kind"] = (this.rowCount ?? 0) > engine.options.materializeRows ? "positions" : "rows";
-      const selected = kind === "rows" ? this.columns.map((column) => quoteIdentifier(column.name)).join(", ") : "";
-      const sql = `CREATE TABLE ${quoteIdentifier(name)} AS SELECT ${this.position} AS ${quoteIdentifier(ROW_COLUMN)}${selected ? `, ${selected}` : ""} FROM ${this.relation} ${where} ORDER BY ${order.join(", ")}`;
-      const connection = await engine.connect();
-      this.viewConnection = connection;
-      const interrupt = () => connection.interrupt();
-      signal?.addEventListener("abort", interrupt, { once: true });
+  /** Waits until a view is ready. */
+  private async whenBuilt(view: View, signal?: AbortSignal): Promise<ViewInfo> {
+    if (view.status === "building") {
+      view.waiters++;
       try {
-        // A request cancelled while it waited for its turn builds nothing.
-        if (this.disposed || signal?.aborted)
-          throw new SourceError(ErrorCodes.cancelled, "The view request was cancelled.", 409);
-        await connection.run(sql, params.values);
-        const count = await connection.runAndReadAll(`SELECT count(*) FROM ${quoteIdentifier(name)}`);
-        const rowCount = Number(count.getRowsJS()[0][0]);
-        if (this.disposed) {
-          await connection.run(`DROP TABLE IF EXISTS ${quoteIdentifier(name)}`);
-          throw new SourceError(ErrorCodes.cancelled, "The view request was cancelled.", 409);
-        }
-        const id = engine.createId("v");
-        this.views.set(id, { id, name, rowCount, query, used: ++this.clock, kind });
-        await this.trimViews(connection);
-        return { id, rowCount, query };
-      } catch (error) {
-        await connection.run(`DROP TABLE IF EXISTS ${quoteIdentifier(name)}`).catch(() => undefined);
-        if (isInterrupt(error)) throw new SourceError(ErrorCodes.cancelled, "The view request was cancelled.", 409);
-        throw error;
+        await settledOrCancelled(view.done, signal);
       } finally {
-        signal?.removeEventListener("abort", interrupt);
-        this.viewConnection = null;
-        connection.closeSync();
+        view.waiters--;
+        view.touched = Date.now();
       }
+    }
+    return this.infoOf(view);
+  }
+
+  private newView(id: string, query: ViewQuery, fields: Pick<View, "name" | "kind" | "rowCount" | "readable">): View {
+    let settle: View["settle"] = () => undefined;
+    const done = new Promise<void>((resolve, reject) => {
+      settle = (error?: unknown) => (error === undefined ? resolve() : reject(error));
+    });
+    // Nobody may be waiting for the build.
+    done.catch(() => undefined);
+    return {
+      id,
+      query,
+      ...fields,
+      used: ++this.clock,
+      status: fields.readable < fields.rowCount ? "building" : "ready",
+      touched: Date.now(),
+      waiters: 0,
+      done,
+      settle,
+      tables: [fields.name],
+      dropped: false,
+      interrupt: null,
+    };
+  }
+
+  private async buildView(query: ViewQuery, signal?: AbortSignal): Promise<View> {
+    return this.engine.work.run(async () => {
+      const built = await this.materialize(query, signal, null);
+      const view = this.newView(this.engine.createId("v"), query, { ...built, readable: built.rowCount });
+      view.settle();
+      if (this.disposed) {
+        await this.dropViews([view]);
+        throw cancelledView();
+      }
+      this.views.set(view.id, view);
+      await this.trimViews();
+      return view;
     });
   }
 
-  private async trimViews(connection: DuckDBConnection) {
-    const views = [...this.views.values()].sort((a, b) => a.used - b.used);
-    while (views.length > this.engine.options.maxViews) {
-      const view = views.shift();
-      if (!view) break;
-      this.views.delete(view.id);
-      await connection.run(`DROP TABLE IF EXISTS ${quoteIdentifier(view.name)}`);
+  /**
+   * Builds the view's table: the rows in view order, ties broken by the position in the table, with
+   * every column or (for large tables) only the positions. `watch` is a view whose background build
+   * this is: dropping or abandoning it stops the build.
+   */
+  private async materialize(query: ViewQuery, signal: AbortSignal | undefined, watch: View | null) {
+    const engine = this.engine;
+    const params = new Parameters();
+    const where = this.where(query, params);
+    const order = [...orderTerms(query.sort ?? [], this.columns), this.position];
+    const name = engine.createId("vg_v");
+    // Large tables keep only the order: sorting every column of 100M rows takes minutes and gigabytes.
+    const kind: View["kind"] = (this.rowCount ?? 0) > engine.options.materializeRows ? "positions" : "rows";
+    const selected = kind === "rows" ? this.columns.map((column) => quoteIdentifier(column.name)).join(", ") : "";
+    const sql = `CREATE TABLE ${quoteIdentifier(name)} AS SELECT ${this.position} AS ${quoteIdentifier(ROW_COLUMN)}${selected ? `, ${selected}` : ""} FROM ${this.relation} ${where} ORDER BY ${order.join(", ")}`;
+    const connection = await engine.connect();
+    this.viewConnection = connection;
+    const interrupt = () => connection.interrupt();
+    signal?.addEventListener("abort", interrupt, { once: true });
+    let stopped = false;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    if (watch) {
+      watch.interrupt = () => {
+        stopped = true;
+        interrupt();
+      };
+      timer = setInterval(() => {
+        if (this.abandoned(watch)) watch.interrupt?.();
+      }, 250);
     }
+    try {
+      // A request cancelled while it waited for its turn builds nothing.
+      if (this.disposed || signal?.aborted || watch?.dropped || (watch && this.abandoned(watch))) throw cancelledView();
+      await connection.run(sql, params.values);
+      const count = await connection.runAndReadAll(`SELECT count(*) FROM ${quoteIdentifier(name)}`);
+      const rowCount = Number(count.getRowsJS()[0][0]);
+      if (this.disposed || stopped || watch?.dropped) throw cancelledView();
+      return { name, kind, rowCount };
+    } catch (error) {
+      await connection.run(`DROP TABLE IF EXISTS ${quoteIdentifier(name)}`).catch(() => undefined);
+      if (stopped || isInterrupt(error)) throw cancelledView();
+      throw error;
+    } finally {
+      clearInterval(timer);
+      if (watch) watch.interrupt = null;
+      signal?.removeEventListener("abort", interrupt);
+      this.viewConnection = null;
+      connection.closeSync();
+    }
+  }
+
+  /** Whether nobody follows a view that is building while another view of the table waits for its turn. */
+  private abandoned(view: View) {
+    return (
+      view.waiters === 0 &&
+      this.queuedBuilds > 0 &&
+      Date.now() - view.touched > this.engine.options.abandonedViewTimeout
+    );
+  }
+
+  /**
+   * Reads the first rows of a sort into a small table (a top-N query, far faster than the sort of
+   * every row) and registers the view as building; the rest is built in the background, in turn with
+   * the other builds of the table.
+   */
+  private startPreview(query: ViewQuery, key: string, signal?: AbortSignal): Promise<View> {
+    let shared = this.previews.get(key);
+    if (!shared) {
+      // Not tied to one request's signal: it stops only when every request waiting for it is cancelled.
+      const controller = new AbortController();
+      const promise = this.buildPreview(query, controller.signal).finally(() => this.previews.delete(key));
+      shared = { promise, controller, waiting: 0 };
+      this.previews.set(key, shared);
+    }
+    const entry = shared;
+    entry.waiting++;
+    return settledOrCancelled(entry.promise, signal, () => {
+      if (--entry.waiting === 0) entry.controller.abort();
+    });
+  }
+
+  private async buildPreview(query: ViewQuery, signal?: AbortSignal): Promise<View> {
+    const engine = this.engine;
+    const params = new Parameters();
+    const where = this.where(query, params);
+    // The same order as the finished view, so that the first rows are the view's first rows.
+    const order = [...orderTerms(query.sort ?? [], this.columns), this.position];
+    const name = engine.createId("vg_p");
+    const selected = this.columns.map((column) => quoteIdentifier(column.name)).join(", ");
+    const limit = params.add(engine.options.viewPreviewRows);
+    const sql = `CREATE TABLE ${quoteIdentifier(name)} AS SELECT ${this.position} AS ${quoteIdentifier(ROW_COLUMN)}${selected ? `, ${selected}` : ""} FROM ${this.relation} ${where} ORDER BY ${order.join(", ")} LIMIT ${limit}`;
+    const view = await engine.withConnection(signal, async (connection) => {
+      if (this.disposed) throw cancelledView();
+      await connection.run(sql, params.values);
+      try {
+        const count = await connection.runAndReadAll(`SELECT count(*) FROM ${quoteIdentifier(name)}`);
+        const readable = Number(count.getRowsJS()[0][0]);
+        let rowCount = readable;
+        if (readable >= engine.options.viewPreviewRows) {
+          if (!filtersRows(query)) rowCount = this.rowCount ?? 0;
+          else {
+            const counting = new Parameters();
+            const filtered = `SELECT count(*) FROM ${this.relation} ${this.where(query, counting)}`;
+            rowCount = Number((await connection.runAndReadAll(filtered, counting.values)).getRowsJS()[0][0]);
+          }
+        }
+        if (this.disposed) throw cancelledView();
+        return this.newView(engine.createId("v"), query, { name, kind: "rows", rowCount, readable });
+      } catch (error) {
+        await connection.run(`DROP TABLE IF EXISTS ${quoteIdentifier(name)}`).catch(() => undefined);
+        throw error;
+      }
+    });
+    if (view.status === "ready") view.settle();
+    this.views.set(view.id, view);
+    await this.trimViews();
+    if (view.status === "building") {
+      this.queuedBuilds++;
+      this.viewQueue = this.viewQueue.then(() => this.finish(view)).catch(() => undefined);
+    }
+    return view;
+  }
+
+  /** Builds the rest of a view that is building, unless it was dropped or nobody follows it any more. */
+  private async finish(view: View) {
+    this.queuedBuilds--;
+    if (view.dropped || this.disposed) return;
+    if (this.abandoned(view)) {
+      await this.dropViews([view]);
+      return;
+    }
+    try {
+      const built = await this.engine.work.run(() => this.materialize(view.query, undefined, view));
+      view.name = built.name;
+      view.kind = built.kind;
+      view.rowCount = built.rowCount;
+      view.readable = built.rowCount;
+      view.tables.push(built.name);
+      view.status = "ready";
+      view.settle();
+    } catch (error) {
+      if (view.dropped || this.disposed) return;
+      if (error instanceof SourceError && error.code === ErrorCodes.cancelled) {
+        // Abandoned: the next request for the query starts over.
+        await this.dropViews([view]);
+        return;
+      }
+      view.status = "error";
+      view.error = this.engine.clientMessage(error);
+      view.settle(error);
+      this.engine.options.log?.(`Building a view of ${this.path} failed`, error);
+    }
+  }
+
+  /** Forgets views, stops their builds and drops their tables. */
+  private async dropViews(views: View[]) {
+    const tables: string[] = [];
+    for (const view of views) {
+      if (this.views.get(view.id) === view) this.views.delete(view.id);
+      if (view.dropped) continue;
+      view.dropped = true;
+      view.interrupt?.();
+      view.settle(cancelledView());
+      tables.push(...view.tables);
+    }
+    if (tables.length === 0) return;
+    await this.engine.withConnection(undefined, async (connection) => {
+      for (const table of tables) await connection.run(`DROP TABLE IF EXISTS ${quoteIdentifier(table)}`);
+    });
+  }
+
+  private async trimViews() {
+    const views = [...this.views.values()].sort((a, b) => a.used - b.used);
+    await this.dropViews(views.slice(0, Math.max(0, views.length - this.engine.options.maxViews)));
   }
 
   async columnStats(viewId: string | null, columnIndex: number, signal?: AbortSignal): Promise<ColumnStats> {
@@ -1019,6 +1307,8 @@ export class OpenTable {
   async aggregate(request: AggregateRequest, signal?: AbortSignal): Promise<SelectionSummary> {
     this.requireReady();
     const view = this.view(request.view);
+    if (view && request.ranges.some((range) => range.end > view.readable && range.end > range.start))
+      this.requireBuilt(view);
     const from = this.rangeRelation(view);
     let count = 0;
     let numericCount = 0;
@@ -1080,6 +1370,7 @@ export class OpenTable {
   async find(request: FindRequest, signal?: AbortSignal): Promise<FindResult | null> {
     this.requireReady();
     const view = this.view(request.view);
+    this.requireBuilt(view);
     const { from, position } = this.relationOf(view);
     const columns = request.columns.map((index) => this.column(index));
     const text = request.text;
@@ -1140,6 +1431,7 @@ export class OpenTable {
   async exportView(request: ExportRequest, target: string, signal?: AbortSignal): Promise<ExportResult> {
     this.requireReady();
     const view = this.view(request.view);
+    this.requireBuilt(view);
     const { from, position } = this.relationOf(view);
     const columns = (request.columns ?? this.columns.map((_, index) => index)).map((index) => this.column(index));
     // Columns read under another name are written under the file's own.
@@ -1183,7 +1475,15 @@ export class OpenTable {
     // Loads and view builds notice `disposed` and drop what they create after this point.
     this.loadConnection?.interrupt();
     this.viewConnection?.interrupt();
-    const names = [...[...this.views.values()].map((view) => `TABLE ${quoteIdentifier(view.name)}`), ...this.objects];
+    const names = [
+      ...[...this.views.values()].flatMap((view) => {
+        view.dropped = true;
+        view.interrupt?.();
+        view.settle(cancelledView());
+        return view.tables.map((table) => `TABLE ${quoteIdentifier(table)}`);
+      }),
+      ...this.objects,
+    ];
     this.views.clear();
     if (names.length > 0) {
       await this.engine

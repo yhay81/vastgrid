@@ -6,6 +6,7 @@ import {
   type DistinctValues,
   ErrorCodes,
   type Filter,
+  filtersRows,
   isAbortError,
   isEmptyQuery,
   isNumericType,
@@ -64,6 +65,13 @@ export interface Hit {
 export class CopyTooLargeError extends Error {
   constructor(readonly limit: number) {
     super(`Select at most ${limit} cells to copy.`);
+  }
+}
+
+/** The operation needs rows of the view that are still being sorted (see `GridController.viewBuilding`). */
+export class ViewBuildingError extends Error {
+  constructor() {
+    super("The view is still being sorted.");
   }
 }
 
@@ -233,6 +241,12 @@ export class GridController {
     if (this.polling && !this.lifecycle.signal.aborted) return;
     if (this.lifecycle.signal.aborted) this.lifecycle = new AbortController();
     this.polling = true;
+    if (this.viewBuilding) {
+      // `stop()` ended the polling of the view.
+      const controller = new AbortController();
+      this.viewAbort = controller;
+      void this.followView(this.view.query, controller);
+    }
     const signal = this.lifecycle.signal;
     void this.poll(signal).finally(() => {
       if (this.lifecycle.signal === signal) this.polling = false;
@@ -374,9 +388,23 @@ export class GridController {
     return this.view.id !== null ? this.view.rowCount : (this.info?.rowCount ?? this.info?.readableRows ?? 0);
   }
 
-  /** Rows that can be read now (less than `rowCount` while a table loads). */
+  /** Rows that can be read now (less than `rowCount` while a table loads or a sorted view is building). */
   get readableRows() {
-    return this.view.id !== null ? this.view.rowCount : (this.info?.readableRows ?? 0);
+    return this.view.id !== null ? (this.view.readableRows ?? this.view.rowCount) : (this.info?.readableRows ?? 0);
+  }
+
+  /**
+   * The view shows its first rows while the source still sorts the rest. Scrolling and selecting work
+   * on every row; rows past `readableRows` show as loading, and copies, summaries, statistics of
+   * filtered views and find wait until the view is ready.
+   */
+  get viewBuilding() {
+    return this.view.status === "building";
+  }
+
+  /** Whether the statistics of a column can be computed now. */
+  get statsAvailable() {
+    return !this.viewBuilding || !filtersRows(this.view.query);
   }
 
   get totalRows() {
@@ -573,6 +601,12 @@ export class GridController {
       this.summaryPending = false;
       return;
     }
+    if (this.viewBuilding && ranges.some((range) => range.end > this.readableRows)) {
+      // Summarized once the view is ready.
+      this.summary = null;
+      this.summaryPending = true;
+      return;
+    }
     this.summaryPending = true;
     this.summaryTimer = setTimeout(() => {
       const controller = new AbortController();
@@ -675,6 +709,7 @@ export class GridController {
     const columns = this.visible.slice(range.left, range.right + 1);
     const rows = range.bottom - range.top + 1;
     if (rows * columns.length > this.options.copyLimit) throw new CopyTooLargeError(this.options.copyLimit);
+    if (this.viewBuilding && range.bottom >= this.readableRows) throw new ViewBuildingError();
     const cached = this.cachedRange();
     if (cached) return this.clipboardText(cached.columns, cached.values, cached.rows, options);
     const values = await this.cache.read(
@@ -711,6 +746,7 @@ export class GridController {
       this.selection.select({ row: 0, col: Math.min(this.selection.active.col, Math.max(0, this.visible.length - 1)) });
       this.scrollToVirtual(null, 0);
       this.scheduleSummary();
+      if (this.viewBuilding) void this.followView(query, controller);
     } catch (error) {
       // Only this grid's own cancellation (a newer query replaced this one) is silent.
       if (controller.signal.aborted) return;
@@ -731,10 +767,55 @@ export class GridController {
    */
   private async createView(query: ViewQuery, signal: AbortSignal) {
     try {
-      return await this.source.createView(query, signal);
+      return await this.source.createView(query, signal, { preview: true });
     } catch (error) {
       if (signal.aborted || codeOf(error) !== ErrorCodes.cancelled) throw error;
-      return this.source.createView(query, signal);
+      return this.source.createView(query, signal, { preview: true });
+    }
+  }
+
+  /**
+   * Polls a view that is building until it is ready, then makes the rest of its rows readable. The rows
+   * shown so far stay: they are the first rows of the finished view. A newer query stops the polling,
+   * so that the state of an old view never replaces the current one.
+   */
+  private async followView(query: ViewQuery, controller: AbortController) {
+    const signal = controller.signal;
+    let id = this.view.id;
+    let delay = 150;
+    while (id !== null && this.viewAbort === controller && this.viewBuilding && !signal.aborted) {
+      await sleep(delay, signal);
+      delay = Math.min(1000, delay * 1.5);
+      if (signal.aborted) return;
+      let next: ViewInfo;
+      try {
+        // Sources without `viewInfo` answer a request without a preview once the view is ready.
+        next = this.source.viewInfo
+          ? await this.source.viewInfo(id, signal)
+          : await this.source.createView(query, signal);
+      } catch (error) {
+        if (signal.aborted || isAbortError(error)) return;
+        // The server stopped or forgot the build: the next poll asks for the view again.
+        if (codeOf(error) === ErrorCodes.cancelled) continue;
+        this.viewError = messageOf(error);
+        this.view = { ...this.view, status: "error" };
+        this.emit();
+        this.requestRender();
+        return;
+      }
+      if (signal.aborted || this.viewAbort !== controller || this.disposed) return;
+      if (next.status === "error") this.viewError = next.error ?? null;
+      const changed =
+        next.id !== id || next.status !== this.view.status || next.readableRows !== this.view.readableRows;
+      this.view = next;
+      if (!changed) continue;
+      // Another view of the same query has the same rows, but they are read under its id.
+      if (next.id !== id) this.cache.clear();
+      id = next.id;
+      this.updateLayout();
+      if (!this.viewBuilding) this.scheduleSummary();
+      this.emit();
+      this.requestRender();
     }
   }
 
@@ -908,7 +989,7 @@ export class GridController {
 
   stats(col: number, signal?: AbortSignal): Promise<ColumnStats> | null {
     const state = this.visible[col];
-    if (!state || !this.source.columnStats) return null;
+    if (!state || !this.source.columnStats || !this.statsAvailable) return null;
     return this.source.columnStats(this.view.id, state.index, signal);
   }
 
@@ -924,6 +1005,8 @@ export class GridController {
     this.findCaseSensitive = caseSensitive;
     this.requestRender();
     if (!text || !this.source.find) return false;
+    // Find walks the whole view.
+    if (this.viewBuilding) throw new ViewBuildingError();
     const active = this.selection.active;
     const result = await this.source.find(
       {
