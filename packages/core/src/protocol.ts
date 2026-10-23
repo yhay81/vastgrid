@@ -317,3 +317,8 @@ export function parseProtocolRequest(body: unknown): ProtocolRequest {
 export function isInvalidRequest(error: unknown) {
   return error instanceof InvalidRequest;
 }
+
+/** Validates an untrusted `ViewQuery`, as `parseProtocolRequest` does for a view request's query. */
+export function parseViewQuery(value: unknown): ViewQuery {
+  return query(value);
+}

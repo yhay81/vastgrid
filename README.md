@@ -125,11 +125,31 @@ rows.
 | `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. |
 | `copyLimit` | `number` | `1000000` | Cells that can be copied at once. |
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
+| `onSelectionChange` | `(event: GridSelectionEvent) => void` | | Called when the selection or the active cell changes. |
+| `onColumnsChange` | `(event: GridColumnsEvent) => void` | | Called when the columns' width, order, visibility or freezing change. |
+| `onCellClick`, `onCellDoubleClick` | `(event: GridCellEvent) => void` | | Called for a click (or Space) and a double click (or F2) on a cell. `preventDefault()` on a double click keeps the cell inspector closed. |
+| `initialState` | `GridState` | | Settings applied when a grid starts, once the table's columns are known. |
+| `onStateChange` | `(state: GridState) => void` | | Called with the settings when the query or the column settings change. |
 | `className`, `style` | | | Added to the root element (`.vg-root`). |
 | `aria-label` | `string` | `messages.gridLabel` | The grid's name for screen readers. |
 
-A ref gives a `DataGridHandle`: `focus()`, `reload()`, `getQuery()`, `setQuery(query)`, `goToRow(row)`, the
-`controller` with the grid's state, and the canvas `renderer` (for diagnostics such as `renderer.timings()`).
+A ref gives a `DataGridHandle`: `focus()`, `reload()`, `getQuery()`, `setQuery(query)`, `getState()`,
+`applyState(state)`, `goToRow(row)`, the `controller` with the grid's state, and the canvas `renderer` (for
+diagnostics such as `renderer.timings()`).
+
+Events give a cell's `row` in the view, its `rowId` in the original table, its visible column `col` and its
+`column` in the table schema, and are sent only for changes, never for scrolling or drawing. `GridState` is
+versioned JSON with the query and the columns' order, set widths, visibility and freezing, kept by column
+name; the app chooses where to save it. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#events).
+
+```tsx
+<DataGrid
+  source={source}
+  initialState={saved}
+  onStateChange={(state) => localStorage.setItem("grid", JSON.stringify(state))}
+  onSelectionChange={({ active }) => showDetail(active.rowId)}
+/>
+```
 
 ```tsx
 const grid = useRef<DataGridHandle>(null);

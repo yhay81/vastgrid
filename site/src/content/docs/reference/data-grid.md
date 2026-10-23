@@ -26,6 +26,12 @@ import "vastgrid/styles.css";
 | `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. |
 | `copyLimit` | `number` | `1000000` | Cells that can be copied at once. |
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
+| `onSelectionChange` | `(event: GridSelectionEvent) => void` | | Called when the selection or the active cell changes. See [Events](#events). |
+| `onColumnsChange` | `(event: GridColumnsEvent) => void` | | Called when the columns' width, order, visibility or freezing change. |
+| `onCellClick` | `(event: GridCellEvent) => void` | | Called when a cell is clicked, or Space is pressed on the active cell. |
+| `onCellDoubleClick` | `(event: GridCellEvent) => void` | | Called when a cell is double-clicked, or F2 is pressed. `event.preventDefault()` keeps the cell inspector closed. |
+| `initialState` | `GridState` | | Settings applied when a grid starts, once the table's columns are known. See [Saving the settings](#saving-the-settings). |
+| `onStateChange` | `(state: GridState) => void` | | Called with the settings when the query or the column settings change. |
 | `className`, `style` | | | Added to the root element (`.vg-root`). |
 | `aria-label` | `string` | `messages.gridLabel` | The grid's name for screen readers. |
 
@@ -39,6 +45,8 @@ A ref gives a `DataGridHandle`:
 | `reload()` | Reads the table again, as a change of `reloadKey` does. |
 | `getQuery()` | The current `ViewQuery`: sort, filters and search. |
 | `setQuery(query)` | Applies a `ViewQuery`, replacing the current one. Before the table is ready, it applies once it is. |
+| `getState()` | The query and the column settings, as a `GridState` to save. |
+| `applyState(state)` | Applies a saved `GridState`. Returns `false` when the value is not a state this version reads. |
 | `goToRow(row)` | Scrolls to a row of the current view and makes it active. |
 | `controller` | The `GridController` with the grid's state: the selection, the layout of the columns, the view. |
 | `renderer` | The `CanvasRenderer`, for diagnostics such as `renderer.timings()`. `null` before the grid mounts. |
@@ -59,6 +67,112 @@ Columns in a query are indexes into the table's columns (`TableInfo.columns`), n
 a saved query still means the same after columns were moved or hidden. See
 [`ViewQuery`](/reference/table-source/#viewquery) for the filters.
 
+## Events
+
+The event props report changes made by the user and by the app (`setQuery`, `applyState`), each change
+once. Scrolling, hovering and drawing send none. They are also available without React, as
+`controller.onSelectionChange`, `onColumnsChange` and `onStateChange`, which return a function that
+unsubscribes.
+
+A cell has three kinds of coordinates:
+
+| Field | Meaning |
+| --- | --- |
+| `row` | Position in the current view (0-based), after sorting and filters: the row as shown. |
+| `rowId` | Position in the original table (0-based). Equal to `row` without sort and filters. In a view it comes with the row, so it is `null` until the row is loaded; `onSelectionChange` is called again when it arrives. |
+| `col` | Position among the visible columns, in display order. Changes when columns are moved or hidden. |
+| `column` | Index of the column in the table (`TableInfo.columns`), as in `ViewQuery`. Moving or hiding columns does not change it. |
+
+- `GridSelectionEvent`: `active`, the active cell (`row`, `rowId`, `col`, `column`), and `ranges`, each
+  with `top`, `bottom`, `left`, `right` (inclusive, in view rows and visible columns), `columns` (their
+  table indexes) and `allRows` / `allCols` for whole columns and whole rows. It is also sent when the
+  table's columns first arrive (the active cell gets a column), when a new view moves the active cell
+  to its first row, and when moving or hiding columns puts another column under the active cell.
+- `GridColumnsEvent`: `reason` (`"resize"`, `"move"`, `"visibility"`, `"freeze"`, `"state"` when a state
+  was applied, `"schema"` when the table was read again with other columns), `columns` (every column in
+  display order with `column`, `name`, `col` (-1 when hidden), `width`, `hidden`, `sized`, `frozen`) and
+  `frozenColumns`. Dragging a column's edge reports the width once, when the drag ends. Widths that the
+  grid fits by itself are not reported.
+- `GridCellEvent`: the cell's coordinates, its loaded `value` (`undefined` while it is not loaded),
+  `trigger` (`"pointer"` or `"keyboard"`), the modifier keys and `preventDefault()`. A click is a press and
+  release on the same cell; a double click is preceded by two clicks, as in the DOM. Space on the
+  active cell counts as a click only when `onCellClick` is set (otherwise the key is left to the
+  browser), and F2 counts as a double click.
+
+```tsx
+<DataGrid
+  source={source}
+  onSelectionChange={({ active }) => setDetail(active.rowId)}
+  onCellDoubleClick={(event) => {
+    event.preventDefault(); // instead of the cell inspector
+    openRecord(event.rowId);
+  }}
+/>
+```
+
+## Saving the settings
+
+`getState()` returns the grid's settings as JSON: the query, and the columns' order, widths set by the
+user, visibility and freezing. The selection and the scroll position are not part of it (use
+`onSelectionChange` and `goToRow` to keep those). The app decides where to keep it:
+
+```tsx
+function read(text: string | null) {
+  try {
+    return text ? JSON.parse(text) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// In localStorage, per file:
+<DataGrid
+  source={source}
+  initialState={read(localStorage.getItem(`grid:${file}`))}
+  onStateChange={(state) => localStorage.setItem(`grid:${file}`, JSON.stringify(state))}
+/>;
+
+// Or in the address, so that a link opens the same view:
+<DataGrid
+  source={source}
+  initialState={read(new URLSearchParams(location.search).get("grid"))}
+  onStateChange={(state) => {
+    const url = new URL(location.href);
+    url.searchParams.set("grid", JSON.stringify(state));
+    history.replaceState(null, "", url);
+  }}
+/>;
+```
+
+```json
+{
+  "version": 1,
+  "schema": ["id", "name", "price"],
+  "query": { "sort": [{ "column": 2, "direction": "desc" }] },
+  "columns": [{ "name": "name", "width": 220 }, { "name": "id", "hidden": true }, { "name": "price" }],
+  "frozenColumns": 1
+}
+```
+
+- Columns are kept by name. `schema` lists the names when the state was saved, and the query's column
+  indexes refer to it, so they are mapped onto the table's columns by name. Of repeated names, the nth
+  matches the nth.
+- Columns of the table that the state does not list (added to the file later) keep their settings and
+  follow the listed ones. Listed columns, sort keys and filters whose column the table no longer has are
+  dropped, and frozen columns that are gone are not replaced by others. At least one column stays visible.
+- A width is saved only for columns the user sized; the others are fitted again to their values.
+- Every part except `version` is optional: applying a state changes only the parts it has. A
+  `ViewQuery` saved from `onQueryChange` or `getQuery()` is read as a state with that query.
+- `applyState` (and `initialState`) can be used before the table has loaded: the state waits until the
+  columns are known, and the query until the table is ready. A query set with `setQuery` meanwhile wins
+  over the state's.
+- Values from storage are checked: invalid parts are left out, and a state of a newer `version` than this
+  package reads is refused (`applyState` returns `false`). `parseGridState(value)` from `vastgrid-core`
+  does the check on its own. Later versions add settings as new optional parts and change `version`
+  only when a part changes its meaning, converting older states.
+
+`onStateChange` is also called when a state is applied, including `initialState`.
+
 `renderer.timings()` returns `{ frames, average, slowest }` in milliseconds over the last 120 frames
 drawn. The [demo](/demo/) shows it in its toolbar.
 
@@ -70,6 +184,8 @@ helpers), so most apps install only `vastgrid`. It also exports:
 | Export | Description |
 | --- | --- |
 | `DataGrid`, `DataGridProps`, `DataGridHandle` | The component, its props and its ref. |
+| `GridCell`, `GridCellEvent`, `GridSelectionEvent`, `GridSelectionRange`, `GridColumnsEvent`, `GridColumn`, `GridColumnsChangeReason` | Types of the [events](#events). |
+| `GridState`, `GridColumnSetting`, `parseGridState(value)`, `resolveGridState(state, names)`, `GRID_STATE_VERSION` | The [saved settings](#saving-the-settings), from `vastgrid-core`. |
 | `en`, `ja`, `Messages`, `messagesFor(locale)` | The built-in texts and the set the grid picks for a locale. |
 | `GridController`, `CanvasRenderer` | The grid's state and its canvas renderer, reached through the ref. |
 | `GridOptions`, `ColumnState`, `Hit`, `HitZone` | Types of the controller's options, column state and hit tests. |
