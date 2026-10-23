@@ -73,6 +73,24 @@ body {
   font-weight: 600;
 }
 
+.app__files li button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.app__open {
+  display: block;
+  padding: 6px 8px;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px dashed light-dark(#d0d7de, #2f2f37);
+  border-radius: 6px;
+}
+
+.app__open input {
+  display: none;
+}
+
 .app__files small {
   flex: none;
   color: light-dark(#656d76, #9a9aa6);

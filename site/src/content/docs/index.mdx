@@ -55,7 +55,8 @@ export function App() {
 ```
 
 For files on disk, `vastgrid-duckdb` serves them from Node.js with DuckDB: see
-[Files on a server](/guides/server/).
+[Files on a server](/guides/server/). With no server, `vastgrid-browser` reads local files and Parquet URLs in
+a Web Worker: see [Files in the browser](/guides/browser/).
 
 <CardGrid>
   <Card title="Any size" icon="document">
@@ -71,8 +72,8 @@ For files on disk, `vastgrid-duckdb` serves them from Node.js with DuckDB: see
     multi-column sort, filters, search, find, column statistics and a summary of the selection.
   </Card>
   <Card title="Bring your engine" icon="puzzle">
-    The grid talks to a `TableSource`: the DuckDB server engine for files, `ArraySource` for data in
-    memory, or [your own](/guides/custom-source/).
+    The grid talks to a `TableSource`: the DuckDB server engine for files, `vastgrid-browser` for files in
+    the browser, `ArraySource` for data in memory, or [your own](/guides/custom-source/).
   </Card>
   <Card title="Safe by construction" icon="approve-check">
     The DuckDB engine only reads files whose real location is inside the folders you allow, and that

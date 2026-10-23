@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArraySource, type CellValue, DataGrid, type DataGridHandle, RemoteSource, type TableSource } from "vastgrid";
+import { BrowserSource, type Transfer } from "vastgrid-browser";
+import BrowserWorker from "vastgrid-browser/worker?worker";
 
 interface FileEntry {
   path: string;
@@ -7,6 +9,50 @@ interface FileEntry {
 }
 
 const GENERATED = "\u0000generated";
+const LOCAL = "\u0000local";
+
+type Engine = "server" | "browser";
+
+/** Where the browser engine can read a file: Parquet over HTTP Range from the dev server's `/data/`. */
+function readableInBrowser(file: string) {
+  return /\.parquet$/i.test(file);
+}
+
+function browserSource(options: { file: File } | { url: string }) {
+  return new BrowserSource({ ...options, worker: () => new BrowserWorker() });
+}
+
+/** Bytes the browser engine read and how long opening took, for comparing with the file size. */
+function BrowserMeter({ source }: { source: BrowserSource }) {
+  const [transfer, setTransfer] = useState<Transfer | null>(null);
+  const [opened, setOpened] = useState<number | null>(null);
+  useEffect(() => {
+    const started = performance.now();
+    let cancelled = false;
+    const poll = async () => {
+      const info = await source.info();
+      if (info.status === "loading") {
+        if (!cancelled) setTimeout(poll, 50);
+        return;
+      }
+      if (!cancelled) setOpened(performance.now() - started);
+    };
+    poll().catch(() => {});
+    const timer = setInterval(() => {
+      source.transfer().then(setTransfer, () => {});
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [source]);
+  return (
+    <p className="app__hint">
+      Browser worker: opened in {opened === null ? "…" : `${Math.round(opened)} ms`}, read{" "}
+      {transfer ? `${formatSize(transfer.bytes)} in ${transfer.requests} reads` : "…"}
+    </p>
+  );
+}
 
 function formatSize(size: number) {
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
@@ -34,6 +80,9 @@ export function App() {
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [root, setRoot] = useState("");
   const [selected, setSelected] = useState<string>(GENERATED);
+  const [engine, setEngine] = useState<Engine>("server");
+  const [localFile, setLocalFile] = useState<File | null>(null);
+  const [source, setSource] = useState<TableSource | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
   );
@@ -59,10 +108,19 @@ export function App() {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
-  const source = useMemo(
-    () => (selected === GENERATED ? generated() : new RemoteSource({ endpoint: "/api/table", ref: selected })),
-    [selected],
-  );
+  useEffect(() => {
+    let next: TableSource;
+    if (selected === GENERATED) next = generated();
+    else if (selected === LOCAL && localFile) next = browserSource({ file: localFile });
+    else if (engine === "browser" && readableInBrowser(selected))
+      next = browserSource({ url: `/data/${selected.split("/").map(encodeURIComponent).join("/")}` });
+    else next = new RemoteSource({ endpoint: "/api/table", ref: selected });
+    setSource(next);
+    // For trying things from the console.
+    (window as unknown as { source: TableSource }).source = next;
+    // A browser source ends its worker.
+    return () => (next as Partial<BrowserSource>).close?.();
+  }, [selected, engine, localFile]);
 
   return (
     <div className="app">
@@ -77,14 +135,42 @@ export function App() {
           </li>
           {files.map((file) => (
             <li key={file.path}>
-              <button type="button" aria-current={selected === file.path} onClick={() => setSelected(file.path)}>
+              <button
+                type="button"
+                aria-current={selected === file.path}
+                disabled={engine === "browser" && !readableInBrowser(file.path)}
+                onClick={() => setSelected(file.path)}
+              >
                 <span>{file.path}</span>
                 <small>{formatSize(file.size)}</small>
               </button>
             </li>
           ))}
+          <li>
+            <label className="app__open">
+              <span>{localFile && selected === LOCAL ? localFile.name : "Open a local file in the browser…"}</span>
+              <input
+                type="file"
+                accept=".parquet,.csv,.tsv,.jsonl,.ndjson,.json,.txt"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  setLocalFile(file);
+                  setSelected(LOCAL);
+                }}
+              />
+            </label>
+          </li>
         </ul>
+        {source instanceof BrowserSource && <BrowserMeter source={source} />}
         <div className="app__options">
+          <label>
+            Engine{" "}
+            <select value={engine} onChange={(event) => setEngine(event.target.value as Engine)}>
+              <option value="server">DuckDB server</option>
+              <option value="browser">Browser worker (Parquet URLs)</option>
+            </select>
+          </label>
           <label>
             Theme{" "}
             <select value={theme} onChange={(event) => setTheme(event.target.value as "light" | "dark")}>
@@ -105,7 +191,7 @@ export function App() {
         </div>
       </aside>
       <main className="app__grid">
-        <DataGrid key={selected} ref={grid} source={source} locale={locale} />
+        {source && <DataGrid key={`${engine}:${selected}`} ref={grid} source={source} locale={locale} />}
       </main>
     </div>
   );

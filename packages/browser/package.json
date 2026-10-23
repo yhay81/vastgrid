@@ -1,0 +1,49 @@
+{
+  "name": "vastgrid-browser",
+  "version": "0.1.1",
+  "description": "vastgrid table sources that read huge Parquet, CSV, TSV and JSON Lines files in a Web Worker: local files and Parquet over HTTP Range, with no server.",
+  "license": "MIT",
+  "author": "yhay81",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yhay81/vastgrid.git",
+    "directory": "packages/browser"
+  },
+  "homepage": "https://vastgrid.yhay81.com",
+  "bugs": "https://github.com/yhay81/vastgrid/issues",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "vastgrid-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./worker": {
+      "vastgrid-source": "./src/worker.ts",
+      "types": "./dist/worker.d.ts",
+      "default": "./dist/worker.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "keywords": [
+    "parquet",
+    "csv",
+    "web-worker",
+    "http-range",
+    "datagrid",
+    "big-data"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "bench": "node --expose-gc --conditions=vastgrid-source --import tsx bench/run.ts"
+  },
+  "dependencies": {
+    "vastgrid-core": "^0.1.1",
+    "hyparquet": "1.31.5",
+    "hyparquet-compressors": "1.1.2"
+  }
+}

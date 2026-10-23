@@ -20,7 +20,8 @@ hundreds of millions of rows — and works like a spreadsheet.
   search across all columns, find (⌘F), column statistics, and a running count, sum, average, min and
   max of the selection.
 - **Bring your engine.** The grid talks to a `TableSource`. Use the DuckDB server engine for files on
-  disk, `ArraySource` for data already in memory, or implement your own.
+  disk, `vastgrid-browser` for files opened in the browser and Parquet URLs, `ArraySource` for data already
+  in memory, or implement your own.
 - **Safe by construction.** The DuckDB engine only reads files whose real location (links followed) is
   inside the folders you allow, and that cannot be changed while it runs. All SQL is generated; values
   are always parameters.
@@ -34,6 +35,7 @@ hundreds of millions of rows — and works like a spreadsheet.
 | [`vastgrid`](packages/react) | The `DataGrid` component (canvas renderer, interaction, menus, filters, statistics). |
 | [`vastgrid-core`](packages/core) | The table protocol, row cache, selection and scroll models, formatting, `ArraySource` and `RemoteSource`. Framework-free. |
 | [`vastgrid-duckdb`](packages/duckdb) | A Node.js table server backed by DuckDB, with a Fetch API request handler. |
+| [`vastgrid-browser`](packages/browser) | Reads local Parquet, CSV, TSV and JSON Lines files, and Parquet URLs with HTTP Range requests, in a Web Worker, with no server. |
 
 ## Requirements
 
@@ -41,6 +43,8 @@ hundreds of millions of rows — and works like a spreadsheet.
   Firefox 120, Safari 17.5 or later.
 - **`vastgrid-duckdb`**: Node.js 20 or later, on a platform DuckDB ships a binary for: Linux (x64 or arm64,
   glibc or musl), macOS (x64 or arm64) or Windows (x64 or arm64).
+- **`vastgrid-browser`**: browsers with module workers (Chrome and Edge 80, Firefox 114, Safari 15 or later), and
+  a bundler that handles `new Worker(new URL(…, import.meta.url))`. No special headers (COOP/COEP) are needed.
 - **`vastgrid-core`** has no dependencies and runs in the same browsers and in Node.js 20 or later.
 
 ## Quick start
@@ -89,6 +93,33 @@ export function Table({ file }: { file: string }) {
 `vastgrid-duckdb` uses `@duckdb/node-api`, a native module: keep it out of server bundles (for Next.js,
 `serverExternalPackages: ["@duckdb/node-api", "@duckdb/node-bindings"]`) and ship the platform package
 (`@duckdb/node-bindings-<platform>`, about 120 MB on macOS) with your server.
+
+### Files in the browser (no server)
+
+```sh
+npm install vastgrid vastgrid-browser
+```
+
+```tsx
+import { DataGrid } from "vastgrid";
+import { BrowserSource } from "vastgrid-browser";
+import { useEffect, useState } from "react";
+
+// A file the user picked (<input type="file">), or a Parquet file at a URL.
+export function Table({ file }: { file: File }) {
+  const [source, setSource] = useState<BrowserSource | null>(null);
+  useEffect(() => {
+    const next = new BrowserSource({ file }); // or { url: "https://example.com/data.parquet" }
+    setSource(next);
+    return () => next.close(); // ends the worker
+  }, [file]);
+  return <div style={{ height: 600 }}>{source && <DataGrid source={source} />}</div>;
+}
+```
+
+The file never leaves the browser: a Web Worker reads the parts the grid shows, and sorts, filters and
+summarizes local files. A Parquet URL is read with HTTP Range requests; operations that read the whole
+table are off for URLs unless `fullScan: true`. See [Files in the browser](https://vastgrid.yhay81.com/guides/browser/).
 
 ### Data in memory
 
@@ -241,7 +272,6 @@ npm run bench
 
 ## Roadmap
 
-- A browser-only engine (DuckDB-WASM or hyparquet in a worker) for apps without a server.
 - Editing cells, with CSV write-back that keeps untouched rows byte for byte.
 - Formula columns.
 - Showing the first rows of a sort of 100M+ rows while the rest is ordered.

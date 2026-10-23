@@ -3,7 +3,6 @@ title: 今後
 description: vastgrid で予定していること。
 ---
 
-- サーバーのないアプリ向けの、ブラウザーだけで動くエンジン（Web Worker の DuckDB-WASM か hyparquet）
 - セルの編集と、変えていない行を 1 バイトも変えない CSV への書き戻し
 - 式の列
 - 1 億行を超える並べ替えで、並べ終わる前に先頭を表示する
