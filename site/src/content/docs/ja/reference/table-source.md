@@ -156,6 +156,9 @@ interface RowBlock {
 
 ## 統計、値の一覧、選択範囲
 
+`vastgrid-duckdb` では、平均・標準偏差・四分位・分布を `NaN` と無限大を除いて計算します。有限の値がないときは、
+平均・標準偏差・四分位は `null` となり、分布は省略されます。行数・null の数・値の種類の数は列全体で数えます。
+
 ```ts
 interface ColumnStats {
   column: number;

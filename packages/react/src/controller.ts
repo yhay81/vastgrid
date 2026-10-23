@@ -296,12 +296,31 @@ export class GridController {
 
   private applyInfo(info: TableInfo) {
     const previous = this.info;
+    // A reopened file may not have its preview schema yet. Keep the old names until new names arrive.
+    if (previous && info.status === "loading" && info.columns.length === 0) {
+      info = { ...info, columns: previous.columns };
+    }
     this.info = info;
     this.loadError = null;
     const names = (table: TableInfo | null) => table?.columns.map((column) => column.name).join("\u0000");
     const types = (table: TableInfo | null) => table?.columns.map((column) => column.type).join("\u0000");
     const reset = !previous || previous.revision !== info.revision || names(previous) !== names(info);
     if (reset) {
+      if (previous?.columns.length && names(previous) !== names(info)) {
+        const indexOf = (column: number) => {
+          const name = previous.columns[column]?.name;
+          return name === undefined ? -1 : info.columns.findIndex((item) => item.name === name);
+        };
+        const sort = this.query.sort?.flatMap((key) => {
+          const column = indexOf(key.column);
+          return column < 0 ? [] : [{ ...key, column }];
+        });
+        const filters = this.query.filters?.flatMap((filter) => {
+          const column = indexOf(filter.column);
+          return column < 0 ? [] : [{ ...filter, column }];
+        });
+        this.query = { ...this.query, ...(sort ? { sort } : {}), ...(filters ? { filters } : {}) };
+      }
       // Settings follow their columns by name, also when the file's columns moved.
       const old = new Map(this.columns.map((column) => [previous?.columns[column.index]?.name ?? "", column]));
       this.columns = info.columns.map((column, index) => {

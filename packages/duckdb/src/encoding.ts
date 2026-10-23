@@ -4,11 +4,10 @@ import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 /**
- * Text encodings of delimited files. DuckDB reads UTF-8 (with or without BOM), UTF-16 and Latin-1
- * itself; Japanese encodings common in spreadsheets exported on Windows (Shift_JIS, EUC-JP) are
- * converted to UTF-8 first.
+ * Text encodings of delimited files. Non-UTF-8 files, including both UTF-16 byte orders and Japanese
+ * encodings common in spreadsheets exported on Windows (Shift_JIS, EUC-JP), are converted first.
  */
-export type TextEncoding = "utf-8" | "utf-16" | "shift_jis" | "euc-jp" | "latin-1";
+export type TextEncoding = "utf-8" | "utf-16" | "utf-16le" | "utf-16be" | "shift_jis" | "euc-jp" | "latin-1";
 
 const SAMPLE_BYTES = 4 * 1024 * 1024;
 
@@ -41,7 +40,8 @@ export async function detectEncoding(path: string): Promise<TextEncoding> {
     await handle.close();
   }
   if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return "utf-8";
-  if ((bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0xfe && bytes[1] === 0xff)) return "utf-16";
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) return "utf-16le";
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return "utf-16be";
   if (decodes(bytes, "utf-8", partial)) return "utf-8";
   for (const encoding of ["shift_jis", "euc-jp"] as const) {
     if (!decodes(bytes, encoding, partial)) continue;

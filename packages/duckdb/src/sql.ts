@@ -1,6 +1,7 @@
 import {
   type CellValue,
   type ColumnType,
+  type CompareOperator,
   type Filter,
   isNumericType,
   isTemporalType,
@@ -142,8 +143,31 @@ export class Parameters {
   }
 }
 
-/** A comparison value cast to the column's type (numbers keep their own type to allow 2.5 against integers). */
+/** A decimal bound truncated to the column's scale, with any discarded fraction kept separately. */
+function decimalBound(column: SqlColumn, value: string | number | boolean) {
+  if (column.type !== "decimal" || typeof value === "boolean") return null;
+  const type = /^DECIMAL\((\d+),\s*(\d+)\)$/i.exec(column.sqlType);
+  const match = /^([+-]?)(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(String(value).trim());
+  if (!type || !match || !(match[2] || match[3])) return null;
+  const width = Number(type[1]);
+  const scale = Number(type[2]);
+  const digits = `${match[2]}${match[3] ?? ""}`.replace(/^0+/, "") || "0";
+  const negative = digits !== "0" && match[1] === "-";
+  const end = digits === "0" ? 1 : digits.length + Number(match[4] ?? 0) - (match[3]?.length ?? 0) + scale;
+  if (end > width) return { text: "0", negative, remainder: false, outside: true };
+  const remainder = /[1-9]/.test(digits.slice(Math.max(0, end)));
+  const kept = (end <= 0 ? "0" : digits.slice(0, end).padEnd(end, "0")).padStart(scale + 1, "0");
+  const text = scale === 0 ? kept : `${kept.slice(0, -scale)}.${kept.slice(-scale)}`;
+  return { text: `${negative ? "-" : ""}${text}`, negative, remainder, outside: false };
+}
+
+/** A value used by IN; an inexact decimal bound cannot equal any value in the column. */
 function typedValue(column: SqlColumn, value: string | number | boolean, params: Parameters) {
+  const decimal = decimalBound(column, value);
+  if (decimal) {
+    if (decimal.outside || decimal.remainder) return "NULL";
+    return `CAST(${params.add(decimal.text)} AS ${column.sqlType})`;
+  }
   const placeholder = params.add(value);
   if (isNumericType(column.type)) {
     if (typeof value === "number") return `CAST(${placeholder} AS DOUBLE)`;
@@ -163,6 +187,28 @@ function comparedExpression(column: SqlColumn) {
 }
 
 const comparisonSql = { eq: "=", ne: "<>", lt: "<", le: "<=", gt: ">", ge: ">=" } as const;
+
+function comparisonExpression(
+  column: SqlColumn,
+  op: CompareOperator,
+  value: string | number | boolean,
+  params: Parameters,
+) {
+  const decimal = decimalBound(column, value);
+  if (!decimal) return `(${comparedExpression(column)} ${comparisonSql[op]} ${typedValue(column, value, params)})`;
+  const id = quoteIdentifier(column.name);
+  if (decimal.outside) {
+    const matches = op === "ne" || (decimal.negative ? op === "gt" || op === "ge" : op === "lt" || op === "le");
+    return matches ? `${id} IS NOT NULL` : "FALSE";
+  }
+  if (decimal.remainder) {
+    if (op === "eq") return "FALSE";
+    if (op === "ne") return `${id} IS NOT NULL`;
+    // Values lie on the column's scale: compare to the adjacent representable bound without rounding it.
+    op = op === "gt" || op === "ge" ? (decimal.negative ? "ge" : "gt") : decimal.negative ? "lt" : "le";
+  }
+  return `(${id} ${comparisonSql[op]} CAST(${params.add(decimal.text)} AS ${column.sqlType}))`;
+}
 
 function blankExpression(column: SqlColumn) {
   const id = quoteIdentifier(column.name);
@@ -194,13 +240,11 @@ export function filterExpression(filter: Filter, columns: readonly SqlColumn[], 
       return filter.exclude ? `(NOT coalesce(${matched}, FALSE))` : `coalesce(${matched}, FALSE)`;
     }
     case "compare":
-      return `(${comparedExpression(column)} ${comparisonSql[filter.op]} ${typedValue(column, filter.value, params)})`;
+      return comparisonExpression(column, filter.op, filter.value, params);
     case "between": {
       const parts: string[] = [];
-      if (filter.min !== undefined)
-        parts.push(`${comparedExpression(column)} >= ${typedValue(column, filter.min, params)}`);
-      if (filter.max !== undefined)
-        parts.push(`${comparedExpression(column)} <= ${typedValue(column, filter.max, params)}`);
+      if (filter.min !== undefined) parts.push(comparisonExpression(column, "ge", filter.min, params));
+      if (filter.max !== undefined) parts.push(comparisonExpression(column, "le", filter.max, params));
       return parts.length === 0 ? "TRUE" : `(${parts.join(" AND ")})`;
     }
     case "text": {
@@ -237,6 +281,8 @@ export function orderTerms(sort: readonly SortKey[], columns: readonly SqlColumn
   return sort.map((key) => {
     const column = columns[key.column];
     if (!column) throw new RangeError(`Column ${key.column} does not exist.`);
-    return `${quoteIdentifier(column.name)} ${key.direction === "desc" ? "DESC" : "ASC"} NULLS LAST`;
+    const id = quoteIdentifier(column.name);
+    const value = column.type === "string" ? `NULLIF(${id}, '')` : id;
+    return `${value} ${key.direction === "desc" ? "DESC" : "ASC"} NULLS LAST`;
   });
 }
