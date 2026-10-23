@@ -1,5 +1,9 @@
 # vastgrid
 
+[![npm](https://img.shields.io/npm/v/vastgrid)](https://www.npmjs.com/package/vastgrid)
+[![CI](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml/badge.svg)](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/yhay81/vastgrid)](LICENSE)
+
 数 GB・数億行の CSV・TSV・Parquet・JSON Lines を開けて、表計算ソフトのように扱える React のデータグリッドです。
 
 [English](README.md)
@@ -24,6 +28,13 @@
 | [`vastgrid`](packages/react) | React の `DataGrid`（キャンバスの描画・操作・メニュー・絞り込み・統計） |
 | [`vastgrid-core`](packages/core) | 表のプロトコル、行のキャッシュ、選択とスクロールの写像、書式、`ArraySource`・`RemoteSource`。フレームワークに依存しない |
 | [`vastgrid-duckdb`](packages/duckdb) | DuckDB を使う Node.js の表のサーバーと、Fetch API の受け口 |
+
+## 動作環境
+
+- **`vastgrid`**: React 18 以降と、CSS の `light-dark()` に対応したブラウザー（Chrome・Edge 123、Firefox 120、Safari 17.5 以降）。
+- **`vastgrid-duckdb`**: Node.js 20 以降。DuckDB のバイナリがある Linux（x64・arm64、glibc・musl）、macOS（x64・arm64）、
+  Windows（x64・arm64）で動きます。
+- **`vastgrid-core`** は依存がなく、同じブラウザーと Node.js 20 以降で動きます。
 
 ## 使い方
 

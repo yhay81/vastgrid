@@ -1,5 +1,9 @@
 # vastgrid
 
+[![npm](https://img.shields.io/npm/v/vastgrid)](https://www.npmjs.com/package/vastgrid)
+[![CI](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml/badge.svg)](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/yhay81/vastgrid)](LICENSE)
+
 A data grid for React that opens CSV, TSV, Parquet and JSON Lines files of any size — gigabytes,
 hundreds of millions of rows — and works like a spreadsheet.
 
@@ -30,6 +34,14 @@ hundreds of millions of rows — and works like a spreadsheet.
 | [`vastgrid`](packages/react) | The `DataGrid` component (canvas renderer, interaction, menus, filters, statistics). |
 | [`vastgrid-core`](packages/core) | The table protocol, row cache, selection and scroll models, formatting, `ArraySource` and `RemoteSource`. Framework-free. |
 | [`vastgrid-duckdb`](packages/duckdb) | A Node.js table server backed by DuckDB, with a Fetch API request handler. |
+
+## Requirements
+
+- **`vastgrid`**: React 18 or later, and a browser with the CSS `light-dark()` function: Chrome and Edge 123,
+  Firefox 120, Safari 17.5 or later.
+- **`vastgrid-duckdb`**: Node.js 20 or later, on a platform DuckDB ships a binary for: Linux (x64 or arm64,
+  glibc or musl), macOS (x64 or arm64) or Windows (x64 or arm64).
+- **`vastgrid-core`** has no dependencies and runs in the same browsers and in Node.js 20 or later.
 
 ## Quick start
 

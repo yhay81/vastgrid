@@ -1,6 +1,7 @@
 # Contributing to vastgrid
 
-Thank you for helping. Issues and pull requests are welcome in English or Japanese.
+Thank you for helping. Issues and pull requests are welcome in English or Japanese. Everyone taking part
+follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Before you start
 
@@ -30,6 +31,7 @@ edits to them apply without building.
 | `packages/duckdb` | `vastgrid-duckdb`: `TableEngine`, the request handler and the benchmark. |
 | `examples/playground` | A Vite app with a table server, for trying changes. |
 | `docs` | The table protocol. |
+| `scripts` | Build and release helpers. |
 
 ## Checks
 
@@ -59,6 +61,44 @@ affect speed, run `npm run bench` before and after and put both results in the p
 - Changes to the API or the features update both [README.md](README.md) and [README.ja.md](README.ja.md).
 - Commit messages start with a short summary in the imperative ("Fix …", "Add …"). Larger commits list
   their changes by package in the body.
+
+## Releasing
+
+The three packages are released together, with one version. Before 1.0, a release that breaks
+compatibility raises the minor version (0.1.x → 0.2.0), and other releases raise the patch version, which
+reaches apps that depend on `^0.1.0`.
+
+On an up-to-date `main` with a clean tree:
+
+```sh
+node scripts/release.mjs version 0.1.1
+git commit -am "Release 0.1.1"
+git tag -s v0.1.1 -m "vastgrid 0.1.1"
+git push origin main v0.1.1
+```
+
+The first command sets the version of the three packages, the `vastgrid-core` that the others depend on and
+the playground's dependencies, turns "Unreleased" in [CHANGELOG.md](CHANGELOG.md) into the version and
+today's date, and updates `package-lock.json`. Look over the diff and run the checks before you commit.
+
+The tag starts the [Release workflow](.github/workflows/release.yml). It checks that the packages and
+CHANGELOG.md are at the tag's version, runs the checks, publishes `vastgrid-core`, `vastgrid-duckdb` and
+`vastgrid` to npm with provenance, and creates the GitHub release with the CHANGELOG.md section as its notes.
+A pre-release version (`0.2.0-beta.1`) is published under the `next` tag and marked as a pre-release. If a
+run fails half-way, run it again: versions already on npm are skipped.
+
+After a release that fixes a vulnerability, publish its GitHub security advisory with the fixed versions
+(see [SECURITY.md](SECURITY.md)).
+
+### One-time setup
+
+Only the Release workflow can publish, and it needs no npm token:
+
+- On npmjs.com, in the settings of each of the three packages, add a trusted publisher: GitHub Actions,
+  the repository `yhay81/vastgrid`, the workflow `release.yml` and the environment `npm`. Then set
+  publishing access to require two-factor authentication and disallow tokens.
+- On GitHub, in Settings → Environments, create `npm` and limit its deployments to tags matching `v*`.
+  Required reviewers there make each release wait for an approval.
 
 ## License
 
