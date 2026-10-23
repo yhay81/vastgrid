@@ -1,8 +1,9 @@
 # vastgrid-duckdb
 
 A table server for [vastgrid](https://github.com/yhay81/vastgrid) backed by DuckDB. It opens huge CSV,
-TSV, Parquet and JSON Lines files in Node.js and answers the vastgrid protocol: windows of rows,
-sorted and filtered views, column statistics, distinct values, selection summaries, find and export.
+TSV, Parquet and JSON Lines files and Excel workbooks in Node.js and answers the vastgrid protocol:
+windows of rows, sorted and filtered views, column statistics, distinct values, selection summaries,
+find and export.
 
 ```ts
 import { createTableHandler, TableEngine } from "vastgrid-duckdb";

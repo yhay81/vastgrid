@@ -36,7 +36,7 @@ clients and files; create one per process.
 
 | Method | Description |
 | --- | --- |
-| `open(path, format?)` | Opens a file, or returns the table already open for it, and starts loading it. Returns an `OpenTable`. The path must be inside the allowed directories, links followed. |
+| `open(path, format?, read?)` | Opens a file, or returns the table already open for it, and starts loading it. Returns an `OpenTable`. The path must be inside the allowed directories, links followed. `read` chooses the sheet of a workbook and how it is read ([Excel workbooks](/guides/server/#excel-workbooks)); each choice is a table of its own. |
 | `get(id)` | The open table with this handle, or a `table_not_found` error. |
 | `close(id)` | Closes a table and its views. |
 | `allows(path)` | Whether an absolute path, as written, is inside the allowed directories. `open` also checks the real location. |
@@ -70,7 +70,7 @@ frameworks without Fetch API requests answer exactly as `createTableHandler` doe
 
 | Export | Description |
 | --- | --- |
-| `tableFormatOf(path)` | The format of a file judged by its extension (`csv`, `tsv`, `parquet`, `ndjson`, `json`), or `null`. Use it to list the files a user can open. |
+| `tableFormatOf(path)` | The format of a file judged by its extension (`csv`, `tsv`, `parquet`, `ndjson`, `json`, `xlsx`), or `null`. Use it to list the files a user can open. |
 | `detectEncoding(path)` | Detects the text encoding of a delimited file from its first megabytes: `utf-8`, `utf-16`, `shift_jis`, `euc-jp` or `latin-1`. |
 | `convertToUtf8(source, target, encoding, signal?)` | Converts a file to UTF-8, replacing invalid bytes. |
 | `columnTypeOf(sqlType)` | The `ColumnType` of a DuckDB type name. |

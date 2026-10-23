@@ -1,7 +1,7 @@
 {
   "name": "vastgrid-duckdb",
   "version": "0.1.1",
-  "description": "A vastgrid table server backed by DuckDB: opens huge CSV, TSV, Parquet and JSON Lines files in Node.js.",
+  "description": "A vastgrid table server backed by DuckDB: opens huge CSV, TSV, Parquet and JSON Lines files and Excel workbooks in Node.js.",
   "license": "MIT",
   "author": "yhay81",
   "repository": {

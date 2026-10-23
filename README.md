@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/github/license/yhay81/vastgrid)](LICENSE)
 
 A data grid for React that opens CSV, TSV, Parquet and JSON Lines files of any size — gigabytes,
-hundreds of millions of rows — and works like a spreadsheet.
+hundreds of millions of rows — and Excel workbooks, and works like a spreadsheet.
 
 **[Try the demo](https://vastgrid.yhay81.com/demo/)** · [Documentation](https://vastgrid.yhay81.com) · [日本語](README.ja.md)
 
@@ -216,7 +216,7 @@ flowchart LR
   Source -. "ArraySource<br/>in memory" .-> Memory[(arrays)]
   subgraph Server["Node.js"]
     Handler --> Engine["TableEngine<br/>DuckDB"]
-    Engine --> Files[(CSV · TSV · Parquet · JSON Lines)]
+    Engine --> Files[(CSV · TSV · Parquet · JSON Lines · xlsx)]
   end
 ```
 
@@ -288,7 +288,6 @@ npm run bench
 - A browser-only engine (DuckDB-WASM or hyparquet in a worker) for apps without a server.
 - Editing cells, with CSV write-back that keeps untouched rows byte for byte.
 - Formula columns.
-- Excel (`.xlsx`) input.
 
 See [docs/research.ja.md](docs/research.ja.md) (Japanese) for the survey of existing viewers and grids
 that shaped these choices.

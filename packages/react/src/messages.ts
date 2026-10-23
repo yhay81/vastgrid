@@ -256,6 +256,8 @@ export const en: Messages = {
     "encoding:euc-jp": "Converted from EUC-JP.",
     "encoding:latin-1": "Converted from Latin-1.",
     "encoding:utf-16": "Converted from UTF-16.",
+    merged_cells: "Merged cells show their value in the first cell only.",
+    formulas_without_values: "Some formulas were saved without a calculated value and are shown blank.",
   },
   export: "Export",
 };
@@ -399,6 +401,8 @@ export const ja: Messages = {
     "encoding:euc-jp": "EUC-JP から変換して表示しています。",
     "encoding:latin-1": "Latin-1 から変換して表示しています。",
     "encoding:utf-16": "UTF-16 から変換して表示しています。",
+    merged_cells: "結合セルの値は先頭のセルにだけ表示しています。",
+    formulas_without_values: "計算結果が保存されていない数式があり、空欄で表示しています。",
   },
   export: "書き出し",
 };
