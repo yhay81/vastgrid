@@ -90,6 +90,14 @@ class CountingSource implements TableSource {
   }
 }
 
+async function waitForCache(cache: RowCache) {
+  const deadline = Date.now() + 5000;
+  while (cache.pending > 0) {
+    assert.ok(Date.now() < deadline, "timed out waiting for the row cache");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 test("row cache loads visible blocks first and serves values", async () => {
   const source = new CountingSource(10_000);
   const cache = new RowCache(source, { blockRows: 100, blockColumns: 2, concurrency: 2 });
@@ -104,7 +112,7 @@ test("row cache loads visible blocks first and serves values", async () => {
       [500, [2]],
     ],
   );
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  await waitForCache(cache);
   assert.ok(changes > 0);
   assert.equal(cache.value(520, 2), 5202);
   assert.equal(cache.value(9000, 0), undefined);
@@ -118,7 +126,7 @@ test("row cache respects readable rows while loading and refetches cut blocks", 
   const cache = new RowCache(source, { blockRows: 100 });
   cache.setView(null, 1000, 150, 1);
   cache.want(0, 300, [0]);
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await waitForCache(cache);
   assert.equal(cache.value(149, 0), 1490);
   assert.equal(cache.value(150, 0), undefined);
   assert.deepEqual(
@@ -130,7 +138,7 @@ test("row cache respects readable rows while loading and refetches cut blocks", 
   );
   cache.setView(null, 1000, 1000, 1);
   cache.want(0, 300, [0]);
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await waitForCache(cache);
   assert.equal(cache.value(250, 0), 2500);
   assert.ok(source.requests.some((request) => request.start === 100 && request.end === 200));
 });

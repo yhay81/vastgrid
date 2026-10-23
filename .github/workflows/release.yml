@@ -25,7 +25,10 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - run: npm pack -w packages/core -w packages/duckdb -w packages/react --pack-destination "$RUNNER_TEMP/packages"
+      - name: Pack packages
+        run: |
+          mkdir -p "$RUNNER_TEMP/packages"
+          npm pack -w packages/core -w packages/duckdb -w packages/react --pack-destination "$RUNNER_TEMP/packages"
       - uses: actions/upload-artifact@v4
         with:
           name: packages
