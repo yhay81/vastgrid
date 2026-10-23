@@ -1,4 +1,4 @@
-import { type CellValue, type ColumnSchema, type Filter, plainText, type ValueFormatter } from "vastgrid-core";
+import { type CellValue, type ColumnFormatter, type Filter, plainText } from "vastgrid-core";
 import type { Messages } from "./messages.js";
 
 /** Formats counts with the locale's grouping. */
@@ -13,22 +13,17 @@ export function numberFormat(locale: string | undefined) {
   return (value: number) => format.format(value);
 }
 
-function valueText(value: CellValue, schema: ColumnSchema | undefined, formatter: ValueFormatter, messages: Messages) {
+function valueText(value: CellValue, formatter: ColumnFormatter | undefined, messages: Messages) {
   if (value === null || value === "") return messages.blank;
-  return formatter.format(value, schema?.type ?? "string");
+  return formatter ? formatter.format(value) : plainText(value);
 }
 
 /** A short description of a filter, for chips ("price ≥ 100", "city: Tokyo +2"). */
-export function filterLabel(
-  filter: Filter,
-  schema: ColumnSchema | undefined,
-  formatter: ValueFormatter,
-  messages: Messages,
-) {
-  const name = schema?.name ?? `#${filter.column}`;
+export function filterLabel(filter: Filter, formatter: ColumnFormatter | undefined, messages: Messages) {
+  const name = formatter?.label ?? `#${filter.column}`;
   switch (filter.type) {
     case "values": {
-      const shown = filter.values.slice(0, 2).map((value) => valueText(value, schema, formatter, messages));
+      const shown = filter.values.slice(0, 2).map((value) => valueText(value, formatter, messages));
       const more = filter.values.length > 2 ? ` +${filter.values.length - 2}` : "";
       return `${name} ${filter.exclude ? "≠" : ":"} ${shown.join(", ")}${more}`;
     }

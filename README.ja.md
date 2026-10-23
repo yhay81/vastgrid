@@ -116,6 +116,8 @@ const source = new ArraySource({
 | `statusBar` | `boolean` | `true` | アクティブなセルと選択範囲の集計を表示します。 |
 | `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。 |
 | `copyLimit` | `number` | `1000000` | 一度にコピーできるセルの数。 |
+| `columnFormats` | `Record<string, ColumnFormat>` | | スキーマの列名ごとの表示設定。表示名、数値と日時の書式、配置、整形関数。 |
+| `copyValues` | `"raw" \| "formatted"` | `"raw"` | コピーするのを、値とスキーマの列名にするか、表示している文字と表示名にするか。 |
 | `onQueryChange` | `(query: ViewQuery) => void` | | 並べ替え・絞り込み・検索が変わったときに呼ばれます。 |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | 選択範囲かアクティブなセルが変わったときに呼ばれます。 |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | 列の幅・順序・表示・固定が変わったときに呼ばれます。 |
@@ -151,6 +153,23 @@ const grid = useRef<DataGridHandle>(null);
 // 3 列目の大きい順に並べ、「東京」を含む行だけを表示する。
 grid.current?.setQuery({ sort: [{ column: 2, direction: "desc" }], search: "東京" });
 ```
+
+### 列の表示設定
+
+`columnFormats` で、スキーマの列名ごとに列の見え方を設定します。変わるのは表示だけで、並べ替え・絞り込み・検索・統計・書き出しは値そのものに対して動きます。64 bit 整数や decimal の桁も失われません。
+
+```tsx
+const formats: Record<string, ColumnFormat> = {
+  price: { label: "価格", number: { style: "currency", currency: "JPY" } },
+  share: { number: { style: "percent", fractionDigits: 1 } },
+  ordered_at: { label: "注文日時", date: { pattern: "yyyy/MM/dd HH:mm" } },
+  status: { align: "center", format: (value, { text }) => (value === "ok" ? "✓" : text) },
+};
+
+<DataGrid source={source} columnFormats={formats} />;
+```
+
+コピーには値とスキーマの列名が入ります。表示している文字と表示名をコピーするには、`copyValues="formatted"`（列ごとには `copy`）を指定します。詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#列の表示設定)を参照してください。
 
 ## 性能
 

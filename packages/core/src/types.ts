@@ -232,3 +232,85 @@ export interface ExportResult {
   target: string;
   rows: number;
 }
+
+/** Horizontal alignment of a column's cells. */
+export type ColumnAlign = "left" | "center" | "right";
+
+/**
+ * How a column shows numbers. Values keep their exact digits: 64-bit integers and decimals that arrive
+ * as strings are formatted from the string, never through a JS number. Maps onto `Intl.NumberFormat`.
+ */
+export interface NumberFormat {
+  /** `percent` multiplies by 100 (0.125 → 12.5%). `currency` needs `currency`. Defaults to `decimal`. */
+  style?: "decimal" | "percent" | "currency";
+  /** ISO 4217 code, for example `USD` or `JPY`. */
+  currency?: string;
+  currencyDisplay?: "symbol" | "narrowSymbol" | "code" | "name";
+  /** Exactly this many fraction digits (sets both the minimum and the maximum). */
+  fractionDigits?: number;
+  minimumFractionDigits?: number;
+  maximumFractionDigits?: number;
+  /** Group digits (1,234,567). Defaults to the grid's setting. */
+  grouping?: boolean;
+  notation?: "standard" | "scientific" | "engineering" | "compact";
+  signDisplay?: "auto" | "always" | "exceptZero" | "negative" | "never";
+  /** Text before and after the number, for example a unit. */
+  prefix?: string;
+  suffix?: string;
+}
+
+/**
+ * How a column shows dates and times (ISO-like strings such as `2024-01-31 12:34:56`). Either a
+ * `pattern` or `Intl.DateTimeFormat` options.
+ */
+export interface DateFormat {
+  /**
+   * `yyyy` `yy` year, `M` `MM` month, `MMM` `MMMM` month name, `d` `dd` day, `EEE` `EEEE` weekday,
+   * `H` `HH` hour (0–23), `h` `hh` hour (1–12), `a` AM/PM, `m` `mm` minute, `s` `ss` second, `S`… fraction
+   * digits. Text in single quotes is kept as it is (`''` is a quote). Example: `yyyy/MM/dd HH:mm`.
+   */
+  pattern?: string;
+  dateStyle?: "full" | "long" | "medium" | "short";
+  timeStyle?: "full" | "long" | "medium" | "short";
+  weekday?: "long" | "short" | "narrow";
+  year?: "numeric" | "2-digit";
+  month?: "numeric" | "2-digit" | "long" | "short" | "narrow";
+  day?: "numeric" | "2-digit";
+  hour?: "numeric" | "2-digit";
+  minute?: "numeric" | "2-digit";
+  second?: "numeric" | "2-digit";
+  fractionalSecondDigits?: 1 | 2 | 3;
+  hour12?: boolean;
+  timeZoneName?: "short" | "long" | "shortOffset" | "longOffset";
+  /**
+   * IANA time zone that values with an offset (`timestamptz`) are shown in. Defaults to the runtime's.
+   * Values without an offset are shown as they are, in no time zone.
+   */
+  timeZone?: string;
+}
+
+/** Text used when copying cells: the value itself, or the text the grid shows. */
+export type CopyValues = "raw" | "formatted";
+
+/**
+ * Display settings of one column, given by the column's schema name. They change only how values are
+ * shown: sorting, filters, search, statistics and exports work on the values themselves.
+ */
+export interface ColumnFormat {
+  /** Shown in the header and the panels instead of the schema name. */
+  label?: string;
+  /** For numeric values (numbers, and numeric strings such as 64-bit integers and decimals). */
+  number?: NumberFormat;
+  /** For date and time values. */
+  date?: DateFormat;
+  /** Defaults to `right` for numeric columns and `left` otherwise. */
+  align?: ColumnAlign;
+  /**
+   * Makes the text of a value. `text` is the text the other settings make. The result is shown in one
+   * line; keep the function stable (define it outside components or memoize it), since a new function
+   * redraws the column.
+   */
+  format?: (value: CellValue, context: { column: ColumnSchema; text: string }) => string;
+  /** Overrides the grid's `copyValues` for this column's cells. */
+  copy?: CopyValues;
+}

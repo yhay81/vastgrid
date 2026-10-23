@@ -2,8 +2,8 @@ import {
   type CacheBlock,
   type CellRange,
   type CellValue,
+  type ColumnFormatter,
   type ColumnType,
-  isNumericType,
   rangeContains,
 } from "vastgrid-core";
 import type { GridController } from "./controller.js";
@@ -202,7 +202,7 @@ export class CanvasRenderer {
     ctx.restore();
   }
 
-  private textOf(block: CacheBlock, column: number, row: number, value: CellValue, type: ColumnType) {
+  private textOf(block: CacheBlock, column: number, row: number, value: CellValue, formatter: ColumnFormatter) {
     if (block.textKey !== this.formatKey || !block.text) {
       block.text = block.columns.map(() => []);
       block.textKey = this.formatKey;
@@ -211,7 +211,7 @@ export class CanvasRenderer {
     const offset = row - block.start;
     let text = list[offset];
     if (text === undefined) {
-      text = this.controller.formatter.format(value, type);
+      text = formatter.format(value);
       list[offset] = text;
     }
     return text;
@@ -227,7 +227,9 @@ export class CanvasRenderer {
     const x = c.columnX(col);
     const width = c.layout.width(col);
     const rowHeight = c.options.rowHeight;
-    const numeric = isNumericType(schema.type);
+    const formatter = c.formatterOf(state.index);
+    const numeric = formatter.numeric;
+    const align = formatter.align;
     const textWidth = width - PADDING * 2;
     const find = c.findText ? (c.findCaseSensitive ? c.findText : c.findText.toLowerCase()) : "";
     ctx.save();
@@ -236,8 +238,8 @@ export class CanvasRenderer {
     ctx.clip();
     ctx.font = this.cellText.font;
     ctx.textBaseline = "middle";
-    ctx.textAlign = numeric ? "right" : "left";
-    const textX = numeric ? x + width - PADDING : x + PADDING;
+    ctx.textAlign = align;
+    const textX = align === "right" ? x + width - PADDING : align === "center" ? x + width / 2 : x + PADDING;
     for (let row = firstRow; row < lastRow; row++) {
       const y = c.rowY(row);
       const block = c.cache.blockAt(row, state.index);
@@ -245,12 +247,18 @@ export class CanvasRenderer {
         if (row < c.readableRows && textWidth > 12) {
           ctx.fillStyle = block?.state === "error" ? t.error : t.placeholder;
           const length = Math.min(textWidth, 24 + ((row * 7919 + state.index * 104729) % 48));
-          ctx.fillRect(numeric ? x + width - PADDING - length : x + PADDING, y + rowHeight / 2 - 3, length, 6);
+          const left =
+            align === "right"
+              ? x + width - PADDING - length
+              : align === "center"
+                ? x + (width - length) / 2
+                : x + PADDING;
+          ctx.fillRect(left, y + rowHeight / 2 - 3, length, 6);
         }
         continue;
       }
       const value = block.values[state.index - block.firstColumn]?.[row - block.start] ?? null;
-      const text = this.textOf(block, state.index, row, value, schema.type);
+      const text = this.textOf(block, state.index, row, value, formatter);
       if (find && text && (c.findCaseSensitive ? text : text.toLowerCase()).includes(find)) {
         ctx.fillStyle = t.match;
         ctx.fillRect(x, y, width, rowHeight);
@@ -425,7 +433,7 @@ export class CanvasRenderer {
     }
     ctx.font = this.headerText.font;
     ctx.fillStyle = t.headerText;
-    ctx.fillText(this.headerText.fit(schema.name, right - start), start, height / 2 + 0.5);
+    ctx.fillText(this.headerText.fit(c.columnLabel(state.index), right - start), start, height / 2 + 0.5);
     // Separator.
     ctx.strokeStyle = t.line;
     ctx.lineWidth = 1 / this.ratio;

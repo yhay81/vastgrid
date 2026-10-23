@@ -40,6 +40,8 @@ export interface Messages {
   filterToValue: string;
   excludeValue: string;
   inspectCell: string;
+  /** Before the text a cell shows, when its value is formatted. */
+  shownAs: string;
   close: string;
   apply: string;
   clear: string;
@@ -151,6 +153,7 @@ export const en: Messages = {
   filterToValue: "Filter to this value",
   excludeValue: "Exclude this value",
   inspectCell: "Show full value",
+  shownAs: "Shown as",
   close: "Close",
   apply: "Apply",
   clear: "Clear",
@@ -289,6 +292,7 @@ export const ja: Messages = {
   filterToValue: "この値で絞り込む",
   excludeValue: "この値を除く",
   inspectCell: "値の全体を表示",
+  shownAs: "表示",
   close: "閉じる",
   apply: "適用",
   clear: "解除",

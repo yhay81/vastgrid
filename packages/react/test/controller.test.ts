@@ -318,3 +318,101 @@ test("the filter panel keeps numbers that a JavaScript number cannot hold exactl
   assert.equal(comparable("abc", "integer"), "abc");
   assert.equal(comparable("2024-01-02", "date"), "2024-01-02");
 });
+
+test("column formats change the shown text, not the values", async () => {
+  const source = new ArraySource({
+    columns: [
+      { name: "item", type: "string" },
+      { name: "price", type: "decimal" },
+    ],
+    rows: [
+      ["b", "1234.5"],
+      ["a", "99.125"],
+      ["c", "9007199254740993.5"],
+    ],
+  });
+  const grid = new GridController(source, {
+    ...options,
+    locale: "en-US",
+    columnFormats: { price: { label: "Price (USD)", number: { style: "currency", currency: "USD" } } },
+  });
+  grid.start();
+  while (grid.info?.status !== "ready") await new Promise((resolve) => setTimeout(resolve, 1));
+  grid.cache.want(0, 3, [0, 1]);
+  await until(() => grid.value(2, 1) !== undefined);
+  assert.equal(grid.columnLabel(1), "Price (USD)");
+  assert.equal(grid.formatterOf(1).format(grid.value(2, 1) ?? null), "$9,007,199,254,740,993.50");
+  // Sorting uses the values.
+  await grid.setQuery({ sort: [{ column: 1, direction: "desc" }] });
+  grid.cache.want(0, 3, [0, 1]);
+  await until(() => grid.value(2, 1) !== undefined);
+  assert.deepEqual(
+    [0, 1, 2].map((row) => grid.value(row, 0)),
+    ["c", "b", "a"],
+  );
+  // Copies are the values by default, and the shown text with copyValues: "formatted".
+  grid.selection.select({ row: 0, col: 0 });
+  grid.selection.select({ row: 1, col: 1 }, "extend");
+  assert.equal(grid.copySelectionSync({ headers: true })?.text, "item\tprice\nc\t9007199254740993.5\nb\t1234.5");
+  grid.options.copyValues = "formatted";
+  assert.equal(
+    grid.copySelectionSync({ headers: true })?.text,
+    "item\tPrice (USD)\nc\t$9,007,199,254,740,993.50\nb\t$1,234.50",
+  );
+  assert.equal(
+    grid.copySelectionSync({ markdown: true })?.text,
+    "| item | Price (USD) |\n| --- | --- |\n| c | $9,007,199,254,740,993.50 |\n| b | $1,234.50 |",
+  );
+  grid.dispose();
+});
+
+test("changing column formats redraws and fits the columns again", async () => {
+  const source = new ArraySource({
+    columns: [
+      { name: "id", type: "integer" },
+      { name: "ratio", type: "float" },
+    ],
+    rows: [
+      [1, 0.5],
+      [2, 0.25],
+    ],
+  });
+  const grid = new GridController(source, { ...options, locale: "en-US" });
+  // 10 px per character.
+  grid.measure = (text) => text.length * 10;
+  grid.start();
+  while (grid.info?.status !== "ready") await new Promise((resolve) => setTimeout(resolve, 1));
+  grid.cache.want(0, 2, [0, 1]);
+  await until(() => grid.visible[1].width !== 110);
+  const before = grid.visible[1].width;
+  const version = grid.formatVersion;
+  // The same settings in a new object change nothing.
+  grid.setColumnFormats({});
+  assert.equal(grid.formatVersion, version);
+  const label = "A much longer label for the ratio";
+  grid.setColumnFormats({ ratio: { label, number: { style: "percent", fractionDigits: 4 } } });
+  assert.ok(grid.formatVersion > version, "cached text is rebuilt");
+  assert.equal(grid.formatterOf(1).format(0.25), "25.0000%");
+  assert.ok(grid.visible[1].width > before, "the column fits its new label");
+  assert.equal(grid.visible[1].width, Math.min(240, label.length * 10 + 62));
+  grid.setColumnFormats({ ratio: { label, number: { style: "percent", fractionDigits: 4 } } });
+  assert.equal(grid.formatVersion, version + 1, "equal settings are not applied again");
+  // Columns the user sized keep their width.
+  grid.resizeColumn(1, 80);
+  grid.setColumnFormats({});
+  assert.equal(grid.visible[1].width, 80);
+  assert.equal(grid.columnLabel(1), "ratio");
+  grid.dispose();
+});
+
+test("invalid column formats are refused when they are set", () => {
+  const source = new ArraySource({ columns: ["price"], rows: [[1]] });
+  assert.throws(
+    () => new GridController(source, { ...options, columnFormats: { price: { number: { style: "currency" } } } }),
+    RangeError,
+  );
+  const grid = new GridController(source, { ...options });
+  assert.throws(() => grid.setColumnFormats({ price: { date: { timeZone: "Nowhere/City" } } }), RangeError);
+  assert.deepEqual(grid.options.columnFormats, {}, "the previous settings stay");
+  grid.dispose();
+});

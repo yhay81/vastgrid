@@ -39,7 +39,8 @@ shows the row's position in the file.
 ⌘/Ctrl + C copies the selection as tab-separated text and as an HTML table, so pasting into a
 spreadsheet or a document keeps the cells. ⌘/Ctrl + Shift + C adds the column names, and the cell menu
 also copies as a Markdown table. Copies hold whole values, also of cells that are cut short on screen.
-At most `copyLimit` cells (1,000,000 by default) are copied at once.
+At most `copyLimit` cells (1,000,000 by default) are copied at once. Copies hold the values, not the text
+that [column formats](/reference/data-grid/#column-formats) show, unless `copyValues` is `"formatted"`.
 
 ## Sorting
 

@@ -1,8 +1,11 @@
 import {
   type CellValue,
+  type ColumnFormat,
+  type ColumnFormatter,
   ColumnLayout,
   type ColumnSchema,
   type ColumnStats,
+  type CopyValues,
   type DistinctValues,
   ErrorCodes,
   type Filter,
@@ -10,10 +13,8 @@ import {
   type GridState,
   isAbortError,
   isEmptyQuery,
-  isNumericType,
   MAX_TEXT_LIMIT,
   parseGridState,
-  plainText,
   RowCache,
   resolveGridState,
   ScrollAxis,
@@ -47,6 +48,10 @@ export interface GridOptions {
   maxAutoWidth: number;
   /** Cells copied at most at once. */
   copyLimit: number;
+  /** Display settings by schema column name. */
+  columnFormats?: Record<string, ColumnFormat>;
+  /** Text copied for cells: the values (`raw`, the default) or the shown text (`formatted`). */
+  copyValues?: CopyValues;
 }
 
 export interface ColumnState {
@@ -121,6 +126,13 @@ function sameQuery(a: ViewQuery, b: ViewQuery) {
   return a === b || JSON.stringify(a) === JSON.stringify(b);
 }
 
+/** Whether two display settings are the same. Functions are compared by identity. */
+function sameFormat(a: ColumnFormat | undefined, b: ColumnFormat | undefined) {
+  if (a === b) return true;
+  if (!a || !b || a.format !== b.format) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 /** Whether a loaded value may be text that the source cut for display (it then ends with "…"). */
 function mayBeCut(value: CellValue) {
   return typeof value === "string" && value.endsWith("…");
@@ -140,8 +152,10 @@ export class GridController {
   readonly scrollX = new ScrollAxis();
   readonly scrollY = new ScrollAxis();
   formatter: ValueFormatter;
-  /** Changes whenever `formatter` is replaced, so that cached display text is rebuilt. */
+  /** Changes whenever `formatter` or a column's settings change, so that cached display text is rebuilt. */
   formatVersion = 0;
+  /** Formatters of the schema columns, with their display settings. */
+  private formatters: ColumnFormatter[] = [];
 
   info: TableInfo | null = null;
   loadError: string | null = null;
@@ -203,6 +217,8 @@ export class GridController {
     this.source = source;
     this.options = options;
     this.formatter = new ValueFormatter({ locale: options.locale, nullText: options.nullText });
+    this.options.columnFormats ??= {};
+    this.checkFormats(this.options.columnFormats);
     this.cache = new RowCache(source);
     this.cache.onChange(() => {
       this.autoSize();
@@ -224,8 +240,50 @@ export class GridController {
     this.options.locale = locale;
     this.options.nullText = nullText;
     this.formatter = new ValueFormatter({ locale, nullText });
+    this.formatChanged(this.schema.map((_, index) => index));
+  }
+
+  /**
+   * Changes the display settings of the columns (by schema name). Columns whose settings changed are
+   * drawn again and, unless the user sized them, fitted to their new text.
+   */
+  setColumnFormats(formats: Record<string, ColumnFormat> = {}) {
+    const previous = this.options.columnFormats ?? {};
+    this.checkFormats(formats);
+    this.options.columnFormats = formats;
+    const changed = this.schema.flatMap((column, index) =>
+      sameFormat(previous[column.name], formats[column.name]) ? [] : [index],
+    );
+    if (changed.length > 0) this.formatChanged(changed);
+  }
+
+  /** Throws a `RangeError` for invalid settings now, rather than while drawing. */
+  private checkFormats(formats: Record<string, ColumnFormat>) {
+    for (const [name, format] of Object.entries(formats)) this.formatter.column({ name, type: "unknown" }, format);
+  }
+
+  private formatChanged(columns: number[]) {
+    this.formatters = [];
     this.formatVersion++;
+    this.refit(columns);
+    this.emit();
     this.requestRender();
+  }
+
+  /** The formatter of a schema column, with its display settings. */
+  formatterOf(index: number): ColumnFormatter {
+    let formatter = this.formatters[index];
+    if (!formatter) {
+      const schema = this.schema[index] ?? { name: "", type: "unknown" };
+      formatter = this.formatter.column(schema, this.options.columnFormats?.[schema.name]);
+      this.formatters[index] = formatter;
+    }
+    return formatter;
+  }
+
+  /** The name shown for a schema column: its label, or its name. */
+  columnLabel(index: number) {
+    return this.formatterOf(index).label;
   }
 
   // ----- subscriptions -----
@@ -401,14 +459,18 @@ export class GridController {
 
   private applyInfo(info: TableInfo) {
     const previous = this.info;
+    const names = (table: TableInfo | null) => table?.columns.map((column) => column.name).join("\u0000");
+    const types = (table: TableInfo | null) => table?.columns.map((column) => column.type).join("\u0000");
     // A reopened file may not have its preview schema yet. Keep the old names until new names arrive.
     if (previous && info.status === "loading" && info.columns.length === 0) {
       info = { ...info, columns: previous.columns };
     }
     this.info = info;
     this.loadError = null;
-    const names = (table: TableInfo | null) => table?.columns.map((column) => column.name).join("\u0000");
-    const types = (table: TableInfo | null) => table?.columns.map((column) => column.type).join("\u0000");
+    if (names(previous) !== names(info) || types(previous) !== types(info)) {
+      this.formatters = [];
+      this.formatVersion++;
+    }
     const reset = !previous || previous.revision !== info.revision || names(previous) !== names(info);
     if (reset) {
       if (previous?.columns.length && names(previous) !== names(info)) {
@@ -814,16 +876,24 @@ export class GridController {
     return block.columns[0]?.[0] ?? null;
   }
 
-  /** Builds clipboard text from values per column. */
+  /**
+   * Builds clipboard text from values per column. With `copyValues: "raw"` (the default) cells are their
+   * values and headers the schema names; with `"formatted"` they are the shown text and the labels.
+   * A column's own `copy` setting decides for its cells.
+   */
   private clipboardText(
     columns: ColumnState[],
     values: CellValue[][],
     rows: number,
     options: { headers?: boolean; markdown?: boolean },
   ) {
-    const header = columns.map((column) => this.schema[column.index]?.name ?? "");
+    const mode = this.options.copyValues ?? "raw";
+    const formatters = columns.map((column) => this.formatterOf(column.index));
+    const header = formatters.map((formatter) => (mode === "formatted" ? formatter.label : formatter.schema.name));
     const body: string[][] = [];
-    for (let row = 0; row < rows; row++) body.push(values.map((column) => plainText(column[row] ?? null)));
+    for (let row = 0; row < rows; row++) {
+      body.push(values.map((column, index) => formatters[index].copyText(column[row] ?? null, mode)));
+    }
     if (options.markdown) return { text: toMarkdownTable(header, body), html: null, cells: rows * columns.length };
     const table = options.headers ? [header, ...body] : body;
     return { text: toTsv(table), html: toHtmlTable(table, options.headers ? 1 : 0), cells: rows * columns.length };
@@ -1131,20 +1201,51 @@ export class GridController {
     return resolved.query;
   }
 
+  /** Width that fits the header and the loaded values of a column in rows `[first, end)`. */
+  private contentWidth(state: ColumnState, first: number, end: number, blanks: boolean) {
+    if (!this.measure) return state.width;
+    const formatter = this.formatterOf(state.index);
+    let widest = this.measure(formatter.label, true) + HEADER_CHROME;
+    for (let row = first; row < Math.min(this.readableRows, end); row++) {
+      const value = this.cache.value(row, state.index);
+      if (value === undefined || (value === null && !blanks)) continue;
+      widest = Math.max(widest, this.measure(formatter.format(value), false) + 18);
+    }
+    return Math.max(this.options.minColumnWidth, Math.ceil(widest));
+  }
+
   /** Width that fits the header and the loaded values of a column. */
   fittedWidth(col: number) {
     const state = this.visible[col];
-    const schema = this.columnSchema(col);
-    if (!state || !schema || !this.measure) return state?.width ?? 120;
-    let widest = this.measure(schema.name, true) + HEADER_CHROME;
+    if (!state || !this.columnSchema(col) || !this.measure) return state?.width ?? 120;
     const [first, last] = this.visibleRows();
-    const end = Math.min(this.readableRows, Math.max(last, first + 200));
-    for (let row = first; row < end; row++) {
-      const value = this.cache.value(row, state.index);
-      if (value === undefined) continue;
-      widest = Math.max(widest, this.measure(this.formatter.format(value, schema.type), false) + 18);
+    return this.contentWidth(state, first, Math.max(last, first + 200), true);
+  }
+
+  /** The automatic width of a column: its content, at most `maxAutoWidth` (240 px for numbers). */
+  private autoWidth(state: ColumnState, first: number) {
+    const cap = this.formatterOf(state.index).numeric ? 240 : this.options.maxAutoWidth;
+    return Math.min(cap, this.contentWidth(state, first, first + 200, false));
+  }
+
+  /**
+   * Fits schema columns again after their text changed (new settings or locale), unless the user sized
+   * them. Before the first automatic sizing there is nothing to fit yet.
+   */
+  private refit(indexes: number[]) {
+    if (!this.autoSized || !this.measure) return;
+    const [first] = this.visibleRows();
+    let changed = false;
+    for (const index of indexes) {
+      const state = this.columns.find((column) => column.index === index);
+      if (!state || state.sized) continue;
+      const width = this.autoWidth(state, first);
+      if (width !== state.width) {
+        state.width = width;
+        changed = true;
+      }
     }
-    return Math.max(this.options.minColumnWidth, Math.ceil(widest));
+    if (changed) this.updateLayout();
   }
 
   autoFit(col: number) {
@@ -1178,20 +1279,9 @@ export class GridController {
     const first = this.visible[0];
     if (!first || this.cache.value(0, first.index) === undefined) return;
     this.autoSized = true;
-    this.visible.forEach((state, col) => {
-      if (state.sized) return;
-      const schema = this.schema[state.index];
-      if (!schema || !this.measure) return;
-      let widest = this.measure(schema.name, true) + HEADER_CHROME;
-      for (let row = 0; row < Math.min(this.readableRows, 200); row++) {
-        const value = this.cache.value(row, state.index);
-        if (value === undefined || value === null) continue;
-        widest = Math.max(widest, this.measure(this.formatter.format(value, schema.type), false) + 18);
-      }
-      const cap = isNumericType(schema.type) ? 240 : this.options.maxAutoWidth;
-      state.width = Math.max(this.options.minColumnWidth, Math.min(cap, Math.ceil(widest)));
-      void col;
-    });
+    for (const state of this.visible) {
+      if (!state.sized && this.schema[state.index]) state.width = this.autoWidth(state, 0);
+    }
     this.updateLayout();
     this.emit();
   }

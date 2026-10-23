@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useId, useMemo, useState } from "react";
 import {
   type CellValue,
+  type ColumnFormatter,
   type ColumnSchema,
   type ColumnType,
   type DistinctValues,
@@ -9,7 +10,6 @@ import {
   isNumericType,
   isTemporalType,
   plainText,
-  type ValueFormatter,
 } from "vastgrid-core";
 import type { Messages } from "../messages.js";
 
@@ -85,7 +85,7 @@ export function FilterPanel({
   schema: ColumnSchema;
   filter: Filter | null;
   messages: Messages;
-  formatter: ValueFormatter;
+  formatter: ColumnFormatter;
   count: (value: number) => string;
   load: (search: string, signal: AbortSignal) => Promise<DistinctValues> | null;
   onApply: (filter: Filter | null) => void;
@@ -205,7 +205,7 @@ export function FilterPanel({
   return (
     <form className="vg-filter" onSubmit={apply}>
       <p className="vg-panel__title" id={`${id}-title`}>
-        {messages.filterBy(schema.name)}
+        {messages.filterBy(formatter.label)}
       </p>
       <input
         type="search"
@@ -238,7 +238,7 @@ export function FilterPanel({
               disabled={condition.operator !== "none"}
             />
             <span className="vg-check__label">
-              {item.value === null || item.value === "" ? messages.blank : formatter.format(item.value, schema.type)}
+              {item.value === null || item.value === "" ? messages.blank : formatter.format(item.value)}
             </span>
             <span className="vg-check__count">{count(item.count)}</span>
           </label>

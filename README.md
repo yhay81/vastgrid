@@ -124,6 +124,8 @@ rows.
 | `statusBar` | `boolean` | `true` | Shows the active cell and the selection summary. |
 | `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. |
 | `copyLimit` | `number` | `1000000` | Cells that can be copied at once. |
+| `columnFormats` | `Record<string, ColumnFormat>` | | Display settings by schema column name: label, number and date formats, alignment, a format function. |
+| `copyValues` | `"raw" \| "formatted"` | `"raw"` | Copy the values with the schema names, or the shown text with the labels. |
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | Called when the selection or the active cell changes. |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | Called when the columns' width, order, visibility or freezing change. |
@@ -159,6 +161,26 @@ const grid = useRef<DataGridHandle>(null);
 // Largest values of the third column first, only rows that contain "Tokyo".
 grid.current?.setQuery({ sort: [{ column: 2, direction: "desc" }], search: "Tokyo" });
 ```
+
+### Column formats
+
+`columnFormats` sets how columns look, by their schema names. The settings change only what is shown:
+sorting, filters, search, statistics and exports work on the values themselves, and 64-bit integers
+and decimals keep all their digits.
+
+```tsx
+const formats: Record<string, ColumnFormat> = {
+  price: { label: "Price", number: { style: "currency", currency: "USD" } },
+  share: { number: { style: "percent", fractionDigits: 1 } },
+  ordered_at: { label: "Ordered", date: { pattern: "yyyy/MM/dd HH:mm" } },
+  status: { align: "center", format: (value, { text }) => (value === "ok" ? "✓" : text) },
+};
+
+<DataGrid source={source} columnFormats={formats} />;
+```
+
+Copies hold the values and the schema names unless `copyValues="formatted"` (or a column's `copy`
+setting) asks for the shown text and the labels. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#column-formats).
 
 ## Performance
 

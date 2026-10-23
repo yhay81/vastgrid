@@ -25,6 +25,8 @@ import "vastgrid/styles.css";
 | `statusBar` | `boolean` | `true` | Shows the active cell and the selection summary. |
 | `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. |
 | `copyLimit` | `number` | `1000000` | Cells that can be copied at once. |
+| `columnFormats` | `Record<string, ColumnFormat>` | | Display settings by schema column name: label, number and date formats, alignment, a format function. |
+| `copyValues` | `"raw" \| "formatted"` | `"raw"` | Copy the values with the schema names, or the shown text with the labels. |
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | Called when the selection or the active cell changes. See [Events](#events). |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | Called when the columns' width, order, visibility or freezing change. |
@@ -175,6 +177,59 @@ function read(text: string | null) {
 
 `renderer.timings()` returns `{ frames, average, slowest }` in milliseconds over the last 120 frames
 drawn. The [demo](/demo/) shows it in its toolbar.
+
+## Column formats
+
+`columnFormats` sets how columns look, by their schema names (`ColumnSchema.name`). Columns without an
+entry look as before.
+
+```tsx
+import { type ColumnFormat, DataGrid } from "vastgrid";
+
+// Outside the component, or memoized: a new object is compared again, and a new function redraws.
+const formats: Record<string, ColumnFormat> = {
+  price: { label: "Price", number: { style: "currency", currency: "USD" } },
+  cost: { label: "Cost", number: { style: "currency", currency: "USD", fractionDigits: 0 } },
+  share: { number: { style: "percent", fractionDigits: 1 } },
+  weight: { number: { maximumFractionDigits: 2, suffix: " kg" } },
+  ordered_at: { label: "Ordered", date: { pattern: "yyyy/MM/dd HH:mm" } },
+  shipped_at: { date: { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Tokyo" } },
+  status: { align: "center", format: (value, { text }) => (value === "ok" ? "✓" : text) },
+};
+
+<DataGrid source={source} columnFormats={formats} />;
+```
+
+| Setting | Description |
+| --- | --- |
+| `label` | Shown in the header, the menus, the panels and the status bar instead of the schema name. |
+| `number` | For numbers and numeric strings: `style` (`decimal`, `percent`, `currency` with `currency`), `currencyDisplay`, `fractionDigits` (or `minimumFractionDigits` and `maximumFractionDigits`), `grouping`, `notation`, `signDisplay`, `prefix` and `suffix`. Text that is not a number keeps its text. |
+| `date` | For dates and times: a `pattern`, or `Intl.DateTimeFormat` options (`dateStyle`, `timeStyle`, `year`, `month`, `day`, `hour`, …). `timeZone` is where values with an offset (`timestamptz`) are shown; values without one are shown as they are. Text that is not a date keeps its text. |
+| `align` | `left`, `center` or `right`. Defaults to `right` for numbers. |
+| `format(value, { column, text })` | Returns the text of a value. `text` is what the other settings make. The result is shown in one line. |
+| `copy` | `raw` or `formatted`: overrides `copyValues` for the column's cells. |
+
+Patterns use `yyyy` `yy` (year), `M` `MM` `MMM` `MMMM` (month), `d` `dd` (day), `EEE` `EEEE` (weekday),
+`H` `HH` (0–23), `h` `hh` with `a` (1–12 and AM/PM), `m` `mm`, `s` `ss`, and `S`, `SS`, `SSS`… (fraction
+digits). Text in single quotes is kept: `yyyy-MM-dd 'at' HH:mm`. Month and weekday names follow
+`locale`.
+
+**Values and shown text.** The settings change only what is shown. Sorting, filters (also the values
+typed into a condition), search, finding, column statistics, the selection summary and exports work on
+the values: a percent column filtered with "> 0.5" keeps the values above 50%. 64-bit integers and
+decimals that arrive as strings are formatted from their digits, never through a JavaScript number, so
+`"9007199254740993"` stays exact. The cell inspector shows the value and, below it, the shown text.
+
+**Copying.** By default copies (TSV, HTML and Markdown) hold the values, as `plainText` writes them, with
+the schema names as headers, so that a spreadsheet reads numbers and dates. `copyValues="formatted"`
+copies the shown text in full (not cut, line breaks kept) with the labels; a column's `copy` setting
+decides for its own cells. Exports (`exportView`) are written by the source and always hold the values
+and the schema names.
+
+Invalid settings, such as a currency style without `currency` or an unknown time zone, throw a
+`RangeError` as soon as the grid receives them. `ColumnFormatter` (made by `ValueFormatter.column(schema,
+format)`, and `controller.formatterOf(index)` in the grid) formats values with the settings outside the
+grid, and keeps them in `settings`.
 
 ## Exports
 

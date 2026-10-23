@@ -7,12 +7,15 @@ import type { Messages } from "../messages.js";
 export function ColumnsPanel({
   columns,
   schema,
+  labelOf,
   messages,
   onToggle,
   onShowAll,
 }: {
   columns: ColumnState[];
   schema: ColumnSchema[];
+  /** The name shown for a schema column. */
+  labelOf: (index: number) => string;
   messages: Messages;
   onToggle: (index: number, hidden: boolean) => void;
   onShowAll: () => void;
@@ -21,7 +24,10 @@ export function ColumnsPanel({
   const needle = search.trim().toLowerCase();
   const visibleCount = columns.filter((column) => !column.hidden).length;
   const shown = columns.filter(
-    (column) => !needle || (schema[column.index]?.name ?? "").toLowerCase().includes(needle),
+    (column) =>
+      !needle ||
+      (schema[column.index]?.name ?? "").toLowerCase().includes(needle) ||
+      labelOf(column.index).toLowerCase().includes(needle),
   );
   return (
     <div className="vg-columns">
@@ -44,7 +50,7 @@ export function ColumnsPanel({
               disabled={!column.hidden && visibleCount <= 1}
               onChange={(event) => onToggle(column.index, !event.target.checked)}
             />
-            <span className="vg-check__label">{schema[column.index]?.name}</span>
+            <span className="vg-check__label">{labelOf(column.index)}</span>
             <span className="vg-check__count">{messages.types[schema[column.index]?.type ?? "unknown"]}</span>
           </label>
         ))}

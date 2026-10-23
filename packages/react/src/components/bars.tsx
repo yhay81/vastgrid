@@ -76,7 +76,7 @@ export function Toolbar({
               sort
                 .map(
                   (key) =>
-                    `${controller.schema[key.column]?.name ?? key.column} ${key.direction === "asc" ? "↑" : "↓"}`,
+                    `${controller.schema[key.column] ? controller.columnLabel(key.column) : key.column} ${key.direction === "asc" ? "↑" : "↓"}`,
                 )
                 .join(", "),
             )}
@@ -93,7 +93,8 @@ export function Toolbar({
         </span>
       )}
       {filters.map((filter) => {
-        const label = filterLabel(filter, controller.schema[filter.column], controller.formatter, messages);
+        const formatter = controller.schema[filter.column] ? controller.formatterOf(filter.column) : undefined;
+        const label = filterLabel(filter, formatter, messages);
         return (
           <span className="vg-chip vg-chip--filter" key={filter.column}>
             <span title={label}>{label}</span>
@@ -143,7 +144,7 @@ export function StatusBar({ controller, messages }: { controller: GridController
     <div className="vg-statusbar">
       {controller.rowCount > 0 && schema && (
         <span className="vg-statusbar__cell">
-          {messages.cell(count(active.row + 1), schema.name)}
+          {messages.cell(count(active.row + 1), controller.columnLabel(controller.visible[active.col].index))}
           {controller.view.id !== null && label !== null && (
             <span className="vg-statusbar__muted"> · {messages.originalRow(count(label))}</span>
           )}
