@@ -50,7 +50,9 @@ async function answer(
       return { table: table.id, ...info };
     }
     case "view":
-      return engine.get(request.table).createView(request.query, signal);
+      return engine.get(request.table).createView(request.query, signal, { preview: request.preview === true });
+    case "status":
+      return engine.get(request.table).viewInfo(request.view);
     case "rows":
       return engine.get(request.table).readRows(request, signal);
     case "stats":

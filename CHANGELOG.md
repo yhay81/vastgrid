@@ -27,6 +27,20 @@
   combinations are refused with a message and `CopyRangesError`. `copyLimit` counts all ranges, cells
   that are not loaded are read, and Escape cancels a copy that is still reading.
 - `vastgrid-core`: `copyLayout(ranges)` gives the rows and columns that a copy of several ranges writes.
+- `vastgrid-duckdb`: sorts of tables with at least `viewPreviewMinRows` rows (1M by default) answer
+  requests that accept a preview with their first `viewPreviewRows` rows (1,000), read with a top-N
+  query in the order of the finished view (ties broken by the position in the file), and build the rest
+  of the view in the background. Builds that nobody follows stop when another view of the table waits
+  (`abandonedViewTimeout`). While a view builds, rows past the first ones, `find`, `export`, summaries
+  past the first rows and the statistics of filtered views answer `not_ready`.
+- `vastgrid-core`: the protocol's `view` request takes `preview`, a new `status` request returns the
+  state of a view, and `ViewInfo` has `status`, `readableRows` and `error`. `TableSource.createView`
+  takes `{ preview }` and sources may implement `viewInfo`; `RemoteSource` does both, and recreates a
+  forgotten view as a preview.
+- `vastgrid`: a sort shows its first rows as soon as the source has them ("Sorting… showing the first
+  1,000 of 100,000,000 rows") and the rest once the view is ready, without moving the rows shown.
+  Copies past the first rows and find say that they wait for the sort, the selection summary waits, and
+  statistics of a filtered view are disabled until then. `ViewBuildingError` is exported.
 
 ## 0.1.1 — 2026-10-23
 

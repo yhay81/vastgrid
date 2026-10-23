@@ -231,7 +231,9 @@ flowchart LR
   1,000 rows are served from a preview while the file loads. Parquet files are read in place by row
   position. Shift_JIS, EUC-JP and BOM-marked UTF-16 (both byte orders) are converted to UTF-8 first. Sorting and filtering
   build a view: a sorted copy for tables up to 20M rows (2 ms windows), or only the order of the rows
-  for larger ones (seconds instead of minutes, and a fraction of the temporary space).
+  for larger ones (seconds instead of minutes, and a fraction of the temporary space). Sorts of tables
+  with 1M rows or more show their first 1,000 rows in about a second, from a top-N query in the order of
+  the finished view, while the rest is built in the background.
 - **Protocol.** `RemoteSource` speaks a small JSON protocol (see [docs/protocol.md](docs/protocol.md)).
   It reopens tables and recreates views when the server forgets them, for example after a restart.
 
@@ -286,7 +288,6 @@ npm run bench
 - A browser-only engine (DuckDB-WASM or hyparquet in a worker) for apps without a server.
 - Editing cells, with CSV write-back that keeps untouched rows byte for byte.
 - Formula columns.
-- Showing the first rows of a sort of 100M+ rows while the rest is ordered.
 - Excel (`.xlsx`) input.
 
 See [docs/research.ja.md](docs/research.ja.md) (Japanese) for the survey of existing viewers and grids

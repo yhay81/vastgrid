@@ -14,6 +14,7 @@ import type {
   SelectionSummary,
   TableInfo,
   ViewInfo,
+  ViewOptions,
   ViewQuery,
 } from "./types.js";
 
@@ -62,7 +63,7 @@ export class RemoteSource implements TableSource {
   private table: string | null = null;
   private opening: Promise<InfoResult> | null = null;
   /** Queries of the views created so far, to recreate them after the server forgets them. */
-  private readonly queries = new Map<string, ViewQuery>();
+  private readonly queries = new Map<string, { query: ViewQuery; preview: boolean }>();
   /** View ids issued to callers → current ids on the server. */
   private readonly aliases = new Map<string, string>();
   private readonly recreating = new Map<string, Promise<string>>();
@@ -151,11 +152,12 @@ export class RemoteSource implements TableSource {
   private recreate(view: string): Promise<string> {
     let pending = this.recreating.get(view);
     if (!pending) {
-      const query = this.queries.get(view);
-      if (!query) return Promise.reject(new SourceError(ErrorCodes.viewNotFound, "The view no longer exists.", 404));
+      const known = this.queries.get(view);
+      if (!known) return Promise.reject(new SourceError(ErrorCodes.viewNotFound, "The view no longer exists.", 404));
+      const { query, preview } = known;
       pending = (async () => {
         const table = await this.tableHandle();
-        const created = await this.post<ViewInfo>({ op: "view", table, query });
+        const created = await this.post<ViewInfo>({ op: "view", table, query, ...(preview ? { preview } : {}) });
         if (created.id === null)
           throw new SourceError(ErrorCodes.viewNotFound, "The view could not be recreated.", 404);
         this.aliases.set(view, created.id);
@@ -197,17 +199,25 @@ export class RemoteSource implements TableSource {
     }
   }
 
-  async createView(query: ViewQuery, signal?: AbortSignal): Promise<ViewInfo> {
+  async createView(query: ViewQuery, signal?: AbortSignal, options?: ViewOptions): Promise<ViewInfo> {
     if (isEmptyQuery(query)) {
       const info = await this.info(signal);
       return { id: null, rowCount: info.rowCount ?? info.readableRows, query: {} };
     }
-    const created = await this.call<ViewInfo>("view", { query } satisfies Operation<"view">, signal);
+    const preview = options?.preview === true;
+    const fields: Operation<"view"> = { query, ...(preview ? { preview } : {}) };
+    const created = await this.call<ViewInfo>("view", fields, signal);
     if (created.id !== null) {
-      this.queries.set(created.id, query);
+      this.queries.set(created.id, { query, preview });
       this.aliases.set(created.id, created.id);
     }
     return created;
+  }
+
+  /** The view's state on the server. A view the server forgot is created again under the same id. */
+  async viewInfo(view: string, signal?: AbortSignal): Promise<ViewInfo> {
+    const result = await this.call<ViewInfo>("status", { view } satisfies Operation<"status">, signal);
+    return { ...result, id: view };
   }
 
   readRows(request: RowRequest, signal?: AbortSignal): Promise<RowBlock> {

@@ -458,3 +458,85 @@ test("a query that only sorts keeps every row; filters and a search leave rows o
   assert.equal(filtersRows({ search: "Tokyo" }), true);
   assert.equal(filtersRows({ filters: [{ type: "blank", column: 0, blank: true }] }), true);
 });
+
+test("protocol requests carry the preview of a view and ask for its status", () => {
+  const query = { sort: [{ column: 0, direction: "asc" }] };
+  assert.deepEqual(parseProtocolRequest({ op: "view", table: "t", query, preview: true }), {
+    op: "view",
+    table: "t",
+    query,
+    preview: true,
+  });
+  assert.deepEqual(parseProtocolRequest({ op: "view", table: "t", query, preview: false }), {
+    op: "view",
+    table: "t",
+    query,
+  });
+  assert.throws(() => parseProtocolRequest({ op: "view", table: "t", query, preview: 1 }), /preview/);
+  assert.deepEqual(parseProtocolRequest({ op: "status", table: "t", view: "v1" }), {
+    op: "status",
+    table: "t",
+    view: "v1",
+  });
+  assert.throws(() => parseProtocolRequest({ op: "status", table: "t", view: 3 }));
+});
+
+test("remote source asks for previews, polls views and recreates forgotten ones as previews", async () => {
+  const backend = people();
+  const requests: Record<string, unknown>[] = [];
+  let ready = false;
+  let forget = false;
+  let next = 1;
+  const views = new Map<string, ViewQuery>();
+  const fakeFetch = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    requests.push(body);
+    const reply = (status: number, payload: unknown) => new Response(JSON.stringify(payload), { status });
+    const state = (id: string) => ({
+      id,
+      rowCount: 5,
+      query: views.get(id),
+      status: ready ? "ready" : "building",
+      readableRows: ready ? 5 : 2,
+    });
+    if (body.op === "info") return reply(200, { result: { table: "t1", ...(await backend.info()) } });
+    if (body.op === "view") {
+      const id = `s${next++}`;
+      views.set(id, body.query);
+      return reply(200, { result: state(id) });
+    }
+    if (body.op === "status") {
+      if (forget || !views.has(body.view)) {
+        forget = false;
+        views.clear();
+        return reply(404, { error: { code: "view_not_found", message: "gone" } });
+      }
+      return reply(200, { result: state(body.view) });
+    }
+    return reply(400, { error: { code: "invalid_request", message: "?" } });
+  }) as typeof fetch;
+  const source = new RemoteSource({ endpoint: "/api", ref: "a.csv", fetch: fakeFetch });
+  const query: ViewQuery = { sort: [{ column: 1, direction: "desc" }] };
+  const view = await source.createView(query, undefined, { preview: true });
+  assert.equal(view.status, "building");
+  assert.equal(view.readableRows, 2);
+  assert.equal(requests.at(-1)?.preview, true);
+  assert.equal((await source.viewInfo(view.id as string)).status, "building");
+  // The server forgets the view: it is created again, still as a preview, under the caller's id.
+  forget = true;
+  ready = true;
+  const polled = await source.viewInfo(view.id as string);
+  assert.deepEqual(
+    requests.slice(-3).map((request) => [request.op, request.preview, request.view]),
+    [
+      ["status", undefined, view.id],
+      ["view", true, undefined],
+      ["status", undefined, "s2"],
+    ],
+  );
+  assert.equal(polled.id, view.id);
+  assert.equal(polled.status, "ready");
+  // Without the option, nothing asks for a preview.
+  await source.createView({ sort: [{ column: 0, direction: "asc" }] });
+  assert.equal(requests.at(-1)?.preview, undefined);
+});

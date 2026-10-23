@@ -1,5 +1,6 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { isAbortError } from "vastgrid-core";
+import { ViewBuildingError } from "../controller.js";
 import type { Messages } from "../messages.js";
 
 /** Find in the table (⌘F / Ctrl+F): moves the active cell to each match, wrapping at the ends. */
@@ -16,7 +17,7 @@ export function FindBar({
 }) {
   const [text, setText] = useState(initial);
   const [caseSensitive, setCaseSensitive] = useState(false);
-  const [status, setStatus] = useState<"idle" | "searching" | "notFound">("idle");
+  const [status, setStatus] = useState<"idle" | "searching" | "notFound" | "waitForSort">("idle");
   const input = useRef<HTMLInputElement>(null);
   const pending = useRef<AbortController | null>(null);
 
@@ -35,7 +36,8 @@ export function FindBar({
       const found = await onFind(text, direction, caseSensitive, controller.signal);
       if (!controller.signal.aborted) setStatus(found || !text ? "idle" : "notFound");
     } catch (error) {
-      if (!controller.signal.aborted && !isAbortError(error)) setStatus("notFound");
+      if (!controller.signal.aborted && !isAbortError(error))
+        setStatus(error instanceof ViewBuildingError ? "waitForSort" : "notFound");
     }
   }
 
@@ -65,7 +67,13 @@ export function FindBar({
         onKeyDown={onKeyDown}
       />
       <span className="vg-find__status" role="status">
-        {status === "searching" ? messages.searching : status === "notFound" ? messages.notFound : ""}
+        {status === "searching"
+          ? messages.searching
+          : status === "notFound"
+            ? messages.notFound
+            : status === "waitForSort"
+              ? messages.waitForSort
+              : ""}
       </span>
       <button
         type="button"

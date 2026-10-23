@@ -11,7 +11,10 @@ import type { AggregateRange, CellValue, ExportFormat, Filter, SortKey, TableInf
  */
 export type ProtocolRequest =
   | { op: "info"; ref: string; table?: string }
-  | { op: "view"; table: string; query: ViewQuery }
+  /** With `preview`, the server may answer with a view that is still building (see `ViewInfo.status`). */
+  | { op: "view"; table: string; query: ViewQuery; preview?: boolean }
+  /** The current state of a view, for polling while it is building. */
+  | { op: "status"; table: string; view: string | null }
   | {
       op: "rows";
       table: string;
@@ -59,7 +62,7 @@ export const ErrorCodes = {
   tableNotFound: "table_not_found",
   /** The view handle is unknown. Recreate the view. */
   viewNotFound: "view_not_found",
-  /** The table is still loading and cannot answer this yet. */
+  /** The table is still loading, or the view is still building, and cannot answer this yet. */
   notReady: "not_ready",
   /**
    * The client went away, or the server closed the table while the request ran (for example because the
@@ -89,6 +92,7 @@ export const ErrorCodes = {
 const operations = new Set<ProtocolOperation>([
   "info",
   "view",
+  "status",
   "rows",
   "stats",
   "distinct",
@@ -250,8 +254,12 @@ export function parseProtocolRequest(body: unknown): ProtocolRequest {
   }
   const table = string(body.table, "table", 128);
   switch (op as Exclude<ProtocolOperation, "info">) {
-    case "view":
-      return { op: "view", table, query: query(body.query) };
+    case "view": {
+      if (body.preview !== undefined && typeof body.preview !== "boolean") fail("preview must be a boolean");
+      return { op: "view", table, query: query(body.query), ...(body.preview ? { preview: true } : {}) };
+    }
+    case "status":
+      return { op: "status", table, view: view(body.view) };
     case "rows": {
       const start = index(body.start, "start");
       const end = index(body.end, "end");

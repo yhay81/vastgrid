@@ -15,8 +15,13 @@ grid does not change what a source is asked for. Ranges are `[start, end)`.
 interface TableSource {
   /** Opens the table on the first call and returns its current state. Polled while `status` is `loading`. */
   info(signal?: AbortSignal): Promise<TableInfo>;
-  /** Creates a sorted or filtered view. An empty query returns the table itself (`id: null`). */
-  createView(query: ViewQuery, signal?: AbortSignal): Promise<ViewInfo>;
+  /**
+   * Creates a sorted or filtered view. An empty query returns the table itself (`id: null`). With
+   * `options.preview`, the view may still be building (`status: "building"`).
+   */
+  createView(query: ViewQuery, signal?: AbortSignal, options?: { preview?: boolean }): Promise<ViewInfo>;
+  /** The current state of a view, polled while its `status` is `building`. */
+  viewInfo?(view: string, signal?: AbortSignal): Promise<ViewInfo>;
   readRows(request: RowRequest, signal?: AbortSignal): Promise<RowBlock>;
   columnStats?(view: string | null, column: number, signal?: AbortSignal): Promise<ColumnStats>;
   distinctValues?(request: DistinctRequest, signal?: AbortSignal): Promise<DistinctValues>;
@@ -132,11 +137,22 @@ type Filter =
   | { type: "blank"; column: number; blank: boolean };
 
 interface ViewInfo {
-  id: string | null; // null: the table in its original order
-  rowCount: number;
+  id: string | null;      // null: the table in its original order
+  rowCount: number;       // also while the view is building
   query: ViewQuery;
+  status?: "building" | "ready" | "error"; // absent: ready
+  readableRows?: number;  // rows readable now, from the start; absent: rowCount
+  error?: string;         // why the build failed
 }
 ```
+
+The grid asks for views with `{ preview: true }`. A source may then answer a sort before every row is
+ordered: `status: "building"` with the first `readableRows` rows, which must already be the first rows of
+the finished view (break ties by the position in the table). The grid shows them right away, polls
+`viewInfo` (or, without it, calls `createView` once more without the option, which waits), and makes the
+rest readable once the view is `ready`. Until then, rows past `readableRows` show as loading; selecting and
+scrolling work on every row, but copies and selection summaries that reach past them, find, and the
+statistics of a view that filters wait. A source that ignores the option answers once the view is ready.
 
 ## Rows
 

@@ -26,6 +26,9 @@ const engine = await TableEngine.create(options: TableEngineOptions);
 | `maxTables` | `4` | 開いたままにする表の数。これを超えると、最も長く使っていない表から閉じます。 |
 | `maxViews` | `2` | 表ごとに残す、並べ替え・絞り込みしたビューの数。 |
 | `materializeRows` | `20000000` | これより行が多い表では、ビューは並べ替えた複製ではなく、行の順番を持ちます。 |
+| `viewPreviewMinRows` | `1000000` | この行数以上の表の並べ替えでは、ビュー全体を作り終える前に先頭の行を表示します（後述）。 |
+| `viewPreviewRows` | `1000` | そうした並べ替えで、ビューの完成前に読める行の数。 |
+| `abandonedViewTimeout` | `3000` | 表のほかのビューが順番を待っていて、このビューがこのミリ秒数のあいだ求められなかったとき、背景での作成をやめます。 |
 | `previewRows` | `1000` | 区切りのテキストや JSON のファイルの読み込み中に読める行の数。 |
 | `textLimit` | `2000` | 既定でセルごとに送る文字列の最大の長さ。 |
 | `log` | | `(message, error?) => void`。要求が原因ではない問題を受け取ります。 |
