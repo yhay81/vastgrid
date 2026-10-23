@@ -22,4 +22,4 @@ const source = new RemoteSource({ endpoint: "/api/table", ref: "sales.parquet" }
 </div>;
 ```
 
-Documentation, benchmarks and the server setup: https://github.com/yhay81/vastgrid
+Documentation and a live demo: https://vastgrid.yhay81.com

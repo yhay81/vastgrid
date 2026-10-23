@@ -6,9 +6,9 @@
 
 数 GB・数億行の CSV・TSV・Parquet・JSON Lines を開けて、表計算ソフトのように扱える React のデータグリッドです。
 
-[English](README.md)
+**[デモを試す](https://vastgrid.yhay81.com/ja/demo/)** · [ドキュメント](https://vastgrid.yhay81.com/ja/) · [English](README.md)
 
-![1 億行の Parquet を絞り込み・並べ替えし、列の統計と選択範囲の集計を表示した画面](docs/images/playground.jpg)
+[![1 億行の Parquet を絞り込み・並べ替えし、列の統計と選択範囲の集計を表示した画面](docs/images/playground.jpg)](https://vastgrid.yhay81.com/ja/demo/)
 
 - **どんな大きさでも開ける。** 行はスクロールに合わせて、まとまりごとに読みます。1.4 GB・1 億行の Parquet は 20 ms で開き、
   735 MB の CSV は読み込みの途中でも 0.15 秒で最初の行を表示します。
@@ -201,6 +201,7 @@ DuckDB の処理を含み、HTTP は含みません。
 ```sh
 npm install
 npm run dev        # お試し画面 http://127.0.0.1:5174（examples/playground/.data のファイル）
+npm run dev -w vastgrid-site   # ドキュメントとデモ http://localhost:4321
 npm run generate -w vastgrid-playground   # 見本のファイル。--large で 1 億行も作る
 npm test
 npm run lint

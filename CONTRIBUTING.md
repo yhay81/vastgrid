@@ -19,10 +19,11 @@ You need Node.js 20 or later and npm. CI checks with the version in `.nvmrc`.
 npm install
 npm run generate -w vastgrid-playground   # sample files in examples/playground/.data, add --large for 100M rows
 npm run dev                               # playground at http://127.0.0.1:5174
+npm run dev -w vastgrid-site              # documentation and demo at http://localhost:4321
 ```
 
-The playground runs the packages from their TypeScript sources (the `vastgrid-source` export condition), so
-edits to them apply without building.
+The playground and the site run the packages from their TypeScript sources (the `vastgrid-source` export
+condition), so edits to them apply without building.
 
 | Folder | Contents |
 | --- | --- |
@@ -30,7 +31,8 @@ edits to them apply without building.
 | `packages/react` | `vastgrid`: the `DataGrid` component, its canvas renderer, menus and panels, and the built-in texts. |
 | `packages/duckdb` | `vastgrid-duckdb`: `TableEngine`, the request handler and the benchmark. |
 | `examples/playground` | A Vite app with a table server, for trying changes. |
-| `docs` | The table protocol. |
+| `site` | The documentation and the demo at https://vastgrid.yhay81.com (Astro Starlight), in English and Japanese. |
+| `docs` | The table protocol, which the site also shows. |
 | `scripts` | Build and release helpers. |
 
 ## Checks
@@ -42,6 +44,7 @@ npm run lint        # Biome; npm run format fixes what it can
 npm run typecheck
 npm test
 npm run build
+npm run build -w vastgrid-site   # when you changed the site, docs/ or the grid
 ```
 
 Tests use `node:test` and live in `packages/*/test/*.test.ts`. A bug fix comes with a test that fails
@@ -58,7 +61,8 @@ affect speed, run `npm run bench` before and after and put both results in the p
 - New texts in the grid go into `packages/react/src/messages.ts` in both English and Japanese.
 - Changes that users notice get a line under "Unreleased" in [CHANGELOG.md](CHANGELOG.md), starting with
   the package name.
-- Changes to the API or the features update both [README.md](README.md) and [README.ja.md](README.ja.md).
+- Changes to the API or the features update both [README.md](README.md) and [README.ja.md](README.ja.md), and
+  the matching pages of the site in `site/src/content/docs` (English) and `site/src/content/docs/ja`.
 - Commit messages start with a short summary in the imperative ("Fix …", "Add …"). Larger commits list
   their changes by package in the body.
 
@@ -78,8 +82,8 @@ git push origin main v0.1.1
 ```
 
 The first command sets the version of the three packages, the `vastgrid-core` that the others depend on and
-the playground's dependencies, turns "Unreleased" in [CHANGELOG.md](CHANGELOG.md) into the version and
-today's date, and updates `package-lock.json`. Look over the diff and run the checks before you commit.
+the dependencies of the playground and the site, turns "Unreleased" in [CHANGELOG.md](CHANGELOG.md) into the
+version and today's date, and updates `package-lock.json`. Look over the diff and run the checks before you commit.
 
 The tag starts the [Release workflow](.github/workflows/release.yml). It checks that the packages and
 CHANGELOG.md are at the tag's version, runs the checks, publishes `vastgrid-core`, `vastgrid-duckdb` and
@@ -99,6 +103,18 @@ Only the Release workflow can publish, and it needs no npm token:
   publishing access to require two-factor authentication and disallow tokens.
 - On GitHub, in Settings → Environments, create `npm` and limit its deployments to tags matching `v*`.
   Required reviewers there make each release wait for an approval.
+
+## The site
+
+The [Site workflow](.github/workflows/site.yml) builds the site for pull requests and deploys `main` to
+https://vastgrid.yhay81.com, a Cloudflare Worker with static assets (`site/wrangler.jsonc`). It needs an
+API token in the `CLOUDFLARE_API_TOKEN` secret, made from Cloudflare's "Edit Cloudflare Workers" template
+with `yhay81.com` in its zone resources. To deploy by hand:
+
+```sh
+npm run build -w vastgrid-site
+npm run deploy -w vastgrid-site   # wrangler deploy; sign in with `npx wrangler login` first
+```
 
 ## License
 

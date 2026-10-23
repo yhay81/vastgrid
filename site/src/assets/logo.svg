@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <title>vastgrid</title>
+  <rect x="3" y="3" width="26" height="26" rx="4" fill="#0b57d0"/>
+  <path d="M3 11h26M3 18h26M3 25h26M12 3v26M21 3v26" stroke="#fff" stroke-opacity=".55" stroke-width="1.5"/>
+  <rect x="12" y="11" width="9" height="7" fill="#fff" fill-opacity=".9"/>
+</svg>

@@ -4,3 +4,10 @@ dist/
 .data/
 .DS_Store
 *.log
+
+# The site's copies of docs/protocol.md and the screenshot (site/astro.config.ts), and Astro's and Wrangler's
+# local state
+site/src/content/docs/reference/protocol.md
+site/public/og.jpg
+site/.astro/
+site/.wrangler/

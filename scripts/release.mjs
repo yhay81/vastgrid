@@ -7,7 +7,8 @@ import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
 const packages = ["packages/core", "packages/duckdb", "packages/react"];
-const playground = "examples/playground/package.json";
+// Private workspaces that depend on the packages.
+const apps = ["examples/playground/package.json", "site/package.json"];
 const commands = { version: setVersion, check, notes: () => process.stdout.write(`${section()}\n`) };
 
 const [command, version] = process.argv.slice(2);
@@ -25,13 +26,15 @@ function setVersion() {
     if (manifest.dependencies?.["vastgrid-core"]) manifest.dependencies["vastgrid-core"] = `^${version}`;
     writeJson(`${dir}/package.json`, manifest);
   }
-  // With another version, npm would install the playground's vastgrid packages from the registry instead of
-  // linking the workspace.
-  const manifest = readJson(playground);
-  for (const name of Object.keys(manifest.dependencies)) {
-    if (name.startsWith("vastgrid")) manifest.dependencies[name] = version;
+  // With another version, npm would install the apps' vastgrid packages from the registry instead of linking the
+  // workspace.
+  for (const app of apps) {
+    const manifest = readJson(app);
+    for (const name of Object.keys(manifest.dependencies)) {
+      if (name.startsWith("vastgrid")) manifest.dependencies[name] = version;
+    }
+    writeJson(app, manifest);
   }
-  writeJson(playground, manifest);
   writeFileSync("CHANGELOG.md", changelog.replace("\n## Unreleased\n", `\n## ${version} — ${today()}\n`));
   execSync("npm install --package-lock-only --ignore-scripts", { stdio: "inherit" });
 }

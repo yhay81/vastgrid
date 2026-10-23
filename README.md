@@ -7,9 +7,9 @@
 A data grid for React that opens CSV, TSV, Parquet and JSON Lines files of any size — gigabytes,
 hundreds of millions of rows — and works like a spreadsheet.
 
-[日本語](README.ja.md)
+**[Try the demo](https://vastgrid.yhay81.com/demo/)** · [Documentation](https://vastgrid.yhay81.com) · [日本語](README.ja.md)
 
-![A 100-million-row Parquet file filtered and sorted, with column statistics and a selection summary](docs/images/playground.jpg)
+[![A 100-million-row Parquet file filtered and sorted, with column statistics and a selection summary](docs/images/playground.jpg)](https://vastgrid.yhay81.com/demo/)
 
 - **Any size.** Rows are read as you scroll, a block at a time. A 1.4 GB Parquet file with 100 million
   rows opens in 20 ms; the first rows of a 735 MB CSV appear in 0.15 s while the rest loads.
@@ -232,6 +232,7 @@ See [`packages/react/src/styles.css`](packages/react/src/styles.css) for the ful
 ```sh
 npm install
 npm run dev        # playground at http://127.0.0.1:5174 (files in examples/playground/.data)
+npm run dev -w vastgrid-site   # documentation and demo at http://localhost:4321
 npm run generate -w vastgrid-playground   # sample files, add --large for 100M rows
 npm test
 npm run lint

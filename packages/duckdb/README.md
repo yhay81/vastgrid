@@ -15,4 +15,4 @@ export const POST = createTableHandler({ engine: () => engine, resolve: (ref) =>
   while the engine runs. `resolve` is where you check what a client may open.
 - `@duckdb/node-api` is a native module: keep it out of server bundles and ship its platform package.
 
-See the main README for details and benchmarks.
+Setup, options and security: https://vastgrid.yhay81.com/guides/server/

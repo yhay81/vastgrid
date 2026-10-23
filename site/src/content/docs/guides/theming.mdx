@@ -1,0 +1,81 @@
+---
+title: Theming
+description: Restyle the grid with CSS custom properties, which the canvas reads as well.
+---
+
+import { ThemedGrid } from "../../../components/examples.tsx";
+
+Every color, font and size is a CSS custom property on `.vg-root`, the grid's root element. The canvas
+reads them too, so a few lines of CSS restyle the cells, the headers, the menus and the panels alike:
+
+```css
+.my-app .vg-root {
+  --vg-font-family: "Inter", sans-serif;
+  --vg-bg: var(--surface);
+  --vg-fg: var(--text);
+  --vg-accent: var(--brand);
+  --vg-selection-bg: color-mix(in srgb, var(--brand) 15%, transparent);
+}
+```
+
+Each of these presets is a class with a handful of properties
+([their CSS](https://github.com/yhay81/vastgrid/blob/main/site/src/styles/docs.css)), passed to the grid
+as `className`:
+
+<ThemedGrid client:only="react" />
+
+## Light and dark
+
+The default colors use `light-dark()`, so they follow the `color-scheme` of the page or of any element
+around the grid. Set `color-scheme: light`, `dark` or `light dark` where your app chooses its theme, and
+the grid follows, also when it changes while the grid is open. In your own colors, use `light-dark()`
+the same way, or set the properties under your dark theme's selector.
+
+In forced-colors mode (Windows high contrast), the grid uses the system colors.
+
+## When the grid reads them
+
+The grid reads the properties when it mounts, when its `className` or `style` change, when the
+`class`, `style` or `data-theme` attribute of the document's root element changes, and when the
+system's color scheme changes. To restyle it in another way, change its `className`.
+
+Row and header heights are read when the grid mounts. To change them later, pass `rowHeight` and
+`headerHeight`.
+
+## Properties
+
+| Property | Light | Dark | Use |
+| --- | --- | --- | --- |
+| `--vg-font-family` | `system-ui, …` | | Every text |
+| `--vg-font-size` | `13px` | | Cells; headers and menus derive from it |
+| `--vg-row-height` | `24px` | | Row height, unless `rowHeight` is given |
+| `--vg-header-height` | `32px` | | Header height, unless `headerHeight` is given |
+| `--vg-radius` | `6px` | | Corners of inputs, buttons, menus and panels |
+| `--vg-bg` | `#ffffff` | `#16161a` | Cells |
+| `--vg-fg` | `#1f2328` | `#e6e6eb` | Text |
+| `--vg-muted` | `#656d76` | `#9a9aa6` | Secondary text |
+| `--vg-surface` | `#ffffff` | `#1e1e24` | Menus, panels, inputs and buttons |
+| `--vg-surface-muted` | `#f6f8fa` | `#24242b` | The value in the cell inspector |
+| `--vg-border` | `#d0d7de` | `#3a3a44` | Borders of inputs, buttons, menus and panels |
+| `--vg-header-bg` | `#f6f8fa` | `#1d1d23` | Column headers |
+| `--vg-header-fg` | `#1f2328` | `#e6e6eb` | Column names |
+| `--vg-header-active-bg` | `#eaeef2` | `#2b2b33` | Headers of the selection; hovered buttons and menu items |
+| `--vg-gutter-bg` | `#f6f8fa` | `#1b1b20` | Row headers |
+| `--vg-gutter-fg` | `#656d76` | `#8a8a96` | Row numbers |
+| `--vg-gutter-view-fg` | `#0b57d0` | `#8ab4f8` | Row numbers in a sorted or filtered view |
+| `--vg-line` | `#e6e9ed` | `#2a2a31` | Grid lines |
+| `--vg-line-strong` | `#c8ced5` | `#3d3d47` | Lines along the headers and frozen columns; toolbar and status bar borders |
+| `--vg-selection-bg` | blue, 12% | blue, 18% | Selected cells |
+| `--vg-selection-border` | `#0b57d0` | `#8ab4f8` | Outline of the selection |
+| `--vg-active-border` | `#0b57d0` | `#8ab4f8` | Outline of the active cell |
+| `--vg-accent` | `#0b57d0` | `#8ab4f8` | Sort and filter indicators, primary buttons, progress, histograms |
+| `--vg-accent-fg` | `#ffffff` | `#0d1b33` | Text of primary buttons |
+| `--vg-null-fg` | `#8c959f` | `#6e6e7a` | `nullText` in blank cells |
+| `--vg-placeholder` | `#eef1f4` | `#26262d` | Cells whose rows are loading |
+| `--vg-match-bg` | yellow, 45% | yellow, 28% | Matches of find |
+| `--vg-error-fg` | `#b42318` | `#ff8a80` | Error messages |
+| `--vg-focus` | `#0b57d0` | `#8ab4f8` | Focus rings |
+| `--vg-shadow` | | | Shadow of menus and panels |
+
+[`styles.css`](https://github.com/yhay81/vastgrid/blob/main/packages/react/src/styles.css) has the exact
+values, and the class names of the toolbar, status bar, menus and panels for further changes.

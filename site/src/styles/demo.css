@@ -1,0 +1,135 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  --demo-bg: light-dark(#f3f4f6, #0f0f12);
+  --demo-fg: light-dark(#1f2328, #e6e6eb);
+  --demo-muted: light-dark(#59636e, #a0a0ab);
+  --demo-border: light-dark(#d0d7de, #2f2f37);
+  --demo-control: light-dark(#ffffff, #1e1e24);
+  --demo-accent: light-dark(#0b57d0, #8ab4f8);
+  --demo-accent-bg: light-dark(#dde7f7, #26324a);
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--demo-bg);
+  color: var(--demo-fg);
+}
+
+.demo {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100dvh;
+}
+
+.demo__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--demo-border);
+  font-size: 13px;
+}
+
+.demo__brand {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.demo__datasets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.demo__bar :is(button, select) {
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid var(--demo-border);
+  border-radius: 6px;
+  background: var(--demo-control);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.demo__datasets button[aria-pressed="true"] {
+  border-color: var(--demo-accent);
+  background: var(--demo-accent-bg);
+  font-weight: 600;
+}
+
+.demo__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.demo__options a {
+  color: var(--demo-accent);
+}
+
+.demo__frame {
+  color: var(--demo-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.demo__frame strong {
+  color: var(--demo-fg);
+}
+
+.demo__note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--demo-muted);
+  line-height: 1.5;
+}
+
+.demo__grid {
+  min-width: 0;
+  min-height: 0;
+}
+
+.demo__hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .demo__bar {
+    padding: 8px 12px;
+  }
+
+  .demo__options {
+    margin-left: 0;
+  }
+
+  .demo__frame {
+    display: none;
+  }
+
+  .demo__note {
+    font-size: 12px;
+  }
+}

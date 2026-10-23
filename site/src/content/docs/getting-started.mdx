@@ -1,0 +1,152 @@
+---
+title: Getting started
+description: Install vastgrid and show a table from memory or from files on a server.
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+vastgrid comes in three packages:
+
+| Package | Contents |
+| --- | --- |
+| [`vastgrid`](https://www.npmjs.com/package/vastgrid) | The `DataGrid` component for React. It re-exports everything in `vastgrid-core`. |
+| [`vastgrid-core`](https://www.npmjs.com/package/vastgrid-core) | The table protocol, `ArraySource`, `RemoteSource`, the row cache, selection and scroll models, formatting. Framework-free. |
+| [`vastgrid-duckdb`](https://www.npmjs.com/package/vastgrid-duckdb) | A Node.js table server backed by DuckDB, with a Fetch API request handler. |
+
+## Requirements
+
+- **`vastgrid`**: React 18 or later, and a browser with the CSS `light-dark()` function: Chrome and Edge
+  123, Firefox 120, Safari 17.5 or later.
+- **`vastgrid-duckdb`**: Node.js 20 or later, on a platform DuckDB ships a binary for: Linux (x64 or
+  arm64, glibc or musl), macOS (x64 or arm64) or Windows (x64 or arm64).
+- **`vastgrid-core`** has no dependencies and runs in the same browsers and in Node.js 20 or later.
+
+## Data in memory
+
+```bash
+npm install vastgrid
+```
+
+Give the grid a `TableSource` and a height. `ArraySource` holds rows that are already in the browser:
+
+```tsx
+import { ArraySource, DataGrid } from "vastgrid";
+import "vastgrid/styles.css";
+import { useMemo } from "react";
+
+export function People({ people }: { people: { name: string; born: number; field: string }[] }) {
+  const source = useMemo(
+    () =>
+      new ArraySource({
+        columns: ["name", "born", "field"],
+        rows: people.map((person) => [person.name, person.born, person.field]),
+      }),
+    [people],
+  );
+  return (
+    <div style={{ height: 600 }}>
+      <DataGrid source={source} />
+    </div>
+  );
+}
+```
+
+The grid fills its parent, so the parent needs a height (a fixed one, or a flex or grid item that
+stretches). Create the source once per table: a new source starts a new grid.
+
+`ArraySource` sorts, filters and summarizes on the main thread and suits up to a few hundred thousand
+rows. See [Data in memory](/guides/in-memory/) for its options.
+
+## Files on a server
+
+```bash
+npm install vastgrid vastgrid-duckdb
+```
+
+The server opens files with DuckDB and answers the grid's requests. The handler takes a Fetch API
+`Request`, so it works in any framework that has them:
+
+<Tabs>
+  <TabItem label="Next.js">
+
+```ts
+// app/api/table/route.ts
+import path from "node:path";
+import { createTableHandler, TableEngine } from "vastgrid-duckdb";
+
+const root = "/srv/data";
+const engine = TableEngine.create({ allowedDirectories: [root], tempDirectory: "/tmp/vastgrid" });
+
+export const POST = createTableHandler({
+  engine: () => engine,
+  // Map the client's reference to a file, refusing anything outside your folder.
+  resolve: (ref) => {
+    const file = path.resolve(root, ref);
+    if (!file.startsWith(`${root}${path.sep}`)) throw new Error("Not allowed");
+    return file;
+  },
+});
+```
+
+```ts
+// next.config.ts
+export default {
+  serverExternalPackages: ["@duckdb/node-api", "@duckdb/node-bindings"],
+};
+```
+
+  </TabItem>
+  <TabItem label="Hono">
+
+```ts
+import path from "node:path";
+import { Hono } from "hono";
+import { createTableHandler, TableEngine } from "vastgrid-duckdb";
+
+const root = "/srv/data";
+const engine = TableEngine.create({ allowedDirectories: [root], tempDirectory: "/tmp/vastgrid" });
+const table = createTableHandler({
+  engine: () => engine,
+  resolve: (ref) => {
+    const file = path.resolve(root, ref);
+    if (!file.startsWith(`${root}${path.sep}`)) throw new Error("Not allowed");
+    return file;
+  },
+});
+
+const app = new Hono();
+app.post("/api/table", (c) => table(c.req.raw));
+export default app;
+```
+
+  </TabItem>
+</Tabs>
+
+In the browser, a `RemoteSource` names the endpoint and the file:
+
+```tsx
+"use client";
+import { DataGrid, RemoteSource } from "vastgrid";
+import "vastgrid/styles.css";
+import { useMemo } from "react";
+
+export function Table({ file }: { file: string }) {
+  const source = useMemo(() => new RemoteSource({ endpoint: "/api/table", ref: file }), [file]);
+  return (
+    <div style={{ height: 600 }}>
+      <DataGrid source={source} />
+    </div>
+  );
+}
+```
+
+`vastgrid-duckdb` uses `@duckdb/node-api`, a native module: keep it out of server bundles and ship the
+platform package (`@duckdb/node-bindings-<platform>`, about 120 MB on macOS) with your server.
+[Files on a server](/guides/server/) covers the engine's options, security and deployment.
+
+## Next steps
+
+- Try the [demo](/demo/), or see [what the grid does](/guides/using-the-grid/) with the mouse and the
+  keyboard.
+- Restyle it with [CSS variables](/guides/theming/).
+- Connect your own engine with a [custom `TableSource`](/guides/custom-source/).

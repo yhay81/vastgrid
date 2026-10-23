@@ -1,0 +1,79 @@
+name: Site
+# The documentation and the demo at https://vastgrid.yhay81.com, a Cloudflare Worker with static assets
+# (site/wrangler.jsonc). Pull requests build it; main deploys it.
+#
+# Deploying needs CLOUDFLARE_API_TOKEN, a repository secret or one of the `site` environment: an API token
+# made from the "Edit Cloudflare Workers" template, with yhay81.com in its zone resources for the custom
+# domain. Without it, main builds the site and skips the deployment with a warning.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "docs/**"
+      - "packages/core/src/**"
+      - "packages/react/src/**"
+      - "package-lock.json"
+      - ".github/workflows/site.yml"
+  pull_request:
+    paths:
+      - "site/**"
+      - "docs/**"
+      - "packages/core/src/**"
+      - "packages/react/src/**"
+      - "package-lock.json"
+      - ".github/workflows/site.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  build:
+    name: Build the site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w vastgrid-site
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: site/dist
+          if-no-files-found: error
+  deploy:
+    name: Deploy to Cloudflare
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: site
+      url: https://vastgrid.yhay81.com
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: site/dist
+      - name: Deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        working-directory: site
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN is not set, so the site was not deployed. See the top of .github/workflows/site.yml."
+            exit 0
+          fi
+          npm run deploy -- --message "main ${GITHUB_SHA}"
