@@ -1,0 +1,45 @@
+name: Bug report
+description: Something does not work as documented.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report. English and Japanese are both fine.
+        Security problems: please report them privately, as described in [SECURITY.md](https://github.com/yhay81/vastgrid/blob/main/SECURITY.md).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what happened instead. Error messages and screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Code, the request sent to the table server, or the steps in the playground.
+  - type: textarea
+    id: data
+    attributes:
+      label: Data
+      description: >-
+        The format (CSV, TSV, Parquet, JSON Lines), size, rows and encoding of the file, and the source
+        (`vastgrid-duckdb`, `ArraySource` or your own). A small file that shows the problem helps most.
+  - type: dropdown
+    id: packages
+    attributes:
+      label: Packages
+      multiple: true
+      options:
+        - vastgrid
+        - vastgrid-core
+        - vastgrid-duckdb
+        - Not sure
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: The vastgrid packages, React, Node.js, the browser and the OS.
+      placeholder: vastgrid 0.1.0, React 19.3, Node.js 24, Chrome on macOS
+    validations:
+      required: true

@@ -90,6 +90,37 @@ const source = new ArraySource({
 
 `ArraySource` は並べ替え・絞り込み・集計を画面のスレッドで行います。数十万行までが目安です。
 
+## `DataGrid` の props
+
+| props | 型 | 既定値 | 説明 |
+| --- | --- | --- | --- |
+| `source` | `TableSource` | （必須） | 表示する表。別のソースを渡すと、グリッドを最初から作り直します。 |
+| `locale` | `string` | ブラウザーの言語 | 数値と組み込みの文言のロケール。`ja` なら日本語、それ以外は英語です。 |
+| `messages` | `Partial<Messages>` | | 組み込みの文言の一部を置き換えます（`en` と `ja` を参照）。 |
+| `rowHeight` | `number` | `--vg-row-height` か 24 | 行の高さ（px）。 |
+| `headerHeight` | `number` | `--vg-header-height` か 32 | 見出しの高さ（px）。 |
+| `nullText` | `string` | `""` | null のセルに表示する文字。 |
+| `frozenColumns` | `number` | `0` | 表を開いたときに左に固定する列の数。 |
+| `toolbar` | `boolean` | `true` | 検索欄、適用中の絞り込み、行数を表示します。 |
+| `statusBar` | `boolean` | `true` | アクティブなセルと選択範囲の集計を表示します。 |
+| `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。 |
+| `copyLimit` | `number` | `1000000` | 一度にコピーできるセルの数。 |
+| `onQueryChange` | `(query: ViewQuery) => void` | | 並べ替え・絞り込み・検索が変わったときに呼ばれます。 |
+| `className`、`style` | | | ルートの要素（`.vg-root`）に付けます。 |
+| `aria-label` | `string` | `messages.gridLabel` | スクリーンリーダー向けのグリッドの名前。 |
+
+ref からは `DataGridHandle` を使えます。`focus()`、`reload()`、`getQuery()`、`setQuery(query)`、`goToRow(row)`、
+グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()` などの診断用）があります。
+
+```tsx
+const grid = useRef<DataGridHandle>(null);
+
+<DataGrid ref={grid} source={source} onQueryChange={(query) => saveQuery(query)} />;
+
+// 3 列目の大きい順に並べ、「東京」を含む行だけを表示する。
+grid.current?.setQuery({ sort: [{ column: 2, direction: "desc" }], search: "東京" });
+```
+
 ## 性能
 
 Apple M2 Pro（12 スレッド・32 GB）、Node.js 24、DuckDB 1.5 で `npm run bench -- --csv-rows=10000000 --parquet-rows=100000000` を実行した結果です。

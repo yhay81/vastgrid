@@ -97,6 +97,37 @@ const source = new ArraySource({
 `ArraySource` sorts, filters and summarizes on the main thread; it suits up to a few hundred thousand
 rows.
 
+## `DataGrid` props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `source` | `TableSource` | (required) | The table to show. A new source starts a new grid. |
+| `locale` | `string` | the browser's language | Locale for numbers and the built-in texts: Japanese for `ja`, English otherwise. |
+| `messages` | `Partial<Messages>` | | Replaces some of the built-in texts (see `en` and `ja`). |
+| `rowHeight` | `number` | `--vg-row-height` or 24 | Row height in pixels. |
+| `headerHeight` | `number` | `--vg-header-height` or 32 | Header height in pixels. |
+| `nullText` | `string` | `""` | Text shown for null cells. |
+| `frozenColumns` | `number` | `0` | Columns frozen at the left when the table opens. |
+| `toolbar` | `boolean` | `true` | Shows the search box, active filters and row count. |
+| `statusBar` | `boolean` | `true` | Shows the active cell and the selection summary. |
+| `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. |
+| `copyLimit` | `number` | `1000000` | Cells that can be copied at once. |
+| `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
+| `className`, `style` | | | Added to the root element (`.vg-root`). |
+| `aria-label` | `string` | `messages.gridLabel` | The grid's name for screen readers. |
+
+A ref gives a `DataGridHandle`: `focus()`, `reload()`, `getQuery()`, `setQuery(query)`, `goToRow(row)`, the
+`controller` with the grid's state, and the canvas `renderer` (for diagnostics such as `renderer.timings()`).
+
+```tsx
+const grid = useRef<DataGridHandle>(null);
+
+<DataGrid ref={grid} source={source} onQueryChange={(query) => saveQuery(query)} />;
+
+// Largest values of the third column first, only rows that contain "Tokyo".
+grid.current?.setQuery({ sort: [{ column: 2, direction: "desc" }], search: "Tokyo" });
+```
+
 ## Performance
 
 `npm run bench -- --csv-rows=10000000 --parquet-rows=100000000` on an Apple M2 Pro (12 threads, 32 GB),

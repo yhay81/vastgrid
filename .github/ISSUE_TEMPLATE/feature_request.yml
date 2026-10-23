@@ -1,0 +1,25 @@
+name: Feature request
+description: An idea for vastgrid.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. English and Japanese are both fine.
+        The [roadmap](https://github.com/yhay81/vastgrid#roadmap) lists what is already planned.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea
+      description: How could vastgrid help? A sketch of the API or the screen is welcome.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Workarounds or other tools you have tried.
