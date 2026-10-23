@@ -72,10 +72,40 @@ export interface TableInfo {
   /**
    * Notes about how the file was read, as stable codes: `encoding:<name>` (converted from that
    * encoding), `all_varchar` (columns read as text because types were inconsistent),
-   * `invalid_utf8_replaced` (invalid bytes replaced).
+   * `invalid_utf8_replaced` (invalid bytes replaced), and for workbooks `merged_cells` (the sheet has
+   * merged cells; their value is in the top-left cell only) and `formulas_without_values` (formulas
+   * that were saved without a calculated value read as blank).
    */
   notes?: string[];
+  /** Workbooks: the sheets that can be read, in workbook order. */
+  sheets?: SheetInfo[];
+  /** Workbooks: the name of the sheet that was read. */
+  sheet?: string;
   capabilities: TableCapabilities;
+}
+
+export interface SheetInfo {
+  name: string;
+  /** Hidden in the workbook (it can still be read). */
+  hidden?: boolean;
+}
+
+/**
+ * How to read a file, for formats that need a choice. Only workbooks (`.xlsx`, `.xlsm`) use these
+ * options today; other formats ignore them.
+ */
+export interface ReadOptions {
+  /** The sheet to read, by name. Defaults to the first visible sheet. */
+  sheet?: string;
+  /**
+   * The 1-based row that holds the column names; rows above it are skipped. `0` reads without
+   * names (columns are named by their letters `A`, `B`, …). Defaults to the first row with a value.
+   */
+  headerRow?: number;
+  /** Keep rows without any value between the first and the last data row. Skipped by default. */
+  keepEmptyRows?: boolean;
+  /** Keep columns without any value (and no name) inside the used range. Skipped by default. */
+  keepEmptyColumns?: boolean;
 }
 
 export type SortDirection = "asc" | "desc";

@@ -4,7 +4,7 @@
 [![CI](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml/badge.svg)](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/yhay81/vastgrid)](LICENSE)
 
-数 GB・数億行の CSV・TSV・Parquet・JSON Lines を開けて、表計算ソフトのように扱える React のデータグリッドです。
+数 GB・数億行の CSV・TSV・Parquet・JSON Lines と Excel のブックを開けて、表計算ソフトのように扱える React のデータグリッドです。
 
 **[デモを試す](https://vastgrid.yhay81.com/ja/demo/)** · [ドキュメント](https://vastgrid.yhay81.com/ja/) · [English](README.md)
 
@@ -214,7 +214,6 @@ npm run bench
 - セルの編集と、変えていない行を 1 バイトも変えない CSV への書き戻し
 - 式の列
 - 1 億行を超える並べ替えで、並べ終わる前に先頭を表示する
-- Excel（`.xlsx`）の読み込み
 
 既存のビューワーとグリッドの調査は [docs/research.ja.md](docs/research.ja.md) にあります。
 

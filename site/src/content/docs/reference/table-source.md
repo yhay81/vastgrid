@@ -48,6 +48,7 @@ Supports every capability but `export`. See [Data in memory](/guides/in-memory/)
 new RemoteSource({
   endpoint: string;                    // URL that accepts the protocol requests (POST, JSON)
   ref: string;                         // what to open, in the server's terms
+  read?: ReadOptions;                  // workbooks: sheet, headerRow, keepEmptyRows, keepEmptyColumns
   headers?: Record<string, string>;    // extra headers for every request
   credentials?: RequestCredentials;
   fetch?: typeof fetch;
@@ -89,10 +90,12 @@ interface TableInfo {
   status: "loading" | "ready" | "error";
   progress?: number | null;     // 0..1 while loading, when known
   error?: string;
-  format?: string;              // csv, tsv, parquet, ndjson, …
+  format?: string;              // csv, tsv, parquet, ndjson, xlsx, …
   byteSize?: number;
   revision?: string;            // changes when the underlying data changes
-  notes?: string[];             // encoding:<name>, all_varchar, invalid_utf8_replaced
+  notes?: string[];             // encoding:<name>, all_varchar, invalid_utf8_replaced, merged_cells, formulas_without_values
+  sheets?: { name: string; hidden?: boolean }[]; // workbooks: the sheets that can be read
+  sheet?: string;               // workbooks: the sheet that was read
   capabilities: {
     sort: boolean;
     filter: boolean;

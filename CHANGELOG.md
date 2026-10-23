@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- `vastgrid-duckdb`: Excel workbooks (`.xlsx`, `.xlsm`) open like other table files. The engine reads
+  them itself, with no dependency or DuckDB extension: the sheet is streamed into a CSV file with one type
+  per column (integers, numbers, booleans, dates, timestamps, times or text), which DuckDB loads. Formulas
+  show their saved values and are never calculated; merged cells keep their value in the top-left cell.
+  Encrypted, `.xls` and `.xlsb` workbooks and damaged files fail with a reason. A 1M-row, 8-column
+  workbook opens in about 8 s.
+- `vastgrid-core`: the `info` request takes `read` (`ReadOptions`: `sheet`, `headerRow`, `keepEmptyRows`,
+  `keepEmptyColumns`), validated by `parseProtocolRequest`; `RemoteSource` sends its `read` option.
+  `TableInfo` has `sheets` and `sheet` for workbooks, and the notes `merged_cells` and
+  `formulas_without_values`.
+- `vastgrid`: the status bar explains the new notes in English and Japanese.
+
 ## 0.1.1 — 2026-10-23
 
 Fixes.

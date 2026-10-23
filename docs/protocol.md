@@ -32,7 +32,7 @@ that changed gets a new handle and a new `revision`.
 
 | `op` | Fields | Result |
 | --- | --- | --- |
-| `info` | `ref` (what to open, in the host's terms), optional `table` | `TableInfo` plus `table` |
+| `info` | `ref` (what to open, in the host's terms), optional `table`, optional `read` | `TableInfo` plus `table` |
 | `view` | `table`, `query` | `{ id, rowCount, query }` (`id: null` for an empty query) |
 | `rows` | `table`, `view`, `start`, `end`, `columns`, optional `textLimit` | `{ start, end, columns: CellValue[][], rowIds }` |
 | `stats` | `table`, `view`, `column` | `ColumnStats` |
@@ -57,13 +57,32 @@ a `values` filter.
   status: "loading" | "ready" | "error";
   progress?: number | null;    // 0..1 while loading
   error?: string;
-  format?: string;             // csv, tsv, parquet, ndjson, …
+  format?: string;             // csv, tsv, parquet, ndjson, xlsx, …
   byteSize?: number;
   revision?: string;           // changes when the data changes
-  notes?: string[];            // encoding:shift_jis, all_varchar, invalid_utf8_replaced
+  notes?: string[];            // encoding:shift_jis, all_varchar, invalid_utf8_replaced, merged_cells, formulas_without_values
+  sheets?: { name: string; hidden?: boolean }[]; // workbooks: the sheets, in workbook order
+  sheet?: string;              // workbooks: the sheet that was read
   capabilities: { sort, filter, search, stats, distinct, aggregate, find, export: boolean };
 }
 ```
+
+### `ReadOptions`
+
+`read` in `info` chooses how to read a file that needs a choice; today only workbooks (`xlsx`) use it, and
+servers ignore it for other formats. The same file read with other options is another table, with its own
+handle.
+
+```ts
+{
+  sheet?: string;              // the sheet's name; default: the first visible sheet
+  headerRow?: number;          // 1-based row with the column names; 0: none (columns A, B, …); default: the first row with a value
+  keepEmptyRows?: boolean;     // keep rows without values between data rows; default false
+  keepEmptyColumns?: boolean;  // keep columns without values or names; default false
+}
+```
+
+Workbooks list `sheets` from the first `info` answer, while the sheet still loads.
 
 Clients poll `info` while `status` is `loading` and only read rows below `readableRows`. When the load
 fails, `info` answers `status: "error"` with the reason in `error`; the `info` after that loads the file

@@ -458,3 +458,23 @@ test("a query that only sorts keeps every row; filters and a search leave rows o
   assert.equal(filtersRows({ search: "Tokyo" }), true);
   assert.equal(filtersRows({ filters: [{ type: "blank", column: 0, blank: true }] }), true);
 });
+
+test("info requests carry read options, validated, and remote sources send them", async () => {
+  assert.deepEqual(
+    parseProtocolRequest({ op: "info", ref: "book.xlsx", read: { sheet: "Q1", headerRow: 0, keepEmptyRows: true } }),
+    { op: "info", ref: "book.xlsx", read: { sheet: "Q1", headerRow: 0, keepEmptyRows: true } },
+  );
+  assert.deepEqual(parseProtocolRequest({ op: "info", ref: "a.csv" }), { op: "info", ref: "a.csv" });
+  for (const read of [null, "Q1", { sheet: 1 }, { headerRow: 1.5 }, { headerRow: 2_000_000 }, { keepEmptyColumns: 1 }])
+    assert.throws(() => parseProtocolRequest({ op: "info", ref: "book.xlsx", read }), JSON.stringify(read));
+  const bodies: unknown[] = [];
+  const fakeFetch = (async (_url: string, init: RequestInit) => {
+    bodies.push(JSON.parse(String(init.body)));
+    const info = await people().info();
+    return new Response(JSON.stringify({ result: { table: "t1", ...info, sheets: [{ name: "Q1" }], sheet: "Q1" } }));
+  }) as typeof fetch;
+  const source = new RemoteSource({ endpoint: "/api", ref: "book.xlsx", read: { sheet: "Q1" }, fetch: fakeFetch });
+  const info = await source.info();
+  assert.equal(info.sheet, "Q1");
+  assert.deepEqual(bodies, [{ op: "info", ref: "book.xlsx", read: { sheet: "Q1" } }]);
+});

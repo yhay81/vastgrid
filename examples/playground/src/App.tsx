@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArraySource, type CellValue, DataGrid, type DataGridHandle, RemoteSource, type TableSource } from "vastgrid";
+import {
+  ArraySource,
+  type CellValue,
+  DataGrid,
+  type DataGridHandle,
+  RemoteSource,
+  type SheetInfo,
+  type TableSource,
+} from "vastgrid";
 
 interface FileEntry {
   path: string;
@@ -34,6 +42,9 @@ export function App() {
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [root, setRoot] = useState("");
   const [selected, setSelected] = useState<string>(GENERATED);
+  /** The sheets of the selected workbook, and the one shown (`undefined`: the first visible one). */
+  const [sheets, setSheets] = useState<SheetInfo[]>([]);
+  const [sheet, setSheet] = useState<string | undefined>();
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
   );
@@ -60,9 +71,35 @@ export function App() {
   }, [theme]);
 
   const source = useMemo(
-    () => (selected === GENERATED ? generated() : new RemoteSource({ endpoint: "/api/table", ref: selected })),
-    [selected],
+    () =>
+      selected === GENERATED
+        ? generated()
+        : new RemoteSource({
+            endpoint: "/api/table",
+            ref: selected,
+            ...(sheet === undefined ? {} : { read: { sheet } }),
+          }),
+    [selected, sheet],
   );
+
+  useEffect(() => {
+    let current = true;
+    void source
+      .info()
+      .then((info) => {
+        if (current && info.sheets) setSheets(info.sheets);
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [source]);
+
+  const choose = (file: string) => {
+    setSelected(file);
+    setSheet(undefined);
+    setSheets([]);
+  };
 
   return (
     <div className="app">
@@ -71,13 +108,13 @@ export function App() {
         <p className="app__hint">Files in {root || "…"}</p>
         <ul>
           <li>
-            <button type="button" aria-current={selected === GENERATED} onClick={() => setSelected(GENERATED)}>
+            <button type="button" aria-current={selected === GENERATED} onClick={() => choose(GENERATED)}>
               <span>Generated (200,000 rows, in memory)</span>
             </button>
           </li>
           {files.map((file) => (
             <li key={file.path}>
-              <button type="button" aria-current={selected === file.path} onClick={() => setSelected(file.path)}>
+              <button type="button" aria-current={selected === file.path} onClick={() => choose(file.path)}>
                 <span>{file.path}</span>
                 <small>{formatSize(file.size)}</small>
               </button>
@@ -85,6 +122,21 @@ export function App() {
           ))}
         </ul>
         <div className="app__options">
+          {sheets.length > 1 && (
+            <label>
+              Sheet{" "}
+              <select
+                value={sheet ?? sheets.find((item) => !item.hidden)?.name}
+                onChange={(event) => setSheet(event.target.value)}
+              >
+                {sheets.map((item) => (
+                  <option key={item.name} value={item.name}>
+                    {item.hidden ? `${item.name} (hidden)` : item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label>
             Theme{" "}
             <select value={theme} onChange={(event) => setTheme(event.target.value as "light" | "dark")}>
@@ -105,7 +157,7 @@ export function App() {
         </div>
       </aside>
       <main className="app__grid">
-        <DataGrid key={selected} ref={grid} source={source} locale={locale} />
+        <DataGrid key={`${selected}\n${sheet ?? ""}`} ref={grid} source={source} locale={locale} />
       </main>
     </div>
   );

@@ -46,6 +46,7 @@ new ArraySource({
 new RemoteSource({
   endpoint: string;                    // プロトコルの要求（POST、JSON）を受ける URL
   ref: string;                         // 開くもの。サーバーが解釈する形で書く
+  read?: ReadOptions;                  // ブック: sheet、headerRow、keepEmptyRows、keepEmptyColumns
   headers?: Record<string, string>;    // すべての要求に付けるヘッダー
   credentials?: RequestCredentials;
   fetch?: typeof fetch;
@@ -84,10 +85,12 @@ interface TableInfo {
   status: "loading" | "ready" | "error";
   progress?: number | null;     // 読み込み中、分かる場合は 0..1
   error?: string;
-  format?: string;              // csv, tsv, parquet, ndjson, …
+  format?: string;              // csv, tsv, parquet, ndjson, xlsx, …
   byteSize?: number;
   revision?: string;            // 元のデータが変わると変わる
-  notes?: string[];             // encoding:<name>, all_varchar, invalid_utf8_replaced
+  notes?: string[];             // encoding:<name>, all_varchar, invalid_utf8_replaced, merged_cells, formulas_without_values
+  sheets?: { name: string; hidden?: boolean }[]; // ブック: 読めるシート
+  sheet?: string;               // ブック: 読んだシート
   capabilities: {
     sort: boolean;
     filter: boolean;

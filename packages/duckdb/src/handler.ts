@@ -44,7 +44,7 @@ async function answer(
 ) {
   switch (request.op) {
     case "info": {
-      const table = await engine.open(await options.resolve(request.ref));
+      const table = await engine.open(await options.resolve(request.ref), undefined, request.read);
       const info = table.info();
       if (!options.resolveTarget) info.capabilities.export = false;
       return { table: table.id, ...info };

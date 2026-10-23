@@ -19,9 +19,11 @@ import {
   isNumericType,
   isTemporalType,
   MAX_TEXT_LIMIT,
+  type ReadOptions,
   type RowBlock,
   type RowRequest,
   type SelectionSummary,
+  type SheetInfo,
   SourceError,
   type TableInfo,
   type ViewInfo,
@@ -41,8 +43,9 @@ import {
   textExpression,
   wireValue,
 } from "./sql.js";
+import { convertSheet, readWorkbook, sheetList, WorkbookError } from "./xlsx.js";
 
-export type TableFormat = "csv" | "tsv" | "parquet" | "json" | "ndjson";
+export type TableFormat = "csv" | "tsv" | "parquet" | "json" | "ndjson" | "xlsx";
 
 export interface TableEngineOptions {
   /** Directories DuckDB may read and export into. All other file access is disabled for good. */
@@ -82,12 +85,29 @@ const extensions: [RegExp, TableFormat][] = [
   [/\.(parquet|pq)$/i, "parquet"],
   [/\.(jsonl|ndjson|jsonl\.gz|ndjson\.gz)$/i, "ndjson"],
   [/\.(json|json\.gz)$/i, "json"],
+  [/\.(xlsx|xlsm)$/i, "xlsx"],
 ];
 
 /** The format of a file judged by its name, or `null` when it is not a table file. */
 export function tableFormatOf(filePath: string): TableFormat | null {
   for (const [pattern, format] of extensions) if (pattern.test(filePath)) return format;
   return null;
+}
+
+/** The options that change how a file of `format` is read (only workbooks have any), without defaults. */
+function readOptionsOf(format: TableFormat, read: ReadOptions | undefined): ReadOptions {
+  if (format !== "xlsx" || !read) return {};
+  return {
+    ...(read.sheet === undefined ? {} : { sheet: read.sheet }),
+    ...(read.headerRow === undefined ? {} : { headerRow: read.headerRow }),
+    ...(read.keepEmptyRows ? { keepEmptyRows: true } : {}),
+    ...(read.keepEmptyColumns ? { keepEmptyColumns: true } : {}),
+  };
+}
+
+/** Tables are shared by file and by how it is read: another sheet of a workbook is another table. */
+function tableKey(file: string, read: ReadOptions) {
+  return Object.keys(read).length === 0 ? file : `${file}\n${JSON.stringify(read)}`;
 }
 
 /** Limits how many long operations (loading, sorting, statistics) run at the same time. */
@@ -282,9 +302,10 @@ export class TableEngine {
    * Opens a file, or returns the table already open for it when the file has not changed. A file
    * that changed (size or modification time) is opened again as a new table, and so is a file whose
    * load failed once `info()` has reported the failure (a retry). Only files whose real location
-   * (after following links) is inside the allowed directories are opened.
+   * (after following links) is inside the allowed directories are opened. `read` chooses the sheet
+   * of a workbook and how its rows are read; each choice is a table of its own.
    */
-  async open(filePath: string, format?: TableFormat): Promise<OpenTable> {
+  async open(filePath: string, format?: TableFormat, read?: ReadOptions): Promise<OpenTable> {
     if (this.disposed) throw new SourceError(ErrorCodes.disposed, "The table engine was closed.", 503);
     const requested = path.resolve(filePath);
     const fileFormat = format ?? tableFormatOf(requested);
@@ -303,21 +324,25 @@ export class TableEngine {
     // Until its failure is reported, a failed table is returned as it is: reopening it right away would
     // answer every poll of a loading table with a new load, so clients would never see the error.
     const reusable = (table: OpenTable) => table.revision === revision && !table.failureReported;
-    let existing = this.byPath.get(absolute);
+    const options = readOptionsOf(fileFormat, read);
+    const key = tableKey(absolute, options);
+    let existing = this.byPath.get(key);
     if (existing && !reusable(existing)) {
       await this.close(existing.id);
       // Another request may have opened the file again while the old table was closing.
-      existing = this.byPath.get(absolute);
+      existing = this.byPath.get(key);
     }
     if (existing && reusable(existing)) {
       existing.touch();
       return existing;
     }
-    const table = new OpenTable(this, this.createId("t"), absolute, fileFormat, revision, info.size);
+    const table = new OpenTable(this, this.createId("t"), absolute, fileFormat, revision, info.size, options);
     this.tables.set(table.id, table);
-    this.byPath.set(absolute, table);
+    this.byPath.set(key, table);
     table.start();
     await this.trim();
+    // Clients can offer the other sheets of a workbook from the first answer on.
+    if (fileFormat === "xlsx") await table.whenListed();
     return table;
   }
 
@@ -332,7 +357,8 @@ export class TableEngine {
     const table = this.tables.get(id);
     if (!table) return;
     this.tables.delete(id);
-    if (this.byPath.get(table.path) === table) this.byPath.delete(table.path);
+    const key = tableKey(table.path, table.read);
+    if (this.byPath.get(key) === table) this.byPath.delete(key);
     await table.dispose();
   }
 
@@ -424,6 +450,11 @@ export class OpenTable {
   /** Set once `info()` has reported a failed load: `TableEngine.open` then loads the file again. */
   failureReported = false;
   readonly notes: string[] = [];
+  /** Workbooks: the sheets, and the one that was read. */
+  sheets: SheetInfo[] | undefined;
+  sheet: string | undefined;
+  /** Workbooks: what `readerFunction` reads the converted sheet with. */
+  private workbookReader = "";
   columns: SqlColumn[] = [];
   rowCount: number | null = null;
   lastUsed = Date.now();
@@ -441,6 +472,10 @@ export class OpenTable {
   private clock = 0;
   private disposed = false;
   private ready: Promise<void> = Promise.resolve();
+  private listed: () => void = () => undefined;
+  private readonly sheetsKnown = new Promise<void>((resolve) => {
+    this.listed = resolve;
+  });
 
   constructor(
     private readonly engine: TableEngine,
@@ -449,6 +484,7 @@ export class OpenTable {
     readonly format: TableFormat,
     readonly revision: string,
     readonly byteSize: number,
+    readonly read: ReadOptions = {},
   ) {}
 
   touch() {
@@ -472,6 +508,11 @@ export class OpenTable {
     return this.ready;
   }
 
+  /** Workbooks: waits until the sheets are known (or the load failed before). */
+  whenListed() {
+    return Promise.race([this.sheetsKnown, this.ready]);
+  }
+
   info(): TableInfo {
     const ready = this.status === "ready";
     if (this.status === "error") this.failureReported = true;
@@ -491,6 +532,8 @@ export class OpenTable {
       byteSize: this.byteSize,
       revision: this.revision,
       ...(this.notes.length > 0 ? { notes: [...this.notes] } : {}),
+      ...(this.sheets ? { sheets: this.sheets.map((sheet) => ({ ...sheet })) } : {}),
+      ...(this.sheet === undefined ? {} : { sheet: this.sheet }),
       capabilities: {
         sort: ready,
         filter: ready,
@@ -526,6 +569,7 @@ export class OpenTable {
   }
 
   private readerFunction(format: TableFormat, attempt: number) {
+    if (format === "xlsx") return this.workbookReader;
     if (format === "json") return attempt === 0 ? "read_json_auto($1)" : "read_json_auto($1, sample_size=-1)";
     if (format === "ndjson") {
       return attempt === 0
@@ -594,11 +638,14 @@ export class OpenTable {
         source = await this.convert(encoding);
       }
     }
+    if (this.format === "xlsx") source = await this.convertWorkbook();
+    if (this.disposed) return;
     await this.loadPreview(source);
     await engine.loads.run(async () => {
       if (this.disposed) return;
       let lastError: unknown = null;
-      const attempts = this.format === "csv" || this.format === "tsv" ? 3 : 2;
+      // A converted sheet has one type per column already: nothing to retry.
+      const attempts = this.format === "csv" || this.format === "tsv" ? 3 : this.format === "xlsx" ? 1 : 2;
       for (let attempt = 0; attempt < attempts; attempt++) {
         try {
           await this.loadTable(source, attempt);
@@ -624,6 +671,35 @@ export class OpenTable {
     this.tempFiles.push(target);
     await convertToUtf8(this.path, target, encoding);
     if (encoding !== "utf-8") this.notes.push(`encoding:${encoding.startsWith("utf-16") ? "utf-16" : encoding}`);
+    return target;
+  }
+
+  /** Converts the chosen sheet to a CSV file with a type per column (see `xlsx.ts`), which is then loaded. */
+  private async convertWorkbook() {
+    const target = this.engine.tempPath(`${this.engine.createId("sheet")}.csv`);
+    this.tempFiles.push(target);
+    try {
+      const workbook = await readWorkbook(this.path);
+      this.sheets = sheetList(workbook);
+      this.listed();
+      const sheet = await this.engine.loads.run(() =>
+        convertSheet(this.path, target, {
+          ...this.read,
+          workbook,
+          // Reading the sheet takes most of the time; DuckDB loading the converted file takes the rest.
+          onProgress: (share) => {
+            this.progress = share * 0.9;
+          },
+          cancelled: () => this.disposed,
+        }),
+      );
+      this.sheet = sheet.sheet;
+      this.notes.push(...sheet.notes);
+      this.workbookReader = sheet.reader;
+    } catch (error) {
+      if (error instanceof WorkbookError) throw new SourceError(ErrorCodes.loadFailed, error.message, 422);
+      throw error;
+    }
     return target;
   }
 
@@ -660,7 +736,7 @@ export class OpenTable {
       await connection.run("SET enable_progress_bar = true; SET enable_progress_bar_print = false");
       timer = setInterval(() => {
         const percentage = connection.progress.percentage;
-        if (percentage >= 0) this.progress = Math.min(0.99, percentage / 100);
+        if (percentage >= 0) this.progress = Math.max(this.progress ?? 0, Math.min(0.99, percentage / 100));
       }, 200);
       const reader = this.readerFunction(this.format, attempt);
       await connection.run(`CREATE TABLE ${quoteIdentifier(name)} AS SELECT * FROM ${reader}`, [source]);

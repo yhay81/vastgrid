@@ -32,7 +32,7 @@ const engine = await TableEngine.create(options: TableEngineOptions);
 
 | メソッド | 説明 |
 | --- | --- |
-| `open(path, format?)` | ファイルを開くか、そのファイルをすでに開いている表を返し、読み込みを始めます。`OpenTable` を返します。パスは、リンクをたどった先が許可したフォルダーの中になければなりません。 |
+| `open(path, format?, read?)` | ファイルを開くか、そのファイルをすでに開いている表を返し、読み込みを始めます。`OpenTable` を返します。パスは、リンクをたどった先が許可したフォルダーの中になければなりません。`read` はブックのシートと読み方を選びます（[Excel のブック](/ja/guides/server/#excel-のブック)）。選び方ごとに別の表になります。 |
 | `get(id)` | このハンドルで開いている表。なければ `table_not_found` のエラー。 |
 | `close(id)` | 表とそのビューを閉じます。 |
 | `allows(path)` | 書かれたままの絶対パスが、許可したフォルダーの中にあるかどうか。`open` では実際の場所も確かめます。 |
@@ -59,7 +59,7 @@ JSON の本文を解析済みの要求 1 つに、同じオプションで答え
 
 | エクスポート | 説明 |
 | --- | --- |
-| `tableFormatOf(path)` | 拡張子から判断したファイルの形式（`csv`、`tsv`、`parquet`、`ndjson`、`json`）か `null`。ユーザーが開けるファイルの一覧を作るときに使います。 |
+| `tableFormatOf(path)` | 拡張子から判断したファイルの形式（`csv`、`tsv`、`parquet`、`ndjson`、`json`、`xlsx`）か `null`。ユーザーが開けるファイルの一覧を作るときに使います。 |
 | `detectEncoding(path)` | 区切りのテキストのファイルの文字コードを、最初の数 MB から判定します。`utf-8`、`utf-16`、`shift_jis`、`euc-jp`、`latin-1` のどれかです。 |
 | `convertToUtf8(source, target, encoding, signal?)` | ファイルを UTF-8 に変換します。正しくないバイトは置き換えます。 |
 | `columnTypeOf(sqlType)` | DuckDB の型名に当たる `ColumnType`。 |

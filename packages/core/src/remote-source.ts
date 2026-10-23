@@ -9,6 +9,7 @@ import type {
   ExportResult,
   FindRequest,
   FindResult,
+  ReadOptions,
   RowBlock,
   RowRequest,
   SelectionSummary,
@@ -22,6 +23,8 @@ export interface RemoteSourceOptions {
   endpoint: string;
   /** What to open, in the server's terms (for example a path relative to a workspace). */
   ref: string;
+  /** How to read the file, for formats that need a choice (for example the sheet of a workbook). */
+  read?: ReadOptions;
   /** Extra headers for every request. */
   headers?: Record<string, string>;
   credentials?: RequestCredentials;
@@ -111,6 +114,7 @@ export class RemoteSource implements TableSource {
         op: "info",
         ref: this.options.ref,
         ...(this.table ? { table: this.table } : {}),
+        ...(this.options.read ? { read: this.options.read } : {}),
       };
       this.opening = this.post<InfoResult>(request).finally(() => {
         this.opening = null;

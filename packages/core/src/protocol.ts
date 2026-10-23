@@ -1,4 +1,13 @@
-import type { AggregateRange, CellValue, ExportFormat, Filter, SortKey, TableInfo, ViewQuery } from "./types.js";
+import type {
+  AggregateRange,
+  CellValue,
+  ExportFormat,
+  Filter,
+  ReadOptions,
+  SortKey,
+  TableInfo,
+  ViewQuery,
+} from "./types.js";
 
 /**
  * The JSON protocol between `RemoteSource` and a table server (for example `vastgrid-duckdb`).
@@ -7,10 +16,11 @@ import type { AggregateRange, CellValue, ExportFormat, Filter, SortKey, TableInf
  *
  * `ref` names a table in terms the host understands (for example a path relative to a workspace).
  * The server answers `info` with a `table` handle that the other operations use. Handles can expire
- * (server restart, file changed); the client then reopens with `info`.
+ * (server restart, file changed); the client then reopens with `info`. `read` chooses how to read
+ * files that need a choice (the sheet of a workbook); the same file read differently is another table.
  */
 export type ProtocolRequest =
-  | { op: "info"; ref: string; table?: string }
+  | { op: "info"; ref: string; table?: string; read?: ReadOptions }
   | { op: "view"; table: string; query: ViewQuery }
   | {
       op: "rows";
@@ -236,6 +246,22 @@ function ranges(value: unknown): AggregateRange[] {
   });
 }
 
+function readOptions(value: unknown): ReadOptions | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) fail("read must be an object");
+  const result: ReadOptions = {};
+  const sheet = optionalString(value.sheet, "read.sheet", 256);
+  if (sheet !== undefined) result.sheet = sheet;
+  // Excel sheets have at most 1,048,576 rows.
+  if (value.headerRow !== undefined) result.headerRow = index(value.headerRow, "read.headerRow", 1_048_576);
+  for (const name of ["keepEmptyRows", "keepEmptyColumns"] as const) {
+    if (value[name] === undefined) continue;
+    if (typeof value[name] !== "boolean") fail(`read.${name} must be a boolean`);
+    result[name] = value[name];
+  }
+  return result;
+}
+
 /**
  * Validates an untrusted request body. Throws `Error` with a readable message for invalid input.
  * Servers should answer those with status 400 and the code `invalid_request`.
@@ -246,7 +272,8 @@ export function parseProtocolRequest(body: unknown): ProtocolRequest {
   if (typeof op !== "string" || !operations.has(op as ProtocolOperation)) fail("op is invalid");
   if (op === "info") {
     const table = optionalString(body.table, "table", 128);
-    return { op, ref: string(body.ref, "ref"), ...(table ? { table } : {}) };
+    const read = readOptions(body.read);
+    return { op, ref: string(body.ref, "ref"), ...(table ? { table } : {}), ...(read ? { read } : {}) };
   }
   const table = string(body.table, "table", 128);
   switch (op as Exclude<ProtocolOperation, "info">) {

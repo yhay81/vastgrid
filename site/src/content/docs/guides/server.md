@@ -1,6 +1,6 @@
 ---
 title: Files on a server
-description: Serve CSV, TSV, Parquet and JSON Lines files of any size from Node.js with vastgrid-duckdb.
+description: Serve CSV, TSV, Parquet and JSON Lines files of any size, and Excel workbooks, from Node.js with vastgrid-duckdb.
 ---
 
 `vastgrid-duckdb` opens table files with DuckDB and answers the grid's requests: windows of rows, sorted
@@ -125,6 +125,7 @@ The format is chosen by the file's extension:
 | Parquet | `.parquet`, `.pq` |
 | JSON Lines | `.jsonl`, `.ndjson`, `.jsonl.gz`, `.ndjson.gz` |
 | JSON | `.json`, `.json.gz` |
+| Excel | `.xlsx`, `.xlsm` |
 
 - **Delimited and JSON files** become DuckDB tables in the engine's database file. The first rows
   (`previewRows`) are readable at once; the grid shows them while the rest loads and enables sorting,
@@ -138,6 +139,61 @@ The format is chosen by the file's extension:
   (`invalid_utf8_replaced`).
 - **When a file changes** on disk (its size or modification time), the next `info` opens it again with a
   new `revision`. Change the grid's `reloadKey` to read it again, for example after your app saved it.
+
+### Excel workbooks
+
+`.xlsx` and `.xlsm` workbooks are read by the engine itself, with no extra package and no DuckDB extension
+to download: the sheet is read as a stream and written to a CSV file with one type per column in the
+engine's temporary folder, which DuckDB then loads like any delimited file. `info` lists the `sheets` (with
+`hidden: true` for hidden ones) from its first answer, while the sheet still loads, and `sheet` names the one
+that was read. Rows can be read once the whole sheet is loaded; `progress` grows meanwhile.
+
+Choose how to read a workbook with `read`: the `read` option of `RemoteSource`, the `read` field of the
+`info` request, or the third argument of `engine.open`. Each sheet, and each set of options, is a table of
+its own.
+
+```ts
+new RemoteSource({ endpoint: "/api/table", ref: "sales.xlsx", read: { sheet: "2026", headerRow: 3 } });
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `sheet` | The first visible sheet | The sheet to read, by name. |
+| `headerRow` | The first row with a value | The 1-based row with the column names; rows above it are skipped. `0`: no names, the columns are named by their letters (`A`, `B`, …). Empty names become the column's letters, and repeated names get a suffix (`name_2`). |
+| `keepEmptyRows` | `false` | Keep rows without any value between the first and the last data row. |
+| `keepEmptyColumns` | `false` | Keep columns without any value or name inside the used range. |
+
+How cells are read:
+
+- **Types.** Each column gets one type from its cells: whole numbers `BIGINT`, other numbers `DOUBLE`,
+  `TRUE`/`FALSE` `BOOLEAN`, dates `DATE`, dates with a time `TIMESTAMP` and times of day `TIME`. A column
+  with several kinds of values is text: numbers in their shortest form, booleans as `TRUE`/`FALSE`, dates as
+  `2024-01-31` and `2024-01-31 12:00:00`.
+- **Dates** are numbers with a date or time format, built in or custom (for example
+  `yyyy"年"m"月"d"日"`), in the 1900 or the 1904 date system, rounded to milliseconds. A value with a time
+  format below one day is a time of day. Serial number 60, the 29 February 1900 that Excel counts but that
+  did not exist, reads as 1900-03-01.
+- **Number formats** are not applied: `12.5%` reads as `0.125`, and currency and decimal places are not kept.
+- **Formulas** show the value Excel saved when the workbook was last calculated; vastgrid never calculates
+  them. A formula saved without a value is blank, and the table notes `formulas_without_values`. Errors such
+  as `#DIV/0!` are text.
+- **Blank cells** and empty text are blank (`null`).
+- **Merged cells** keep their value in the top-left cell only; the other cells of the range are blank, and
+  the table notes `merged_cells`.
+- **Text**: rich text is read as plain text, without phonetic guides (furigana).
+- **Not reproduced**: formatting, comments, images, charts, hidden rows and columns (they are read like the
+  others), filters and data validation. Chart sheets are not listed.
+
+Workbooks that cannot be read fail to load (`status: "error"`; later requests answer `load_failed`), with
+a reason in `error`: not a ZIP archive, encrypted or in the old `.xls` format, a binary `.xlsb` workbook, a
+missing part, compressed data that is damaged, rows or cells outside Excel's limits (1,048,576 rows and
+16,384 columns), or no sheet with the requested name. Files named `.xls` or `.xlsb` are not table files
+(`unsupported_format`).
+
+The shared text of the workbook stays in memory while a sheet is read; the cells are streamed. A workbook of
+1 million rows and 8 columns (64 MB) opens in about 8 s on an Apple M2 Pro, with at most about 130 MB of
+JavaScript heap and 600–700 MB of resident memory for the whole process (DuckDB included). Measure your
+own workbooks with `packages/duckdb/bench/xlsx.ts`.
 
 ## Sorted and filtered views
 
