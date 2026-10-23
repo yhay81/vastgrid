@@ -52,7 +52,7 @@ export function App() {
 }
 ```
 
-ディスク上のファイルは、`vastgrid-duckdb` が Node.js から DuckDB で配信します。[サーバーのファイル](/ja/guides/server/)を参照してください。
+ディスク上のファイルは、`vastgrid-duckdb` が Node.js から DuckDB で配信します。[サーバーのファイル](/ja/guides/server/)を参照してください。サーバーがなければ、`vastgrid-browser` がローカルのファイルと URL の Parquet を Web Worker で読みます。[ブラウザーで開くファイル](/ja/guides/browser/)を参照してください。
 
 <CardGrid>
   <Card title="どんな大きさでも開ける" icon="document">
@@ -65,7 +65,7 @@ export function App() {
     マウスと Excel のキー操作での範囲の選択、コピー（TSV・HTML・Markdown）、複数の列での並べ替え、絞り込み、すべての列からの絞り込み、検索、列の統計、選択範囲の集計。
   </Card>
   <Card title="エンジンを選べる" icon="puzzle">
-    グリッドは `TableSource` とだけやり取りします。ファイルは DuckDB のサーバーのエンジン、メモリ上のデータは `ArraySource`、ほかのエンジンは[自作のもの](/ja/guides/custom-source/)で扱えます。
+    グリッドは `TableSource` とだけやり取りします。ファイルは DuckDB のサーバーのエンジン、ブラウザーで開くファイルは `vastgrid-browser`、メモリ上のデータは `ArraySource`、ほかのエンジンは[自作のもの](/ja/guides/custom-source/)で扱えます。
   </Card>
   <Card title="安全な作り" icon="approve-check">
     DuckDB のエンジンは、実際の場所が許可したフォルダーの中にあるファイルだけを読み、その設定は実行中に変えられません。SQL はすべて組み立てたもので、値は必ずパラメーターで渡します。

@@ -72,6 +72,7 @@ export default defineConfig({
           items: [
             "guides/in-memory",
             "guides/server",
+            "guides/browser",
             "guides/custom-source",
             "guides/using-the-grid",
             "guides/theming",

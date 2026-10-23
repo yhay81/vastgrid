@@ -3,7 +3,6 @@ title: Roadmap
 description: What is planned for vastgrid.
 ---
 
-- A browser-only engine (DuckDB-WASM or hyparquet in a worker) for apps without a server.
 - Editing cells, with CSV write-back that keeps untouched rows byte for byte.
 - Formula columns.
 

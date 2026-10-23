@@ -1,3 +1,4 @@
+import { createReadStream } from "node:fs";
 import { readdir, realpath, stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import os from "node:os";
@@ -51,7 +52,42 @@ async function send(response: ServerResponse, result: Response) {
   response.end(Buffer.from(await result.arrayBuffer()));
 }
 
-/** Serves the vastgrid protocol for the table files in `dataDirectory` from the Vite dev server. */
+/**
+ * Sends a table file as it is, with byte ranges (HTTP `Range`) and an `ETag`, for `BrowserSource` to read
+ * Parquet from a URL.
+ */
+async function sendFile(root: string, request: IncomingMessage, response: ServerResponse) {
+  const file = await resolveInside(root, decodeURIComponent((request.url ?? "/").replace(/^\/+|[?#].*$/g, "")));
+  const { size, mtimeMs } = await stat(file);
+  response.setHeader("accept-ranges", "bytes");
+  response.setHeader("etag", `"${size.toString(36)}-${Math.floor(mtimeMs).toString(36)}"`);
+  const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.range ?? "");
+  let start = 0;
+  let end = size - 1;
+  if (range && (range[1] || range[2])) {
+    start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+    end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (start > end || start >= size) {
+      response.statusCode = 416;
+      response.setHeader("content-range", `bytes */${size}`);
+      response.end();
+      return;
+    }
+    response.statusCode = 206;
+    response.setHeader("content-range", `bytes ${start}-${end}/${size}`);
+  }
+  response.setHeader("content-length", end - start + 1);
+  if (request.method === "HEAD") {
+    response.end();
+    return;
+  }
+  createReadStream(file, { start, end }).pipe(response);
+}
+
+/**
+ * Serves the vastgrid protocol for the table files in `dataDirectory` from the Vite dev server, and the files
+ * themselves under `/data/`.
+ */
 export function tableServer(dataDirectory: string): Plugin {
   return {
     name: "vastgrid-table-server",
@@ -81,6 +117,12 @@ export function tableServer(dataDirectory: string): Plugin {
             response.statusCode = 500;
             response.end(String(error));
           });
+      });
+      server.middlewares.use("/data", (request, response) => {
+        sendFile(root, request, response).catch((error: unknown) => {
+          response.statusCode = 404;
+          response.end(String(error));
+        });
       });
       server.middlewares.use("/api/files", (_request, response) => {
         void listTables(root).then(

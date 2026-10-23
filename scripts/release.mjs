@@ -6,7 +6,7 @@
 import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
-const packages = ["packages/core", "packages/duckdb", "packages/react"];
+const packages = ["packages/core", "packages/duckdb", "packages/browser", "packages/react"];
 // Private workspaces that depend on the packages.
 const apps = ["examples/playground/package.json", "site/package.json"];
 const commands = { version: setVersion, check, notes: () => process.stdout.write(`${section()}\n`) };

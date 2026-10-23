@@ -52,6 +52,12 @@
   `TableInfo` has `sheets` and `sheet` for workbooks, and the notes `merged_cells` and
   `formulas_without_values`.
 - `vastgrid`: the status bar explains the new notes in English and Japanese.
+- `vastgrid-browser` (new): `BrowserSource` reads local Parquet, CSV, TSV and JSON Lines files, and
+  Parquet files at a URL with HTTP Range requests, in a Web Worker, with no server. Local files can be
+  sorted, filtered, searched and summarized in the worker, with the same results as `ArraySource` and
+  `vastgrid-duckdb`; URLs read only what the grid shows, check the file's `ETag`, and handle servers
+  without `Range` or `HEAD`, unknown sizes and authentication headers. Requests can be cancelled, and
+  `close()` ends the worker.
 
 ## 0.1.1 — 2026-10-23
 

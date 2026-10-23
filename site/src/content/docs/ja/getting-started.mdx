@@ -5,18 +5,20 @@ description: vastgrid をインストールして、メモリ上のデータや�
 
 import { Tabs, TabItem } from "@astrojs/starlight/components";
 
-vastgrid は 3 つのパッケージからなります。
+vastgrid は 4 つのパッケージからなります。
 
 | パッケージ | 内容 |
 | --- | --- |
 | [`vastgrid`](https://www.npmjs.com/package/vastgrid) | React の `DataGrid` コンポーネント。`vastgrid-core` のものをすべて再エクスポートします。 |
 | [`vastgrid-core`](https://www.npmjs.com/package/vastgrid-core) | 表のプロトコル、`ArraySource`・`RemoteSource`、行のキャッシュ、選択とスクロールの写像、書式。フレームワークに依存しません。 |
 | [`vastgrid-duckdb`](https://www.npmjs.com/package/vastgrid-duckdb) | DuckDB を使う Node.js の表のサーバーと、Fetch API の要求の受け口。 |
+| [`vastgrid-browser`](https://www.npmjs.com/package/vastgrid-browser) | ローカルのファイルと URL の Parquet（HTTP Range）を Web Worker で読みます。サーバーは不要です。 |
 
 ## 動作環境
 
 - **`vastgrid`**: React 18 以降と、CSS の `light-dark()` に対応したブラウザー（Chrome・Edge 123、Firefox 120、Safari 17.5 以降）。
 - **`vastgrid-duckdb`**: Node.js 20 以降。DuckDB のバイナリがある Linux（x64・arm64、glibc・musl）、macOS（x64・arm64）、Windows（x64・arm64）で動きます。
+- **`vastgrid-browser`**: モジュールの Worker に対応したブラウザー（Chrome・Edge 80、Firefox 114、Safari 15 以降）。特別なヘッダー（COOP/COEP）は要りません。
 - **`vastgrid-core`** は依存がなく、同じブラウザーと Node.js 20 以降で動きます。
 
 ## メモリ上のデータ
@@ -136,6 +138,20 @@ export function Table({ file }: { file: string }) {
 ```
 
 `vastgrid-duckdb` が使う `@duckdb/node-api` はネイティブの拡張です。サーバーのバンドルに含めず、OS ごとのパッケージ（`@duckdb/node-bindings-<platform>`。macOS で約 120 MB）をサーバーと一緒に配布してください。エンジンのオプション、安全性、デプロイは[サーバーのファイル](/ja/guides/server/)で説明します。
+
+## ブラウザーで開くファイル
+
+サーバーがなくても、`vastgrid-browser` が利用者の選んだファイルや URL の Parquet を Web Worker で読みます。
+
+```tsx
+import { BrowserSource } from "vastgrid-browser";
+
+const source = new BrowserSource({ file }); // URL なら { url: "https://example.com/data.parquet" }
+<DataGrid source={source} locale="ja" />;
+// 表示しなくなったら source.close()
+```
+
+対応する形式、URL でできること、Parquet の配信は[ブラウザーで開くファイル](/ja/guides/browser/)で説明します。
 
 ## 次に読む
 

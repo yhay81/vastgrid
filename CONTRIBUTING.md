@@ -30,6 +30,7 @@ condition), so edits to them apply without building.
 | `packages/core` | `vastgrid-core`: the protocol, `RemoteSource`, `ArraySource`, the row cache, selection and scroll models, formatting. |
 | `packages/react` | `vastgrid`: the `DataGrid` component, its canvas renderer, menus and panels, and the built-in texts. |
 | `packages/duckdb` | `vastgrid-duckdb`: `TableEngine`, the request handler and the benchmark. |
+| `packages/browser` | `vastgrid-browser`: `BrowserSource` and its Web Worker, which read local files and Parquet URLs (HTTP Range) without a server. |
 | `examples/playground` | A Vite app with a table server, for trying changes. |
 | `site` | The documentation and the demo at https://vastgrid.yhay81.com (Astro Starlight), in English and Japanese. |
 | `docs` | The table protocol, which the site also shows. |
@@ -68,7 +69,7 @@ affect speed, run `npm run bench` before and after and put both results in the p
 
 ## Releasing
 
-The three packages are released together, with one version. Before 1.0, a release that breaks
+The four packages are released together, with one version. Before 1.0, a release that breaks
 compatibility raises the minor version (0.1.x → 0.2.0), and other releases raise the patch version, which
 reaches apps that depend on `^0.1.0`.
 
@@ -81,13 +82,13 @@ git tag -s v0.1.1 -m "vastgrid 0.1.1"
 git push origin main v0.1.1
 ```
 
-The first command sets the version of the three packages, the `vastgrid-core` that the others depend on and
+The first command sets the version of the four packages, the `vastgrid-core` that the others depend on and
 the dependencies of the playground and the site, turns "Unreleased" in [CHANGELOG.md](CHANGELOG.md) into the
 version and today's date, and updates `package-lock.json`. Look over the diff and run the checks before you commit.
 
 The tag starts the [Release workflow](.github/workflows/release.yml). It checks that the packages and
-CHANGELOG.md are at the tag's version, runs the checks, publishes `vastgrid-core`, `vastgrid-duckdb` and
-`vastgrid` to npm with provenance, and creates the GitHub release with the CHANGELOG.md section as its notes.
+CHANGELOG.md are at the tag's version, runs the checks, publishes `vastgrid-core`, `vastgrid-duckdb`,
+`vastgrid-browser` and `vastgrid` to npm with provenance, and creates the GitHub release with the CHANGELOG.md section as its notes.
 A pre-release version (`0.2.0-beta.1`) is published under the `next` tag and marked as a pre-release. If a
 run fails half-way, run it again: versions already on npm are skipped.
 
@@ -98,7 +99,7 @@ After a release that fixes a vulnerability, publish its GitHub security advisory
 
 Only the Release workflow can publish, and it needs no npm token:
 
-- On npmjs.com, in the settings of each of the three packages, add a trusted publisher: GitHub Actions,
+- On npmjs.com, in the settings of each of the four packages, add a trusted publisher: GitHub Actions,
   the repository `yhay81/vastgrid`, the workflow `release.yml` and the environment `npm`. Then set
   publishing access to require two-factor authentication and disallow tokens.
 - On GitHub, in Settings → Environments, create `npm` and limit its deployments to tags matching `v*`.

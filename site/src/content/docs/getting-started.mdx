@@ -5,13 +5,14 @@ description: Install vastgrid and show a table from memory or from files on a se
 
 import { Tabs, TabItem } from "@astrojs/starlight/components";
 
-vastgrid comes in three packages:
+vastgrid comes in four packages:
 
 | Package | Contents |
 | --- | --- |
 | [`vastgrid`](https://www.npmjs.com/package/vastgrid) | The `DataGrid` component for React. It re-exports everything in `vastgrid-core`. |
 | [`vastgrid-core`](https://www.npmjs.com/package/vastgrid-core) | The table protocol, `ArraySource`, `RemoteSource`, the row cache, selection and scroll models, formatting. Framework-free. |
 | [`vastgrid-duckdb`](https://www.npmjs.com/package/vastgrid-duckdb) | A Node.js table server backed by DuckDB, with a Fetch API request handler. |
+| [`vastgrid-browser`](https://www.npmjs.com/package/vastgrid-browser) | Reads local files and Parquet URLs (HTTP Range) in a Web Worker, with no server. |
 
 ## Requirements
 
@@ -19,6 +20,8 @@ vastgrid comes in three packages:
   123, Firefox 120, Safari 17.5 or later.
 - **`vastgrid-duckdb`**: Node.js 20 or later, on a platform DuckDB ships a binary for: Linux (x64 or
   arm64, glibc or musl), macOS (x64 or arm64) or Windows (x64 or arm64).
+- **`vastgrid-browser`**: browsers with module workers (Chrome and Edge 80, Firefox 114, Safari 15 or later).
+  No special headers (COOP/COEP) are needed.
 - **`vastgrid-core`** has no dependencies and runs in the same browsers and in Node.js 20 or later.
 
 ## Data in memory
@@ -143,6 +146,20 @@ export function Table({ file }: { file: string }) {
 `vastgrid-duckdb` uses `@duckdb/node-api`, a native module: keep it out of server bundles and ship the
 platform package (`@duckdb/node-bindings-<platform>`, about 120 MB on macOS) with your server.
 [Files on a server](/guides/server/) covers the engine's options, security and deployment.
+
+## Files in the browser
+
+With no server, `vastgrid-browser` reads a file the user picks, or a Parquet file at a URL, in a Web Worker:
+
+```tsx
+import { BrowserSource } from "vastgrid-browser";
+
+const source = new BrowserSource({ file }); // or { url: "https://example.com/data.parquet" }
+<DataGrid source={source} />;
+// source.close() when it is no longer shown
+```
+
+[Files in the browser](/guides/browser/) covers the formats, what works with URLs, and serving Parquet.
 
 ## Next steps
 

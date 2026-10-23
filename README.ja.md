@@ -17,7 +17,7 @@
 - **表計算ソフトの操作。** マウスと Excel のキー操作での範囲の選択、コピー（TSV・HTML・Markdown）、複数の列での並べ替え、
   値の一覧（検索・件数つき）と条件での絞り込み、すべての列からの絞り込み、検索（⌘F）、列の統計、選択範囲のデータの個数・合計・平均・最小・最大。
 - **エンジンを選べる。** グリッドは `TableSource` とだけやり取りします。ディスク上のファイルは DuckDB のサーバー（`vastgrid-duckdb`）、
-  メモリ上のデータは `ArraySource`、ほかのエンジンは自作の `TableSource` で扱えます。
+  ブラウザーで開くファイルと URL の Parquet は `vastgrid-browser`、メモリ上のデータは `ArraySource`、ほかのエンジンは自作の `TableSource` で扱えます。
 - **安全。** DuckDB のエンジンは、リンクをたどった実際の場所が許可したフォルダーの中にあるファイルだけを読み、実行中は変えられません。SQL はすべて組み立てたもので、値は必ずパラメーターで渡します。
 - **日本語と英語**の表示、CSS 変数によるライトとダーク、ARIA のグリッドの役割とキーボードだけでの操作。
 
@@ -28,12 +28,15 @@
 | [`vastgrid`](packages/react) | React の `DataGrid`（キャンバスの描画・操作・メニュー・絞り込み・統計） |
 | [`vastgrid-core`](packages/core) | 表のプロトコル、行のキャッシュ、選択とスクロールの写像、書式、`ArraySource`・`RemoteSource`。フレームワークに依存しない |
 | [`vastgrid-duckdb`](packages/duckdb) | DuckDB を使う Node.js の表のサーバーと、Fetch API の受け口 |
+| [`vastgrid-browser`](packages/browser) | ローカルの Parquet・CSV・TSV・JSON Lines と、URL の Parquet（HTTP Range）を Web Worker で読む。サーバー不要 |
 
 ## 動作環境
 
 - **`vastgrid`**: React 18 以降と、CSS の `light-dark()` に対応したブラウザー（Chrome・Edge 123、Firefox 120、Safari 17.5 以降）。
 - **`vastgrid-duckdb`**: Node.js 20 以降。DuckDB のバイナリがある Linux（x64・arm64、glibc・musl）、macOS（x64・arm64）、
   Windows（x64・arm64）で動きます。
+- **`vastgrid-browser`**: モジュールの Worker に対応したブラウザー（Chrome・Edge 80、Firefox 114、Safari 15 以降）と、
+  `new Worker(new URL(…, import.meta.url))` を扱えるバンドラー。特別なヘッダー（COOP/COEP）は要りません。
 - **`vastgrid-core`** は依存がなく、同じブラウザーと Node.js 20 以降で動きます。
 
 ## 使い方
@@ -82,6 +85,33 @@ export function Table({ file }: { file: string }) {
 `vastgrid-duckdb` が使う `@duckdb/node-api` はネイティブの拡張です。サーバーのバンドルに含めず（Next.js では
 `serverExternalPackages: ["@duckdb/node-api", "@duckdb/node-bindings"]`）、OS ごとのパッケージ
 （`@duckdb/node-bindings-<platform>`。macOS で約 120 MB）をサーバーと一緒に配布してください。
+
+### ブラウザーで開くファイル（サーバーなし）
+
+```sh
+npm install vastgrid vastgrid-browser
+```
+
+```tsx
+import { DataGrid } from "vastgrid";
+import { BrowserSource } from "vastgrid-browser";
+import { useEffect, useState } from "react";
+
+// 利用者が選んだファイル（<input type="file">）か、URL の Parquet
+export function Table({ file }: { file: File }) {
+  const [source, setSource] = useState<BrowserSource | null>(null);
+  useEffect(() => {
+    const next = new BrowserSource({ file }); // URL なら { url: "https://example.com/data.parquet" }
+    setSource(next);
+    return () => next.close(); // Worker を終える
+  }, [file]);
+  return <div style={{ height: 600 }}>{source && <DataGrid source={source} locale="ja" />}</div>;
+}
+```
+
+ファイルはブラウザーの外に出ません。Web Worker がグリッドの表示する部分を読み、ローカルのファイルなら並べ替え・
+絞り込み・集計も行います。URL の Parquet は HTTP Range で読み、表全体を読む操作は `fullScan: true` のときだけ使えます。
+詳しくは[ブラウザーで開くファイル](https://vastgrid.yhay81.com/ja/guides/browser/)を参照してください。
 
 ### メモリ上のデータ
 
@@ -250,7 +280,6 @@ npm run bench
 
 ## 今後
 
-- サーバーのないアプリ向けの、ブラウザーだけで動くエンジン（Web Worker の DuckDB-WASM か hyparquet）
 - セルの編集と、変えていない行を 1 バイトも変えない CSV への書き戻し
 - 式の列
 
