@@ -5,14 +5,14 @@ import {
   ColumnLayout,
   type ColumnSchema,
   type ColumnStats,
-  copyLayout,
   type CopyValues,
+  copyLayout,
   type DistinctValues,
   ErrorCodes,
   type Filter,
+  filtersRows,
   GRID_STATE_VERSION,
   type GridState,
-  filtersRows,
   isAbortError,
   isEmptyQuery,
   MAX_TEXT_LIMIT,
@@ -994,7 +994,7 @@ export class GridController {
     if (!cells) throw new CopyRangesError();
     const { spans, columns, rows } = cells;
     if (rows * columns.length > this.options.copyLimit) throw new CopyTooLargeError(this.options.copyLimit);
-    if (this.viewBuilding && range.bottom >= this.readableRows) throw new ViewBuildingError();
+    if (this.viewBuilding && spans.some((span) => span.end > this.readableRows)) throw new ViewBuildingError();
     const cached = this.cachedRange();
     if (cached) return this.clipboardText(cached.columns, cached.values, cached.rows, options);
     const indexes = columns.map((column) => column.index);

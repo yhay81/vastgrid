@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArraySource,
   type CellValue,
@@ -125,12 +125,12 @@ export function App() {
     else if (selected === LOCAL && localFile) next = browserSource({ file: localFile });
     else if (engine === "browser" && readableInBrowser(selected))
       next = browserSource({ url: `/data/${selected.split("/").map(encodeURIComponent).join("/")}` });
-    else next =
-        new RemoteSource({
-          endpoint: "/api/table",
-          ref: selected,
-          ...(sheet === undefined ? {} : { read: { sheet } }),
-        });
+    else
+      next = new RemoteSource({
+        endpoint: "/api/table",
+        ref: selected,
+        ...(sheet === undefined ? {} : { read: { sheet } }),
+      });
     setSource(next);
     // For trying things from the console.
     (window as unknown as { source: TableSource }).source = next;
@@ -139,6 +139,7 @@ export function App() {
   }, [selected, sheet, engine, localFile]);
 
   useEffect(() => {
+    if (!source) return;
     let current = true;
     void source
       .info()
