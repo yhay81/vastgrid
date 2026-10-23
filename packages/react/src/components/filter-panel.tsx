@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useId, useMemo, useState } from "react";
 import {
   type CellValue,
   type ColumnSchema,
+  type ColumnType,
   type DistinctValues,
   type Filter,
   isAbortError,
@@ -53,13 +54,17 @@ function initialCondition(filter: Filter | null): { operator: Operator; first: s
   }
 }
 
-/** Converts typed text for a numeric column into a number when it is one. */
-function comparable(text: string, numeric: boolean): string | number {
-  if (numeric) {
-    const number = Number(text.replaceAll(",", ""));
-    if (text.trim() !== "" && Number.isFinite(number)) return number;
-  }
-  return text;
+/**
+ * Converts typed text for a numeric column into a number when it is one. Decimals and integers that a
+ * JavaScript number cannot hold exactly (beyond 2^53) stay text, which servers compare exactly.
+ */
+export function comparable(text: string, type: ColumnType): string | number {
+  if (!isNumericType(type)) return text;
+  const digits = text.trim().replaceAll(",", "");
+  const number = Number(digits);
+  if (digits === "" || !Number.isFinite(number)) return text;
+  if (type === "decimal" || (/^[+-]?\d+$/.test(digits) && !Number.isSafeInteger(number))) return digits;
+  return number;
 }
 
 /**
@@ -174,8 +179,8 @@ export function FilterPanel({
         return {
           type: "between",
           column,
-          ...(first ? { min: comparable(first, isNumericType(schema.type)) } : {}),
-          ...(second ? { max: comparable(second, isNumericType(schema.type)) } : {}),
+          ...(first ? { min: comparable(first, schema.type) } : {}),
+          ...(second ? { max: comparable(second, schema.type) } : {}),
         };
       case "eq":
       case "ne":
@@ -183,9 +188,7 @@ export function FilterPanel({
       case "le":
       case "gt":
       case "ge":
-        return first === ""
-          ? null
-          : { type: "compare", column, op: operator, value: comparable(first, isNumericType(schema.type)) };
+        return first === "" ? null : { type: "compare", column, op: operator, value: comparable(first, schema.type) };
       default:
         return first === "" ? null : { type: "text", column, op: operator, value: first };
     }

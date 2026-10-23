@@ -737,13 +737,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           label: messages.filterToValue,
           separator: true,
           disabled: !ready || !capabilities?.filter,
-          onSelect: () => c.setFilter(state.index, { type: "values", column: state.index, values: [value] }),
+          onSelect: () => void c.filterByValue(row, col),
         },
         {
           label: messages.excludeValue,
           disabled: !ready || !capabilities?.filter,
-          onSelect: () =>
-            c.setFilter(state.index, { type: "values", column: state.index, values: [value], exclude: true }),
+          onSelect: () => void c.filterByValue(row, col, true),
         },
       );
     }

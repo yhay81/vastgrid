@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ArraySource, SourceError, type ViewQuery } from "vastgrid-core";
+import { ArraySource, type RowRequest, SourceError, type TableSource, type ViewQuery } from "vastgrid-core";
+import { comparable } from "../src/components/filter-panel.tsx";
 import { GridController } from "../src/controller.ts";
 
 const options = {
@@ -31,11 +32,16 @@ function cancellingSource(failures: number) {
   return source;
 }
 
-async function readyGrid(source: ArraySource) {
+async function readyGrid(source: TableSource) {
   const grid = new GridController(source, { ...options });
   grid.start();
   while (grid.info?.status !== "ready") await new Promise((resolve) => setTimeout(resolve, 1));
   return grid;
+}
+
+async function until(condition: () => boolean) {
+  for (let wait = 0; wait < 200 && !condition(); wait++) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.ok(condition(), "timed out");
 }
 
 test("a view the server cancelled on its own is asked for once more", async () => {
@@ -83,4 +89,107 @@ test("a view that keeps being cancelled is reported instead of pending forever",
   assert.equal(grid.view.id, null);
   assert.match(grid.viewError ?? "", /cancelled/);
   grid.dispose();
+});
+
+/** Answers like a table server: text longer than `textLimit` (2,000 characters unless asked) ends with "…". */
+function truncating(source: ArraySource) {
+  const readRows = source.readRows.bind(source);
+  source.readRows = async (request: RowRequest) => {
+    const block = await readRows(request);
+    const limit = request.textLimit ?? 2000;
+    const cut = (value: unknown) =>
+      typeof value === "string" && value.length > limit ? `${value.slice(0, limit)}…` : value;
+    return { ...block, columns: block.columns.map((values) => values.map(cut) as typeof values) };
+  };
+  return source;
+}
+
+test("copies and filters by the whole text of long cells", async () => {
+  const long = `${"x".repeat(2999)}y`;
+  const grid = await readyGrid(
+    truncating(
+      new ArraySource({
+        columns: ["id", "note"],
+        rows: [
+          [1, long],
+          [2, "short"],
+        ],
+      }),
+    ),
+  );
+  grid.cache.want(0, 2, [0, 1]);
+  await until(() => grid.value(0, 1) !== undefined);
+  grid.selection.select({ row: 0, col: 1 });
+  // The loaded value was cut for display, so the browser's copy event cannot answer with it.
+  assert.equal(grid.copySelectionSync({}), null);
+  assert.equal((await grid.copySelection({})).text, long);
+  await grid.filterByValue(0, 1, false);
+  assert.equal(grid.view.rowCount, 1);
+  grid.dispose();
+});
+
+test("widening a column for a long number stops at the widest width", async () => {
+  const grid = await readyGrid(cancellingSource(0));
+  let renders = 0;
+  grid.onRender(() => renders++);
+  grid.growColumns(new Map([[1, 900]]));
+  assert.equal(grid.visible[1].width, 600);
+  renders = 0;
+  // The renderer reports the same need on every frame.
+  grid.growColumns(new Map([[1, 900]]));
+  assert.equal(renders, 0);
+  grid.dispose();
+});
+
+test("reading a changed file again keeps column settings with their columns and clears the summary", async () => {
+  const first = new ArraySource({
+    columns: ["a", "b", "c"],
+    rows: [
+      [1, 2, 3],
+      [4, 5, 6],
+      [7, 8, 9],
+    ],
+  });
+  // The file was rewritten with its columns in another order.
+  const second = new ArraySource({
+    columns: ["c", "a", "b"],
+    rows: [
+      [3, 1, 2],
+      [6, 4, 5],
+      [9, 7, 8],
+    ],
+  });
+  let current = first;
+  const source: TableSource = {
+    info: async () => ({ ...(await current.info()), revision: current === first ? "1" : "2" }),
+    createView: (query, signal) => current.createView(query, signal),
+    readRows: (request) => current.readRows(request),
+    aggregate: (request) => current.aggregate(request),
+  };
+  const grid = await readyGrid(source);
+  grid.resizeColumn(0, 222);
+  grid.setColumnHidden(1, true);
+  grid.selection.select({ row: 0, col: 0 });
+  grid.selection.select({ row: 2, col: 0 }, "extend");
+  grid.selectionChanged();
+  await until(() => grid.summary !== null);
+  current = second;
+  grid.reload();
+  await until(() => grid.info?.revision === "2");
+  const byName = new Map(grid.columns.map((state) => [grid.schema[state.index].name, state]));
+  assert.equal(byName.get("a")?.width, 222);
+  assert.equal(byName.get("b")?.hidden, true);
+  assert.equal(byName.get("c")?.hidden, false);
+  assert.equal(grid.summary, null);
+  grid.dispose();
+});
+
+test("the filter panel keeps numbers that a JavaScript number cannot hold exactly as text", () => {
+  assert.equal(comparable("1,234", "integer"), 1234);
+  assert.equal(comparable("2.5", "bigint"), 2.5);
+  assert.equal(comparable("9007199254740993", "bigint"), "9007199254740993");
+  assert.equal(comparable("9,007,199,254,740,993", "bigint"), "9007199254740993");
+  assert.equal(comparable("12.30", "decimal"), "12.30");
+  assert.equal(comparable("abc", "integer"), "abc");
+  assert.equal(comparable("2024-01-02", "date"), "2024-01-02");
 });

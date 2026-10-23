@@ -3,6 +3,8 @@ import type { CellValue, ColumnType, Filter, SortKey } from "vastgrid-core";
 /** A column as DuckDB sees it: the quoted identifier and its DuckDB type name. */
 export interface SqlColumn {
   name: string;
+  /** The column's name in the file, when the engine reads it under another `name` (one it needs itself). */
+  label?: string;
   /** DuckDB type, for example `BIGINT`, `DECIMAL(10,2)` or `VARCHAR[]`. */
   sqlType: string;
   type: ColumnType;

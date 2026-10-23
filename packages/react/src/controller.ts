@@ -103,6 +103,11 @@ function codeOf(error: unknown) {
   return error instanceof Error && "code" in error ? error.code : undefined;
 }
 
+/** Whether a loaded value may be text that the source cut for display (it then ends with "…"). */
+function mayBeCut(value: CellValue) {
+  return typeof value === "string" && value.endsWith("…");
+}
+
 function hasQuery(query: ViewQuery) {
   return Boolean(query.sort?.length || query.filters?.length || query.search?.trim());
 }
@@ -303,7 +308,8 @@ export class GridController {
     const types = (table: TableInfo | null) => table?.columns.map((column) => column.type).join("\u0000");
     const reset = !previous || previous.revision !== info.revision || names(previous) !== names(info);
     if (reset) {
-      const old = new Map(this.columns.map((column) => [info.columns[column.index]?.name ?? "", column]));
+      // Settings follow their columns by name, also when the file's columns moved.
+      const old = new Map(this.columns.map((column) => [previous?.columns[column.index]?.name ?? "", column]));
       this.columns = info.columns.map((column, index) => {
         const kept =
           previous && names(previous) === names(info)
@@ -323,6 +329,8 @@ export class GridController {
       this.viewPending = false;
       this.cache.clear();
       this.selection.select({ row: 0, col: 0 });
+      // The summary of the previous selection no longer applies.
+      this.scheduleSummary();
     } else if (previous.status !== info.status && types(previous) !== types(info)) {
       // The final types differ from the preview's (for example all columns read as text).
       this.cache.clear();
@@ -615,7 +623,10 @@ export class GridController {
     return { text: toTsv(table), html: toHtmlTable(table, options.headers ? 1 : 0), cells: rows * columns.length };
   }
 
-  /** The current range's values from the cache, or null when some are not loaded (or it is large). */
+  /**
+   * The current range's values from the cache, or null when some are not loaded, may have been cut
+   * for display, or the range is large.
+   */
   private cachedRange() {
     const range = this.selection.current;
     if (!range) return null;
@@ -627,7 +638,7 @@ export class GridController {
       const list: CellValue[] = [];
       for (let row = range.top; row <= range.bottom; row++) {
         const value = this.cache.value(row, column.index);
-        if (value === undefined) return null;
+        if (value === undefined || mayBeCut(value)) return null;
         list.push(value);
       }
       values.push(list);
@@ -729,7 +740,17 @@ export class GridController {
   setFilter(column: number, filter: Filter | null) {
     const filters = (this.query.filters ?? []).filter((item) => item.column !== column);
     if (filter) filters.push(filter);
-    void this.setQuery({ ...this.query, filters });
+    return this.setQuery({ ...this.query, filters });
+  }
+
+  /** Keeps the rows whose value in the cell's column is the cell's value (or all others, with `exclude`). */
+  async filterByValue(row: number, col: number, exclude = false) {
+    const state = this.visible[col];
+    let value = this.value(row, col);
+    if (!state || value === undefined) return;
+    // A value cut for display would match nothing: filter by the whole text.
+    if (mayBeCut(value)) value = await this.fullValue(row, col);
+    await this.setFilter(state.index, { type: "values", column: state.index, values: [value], exclude });
   }
 
   filterOf(column: number) {
@@ -834,8 +855,10 @@ export class GridController {
     let changed = false;
     for (const [col, width] of widths) {
       const state = this.visible[col];
-      if (!state || state.sized || width <= state.width) continue;
-      state.width = Math.min(Math.ceil(width), 600);
+      // At most 600 px: wider numbers stay cut, and asking again for them changes nothing.
+      const next = Math.min(Math.ceil(width), 600);
+      if (!state || state.sized || next <= state.width) continue;
+      state.width = next;
       changed = true;
     }
     if (changed) {

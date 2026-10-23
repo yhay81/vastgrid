@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
@@ -192,7 +192,7 @@ test("exports views inside the allowed directories only", async () => {
   assert.equal(copy.info().rowCount, 5);
   await assert.rejects(
     table.exportView({ view: null, format: "csv", target: "x" }, path.join(root, "outside.csv")),
-    /Permission|access/i,
+    (error: Error & { code?: string }) => error.code === "not_allowed",
   );
 });
 
@@ -311,13 +311,17 @@ test("serves a preview while loading and reopens changed files", async () => {
   assert.throws(() => engine.get(first.id), /no longer open/);
 });
 
-test("refuses files outside the allowed directories", async () => {
+test("refuses files outside the allowed directories and reports missing ones", async () => {
   const outside = path.join(root, "secret.csv");
   await writeFile(outside, "a\n1\n");
-  const table = await engine.open(outside);
-  await table.whenReady();
-  assert.equal(table.info().status, "error");
-  assert.match(table.info().error ?? "", /Permission|access/i);
+  await assert.rejects(
+    engine.open(outside),
+    (error: Error & { code?: string; status?: number }) => error.code === "not_allowed" && error.status === 403,
+  );
+  await assert.rejects(
+    engine.open(path.join(workspace, "missing.csv")),
+    (error: Error & { code?: string; status?: number }) => error.code === "not_found" && error.status === 404,
+  );
 });
 
 test("the HTTP handler validates requests and maps errors", async () => {
@@ -555,4 +559,93 @@ test("requests that open a changed file at the same time share one new table", a
   assert.equal(first.id, second.id);
   await first.whenReady();
   assert.equal(first.info().rowCount, 2);
+});
+
+test("reads only files whose real location is inside the allowed folders", async () => {
+  const outside = path.join(root, "outside");
+  await mkdir(outside, { recursive: true });
+  // The engine converts Shift_JIS itself, before DuckDB (which checks the folders) reads the file.
+  const sjis = path.join(outside, "secret-sjis.csv");
+  await writeFile(
+    sjis,
+    // "名前,数\n東京,1\n" in Shift_JIS
+    new Uint8Array([0x96, 0xbc, 0x91, 0x4f, 0x2c, 0x90, 0x94, 0x0a, 0x93, 0x8c, 0x8b, 0x9e, 0x2c, 0x31, 0x0a]),
+  );
+  const plain = path.join(outside, "secret.csv");
+  await writeFile(plain, "secret\n42\n");
+  // Links inside an allowed folder to files outside it.
+  await symlink(plain, path.join(workspace, "link.csv"));
+  await symlink(sjis, path.join(workspace, "link-sjis.csv"));
+  for (const file of [sjis, plain, path.join(workspace, "link.csv"), path.join(workspace, "link-sjis.csv")]) {
+    await assert.rejects(engine.open(file), (error: Error & { code?: string }) => error.code === "not_allowed", file);
+  }
+  // Exports cannot leave the allowed folders through a link either.
+  await symlink(outside, path.join(workspace, "outside-link"));
+  const table = await open("fruit.csv");
+  await assert.rejects(
+    table.exportView(
+      { view: null, format: "csv", target: "outside-link/x.csv" },
+      path.join(workspace, "outside-link", "x.csv"),
+    ),
+    (error: Error & { code?: string }) => error.code === "not_allowed",
+  );
+  assert.deepEqual((await readdir(outside)).sort(), ["secret-sjis.csv", "secret.csv"]);
+});
+
+test("reads columns named like the ones the engine uses itself", async () => {
+  await writeFile(path.join(workspace, "reserved.csv"), "rowid,__vg_row,name\n30,c,Cherry\n10,a,Apple\n20,b,Banana\n");
+  const table = await open("reserved.csv");
+  assert.deepEqual(
+    table.info().columns.map((item) => item.name),
+    ["rowid", "__vg_row", "name"],
+  );
+  const rows = await table.readRows({ view: null, start: 0, end: 3, columns: [0, 1, 2] });
+  assert.deepEqual(rows.columns, [
+    [30, 10, 20],
+    ["c", "a", "b"],
+    ["Cherry", "Apple", "Banana"],
+  ]);
+  const view = await table.createView({ sort: [{ column: 0, direction: "asc" }] });
+  const sorted = await table.readRows({ view: view.id, start: 0, end: 3, columns: [0, 2] });
+  assert.deepEqual(sorted.columns, [
+    [10, 20, 30],
+    ["Apple", "Banana", "Cherry"],
+  ]);
+  assert.deepEqual(sorted.rowIds, [1, 2, 0]);
+  // Exports keep the file's names.
+  const target = path.join(workspace, "reserved-sorted.csv");
+  await table.exportView({ view: view.id, format: "csv", target: "reserved-sorted.csv" }, target);
+  assert.equal(await readFile(target, "utf8"), "rowid,__vg_row,name\n10,a,Apple\n20,b,Banana\n30,c,Cherry\n");
+  // The same for a Parquet file read in place.
+  const file = path.join(workspace, "reserved.parquet");
+  const instance = await DuckDBInstance.create(":memory:");
+  const connection = await instance.connect();
+  await connection.run(
+    `COPY (SELECT * FROM (VALUES (30, 'Cherry'), (10, 'Apple'), (20, 'Banana')) t(rowid, name)) TO '${file}' (FORMAT parquet)`,
+  );
+  connection.closeSync();
+  instance.closeSync();
+  const parquet = await open("reserved.parquet");
+  const byRowid = await parquet.createView({ sort: [{ column: 0, direction: "asc" }] });
+  const parquetRows = await parquet.readRows({ view: byRowid.id, start: 0, end: 3, columns: [0, 1] });
+  assert.deepEqual(parquetRows.columns, [
+    [10, 20, 30],
+    ["Apple", "Banana", "Cherry"],
+  ]);
+});
+
+test("lists and filters long text values whole", async () => {
+  const prefix = "x".repeat(5000);
+  await writeFile(path.join(workspace, "long.csv"), `note\n${prefix}A\n${prefix}B\n${prefix}A\n`);
+  const table = await open("long.csv");
+  const distinct = await table.distinctValues({ view: null, column: 0 });
+  assert.deepEqual(
+    distinct.values.map((item) => [String(item.value).slice(-2), item.count]),
+    [
+      ["xA", 2],
+      ["xB", 1],
+    ],
+  );
+  const view = await table.createView({ filters: [{ type: "values", column: 0, values: [distinct.values[1].value] }] });
+  assert.equal(view.rowCount, 1);
 });

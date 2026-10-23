@@ -4,6 +4,28 @@
 
 Fixes.
 
+- `vastgrid-duckdb`: files are opened by their real location (links followed), which must be inside the
+  allowed directories, before the engine reads them itself to detect and convert their encoding. A
+  Shift_JIS file outside them, or a link to one, could be read through the conversion. Exports are
+  written to the real location of their folder, which must be allowed too. Refused paths answer
+  `not_allowed` (403), and missing files `not_found` (404) instead of `internal_error`.
+- `vastgrid-duckdb`: columns named `rowid` (or like the engine's own `__vg_row` and `__vg_position`)
+  are read under another name in SQL and keep their names for clients and exports. Such a column used
+  to empty every read or break sorting.
+- `vastgrid-duckdb`: `distinct` counts and sends whole values, so values that share their first 4,096
+  characters are no longer merged into one that filters to nothing; the most common values in column
+  statistics are counted by whole values too.
+- `vastgrid-core`: `ArraySource` compares and sorts integers beyond 2^53 exactly, finds the minimum and
+  maximum of decimals given as text by value, and computes the standard deviation of large numbers
+  without losing digits.
+- `vastgrid-core`: `RowCache.read` reads whole text and stays on the view it started in, so copies are no
+  longer cut at 2,000 characters or mixed from two orders when the view changes meanwhile.
+- `vastgrid`: the filter panel sends integers beyond 2^53 and decimals as text, which servers compare
+  exactly; copying a cell cut for display, and filtering by its value, use its whole text.
+- `vastgrid`: a column widened for long numbers stops at 600 px without redrawing on every frame, and
+  reading a changed file again keeps each column's width and visibility with that column and clears the
+  selection summary.
+
 - `vastgrid-duckdb`: a file that fails to load is reported to clients that poll `info`. It used to be
   loaded again on every poll, so the grid showed "Loading" forever while the server kept rereading the
   file. The `info` after the failure loads the file again (a retry).

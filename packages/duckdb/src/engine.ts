@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, realpath, rename, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
@@ -111,6 +111,10 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function notAllowed() {
+  return new SourceError("not_allowed", "The path is outside the folders this server may use.", 403);
+}
+
 function isInterrupt(error: unknown) {
   return /interrupt/i.test(errorMessage(error));
 }
@@ -185,7 +189,10 @@ export class TableEngine {
       autoinstall_known_extensions: "false",
       autoload_known_extensions: "false",
     });
-    const directories = [...options.allowedDirectories.map((directory) => path.resolve(directory)), tempDirectory];
+    const resolved = [...options.allowedDirectories.map((directory) => path.resolve(directory)), tempDirectory];
+    // Files are opened by their real location (links followed), so the directories are allowed by theirs too.
+    const real = await Promise.all(resolved.map((directory) => realpath(directory).catch(() => directory)));
+    const directories = [...new Set([...resolved, ...real])];
     const connection = await instance.connect();
     try {
       const list = directories.map((directory) =>
@@ -262,16 +269,31 @@ export class TableEngine {
     return `${prefix}${this.nextId++}_${randomBytes(4).toString("hex")}`;
   }
 
+  /** Whether an absolute path is inside one of the allowed directories. */
+  allows(file: string) {
+    return this.options.allowedDirectories.some((directory) =>
+      file.startsWith(directory.endsWith(path.sep) ? directory : `${directory}${path.sep}`),
+    );
+  }
+
   /**
    * Opens a file, or returns the table already open for it when the file has not changed. A file
    * that changed (size or modification time) is opened again as a new table, and so is a file whose
-   * load failed once `info()` has reported the failure (a retry).
+   * load failed once `info()` has reported the failure (a retry). Only files whose real location
+   * (after following links) is inside the allowed directories are opened.
    */
   async open(filePath: string, format?: TableFormat): Promise<OpenTable> {
     if (this.disposed) throw new SourceError("disposed", "The table engine was closed.", 503);
-    const absolute = path.resolve(filePath);
-    const fileFormat = format ?? tableFormatOf(absolute);
+    const requested = path.resolve(filePath);
+    const fileFormat = format ?? tableFormatOf(requested);
     if (!fileFormat) throw new SourceError("unsupported_format", "This file is not a supported table format.", 415);
+    // The engine reads some files itself (to detect and convert their encoding), and a link can point
+    // anywhere: the file is opened by its real location, which must be inside the allowed directories.
+    if (!this.allows(requested)) throw notAllowed();
+    const absolute = await realpath(requested).catch((error: NodeJS.ErrnoException) => {
+      throw error.code === "ENOENT" ? new SourceError("not_found", "The file does not exist.", 404) : error;
+    });
+    if (!this.allows(absolute)) throw notAllowed();
     const info = await stat(absolute);
     if (!info.isFile()) throw new SourceError("not_file", "Only files can be opened as tables.", 400);
     const revision = `${info.size}:${Math.round(info.mtimeMs)}`;
@@ -372,6 +394,26 @@ const POSITION_COLUMN = "__vg_position";
 const LOOKUP_BATCH = 2048;
 /** Cells (rows × columns) one `rows` request may read: the answer is built in memory. */
 const MAX_CELLS = 1_000_000;
+/** The longest text sent for a cell, also when a request asks for more. */
+const MAX_TEXT = 1_000_000;
+/** Names the engine uses in its queries; a file's column with one of them gets another name in SQL. */
+const RESERVED_NAMES = new Set(["rowid", ROW_COLUMN, POSITION_COLUMN]);
+
+/**
+ * The columns under the names used in SQL: a column whose name the engine needs itself (compared
+ * without case, as SQL does) is given a free name, and keeps its own as `label`.
+ */
+function safeColumns(columns: SqlColumn[]): SqlColumn[] {
+  const taken = new Set(columns.map((column) => column.name.toLowerCase()));
+  return columns.map((column) => {
+    if (!RESERVED_NAMES.has(column.name.toLowerCase())) return column;
+    let suffix = 1;
+    while (taken.has(`${column.name}_${suffix}`.toLowerCase())) suffix++;
+    const name = `${column.name}_${suffix}`;
+    taken.add(name.toLowerCase());
+    return { ...column, name, label: column.name };
+  });
+}
 
 /** One open file. Created by `TableEngine.open`. */
 export class OpenTable {
@@ -433,7 +475,11 @@ export class OpenTable {
     const ready = this.status === "ready";
     if (this.status === "error") this.failureReported = true;
     return {
-      columns: this.columns.map((column) => ({ name: column.name, type: column.type, sourceType: column.sqlType })),
+      columns: this.columns.map((column) => ({
+        name: column.label ?? column.name,
+        type: column.type,
+        sourceType: column.sqlType,
+      })),
       rowCount: ready ? this.rowCount : null,
       // The preview is served while loading only: a table that failed has no rows to read.
       readableRows: ready ? (this.rowCount ?? 0) : this.status === "loading" ? (this.preview?.rows ?? 0) : 0,
@@ -466,6 +512,18 @@ export class OpenTable {
     });
   }
 
+  /** Renames the columns of a table this engine created whose names it needs itself (see `safeColumns`). */
+  private async renameReserved(connection: DuckDBConnection, table: string, columns: SqlColumn[]) {
+    const safe = safeColumns(columns);
+    for (const column of safe) {
+      if (column.label === undefined) continue;
+      await connection.run(
+        `ALTER TABLE ${quoteIdentifier(table)} RENAME COLUMN ${quoteIdentifier(column.label)} TO ${quoteIdentifier(column.name)}`,
+      );
+    }
+    return safe;
+  }
+
   private readerFunction(format: TableFormat, attempt: number) {
     if (format === "json") return attempt === 0 ? "read_json_auto($1)" : "read_json_auto($1, sample_size=-1)";
     if (format === "ndjson") {
@@ -494,14 +552,22 @@ export class OpenTable {
       await engine.withConnection(undefined, async (connection) => {
         const columns = await this.describe(connection, "SELECT * FROM read_parquet($1)", [this.path]);
         const name = engine.createId("vg_p");
-        if (columns.some((column) => column.name === "file_row_number")) {
+        let safe: SqlColumn[];
+        if (columns.some((column) => column.name.toLowerCase() === "file_row_number")) {
           // The file already has a column with this name: load it as a table instead.
           await connection.run(`CREATE TABLE ${quoteIdentifier(name)} AS SELECT * FROM read_parquet($1)`, [this.path]);
           this.objects.push(`TABLE ${quoteIdentifier(name)}`);
           this.position = "rowid";
+          safe = await this.renameReserved(connection, name, columns);
         } else {
+          safe = safeColumns(columns);
+          const selected = safe.map((column) =>
+            column.label === undefined
+              ? quoteIdentifier(column.name)
+              : `${quoteIdentifier(column.label)} AS ${quoteIdentifier(column.name)}`,
+          );
           await connection.run(
-            `CREATE VIEW ${quoteIdentifier(name)} AS SELECT * FROM read_parquet(${quoteLiteral(this.path)}, file_row_number=true)`,
+            `CREATE VIEW ${quoteIdentifier(name)} AS SELECT ${[...selected, "file_row_number"].join(", ")} FROM read_parquet(${quoteLiteral(this.path)}, file_row_number=true)`,
           );
           this.objects.push(`VIEW ${quoteIdentifier(name)}`);
           this.position = "file_row_number";
@@ -512,7 +578,7 @@ export class OpenTable {
           await connection.run(`DROP ${object.split(" ")[0]} IF EXISTS ${quoteIdentifier(name)}`);
           return;
         }
-        this.columns = columns;
+        this.columns = safe;
         this.relation = quoteIdentifier(name);
         this.rowCount = Number(count.getRowsJS()[0][0]);
         this.status = "ready";
@@ -602,7 +668,11 @@ export class OpenTable {
         return;
       }
       this.objects.push(`TABLE ${quoteIdentifier(name)}`);
-      const columns = await this.describe(connection, `SELECT * FROM ${quoteIdentifier(name)}`);
+      const columns = await this.renameReserved(
+        connection,
+        name,
+        await this.describe(connection, `SELECT * FROM ${quoteIdentifier(name)}`),
+      );
       const count = await connection.runAndReadAll(`SELECT count(*) FROM ${quoteIdentifier(name)}`);
       this.columns = columns;
       this.relation = quoteIdentifier(name);
@@ -672,7 +742,7 @@ export class OpenTable {
     if ((request.end - request.start) * request.columns.length > MAX_CELLS) {
       throw new SourceError(ErrorCodes.invalidRequest, "Read at most a million cells at a time.", 400);
     }
-    const limit = Math.min(Math.max(1, request.textLimit ?? this.engine.options.textLimit), 1_000_000);
+    const limit = Math.min(Math.max(1, request.textLimit ?? this.engine.options.textLimit), MAX_TEXT);
     if (this.status === "loading") {
       // While loading, the beginning of the file is served from the preview.
       const preview = this.preview;
@@ -907,7 +977,8 @@ export class OpenTable {
         }
         if (!value || (stats.distinct !== null && stats.distinct <= 24)) {
           const top = await connection.runAndReadAll(
-            `SELECT ${selectExpression(column, 500)} AS value, count(*) AS n FROM ${from} WHERE ${id} IS NOT NULL GROUP BY ALL ORDER BY n DESC, value LIMIT 10`,
+            // Counted by whole values; long text is shortened only for display.
+            `SELECT ${selectExpression(column, 500)} AS value, count(*) AS n FROM ${from} WHERE ${id} IS NOT NULL GROUP BY ${id} ORDER BY n DESC, value LIMIT 10`,
           );
           stats.top = top.getRowsJS().map((row) => ({ value: wireValue(row[0]), count: Number(row[1]) }));
         }
@@ -927,8 +998,10 @@ export class OpenTable {
     const where = search
       ? `WHERE coalesce(contains(lower(${textExpression(column)}), ${params.add(search.toLowerCase())}), FALSE)`
       : "";
-    const expression = selectExpression(column, 4096);
-    const sql = `SELECT ${expression} AS value, count(*) AS n FROM ${from} ${where} GROUP BY ALL ORDER BY n DESC, value NULLS FIRST LIMIT ${limit + 1}`;
+    // Values are counted and sent whole (up to the longest text of a cell), so that a value picked from
+    // the list as a filter matches its rows.
+    const expression = selectExpression(column, MAX_TEXT);
+    const sql = `SELECT ${expression} AS value, count(*) AS n FROM ${from} ${where} GROUP BY ${quoteIdentifier(column.name)} ORDER BY n DESC, value NULLS FIRST LIMIT ${limit + 1}`;
     return this.engine.work.run(() =>
       this.engine.withConnection(signal, async (connection) => {
         const rows = (await connection.runAndReadAll(sql, params.values)).getRowsJS();
@@ -1066,24 +1139,32 @@ export class OpenTable {
     const view = this.view(request.view);
     const { from, position } = this.relationOf(view);
     const columns = (request.columns ?? this.columns.map((_, index) => index)).map((index) => this.column(index));
-    const selected = columns.map((column) => quoteIdentifier(column.name)).join(", ");
+    // Columns read under another name are written under the file's own.
+    const selected = columns
+      .map((column) =>
+        column.label === undefined
+          ? quoteIdentifier(column.name)
+          : `${quoteIdentifier(column.name)} AS ${quoteIdentifier(column.label)}`,
+      )
+      .join(", ");
     const options = {
       csv: "FORMAT csv, HEADER true",
       tsv: "FORMAT csv, HEADER true, DELIMITER '\\t'",
       parquet: "FORMAT parquet, COMPRESSION zstd",
       json: "FORMAT json, ARRAY true",
     }[request.format];
-    const temporary = path.join(
-      path.dirname(target),
-      `.${path.basename(target)}.${randomBytes(6).toString("hex")}.tmp`,
-    );
+    // The folder may be a link: the file is written to its real location, which must be allowed.
+    const folder = await realpath(path.dirname(target)).catch(() => path.dirname(target));
+    const destination = path.join(folder, path.basename(target));
+    if (!this.engine.allows(destination)) throw notAllowed();
+    const temporary = path.join(folder, `.${path.basename(target)}.${randomBytes(6).toString("hex")}.tmp`);
     return this.engine.work.run(() =>
       this.engine.withConnection(signal, async (connection) => {
         try {
           await connection.run(
             `COPY (SELECT ${selected || "*"} FROM ${from} ORDER BY ${position}) TO ${quoteLiteral(temporary)} (${options})`,
           );
-          await rename(temporary, target);
+          await rename(temporary, destination);
         } catch (error) {
           await rm(temporary, { force: true });
           throw error;

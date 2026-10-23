@@ -43,7 +43,9 @@ that changed gets a new handle and a new `revision`.
 | `close` | `table` | `null` |
 
 A `rows` request reads at most 1,000,000 rows and 1,000,000 cells (rows × columns); read more in parts.
-View requests on one table are answered one at a time and never cancel each other.
+View requests on one table are answered one at a time and never cancel each other. `distinct` counts
+whole values and sends them whole (up to 1,000,000 characters), so that a value from its list works in
+a `values` filter.
 
 ### `TableInfo`
 
@@ -103,5 +105,7 @@ type Filter =
 | `load_failed` | 422 | The file could not be read; `message` explains why. |
 | `query_failed` | 422 | A filter value does not fit the column (for example text compared with a number). |
 | `unsupported_format` | 415 | Not a table file. |
+| `not_found` | 404 | The file does not exist. |
+| `not_allowed` | 403 | The file, or the folder of an export, is outside the folders the server may use (links are followed). |
 | `export_disabled` | 403 | The host did not enable exports. |
 | `internal_error` | 500 | Anything else. |

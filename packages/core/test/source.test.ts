@@ -324,3 +324,70 @@ test("row cache asks for failed blocks again by itself", async () => {
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(cache.value(5, 0), 50);
 });
+
+test("array source compares, sorts and summarizes large integers and decimals exactly", async () => {
+  const source = new ArraySource({
+    columns: [
+      { name: "id", type: "bigint" },
+      { name: "price", type: "decimal" },
+      { name: "serial", type: "bigint" },
+    ],
+    rows: [
+      ["9007199254740993", "2.00", 10_000_000_001],
+      ["9007199254740992", "10.00", 10_000_000_002],
+      ["9007199254740994", "3.50", 10_000_000_003],
+    ],
+  });
+  const equal = await source.createView({
+    filters: [{ type: "compare", column: 0, op: "eq", value: "9007199254740993" }],
+  });
+  assert.equal(equal.rowCount, 1);
+  const above = await source.createView({ filters: [{ type: "between", column: 0, min: "9007199254740993" }] });
+  assert.equal(above.rowCount, 2);
+  const sorted = await source.createView({ sort: [{ column: 0, direction: "asc" }] });
+  const rows = await source.readRows({ view: sorted.id, start: 0, end: 3, columns: [0] });
+  assert.deepEqual(rows.columns[0], ["9007199254740992", "9007199254740993", "9007199254740994"]);
+  const price = await source.columnStats(null, 1);
+  assert.equal(price.min, "2.00");
+  assert.equal(price.max, "10.00");
+  const serial = await source.columnStats(null, 2);
+  assert.equal(serial.stddev, 1);
+});
+
+/** Like a table server: text longer than `textLimit` (2,000 characters unless asked) ends with "…". */
+class TruncatingSource extends CountingSource {
+  override async readRows(request: RowRequest, signal?: AbortSignal) {
+    const block = await super.readRows(request, signal);
+    const limit = request.textLimit ?? 2000;
+    const long = "x".repeat(3000);
+    return {
+      ...block,
+      columns: block.columns.map((values) =>
+        values.map(() => (long.length > limit ? `${long.slice(0, limit)}…` : long)),
+      ),
+    };
+  }
+}
+
+test("row cache reads copies whole and from the view they started in", async () => {
+  const source = new TruncatingSource(100_000);
+  let release = () => {};
+  const firstPart = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const readRows = source.readRows.bind(source);
+  source.readRows = async (request, signal) => {
+    await firstPart;
+    return readRows(request, signal);
+  };
+  const cache = new RowCache(source);
+  cache.setView("sorted", 100_000, 100_000, 3);
+  const reading = cache.read(0, 100_000, [0, 1, 2]);
+  // The user sorts again while the first part of the copy is being read.
+  cache.setView("sorted again", 100_000, 100_000, 3);
+  release();
+  const values = await reading;
+  assert.ok(source.requests.length > 1);
+  assert.ok(source.requests.every((request) => request.view === "sorted"));
+  assert.equal(values[2][99_999], "x".repeat(3000));
+});

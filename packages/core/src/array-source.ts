@@ -49,15 +49,32 @@ function inferType(values: CellValue[]): ColumnType {
   return "string";
 }
 
-function isBlank(value: CellValue) {
+function isBlank(value: CellValue | bigint) {
   return value === null || value === "";
 }
 
+const integerText = /^[+-]?\d+$/;
+
+/**
+ * The number of a numeric column's value, exactly: integers that a JavaScript number cannot hold (64-bit
+ * integers beyond 2^53, which arrive as text) become BigInts. `null` when the value is not a number.
+ */
+function exactNumber(value: CellValue, type: ColumnType): number | bigint | null {
+  if (typeof value === "string" && integerText.test(value)) {
+    const number = Number(value);
+    return Number.isSafeInteger(number) ? number : BigInt(value);
+  }
+  return numericValue(value, type);
+}
+
 /** Total order used for sorting: numbers, then booleans, then strings. Blanks are handled by the caller. */
-function compareValues(a: CellValue, b: CellValue): number {
-  if (typeof a === "number" && typeof b === "number") return a - b;
-  if (typeof a === "number") return -1;
-  if (typeof b === "number") return 1;
+function compareValues(a: CellValue | bigint, b: CellValue | bigint): number {
+  const aNumber = typeof a === "number" || typeof a === "bigint";
+  const bNumber = typeof b === "number" || typeof b === "bigint";
+  // Comparing numbers with BigInts is exact.
+  if (aNumber && bNumber) return a < b ? -1 : a > b ? 1 : 0;
+  if (aNumber) return -1;
+  if (bNumber) return 1;
   if (typeof a === "boolean" && typeof b === "boolean") return Number(a) - Number(b);
   if (typeof a === "boolean") return -1;
   if (typeof b === "boolean") return 1;
@@ -173,8 +190,9 @@ export class ArraySource implements TableSource {
       case "between": {
         if (value === null) return false;
         const numeric = isNumericType(type);
-        const left = numeric ? numericValue(value, type) : value;
-        const cast = (bound: CellValue) => (numeric ? numericValue(bound, type) : bound);
+        // Numbers compare by value, exactly also for integers beyond 2^53.
+        const left = numeric ? exactNumber(value, type) : value;
+        const cast = (bound: CellValue) => (numeric ? exactNumber(bound, type) : bound);
         if (left === null) return false;
         if (filter.type === "between") {
           const min = filter.min === undefined ? null : cast(filter.min);
@@ -224,15 +242,17 @@ export class ArraySource implements TableSource {
     }
     const sort = query.sort ?? [];
     if (sort.length > 0) {
-      const numeric = sort.map((key) => isNumericType(this.schema[key.column]?.type ?? "string"));
+      const types = sort.map((key) => this.schema[key.column]?.type ?? "string");
       kept.sort((a, b) => {
         for (let index = 0; index < sort.length; index++) {
           const key = sort[index];
-          let left = this.value(a, key.column);
-          let right = this.value(b, key.column);
-          if (numeric[index]) {
-            left = numericValue(left);
-            right = numericValue(right);
+          const type = types[index];
+          let left: CellValue | bigint = this.value(a, key.column);
+          let right: CellValue | bigint = this.value(b, key.column);
+          // Numbers sort by value, exactly also beyond 2^53; what is not a number counts as blank.
+          if (isNumericType(type)) {
+            left = exactNumber(left, type);
+            right = exactNumber(right, type);
           }
           const leftBlank = isBlank(left);
           const rightBlank = isBlank(right);
@@ -281,11 +301,12 @@ export class ArraySource implements TableSource {
     let min: CellValue | undefined;
     let max: CellValue | undefined;
     let sum = 0;
-    let squares = 0;
     let numbers = 0;
     let minLength: number | null = null;
     let maxLength: number | null = null;
     const numericValues: number[] = [];
+    // Numbers compare by value, also decimals and large integers that arrive as text.
+    const rank = (item: CellValue) => (isNumericType(type) ? (exactNumber(item, type) ?? item) : item);
     for (let position = 0; position < size; position++) {
       const value = this.value(this.rowAt(view, position), column);
       if (value === null) {
@@ -296,13 +317,12 @@ export class ArraySource implements TableSource {
       const entry = counts.get(key);
       if (entry) entry.count++;
       else counts.set(key, { value, count: 1 });
-      if (min === undefined || compareValues(value, min) < 0) min = value;
-      if (max === undefined || compareValues(value, max) > 0) max = value;
+      if (min === undefined || compareValues(rank(value), rank(min)) < 0) min = value;
+      if (max === undefined || compareValues(rank(value), rank(max)) > 0) max = value;
       const number = numericValue(value, type);
       if (number !== null && isNumericType(type)) {
         numbers++;
         sum += number;
-        squares += number * number;
         numericValues.push(number);
       }
       if (typeof value === "string") {
@@ -315,7 +335,10 @@ export class ArraySource implements TableSource {
     if (numbers > 0) {
       const mean = sum / numbers;
       stats.mean = mean;
-      stats.stddev = numbers > 1 ? Math.sqrt(Math.max(0, (squares - numbers * mean * mean) / (numbers - 1))) : null;
+      // From the deviations, not from the sum of squares, which loses the digits of large numbers.
+      let deviations = 0;
+      for (const number of numericValues) deviations += (number - mean) ** 2;
+      stats.stddev = numbers > 1 ? Math.sqrt(deviations / (numbers - 1)) : null;
       numericValues.sort((a, b) => a - b);
       const quantile = (q: number) =>
         numericValues[Math.min(numericValues.length - 1, Math.floor(q * (numericValues.length - 1)))];

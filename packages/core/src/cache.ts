@@ -16,6 +16,9 @@ export interface RowCacheOptions {
 
 export type BlockState = "queued" | "loading" | "ready" | "error";
 
+/** `textLimit` for copies, which need whole values: as much text as servers send for a cell. */
+const WHOLE_TEXT = 1_000_000;
+
 /** Rows `[start, end)` of the columns `[firstColumn, firstColumn + columns.length)`. */
 export class CacheBlock {
   state: BlockState = "queued";
@@ -323,7 +326,8 @@ export class RowCache {
 
   /**
    * Reads rows `[start, end)` of the given schema columns directly from the source, in chunks, for
-   * copying and exporting. Values are returned per column, in the order of `columns`.
+   * copying and exporting. Values are returned per column, in the order of `columns`, with their whole
+   * text, and all of them from the view shown when the reading started.
    */
   async read(
     start: number,
@@ -334,12 +338,13 @@ export class RowCache {
   ): Promise<CellValue[][]> {
     const result: CellValue[][] = columns.map(() => []);
     if (columns.length === 0 || end <= start) return result;
+    const view = this.viewId;
     // About 200,000 cells per request, also for wide tables: servers limit the cells of one request.
     const chunk = Math.max(1, Math.floor(200_000 / columns.length));
     for (let from = start; from < end; from += chunk) {
       const to = Math.min(end, from + chunk);
       const block = await this.source.readRows(
-        { view: this.viewId, start: from, end: to, columns: [...columns] },
+        { view, start: from, end: to, columns: [...columns], textLimit: WHOLE_TEXT },
         signal,
       );
       block.columns.forEach((values, index) => {

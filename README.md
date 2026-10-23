@@ -17,8 +17,9 @@ hundreds of millions of rows — and works like a spreadsheet.
   max of the selection.
 - **Bring your engine.** The grid talks to a `TableSource`. Use the DuckDB server engine for files on
   disk, `ArraySource` for data already in memory, or implement your own.
-- **Safe by construction.** The DuckDB engine can only read the folders you allow, and that cannot be
-  changed while it runs. All SQL is generated; values are always parameters.
+- **Safe by construction.** The DuckDB engine only reads files whose real location (links followed) is
+  inside the folders you allow, and that cannot be changed while it runs. All SQL is generated; values
+  are always parameters.
 - **Japanese and English** built in, light and dark themes through CSS variables, ARIA grid semantics
   and full keyboard operation.
 
