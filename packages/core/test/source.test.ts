@@ -5,7 +5,7 @@ import { RowCache } from "../src/cache.ts";
 import { parseProtocolRequest } from "../src/protocol.ts";
 import { RemoteSource } from "../src/remote-source.ts";
 import { filtersRows, isEmptyQuery, type TableSource } from "../src/source.ts";
-import type { RowRequest } from "../src/types.ts";
+import type { RowRequest, ViewQuery } from "../src/types.ts";
 
 function people() {
   return new ArraySource({
@@ -352,6 +352,54 @@ test("array source compares, sorts and summarizes large integers and decimals ex
   assert.equal(price.max, "10.00");
   const serial = await source.columnStats(null, 2);
   assert.equal(serial.stddev, 1);
+});
+
+test("array source preserves decimal digits in sorting, comparisons, ranges and extrema", async () => {
+  const values = ["9007199254740992.20", "9007199254740992.10", "-1.00000000000000002", "-1.00000000000000001"];
+  const source = new ArraySource({ columns: [{ name: "amount", type: "decimal" }], columnData: [values] });
+  const read = async (query: ViewQuery) => {
+    const view = await source.createView(query);
+    return (await source.readRows({ view: view.id, start: 0, end: 10, columns: [0] })).columns[0];
+  };
+  assert.deepEqual(await read({ sort: [{ column: 0, direction: "asc" }] }), [
+    values[2],
+    values[3],
+    values[1],
+    values[0],
+  ]);
+  assert.deepEqual(await read({ sort: [{ column: 0, direction: "desc" }] }), [
+    values[0],
+    values[1],
+    values[3],
+    values[2],
+  ]);
+  assert.deepEqual(await read({ filters: [{ type: "compare", column: 0, op: "eq", value: values[1] }] }), [values[1]]);
+  assert.deepEqual(
+    await read({ filters: [{ type: "between", column: 0, min: "9007199254740992.09", max: "9007199254740992.15" }] }),
+    [values[1]],
+  );
+  const stats = await source.columnStats(null, 0);
+  assert.equal(stats.min, values[2]);
+  assert.equal(stats.max, values[0]);
+
+  const mixed = new ArraySource({
+    columns: [{ name: "amount", type: "decimal" }],
+    columnData: [["1.2300", "123e-2", "0.00", "-0e5", 1.23, "0.0001", "-2.5e3", "2.5e3", "1e-1000"]],
+  });
+  const equal = await mixed.createView({ filters: [{ type: "compare", column: 0, op: "eq", value: "1.23" }] });
+  assert.equal(equal.rowCount, 3);
+  const sorted = await mixed.createView({ sort: [{ column: 0, direction: "asc" }] });
+  assert.deepEqual((await mixed.readRows({ view: sorted.id, start: 0, end: 9, columns: [0] })).columns[0], [
+    "-2.5e3",
+    "0.00",
+    "-0e5",
+    "1e-1000",
+    "0.0001",
+    "1.2300",
+    "123e-2",
+    1.23,
+    "2.5e3",
+  ]);
 });
 
 /** Like a table server: text longer than `textLimit` (2,000 characters unless asked) ends with "…". */

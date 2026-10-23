@@ -184,6 +184,131 @@ test("reading a changed file again keeps column settings with their columns and 
   grid.dispose();
 });
 
+test("reloading remaps sort and filters by name after a schema-less loading response", async () => {
+  const first = new ArraySource({
+    columns: ["name", "age", "removed"],
+    rows: [
+      ["Ada", 30, "x"],
+      ["Ada", 40, "x"],
+      ["Bob", 50, "x"],
+    ],
+  });
+  const second = new ArraySource({
+    columns: ["age", "name"],
+    rows: [
+      [30, "Ada"],
+      [40, "Ada"],
+      [50, "Bob"],
+    ],
+  });
+  let current = first;
+  let loading = false;
+  const source: TableSource = {
+    info: async () => {
+      const info = { ...(await current.info()), revision: current === first ? "1" : "2" };
+      if (loading) {
+        loading = false;
+        return { ...info, columns: [], rowCount: null, readableRows: 0, status: "loading" };
+      }
+      return info;
+    },
+    createView: (query, signal) => current.createView(query, signal),
+    readRows: (request) => current.readRows(request),
+  };
+  const grid = await readyGrid(source);
+  try {
+    await grid.setQuery({
+      sort: [
+        { column: 1, direction: "desc" },
+        { column: 2, direction: "asc" },
+      ],
+      filters: [
+        { type: "values", column: 0, values: ["Ada"] },
+        { type: "values", column: 2, values: ["x"] },
+      ],
+      search: "Ada",
+    });
+    current = second;
+    loading = true;
+    grid.reload();
+    await until(() => grid.info?.revision === "2" && grid.status === "ready" && !grid.viewPending);
+    assert.equal(grid.viewError, null);
+    assert.equal(grid.rowCount, 2);
+    assert.deepEqual(grid.query, {
+      sort: [{ column: 0, direction: "desc" }],
+      filters: [{ type: "values", column: 1, values: ["Ada"] }],
+      search: "Ada",
+    });
+    assert.deepEqual((await grid.source.readRows({ view: grid.view.id, start: 0, end: 2, columns: [0, 1] })).columns, [
+      [40, 30],
+      ["Ada", "Ada"],
+    ]);
+  } finally {
+    grid.dispose();
+  }
+});
+
+test("reloading removes query keys for columns that no longer exist", async () => {
+  const first = new ArraySource({
+    columns: ["removed", "kept"],
+    rows: [
+      ["x", "Ada"],
+      ["y", "Bob"],
+    ],
+  });
+  const second = new ArraySource({ columns: ["kept"], rows: [["Ada"], ["Bob"]] });
+  let current = first;
+  const source: TableSource = {
+    info: async () => ({ ...(await current.info()), revision: current === first ? "1" : "2" }),
+    createView: (query, signal) => current.createView(query, signal),
+    readRows: (request) => current.readRows(request),
+  };
+  const grid = await readyGrid(source);
+  try {
+    await grid.setQuery({
+      sort: [{ column: 0, direction: "asc" }],
+      filters: [{ type: "text", column: 0, op: "equals", value: "x" }],
+    });
+    current = second;
+    grid.reload();
+    await until(() => grid.info?.revision === "2" && !grid.viewPending);
+    assert.deepEqual(grid.query, { sort: [], filters: [] });
+    assert.equal(grid.view.id, null);
+    assert.equal(grid.rowCount, 2);
+  } finally {
+    grid.dispose();
+  }
+});
+
+test("queries set before the first schema arrives keep their column indexes", async () => {
+  const source = new ArraySource({
+    columns: ["name", "age"],
+    rows: [
+      ["Ada", 30],
+      ["Bob", 40],
+    ],
+  });
+  const info = source.info.bind(source);
+  let loading = true;
+  source.info = async () => {
+    const result = await info();
+    if (!loading) return result;
+    loading = false;
+    return { ...result, columns: [], status: "loading", rowCount: null, readableRows: 0 };
+  };
+  const grid = new GridController(source, { ...options });
+  try {
+    const query: ViewQuery = { filters: [{ type: "values", column: 0, values: ["Ada"] }] };
+    await grid.setQuery(query);
+    grid.start();
+    await until(() => grid.status === "ready" && !grid.viewPending);
+    assert.deepEqual(grid.query, query);
+    assert.equal(grid.rowCount, 1);
+  } finally {
+    grid.dispose();
+  }
+});
+
 test("the filter panel keeps numbers that a JavaScript number cannot hold exactly as text", () => {
   assert.equal(comparable("1,234", "integer"), 1234);
   assert.equal(comparable("2.5", "bigint"), 2.5);

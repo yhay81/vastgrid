@@ -1,0 +1,144 @@
+---
+title: 使い始める
+description: vastgrid をインストールして、メモリ上のデータやサーバーのファイルを表で表示します。
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+vastgrid は 3 つのパッケージからなります。
+
+| パッケージ | 内容 |
+| --- | --- |
+| [`vastgrid`](https://www.npmjs.com/package/vastgrid) | React の `DataGrid` コンポーネント。`vastgrid-core` のものをすべて再エクスポートします。 |
+| [`vastgrid-core`](https://www.npmjs.com/package/vastgrid-core) | 表のプロトコル、`ArraySource`・`RemoteSource`、行のキャッシュ、選択とスクロールの写像、書式。フレームワークに依存しません。 |
+| [`vastgrid-duckdb`](https://www.npmjs.com/package/vastgrid-duckdb) | DuckDB を使う Node.js の表のサーバーと、Fetch API の要求の受け口。 |
+
+## 動作環境
+
+- **`vastgrid`**: React 18 以降と、CSS の `light-dark()` に対応したブラウザー（Chrome・Edge 123、Firefox 120、Safari 17.5 以降）。
+- **`vastgrid-duckdb`**: Node.js 20 以降。DuckDB のバイナリがある Linux（x64・arm64、glibc・musl）、macOS（x64・arm64）、Windows（x64・arm64）で動きます。
+- **`vastgrid-core`** は依存がなく、同じブラウザーと Node.js 20 以降で動きます。
+
+## メモリ上のデータ
+
+```bash
+npm install vastgrid
+```
+
+グリッドには `TableSource` と高さを渡します。`ArraySource` は、すでにブラウザーにある行を持ちます。
+
+```tsx
+import { ArraySource, DataGrid } from "vastgrid";
+import "vastgrid/styles.css";
+import { useMemo } from "react";
+
+export function People({ people }: { people: { name: string; born: number; field: string }[] }) {
+  const source = useMemo(
+    () =>
+      new ArraySource({
+        columns: ["name", "born", "field"],
+        rows: people.map((person) => [person.name, person.born, person.field]),
+      }),
+    [people],
+  );
+  return (
+    <div style={{ height: 600 }}>
+      <DataGrid source={source} />
+    </div>
+  );
+}
+```
+
+グリッドは親の要素いっぱいに広がるので、親に高さが必要です（固定の高さか、伸びる flex や grid の子要素）。ソースは表ごとに 1 回だけ作ってください。新しいソースを渡すと、グリッドを最初から作り直します。
+
+`ArraySource` は並べ替え・絞り込み・集計を画面のスレッドで行います。数十万行までが目安です。オプションは[メモリ上のデータ](/ja/guides/in-memory/)を参照してください。
+
+## サーバーのファイル
+
+```bash
+npm install vastgrid vastgrid-duckdb
+```
+
+サーバーは DuckDB でファイルを開き、グリッドの要求に答えます。受け口は Fetch API の `Request` を受け取るので、それを使うどのフレームワークでも動きます。
+
+<Tabs>
+  <TabItem label="Next.js">
+
+```ts
+// app/api/table/route.ts
+import path from "node:path";
+import { createTableHandler, TableEngine } from "vastgrid-duckdb";
+
+const root = "/srv/data";
+const engine = TableEngine.create({ allowedDirectories: [root], tempDirectory: "/tmp/vastgrid" });
+
+export const POST = createTableHandler({
+  engine: () => engine,
+  // 画面から受け取った ref をファイルに対応させる。フォルダーの外は拒否する。
+  resolve: (ref) => {
+    const file = path.resolve(root, ref);
+    if (!file.startsWith(`${root}${path.sep}`)) throw new Error("Not allowed");
+    return file;
+  },
+});
+```
+
+```ts
+// next.config.ts
+export default {
+  serverExternalPackages: ["@duckdb/node-api", "@duckdb/node-bindings"],
+};
+```
+
+  </TabItem>
+  <TabItem label="Hono">
+
+```ts
+import path from "node:path";
+import { Hono } from "hono";
+import { createTableHandler, TableEngine } from "vastgrid-duckdb";
+
+const root = "/srv/data";
+const engine = TableEngine.create({ allowedDirectories: [root], tempDirectory: "/tmp/vastgrid" });
+const table = createTableHandler({
+  engine: () => engine,
+  resolve: (ref) => {
+    const file = path.resolve(root, ref);
+    if (!file.startsWith(`${root}${path.sep}`)) throw new Error("Not allowed");
+    return file;
+  },
+});
+
+const app = new Hono();
+app.post("/api/table", (c) => table(c.req.raw));
+export default app;
+```
+
+  </TabItem>
+</Tabs>
+
+ブラウザーでは、`RemoteSource` に受け口の URL とファイルを指定します。
+
+```tsx
+"use client";
+import { DataGrid, RemoteSource } from "vastgrid";
+import "vastgrid/styles.css";
+import { useMemo } from "react";
+
+export function Table({ file }: { file: string }) {
+  const source = useMemo(() => new RemoteSource({ endpoint: "/api/table", ref: file }), [file]);
+  return (
+    <div style={{ height: 600 }}>
+      <DataGrid source={source} />
+    </div>
+  );
+}
+```
+
+`vastgrid-duckdb` が使う `@duckdb/node-api` はネイティブの拡張です。サーバーのバンドルに含めず、OS ごとのパッケージ（`@duckdb/node-bindings-<platform>`。macOS で約 120 MB）をサーバーと一緒に配布してください。エンジンのオプション、安全性、デプロイは[サーバーのファイル](/ja/guides/server/)で説明します。
+
+## 次に読む
+
+- [デモ](/ja/demo/)を試すか、マウスとキーボードでの[グリッドの操作](/ja/guides/using-the-grid/)を見てください。
+- [CSS 変数](/ja/guides/theming/)で見た目を変えられます。
+- [自作の `TableSource`](/ja/guides/custom-source/)で、ほかのエンジンにつなげられます。

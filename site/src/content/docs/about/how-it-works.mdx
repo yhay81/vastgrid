@@ -1,0 +1,53 @@
+---
+title: How it works
+description: How the grid scrolls past the browser's limits, loads rows, and how the DuckDB engine opens and sorts files.
+---
+
+import Architecture from "../../../components/Architecture.astro";
+
+<Architecture />
+
+The grid knows nothing about files or engines: it reads windows of rows from a `TableSource`. What it
+draws costs the same whether the table has a hundred rows or a billion.
+
+## Drawing
+
+Cells are drawn on a canvas, which takes about 2 ms per frame for a full screen of cells (1,000 and
+more). Menus, panels, the find bar and the cell inspector are DOM elements over it. Scrolling draws the
+canvas without rendering React; React renders the toolbar, the status bar and the panels when what they
+show changes.
+
+The canvas reads its colors and fonts from the [CSS custom properties](/guides/theming/) of the grid's
+root, so CSS styles the cells as it styles the rest.
+
+## Scrolling
+
+A transparent native scroller sits over the canvas, so the wheel, the trackpad and the scrollbars behave
+as the platform's do. Browsers cap the size of an element (about 16.7 million pixels in Chromium, under
+700,000 rows of 24 px), so `ScrollAxis` maps the native position to a virtual one: small movements move
+by the same amount, while large jumps and the two ends map proportionally. Every row of a billion stays
+reachable with the scrollbar and the keyboard.
+
+## Loading
+
+On every frame the grid declares the visible rows and columns. `RowCache` loads the missing blocks of
+256 rows by 48 columns: the visible ones first, then one screen ahead and behind. It cancels the requests
+for blocks that scrolled far away, drops the least recently used blocks beyond its budget, and asks again
+for blocks that failed after a delay. Engines cut long text for display (`vastgrid-duckdb` at 2,000
+characters); copies and the cell inspector read whole values.
+
+## The DuckDB engine
+
+- **Opening.** Delimited and JSON files become DuckDB tables in a database file of the session; the
+  first 1,000 rows are served from a preview while the file loads. Parquet files are read in place by
+  row position, with no load. Encodings DuckDB cannot read (Shift_JIS, EUC-JP) are converted first.
+- **Views.** Sorting and filtering build a view: a sorted copy for tables up to 20M rows, so that a
+  window of rows takes 2 ms, or only the order of the rows for larger ones, which takes seconds instead
+  of minutes to build and a fraction of the temporary space.
+- **Isolation.** The engine allows DuckDB to read only the folders you name, by their real location,
+  and then disables changing that. All SQL is generated; values are always parameters.
+- **Protocol.** `RemoteSource` speaks a small [JSON protocol](/reference/protocol/) with the server. It
+  reopens tables and recreates views when the server forgets them, for example after a restart.
+
+The [survey of existing viewers and grids](https://github.com/yhay81/vastgrid/blob/main/docs/research.ja.md)
+(Japanese) explains the choices.

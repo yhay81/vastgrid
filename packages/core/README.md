@@ -6,3 +6,4 @@ and its JSON protocol, `RemoteSource` (a client for table servers such as `vastg
 clipboard serialization.
 
 Most apps install [`vastgrid`](https://www.npmjs.com/package/vastgrid), which re-exports everything here.
+Documentation: https://vastgrid.yhay81.com/reference/table-source/

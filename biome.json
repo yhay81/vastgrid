@@ -12,6 +12,10 @@
     {
       "includes": ["**/*.css"],
       "linter": { "rules": { "style": { "noDescendingSpecificity": "off" } } }
+    },
+    {
+      "includes": ["**/*.astro"],
+      "linter": { "rules": { "correctness": { "noUnusedImports": "off", "noUnusedVariables": "off" } } }
     }
   ]
 }

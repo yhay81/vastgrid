@@ -1,0 +1,84 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+concurrency:
+  group: release
+jobs:
+  # Checks and packs without the right to publish, so that no dependency run here can publish.
+  build:
+    name: Check and pack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # No cache: what is published is built from the lockfile alone.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: node scripts/release.mjs check "${GITHUB_REF_NAME#v}"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm pack -w packages/core -w packages/duckdb -w packages/react --pack-destination "$RUNNER_TEMP/packages"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: ${{ runner.temp }}/packages
+          if-no-files-found: error
+  publish:
+    name: Publish to npm
+    needs: build
+    runs-on: ubuntu-latest
+    # npm accepts these packages only from this workflow in this environment; the environment's settings decide
+    # which tags may use it. See "Releasing" in CONTRIBUTING.md.
+    environment: npm
+    permissions:
+      # The GitHub release.
+      contents: write
+      # Trusted publishing and provenance.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # Trusted publishing needs npm 11.5.1 or later, which Node.js 24 includes.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: ${{ runner.temp }}/packages
+      # vastgrid-core first, as the others depend on it. Versions already on npm are skipped, so that a failed
+      # run can be run again.
+      - name: Publish
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          tag=latest
+          if [[ "$version" == *-* ]]; then tag=next; fi
+          for name in vastgrid-core vastgrid-duckdb vastgrid; do
+            if [ "$(npm view "$name@$version" version 2>/dev/null)" = "$version" ]; then
+              echo "$name@$version is already on npm."
+            else
+              npm publish "$RUNNER_TEMP/packages/$name-$version.tgz" --provenance --tag "$tag"
+            fi
+          done
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then exit 0; fi
+          node scripts/release.mjs notes "$version" > "$RUNNER_TEMP/notes.md"
+          options=()
+          if [[ "$version" == *-* ]]; then options+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "vastgrid $version" \
+            --notes-file "$RUNNER_TEMP/notes.md" "${options[@]}"

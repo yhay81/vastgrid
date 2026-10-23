@@ -1,10 +1,14 @@
 # vastgrid
 
+[![npm](https://img.shields.io/npm/v/vastgrid)](https://www.npmjs.com/package/vastgrid)
+[![CI](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml/badge.svg)](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/yhay81/vastgrid)](LICENSE)
+
 数 GB・数億行の CSV・TSV・Parquet・JSON Lines を開けて、表計算ソフトのように扱える React のデータグリッドです。
 
-[English](README.md)
+**[デモを試す](https://vastgrid.yhay81.com/ja/demo/)** · [ドキュメント](https://vastgrid.yhay81.com/ja/) · [English](README.md)
 
-![1 億行の Parquet を絞り込み・並べ替えし、列の統計と選択範囲の集計を表示した画面](docs/images/playground.jpg)
+[![1 億行の Parquet を絞り込み・並べ替えし、列の統計と選択範囲の集計を表示した画面](docs/images/playground.jpg)](https://vastgrid.yhay81.com/ja/demo/)
 
 - **どんな大きさでも開ける。** 行はスクロールに合わせて、まとまりごとに読みます。1.4 GB・1 億行の Parquet は 20 ms で開き、
   735 MB の CSV は読み込みの途中でも 0.15 秒で最初の行を表示します。
@@ -24,6 +28,13 @@
 | [`vastgrid`](packages/react) | React の `DataGrid`（キャンバスの描画・操作・メニュー・絞り込み・統計） |
 | [`vastgrid-core`](packages/core) | 表のプロトコル、行のキャッシュ、選択とスクロールの写像、書式、`ArraySource`・`RemoteSource`。フレームワークに依存しない |
 | [`vastgrid-duckdb`](packages/duckdb) | DuckDB を使う Node.js の表のサーバーと、Fetch API の受け口 |
+
+## 動作環境
+
+- **`vastgrid`**: React 18 以降と、CSS の `light-dark()` に対応したブラウザー（Chrome・Edge 123、Firefox 120、Safari 17.5 以降）。
+- **`vastgrid-duckdb`**: Node.js 20 以降。DuckDB のバイナリがある Linux（x64・arm64、glibc・musl）、macOS（x64・arm64）、
+  Windows（x64・arm64）で動きます。
+- **`vastgrid-core`** は依存がなく、同じブラウザーと Node.js 20 以降で動きます。
 
 ## 使い方
 
@@ -149,7 +160,7 @@ DuckDB の処理を含み、HTTP は含みません。
 - **読み込み。** グリッドは毎フレーム、見えている行と列を伝えます。`RowCache` は足りないまとまり（256 行 × 48 列）を、見えている所から、
   1 画面先と前まで読み、遠ざかった要求は取り消し、古いまとまりから捨てます。
 - **エンジン。** 区切りのテキストと JSON は、セッションの DuckDB のファイルに表として読み込みます。読み込み中も先頭の 1,000 行を表示します。
-  Parquet はファイルのまま、行の位置で読みます。DuckDB が読めない文字コード（Shift_JIS・EUC-JP）は先に変換します。
+  Parquet はファイルのまま、行の位置で読みます。Shift_JIS・EUC-JP・BOM 付き UTF-16（両方のバイト順）は先に UTF-8 に変換します。
   並べ替え・絞り込みの結果は、2,000 万行までは並べ替えた表を（取り出し 2 ms）、それを超えると行の順番だけを作ります（数分かかる処理が数秒に、一時領域も数分の 1 に）。
 - **プロトコル。** `RemoteSource` は小さな JSON のプロトコル（[docs/protocol.md](docs/protocol.md)）を話し、サーバーが表やビューを忘れた場合（再起動など）は開き直します。
 
@@ -190,6 +201,7 @@ DuckDB の処理を含み、HTTP は含みません。
 ```sh
 npm install
 npm run dev        # お試し画面 http://127.0.0.1:5174（examples/playground/.data のファイル）
+npm run dev -w vastgrid-site   # ドキュメントとデモ http://localhost:4321
 npm run generate -w vastgrid-playground   # 見本のファイル。--large で 1 億行も作る
 npm test
 npm run lint

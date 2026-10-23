@@ -1,11 +1,15 @@
 # vastgrid
 
+[![npm](https://img.shields.io/npm/v/vastgrid)](https://www.npmjs.com/package/vastgrid)
+[![CI](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml/badge.svg)](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/yhay81/vastgrid)](LICENSE)
+
 A data grid for React that opens CSV, TSV, Parquet and JSON Lines files of any size — gigabytes,
 hundreds of millions of rows — and works like a spreadsheet.
 
-[日本語](README.ja.md)
+**[Try the demo](https://vastgrid.yhay81.com/demo/)** · [Documentation](https://vastgrid.yhay81.com) · [日本語](README.ja.md)
 
-![A 100-million-row Parquet file filtered and sorted, with column statistics and a selection summary](docs/images/playground.jpg)
+[![A 100-million-row Parquet file filtered and sorted, with column statistics and a selection summary](docs/images/playground.jpg)](https://vastgrid.yhay81.com/demo/)
 
 - **Any size.** Rows are read as you scroll, a block at a time. A 1.4 GB Parquet file with 100 million
   rows opens in 20 ms; the first rows of a 735 MB CSV appear in 0.15 s while the rest loads.
@@ -30,6 +34,14 @@ hundreds of millions of rows — and works like a spreadsheet.
 | [`vastgrid`](packages/react) | The `DataGrid` component (canvas renderer, interaction, menus, filters, statistics). |
 | [`vastgrid-core`](packages/core) | The table protocol, row cache, selection and scroll models, formatting, `ArraySource` and `RemoteSource`. Framework-free. |
 | [`vastgrid-duckdb`](packages/duckdb) | A Node.js table server backed by DuckDB, with a Fetch API request handler. |
+
+## Requirements
+
+- **`vastgrid`**: React 18 or later, and a browser with the CSS `light-dark()` function: Chrome and Edge 123,
+  Firefox 120, Safari 17.5 or later.
+- **`vastgrid-duckdb`**: Node.js 20 or later, on a platform DuckDB ships a binary for: Linux (x64 or arm64,
+  glibc or musl), macOS (x64 or arm64) or Windows (x64 or arm64).
+- **`vastgrid-core`** has no dependencies and runs in the same browsers and in Node.js 20 or later.
 
 ## Quick start
 
@@ -175,7 +187,7 @@ flowchart LR
   away and drops the least recently used blocks.
 - **Engine.** Delimited and JSON files become DuckDB tables in a database file of the session; the first
   1,000 rows are served from a preview while the file loads. Parquet files are read in place by row
-  position. Encodings DuckDB cannot read (Shift_JIS, EUC-JP) are converted first. Sorting and filtering
+  position. Shift_JIS, EUC-JP and BOM-marked UTF-16 (both byte orders) are converted to UTF-8 first. Sorting and filtering
   build a view: a sorted copy for tables up to 20M rows (2 ms windows), or only the order of the rows
   for larger ones (seconds instead of minutes, and a fraction of the temporary space).
 - **Protocol.** `RemoteSource` speaks a small JSON protocol (see [docs/protocol.md](docs/protocol.md)).
@@ -220,6 +232,7 @@ See [`packages/react/src/styles.css`](packages/react/src/styles.css) for the ful
 ```sh
 npm install
 npm run dev        # playground at http://127.0.0.1:5174 (files in examples/playground/.data)
+npm run dev -w vastgrid-site   # documentation and demo at http://localhost:4321
 npm run generate -w vastgrid-playground   # sample files, add --large for 100M rows
 npm test
 npm run lint

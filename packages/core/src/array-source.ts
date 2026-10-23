@@ -51,28 +51,68 @@ function inferType(values: CellValue[]): ColumnType {
   return "string";
 }
 
-function isBlank(value: CellValue | bigint) {
+interface Decimal {
+  negative: boolean;
+  digits: string;
+  exponent: number;
+}
+
+type OrderedValue = CellValue | bigint | Decimal;
+
+function isBlank(value: OrderedValue) {
   return value === null || value === "";
 }
 
 const integerText = /^[+-]?\d+$/;
 
-/**
- * The number of a numeric column's value, exactly: integers that a JavaScript number cannot hold (64-bit
- * integers beyond 2^53, which arrive as text) become BigInts. `null` when the value is not a number.
- */
-function exactNumber(value: CellValue, type: ColumnType): number | bigint | null {
+/** Keeps decimal digits and their power of ten without converting them to a floating-point number. */
+function decimalOf(text: string): Decimal | null {
+  const match = /^([+-]?)(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(text.trim());
+  if (!match || !(match[2] || match[3])) return null;
+  const digits = `${match[2]}${match[3] ?? ""}`.replace(/^0+/, "") || "0";
+  const exponent = Number(match[4] ?? 0) - (match[3]?.length ?? 0);
+  if (!Number.isSafeInteger(exponent)) return null;
+  return { negative: digits !== "0" && match[1] === "-", digits, exponent: digits === "0" ? 0 : exponent };
+}
+
+/** Numeric values for exact comparisons; null when the value is not a number. */
+function exactNumber(value: CellValue, type: ColumnType): number | bigint | Decimal | null {
   if (typeof value === "string" && integerText.test(value)) {
     const number = Number(value);
     return Number.isSafeInteger(number) ? number : BigInt(value);
   }
+  if (type === "decimal" && typeof value === "string") return decimalOf(value);
   return numericValue(value, type);
 }
 
+function compareDecimals(a: number | bigint | Decimal, b: number | bigint | Decimal): number {
+  if (typeof a === "number" && !Number.isFinite(a)) return a < 0 ? -1 : 1;
+  if (typeof b === "number" && !Number.isFinite(b)) return b < 0 ? 1 : -1;
+  const left = typeof a === "object" ? a : (decimalOf(String(a)) as Decimal);
+  const right = typeof b === "object" ? b : (decimalOf(String(b)) as Decimal);
+  if (left.negative !== right.negative) return left.negative ? -1 : 1;
+  let order = 0;
+  if (left.digits === "0" || right.digits === "0") {
+    order = left.digits === right.digits ? 0 : left.digits === "0" ? -1 : 1;
+  } else {
+    const leftSize = left.digits.length + left.exponent;
+    const rightSize = right.digits.length + right.exponent;
+    if (leftSize !== rightSize) order = leftSize < rightSize ? -1 : 1;
+    else {
+      const width = Math.max(left.digits.length, right.digits.length);
+      const l = left.digits.padEnd(width, "0");
+      const r = right.digits.padEnd(width, "0");
+      order = l < r ? -1 : l > r ? 1 : 0;
+    }
+  }
+  return left.negative ? -order : order;
+}
+
 /** Total order used for sorting: numbers, then booleans, then strings. Blanks are handled by the caller. */
-function compareValues(a: CellValue | bigint, b: CellValue | bigint): number {
-  const aNumber = typeof a === "number" || typeof a === "bigint";
-  const bNumber = typeof b === "number" || typeof b === "bigint";
+function compareValues(a: OrderedValue, b: OrderedValue): number {
+  const aNumber = typeof a === "number" || typeof a === "bigint" || (typeof a === "object" && a !== null);
+  const bNumber = typeof b === "number" || typeof b === "bigint" || (typeof b === "object" && b !== null);
+  if (aNumber && bNumber && (typeof a === "object" || typeof b === "object")) return compareDecimals(a, b);
   // Comparing numbers with BigInts is exact.
   if (aNumber && bNumber) return a < b ? -1 : a > b ? 1 : 0;
   if (aNumber) return -1;
@@ -249,8 +289,8 @@ export class ArraySource implements TableSource {
         for (let index = 0; index < sort.length; index++) {
           const key = sort[index];
           const type = types[index];
-          let left: CellValue | bigint = this.value(a, key.column);
-          let right: CellValue | bigint = this.value(b, key.column);
+          let left: OrderedValue = this.value(a, key.column);
+          let right: OrderedValue = this.value(b, key.column);
           // Numbers sort by value, exactly also beyond 2^53; what is not a number counts as blank.
           if (isNumericType(type)) {
             left = exactNumber(left, type);

@@ -9,7 +9,7 @@
     "url": "git+https://github.com/yhay81/vastgrid.git",
     "directory": "packages/duckdb"
   },
-  "homepage": "https://github.com/yhay81/vastgrid#readme",
+  "homepage": "https://vastgrid.yhay81.com",
   "bugs": "https://github.com/yhay81/vastgrid/issues",
   "type": "module",
   "sideEffects": false,

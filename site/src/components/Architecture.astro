@@ -1,0 +1,143 @@
+---
+interface Props {
+  /** Texts of the diagram, so that the Japanese page can translate them. */
+  labels?: Partial<typeof english>;
+}
+
+const english = {
+  title: "How vastgrid reads a table",
+  browser: "Browser",
+  server: "Node.js",
+  grid: "DataGrid",
+  gridNote: "canvas + DOM overlays",
+  cache: "RowCache",
+  cacheNote: "256 × 48 blocks, prefetch,",
+  cacheNote2: "cancel, LRU",
+  source: "TableSource",
+  array: "ArraySource",
+  arrayNote: "arrays in memory",
+  remote: "RemoteSource",
+  protocol: "JSON protocol",
+  handler: "createTableHandler",
+  engine: "TableEngine",
+  engineNote: "DuckDB",
+  files: "CSV · TSV · Parquet · JSON Lines",
+};
+
+const t = { ...english, ...Astro.props.labels };
+---
+
+<figure class="architecture not-content">
+  <svg viewBox="0 0 860 250" role="img" aria-labelledby="architecture-title">
+    <title id="architecture-title">{t.title}</title>
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+        <path d="M0 0L10 5L0 10z" class="architecture__head"></path>
+      </marker>
+    </defs>
+    <rect class="architecture__group" x="1" y="1" width="498" height="248" rx="10"></rect>
+    <text class="architecture__group-label" x="16" y="24">{t.browser}</text>
+    <rect class="architecture__group" x="623" y="1" width="236" height="248" rx="10"></rect>
+    <text class="architecture__group-label" x="638" y="24">{t.server}</text>
+
+    <rect class="architecture__box" x="16" y="48" width="150" height="64" rx="6"></rect>
+    <text class="architecture__name" x="91" y="74">{t.grid}</text>
+    <text class="architecture__note" x="91" y="94">{t.gridNote}</text>
+
+    <rect class="architecture__box" x="186" y="48" width="170" height="64" rx="6"></rect>
+    <text class="architecture__name" x="271" y="70">{t.cache}</text>
+    <text class="architecture__note" x="271" y="88">{t.cacheNote}</text>
+    <text class="architecture__note" x="271" y="103">{t.cacheNote2}</text>
+
+    <rect class="architecture__box architecture__box--accent" x="376" y="48" width="110" height="64" rx="6"></rect>
+    <text class="architecture__name" x="431" y="85">{t.source}</text>
+
+    <rect class="architecture__box" x="376" y="166" width="110" height="64" rx="6"></rect>
+    <text class="architecture__name" x="431" y="192">{t.array}</text>
+    <text class="architecture__note" x="431" y="212">{t.arrayNote}</text>
+
+    <rect class="architecture__box" x="636" y="48" width="210" height="44" rx="6"></rect>
+    <text class="architecture__name" x="741" y="75">{t.handler}</text>
+    <rect class="architecture__box" x="636" y="116" width="210" height="44" rx="6"></rect>
+    <text class="architecture__name" x="741" y="143"><tspan>{t.engine}</tspan><tspan class="architecture__note" dx="8">{t.engineNote}</tspan></text>
+    <rect class="architecture__box" x="636" y="186" width="210" height="44" rx="6"></rect>
+    <text class="architecture__name architecture__name--small" x="741" y="213">{t.files}</text>
+
+    <path class="architecture__line" d="M166 80H184" marker-end="url(#arrow)"></path>
+    <path class="architecture__line" d="M356 80H374" marker-end="url(#arrow)"></path>
+    <path class="architecture__line architecture__line--dashed" d="M431 112V164" marker-end="url(#arrow)"></path>
+    <path class="architecture__line" d="M486 70H634" marker-end="url(#arrow)"></path>
+    <text class="architecture__name architecture__name--small" x="560" y="60">{t.remote}</text>
+    <text class="architecture__note" x="560" y="88">{t.protocol}</text>
+    <path class="architecture__line" d="M741 92V114" marker-end="url(#arrow)"></path>
+    <path class="architecture__line" d="M741 160V184" marker-end="url(#arrow)"></path>
+  </svg>
+</figure>
+
+<style>
+  .architecture {
+    margin-block: 1.5rem;
+    overflow-x: auto;
+  }
+
+  svg {
+    display: block;
+    width: 100%;
+    min-width: 640px;
+    height: auto;
+    font-family: var(--sl-font);
+  }
+
+  .architecture__group {
+    fill: var(--sl-color-gray-7, var(--sl-color-gray-6));
+    stroke: var(--sl-color-hairline);
+  }
+
+  .architecture__group-label {
+    fill: var(--sl-color-gray-3);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .architecture__box {
+    fill: var(--sl-color-bg);
+    stroke: var(--sl-color-gray-4);
+  }
+
+  .architecture__box--accent {
+    stroke: var(--sl-color-accent);
+    stroke-width: 2;
+  }
+
+  .architecture__name {
+    fill: var(--sl-color-white);
+    font-size: 14px;
+    font-weight: 600;
+    text-anchor: middle;
+  }
+
+  .architecture__name--small {
+    font-size: 12.5px;
+  }
+
+  .architecture__note {
+    fill: var(--sl-color-gray-2);
+    font-size: 12px;
+    font-weight: 400;
+    text-anchor: middle;
+  }
+
+  .architecture__line {
+    fill: none;
+    stroke: var(--sl-color-gray-3);
+    stroke-width: 1.5;
+  }
+
+  .architecture__line--dashed {
+    stroke-dasharray: 5 4;
+  }
+
+  .architecture__head {
+    fill: var(--sl-color-gray-3);
+  }
+</style>

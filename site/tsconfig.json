@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "customConditions": ["vastgrid-source"],
+    "types": ["node", "astro/client"]
+  },
+  "include": ["src/components", "src/data", "astro.config.ts"]
+}

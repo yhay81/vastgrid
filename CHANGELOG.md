@@ -4,6 +4,18 @@
 
 Fixes.
 
+- `vastgrid-duckdb`: decimal comparison and range filters preserve bounds finer than the column's
+  scale instead of rounding them, including 38-digit columns and bounds outside the column's range.
+- `vastgrid-core`: `ArraySource` preserves decimal digits when sorting, comparing, filtering ranges,
+  and finding minimum and maximum values, including decimals beyond JavaScript's number precision.
+- `vastgrid`: reloading a file follows column names when reapplying sort and filter conditions, even
+  before the new schema is available; conditions on removed columns are cleared.
+- `vastgrid-duckdb`: BOM-marked UTF-16 CSV files are decoded in their actual byte order, fixing
+  corrupted column names and missing rows in UTF-16BE files.
+- `vastgrid-duckdb`: column statistics with `NaN` or infinities compute the mean, standard deviation,
+  quartiles and histogram over finite values, instead of failing the whole statistics request.
+- `vastgrid-duckdb`: empty strings sort last in both directions alongside nulls, with secondary sort
+  keys still applied, matching `ArraySource`.
 - `vastgrid-duckdb`: files are opened by their real location (links followed), which must be inside the
   allowed directories, before the engine reads them itself to detect and convert their encoding. A
   Shift_JIS file outside them, or a link to one, could be read through the conversion. Exports are

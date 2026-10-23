@@ -1,0 +1,16 @@
+// The documentation site and the demo: a Worker with static assets only.
+// `npm run build -w vastgrid-site`, then `npm run deploy -w vastgrid-site`.
+{
+  "name": "vastgrid",
+  "compatibility_date": "2026-10-22",
+  "assets": {
+    "directory": "./dist",
+    // Astro writes guides/theming/index.html and links to /guides/theming/.
+    "html_handling": "auto-trailing-slash",
+    // Starlight writes 404.html; it is answered with a 404 status.
+    "not_found_handling": "404-page"
+  },
+  "routes": [{ "pattern": "vastgrid.yhay81.com", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false
+}

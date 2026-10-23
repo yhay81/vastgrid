@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { DuckDBInstance } from "@duckdb/node-api";
-import type { CellValue } from "vastgrid-core";
+import type { CellValue, Filter } from "vastgrid-core";
 import { TableEngine } from "../src/engine.ts";
 import { createTableHandler } from "../src/handler.ts";
 
@@ -49,6 +49,151 @@ async function open(name: string) {
 function column(values: CellValue[][], index: number) {
   return values[index];
 }
+
+async function parquet(name: string, select: string) {
+  const instance = await DuckDBInstance.create(":memory:");
+  const connection = await instance.connect();
+  try {
+    const file = path.join(workspace, name).replaceAll("'", "''");
+    await connection.run(`COPY (${select}) TO '${file}' (FORMAT parquet)`);
+  } finally {
+    connection.closeSync();
+    instance.closeSync();
+  }
+  return open(name);
+}
+
+test("decimal filters preserve bounds finer than the column's scale", async () => {
+  const table = await parquet(
+    "decimal-bounds.parquet",
+    `
+    SELECT amount::DECIMAL(10,2) AS amount
+    FROM (VALUES ('1.00'), ('1.01'), ('1.02'), ('-1.00'), ('-1.01'), (NULL)) t(amount)
+  `,
+  );
+  const read = async (filter: Filter) => {
+    const view = await table.createView({ filters: [filter] });
+    return (await table.readRows({ view: view.id, start: 0, end: 10, columns: [0] })).columns[0];
+  };
+  const expected = {
+    eq: [],
+    ne: ["1.00", "1.01", "1.02", "-1.00", "-1.01"],
+    lt: ["1.00", "-1.00", "-1.01"],
+    le: ["1.00", "-1.00", "-1.01"],
+    gt: ["1.01", "1.02"],
+    ge: ["1.01", "1.02"],
+  };
+  for (const op of ["eq", "ne", "lt", "le", "gt", "ge"] as const) {
+    for (const value of ["1.005", "1.0050", "1005e-3", 1.005]) {
+      assert.deepEqual(await read({ type: "compare", column: 0, op, value }), expected[op], `${op} ${value}`);
+    }
+  }
+  assert.deepEqual(await read({ type: "compare", column: 0, op: "gt", value: "-1.005" }), [
+    "1.00",
+    "1.01",
+    "1.02",
+    "-1.00",
+  ]);
+  assert.deepEqual(await read({ type: "compare", column: 0, op: "lt", value: "-1.005" }), ["-1.01"]);
+  assert.deepEqual(await read({ type: "between", column: 0, min: "1.005", max: "1.015" }), ["1.01"]);
+  assert.deepEqual(await read({ type: "values", column: 0, values: ["1.005", "1.0100"] }), ["1.01"]);
+  assert.deepEqual(await read({ type: "compare", column: 0, op: "eq", value: "0.0001" }), []);
+  assert.deepEqual(await read({ type: "compare", column: 0, op: "lt", value: "0.0001" }), ["-1.00", "-1.01"]);
+});
+
+test("decimal bounds do not narrow the integer range of a 38-digit column", async () => {
+  const high = "999999999999999999999999999999999999.99";
+  const low = "999999999999999999999999999999999999.98";
+  const table = await parquet(
+    "wide-decimal-bounds.parquet",
+    `
+    SELECT amount::DECIMAL(38,2) AS amount FROM (VALUES ('${high}'), ('${low}')) t(amount)
+  `,
+  );
+  for (const value of ["1.005", "-1e40"]) {
+    assert.equal((await table.createView({ filters: [{ type: "compare", column: 0, op: "gt", value }] })).rowCount, 2);
+  }
+  assert.equal(
+    (await table.createView({ filters: [{ type: "compare", column: 0, op: "eq", value: low }] })).rowCount,
+    1,
+  );
+  assert.equal(
+    (await table.createView({ filters: [{ type: "compare", column: 0, op: "lt", value: "1e40" }] })).rowCount,
+    2,
+  );
+  assert.equal((await table.createView({ filters: [{ type: "values", column: 0, values: ["1e40"] }] })).rowCount, 0);
+});
+
+test("string sorts put empty strings and nulls last and preserve secondary sort keys", async () => {
+  const table = await parquet(
+    "blank-sorts.parquet",
+    `
+    SELECT * FROM (VALUES ('b', 2), ('', 3), ('a', 1), (NULL, 2), ('', 1)) t(label, rank)
+  `,
+  );
+  for (const direction of ["asc", "desc"] as const) {
+    const view = await table.createView({
+      sort: [
+        { column: 0, direction },
+        { column: 1, direction: "asc" },
+      ],
+    });
+    const rows = await table.readRows({ view: view.id, start: 0, end: 5, columns: [0, 1] });
+    assert.deepEqual(rows.columns[0], direction === "asc" ? ["a", "b", "", null, ""] : ["b", "a", "", null, ""]);
+    assert.deepEqual(rows.columns[1], direction === "asc" ? [1, 2, 1, 2, 3] : [2, 1, 1, 2, 3]);
+  }
+});
+
+test("column statistics compute distributions over finite values when NaN or infinities occur", async () => {
+  const table = await parquet(
+    "nonfinite-stats.parquet",
+    `
+    SELECT x::DOUBLE AS mixed, CASE WHEN x IN ('1', '2') THEN NULL ELSE x::DOUBLE END AS special
+    FROM (VALUES ('1'), ('2'), ('NaN'), ('Infinity'), ('-Infinity'), (NULL)) t(x)
+  `,
+  );
+  const stats = await table.columnStats(null, 0);
+  assert.equal(stats.rows, 6);
+  assert.equal(stats.nulls, 1);
+  assert.equal(stats.distinct, 5);
+  assert.equal(stats.mean, 1.5);
+  assert.equal(stats.stddev, Math.sqrt(0.5));
+  assert.ok(stats.quantiles?.every((value) => typeof value === "number" && Number.isFinite(value)));
+  assert.equal(
+    stats.histogram?.reduce((count, bin) => count + bin.count, 0),
+    2,
+  );
+  assert.equal(stats.histogram?.[0].start, 1);
+  assert.equal(stats.histogram?.at(-1)?.end, 2);
+  const special = await table.columnStats(null, 1);
+  assert.equal(special.mean, null);
+  assert.equal(special.stddev, null);
+  assert.equal(special.quantiles, null);
+  assert.equal(special.histogram, undefined);
+});
+
+test("reads BOM-marked UTF-16 CSV in either byte order", async () => {
+  const text = "\ufeff名前,数\n東京,1\n大阪,2\n";
+  for (const encoding of ["utf-16le", "utf-16be"] as const) {
+    const bytes = Buffer.from(text, "utf16le");
+    if (encoding === "utf-16be") bytes.swap16();
+    const name = `${encoding}.csv`;
+    await writeFile(path.join(workspace, name), bytes);
+    const table = await open(name);
+    const info = table.info();
+    assert.equal(info.status, "ready", info.error);
+    assert.equal(info.rowCount, 2);
+    assert.deepEqual(
+      info.columns.map((column) => column.name),
+      ["名前", "数"],
+    );
+    assert.deepEqual(info.notes, ["encoding:utf-16"]);
+    assert.deepEqual((await table.readRows({ view: null, start: 0, end: 2, columns: [0, 1] })).columns, [
+      ["東京", "大阪"],
+      [1, 2],
+    ]);
+  }
+});
 
 test("loads a CSV with types, quotes and line breaks", async () => {
   const table = await open("fruit.csv");
@@ -478,7 +623,7 @@ test("errors sent to clients leave out the server's folders and SQL", async () =
   assert.doesNotMatch(notANumber.message, /LINE \d+:|SELECT/);
   const missingFolder = await post({ op: "export", table, view: null, format: "csv", target: "missing/out.csv" });
   assert.equal(missingFolder.code, "query_failed");
-  assert.match(missingFolder.message, /"missing\//);
+  assert.match(missingFolder.message, /"missing[/\\]/);
   assert.ok(!missingFolder.message.includes(workspace), missingFolder.message);
 });
 

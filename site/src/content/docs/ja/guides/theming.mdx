@@ -1,0 +1,71 @@
+---
+title: 見た目の変更
+description: CSS のカスタムプロパティでグリッドの見た目を変えます。キャンバスもそれを読みます。
+---
+
+import { ThemedGrid } from "../../../../components/examples.tsx";
+
+色・文字・大きさは、すべてグリッドのルートの要素 `.vg-root` の CSS のカスタムプロパティ（CSS 変数）です。キャンバスもそれを読むので、数行の CSS でセル・見出し・メニュー・パネルをまとめて変えられます。
+
+```css
+.my-app .vg-root {
+  --vg-font-family: "Inter", sans-serif;
+  --vg-bg: var(--surface);
+  --vg-fg: var(--text);
+  --vg-accent: var(--brand);
+  --vg-selection-bg: color-mix(in srgb, var(--brand) 15%, transparent);
+}
+```
+
+次の見本は、それぞれいくつかのプロパティを書いたクラスで（[CSS](https://github.com/yhay81/vastgrid/blob/main/site/src/styles/docs.css)）、`className` でグリッドに渡しています。
+
+<ThemedGrid client:only="react" locale="ja" />
+
+## ライトとダーク
+
+既定の色は `light-dark()` を使うので、ページか、グリッドを囲む要素の `color-scheme` に従います。アプリでテーマを決める所で `color-scheme: light`、`dark`、`light dark` のどれかを設定すれば、グリッドはそれに従い、グリッドを開いている間に変わっても追従します。自分で色を決めるときも同じように `light-dark()` を使うか、ダークのテーマのセレクターの下でプロパティを設定してください。
+
+強制カラーモード（Windows のハイコントラスト）では、グリッドはシステムの色を使います。
+
+## プロパティを読むとき
+
+グリッドがプロパティを読むのは、マウントしたとき、`className` か `style` が変わったとき、文書のルートの要素の `class`・`style`・`data-theme` 属性が変わったとき、システムの配色が変わったときです。ほかの方法で見た目を変えるときは、`className` を変えてください。
+
+行と見出しの高さは、マウントしたときに読みます。あとから変えるには、`rowHeight` と `headerHeight` を渡してください。
+
+## プロパティ
+
+| プロパティ | ライト | ダーク | 用途 |
+| --- | --- | --- | --- |
+| `--vg-font-family` | `system-ui, …` | | すべての文字 |
+| `--vg-font-size` | `13px` | | セル。見出しとメニューはこれをもとにする |
+| `--vg-row-height` | `24px` | | 行の高さ（`rowHeight` を渡さないとき） |
+| `--vg-header-height` | `32px` | | 見出しの高さ（`headerHeight` を渡さないとき） |
+| `--vg-radius` | `6px` | | 入力欄・ボタン・メニュー・パネルの角 |
+| `--vg-bg` | `#ffffff` | `#16161a` | セル |
+| `--vg-fg` | `#1f2328` | `#e6e6eb` | 文字 |
+| `--vg-muted` | `#656d76` | `#9a9aa6` | 補助の文字 |
+| `--vg-surface` | `#ffffff` | `#1e1e24` | メニュー・パネル・入力欄・ボタン |
+| `--vg-surface-muted` | `#f6f8fa` | `#24242b` | 「値の全体を表示」の値 |
+| `--vg-border` | `#d0d7de` | `#3a3a44` | 入力欄・ボタン・メニュー・パネルの枠 |
+| `--vg-header-bg` | `#f6f8fa` | `#1d1d23` | 列見出し |
+| `--vg-header-fg` | `#1f2328` | `#e6e6eb` | 列名 |
+| `--vg-header-active-bg` | `#eaeef2` | `#2b2b33` | 選択範囲の見出し。ポインターを載せたボタンとメニューの項目 |
+| `--vg-gutter-bg` | `#f6f8fa` | `#1b1b20` | 行見出し |
+| `--vg-gutter-fg` | `#656d76` | `#8a8a96` | 行番号 |
+| `--vg-gutter-view-fg` | `#0b57d0` | `#8ab4f8` | 並べ替え・絞り込みしたビューの行番号 |
+| `--vg-line` | `#e6e9ed` | `#2a2a31` | 罫線 |
+| `--vg-line-strong` | `#c8ced5` | `#3d3d47` | 見出しと固定した列に沿う線。ツールバーとステータスバーの枠 |
+| `--vg-selection-bg` | 青、12% | 青、18% | 選択したセル |
+| `--vg-selection-border` | `#0b57d0` | `#8ab4f8` | 選択範囲の枠 |
+| `--vg-active-border` | `#0b57d0` | `#8ab4f8` | アクティブなセルの枠 |
+| `--vg-accent` | `#0b57d0` | `#8ab4f8` | 並べ替えと絞り込みの印、主なボタン、進み具合、分布 |
+| `--vg-accent-fg` | `#ffffff` | `#0d1b33` | 主なボタンの文字 |
+| `--vg-null-fg` | `#8c959f` | `#6e6e7a` | 空白のセルの `nullText` |
+| `--vg-placeholder` | `#eef1f4` | `#26262d` | 行を読み込み中のセル |
+| `--vg-match-bg` | 黄、45% | 黄、28% | 検索で見つかったセル |
+| `--vg-error-fg` | `#b42318` | `#ff8a80` | エラーメッセージ |
+| `--vg-focus` | `#0b57d0` | `#8ab4f8` | フォーカスの枠 |
+| `--vg-shadow` | | | メニューとパネルの影 |
+
+正確な値は [`styles.css`](https://github.com/yhay81/vastgrid/blob/main/packages/react/src/styles.css) にあります。ツールバー、ステータスバー、メニュー、パネルのクラス名もあるので、さらに細かく変えるときに使えます。
