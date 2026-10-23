@@ -22,6 +22,11 @@
 - `vastgrid-core`: `ColumnFormat`, `NumberFormat`, `DateFormat` and `ColumnFormatter`
   (`ValueFormatter.column(schema, format)`), which formats 64-bit integers and decimals from their
   digits without converting them to JavaScript numbers.
+- `vastgrid`: copies cover every selected range. Ranges with the same rows are copied side by side and
+  ranges with the same columns one below the other, in the grid's order and with overlaps once; other
+  combinations are refused with a message and `CopyRangesError`. `copyLimit` counts all ranges, cells
+  that are not loaded are read, and Escape cancels a copy that is still reading.
+- `vastgrid-core`: `copyLayout(ranges)` gives the rows and columns that a copy of several ranges writes.
 
 ## 0.1.1 — 2026-10-23
 

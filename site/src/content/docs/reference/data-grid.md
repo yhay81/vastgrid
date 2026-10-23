@@ -24,7 +24,7 @@ import "vastgrid/styles.css";
 | `toolbar` | `boolean` | `true` | Shows the search box, active filters and row count. |
 | `statusBar` | `boolean` | `true` | Shows the active cell and the selection summary. |
 | `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. |
-| `copyLimit` | `number` | `1000000` | Cells that can be copied at once. |
+| `copyLimit` | `number` | `1000000` | Cells that can be copied at once, over all selected ranges. |
 | `columnFormats` | `Record<string, ColumnFormat>` | | Display settings by schema column name: label, number and date formats, alignment, a format function. |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | Copy the values with the schema names, or the shown text with the labels. |
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
@@ -246,3 +246,4 @@ helpers), so most apps install only `vastgrid`. It also exports:
 | `GridOptions`, `ColumnState`, `Hit`, `HitZone` | Types of the controller's options, column state and hit tests. |
 | `resolveTheme(element)`, `GridTheme` | The colors and fonts the canvas reads from the CSS variables of an element. |
 | `CopyTooLargeError` | Thrown by copies of more than `copyLimit` cells. |
+| `CopyRangesError` | Thrown by copies of several ranges that have neither the same rows nor the same columns. |

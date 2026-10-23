@@ -5,6 +5,7 @@ import {
   ColumnLayout,
   type ColumnSchema,
   type ColumnStats,
+  copyLayout,
   type CopyValues,
   type DistinctValues,
   ErrorCodes,
@@ -80,6 +81,13 @@ export interface Hit {
 export class CopyTooLargeError extends Error {
   constructor(readonly limit: number) {
     super(`Select at most ${limit} cells to copy.`);
+  }
+}
+
+/** The selected ranges have neither the same rows nor the same columns, so they cannot be copied together. */
+export class CopyRangesError extends Error {
+  constructor() {
+    super("Ranges can be copied together when they have the same rows or the same columns.");
   }
 }
 
@@ -899,53 +907,73 @@ export class GridController {
     return { text: toTsv(table), html: toHtmlTable(table, options.headers ? 1 : 0), cells: rows * columns.length };
   }
 
+  /** The rows and columns that the selection copies (see `copyLayout`), or null when they cannot be combined. */
+  private copyCells() {
+    const layout = copyLayout(this.selection.ranges);
+    if (!layout) return null;
+    const columns = layout.cols.flatMap((col) => this.visible[col] ?? []);
+    let rows = 0;
+    for (const span of layout.rows) rows += span.end - span.start;
+    return { spans: layout.rows, columns, rows };
+  }
+
   /**
-   * The current range's values from the cache, or null when some are not loaded, may have been cut
-   * for display, or the range is large.
+   * The selection's values from the cache, or null when some are not loaded, may have been cut for
+   * display, the selection is large, or its ranges cannot be copied together.
    */
   private cachedRange() {
-    const range = this.selection.current;
-    if (!range) return null;
-    const columns = this.visible.slice(range.left, range.right + 1);
-    const rows = range.bottom - range.top + 1;
+    const cells = this.copyCells();
+    if (!cells) return null;
+    const { spans, columns, rows } = cells;
     if (rows * columns.length > 50_000) return null;
     const values: CellValue[][] = [];
     for (const column of columns) {
       const list: CellValue[] = [];
-      for (let row = range.top; row <= range.bottom; row++) {
-        const value = this.cache.value(row, column.index);
-        if (value === undefined || mayBeCut(value)) return null;
-        list.push(value);
+      for (const span of spans) {
+        for (let row = span.start; row < span.end; row++) {
+          const value = this.cache.value(row, column.index);
+          if (value === undefined || mayBeCut(value)) return null;
+          list.push(value);
+        }
       }
       values.push(list);
     }
     return { columns, values, rows };
   }
 
-  /** Clipboard text for the current range when every cell is loaded; otherwise null (use `copySelection`). */
+  /** Clipboard text for the selection when every cell is loaded; otherwise null (use `copySelection`). */
   copySelectionSync(options: { headers?: boolean; markdown?: boolean }) {
     const cached = this.cachedRange();
     return cached ? this.clipboardText(cached.columns, cached.values, cached.rows, options) : null;
   }
 
-  /** Copies the current range as TSV and HTML (or Markdown), reading cells that are not loaded. */
+  /**
+   * Copies the selection as TSV and HTML (or Markdown), reading cells that are not loaded. Several
+   * ranges are combined as `copyLayout` describes; `copyLimit` applies to the combined cells.
+   */
   async copySelection(
     options: { headers?: boolean; markdown?: boolean },
     signal?: AbortSignal,
   ): Promise<{ text: string; html: string | null; cells: number }> {
-    const range = this.selection.current;
-    if (!range) return { text: "", html: null, cells: 0 };
-    const columns = this.visible.slice(range.left, range.right + 1);
-    const rows = range.bottom - range.top + 1;
+    if (this.selection.ranges.length === 0) return { text: "", html: null, cells: 0 };
+    const cells = this.copyCells();
+    if (!cells) throw new CopyRangesError();
+    const { spans, columns, rows } = cells;
     if (rows * columns.length > this.options.copyLimit) throw new CopyTooLargeError(this.options.copyLimit);
     const cached = this.cachedRange();
     if (cached) return this.clipboardText(cached.columns, cached.values, cached.rows, options);
-    const values = await this.cache.read(
-      range.top,
-      range.bottom + 1,
-      columns.map((column) => column.index),
-      signal,
-    );
+    const indexes = columns.map((column) => column.index);
+    const values: CellValue[][] = columns.map(() => []);
+    for (const span of spans) {
+      // Sources may finish a request that was canceled; stop before reading the next range.
+      signal?.throwIfAborted();
+      const read = await this.cache.read(span.start, span.end, indexes, signal);
+      read.forEach((list, index) => {
+        const target = values[index];
+        for (const value of list) target.push(value);
+      });
+    }
+    signal?.throwIfAborted();
     return this.clipboardText(columns, values, rows, options);
   }
 

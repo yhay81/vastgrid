@@ -123,7 +123,7 @@ rows.
 | `toolbar` | `boolean` | `true` | Shows the search box, active filters and row count. |
 | `statusBar` | `boolean` | `true` | Shows the active cell and the selection summary. |
 | `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. |
-| `copyLimit` | `number` | `1000000` | Cells that can be copied at once. |
+| `copyLimit` | `number` | `1000000` | Cells that can be copied at once, over all selected ranges. |
 | `columnFormats` | `Record<string, ColumnFormat>` | | Display settings by schema column name: label, number and date formats, alignment, a format function. |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | Copy the values with the schema names, or the shown text with the labels. |
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
@@ -242,7 +242,7 @@ flowchart LR
 | Arrows · Page Up/Down · Home/End | Move the active cell |
 | ⌘/Ctrl + arrows · ⌘/Ctrl + Home/End | Jump to the first or last row or column |
 | Shift + any of the above · Shift + click | Extend the selection |
-| ⌘/Ctrl + click | Add a range |
+| ⌘/Ctrl + click | Add a range (ranges with the same rows or the same columns copy together) |
 | Tab / Enter (with Shift: backwards) | Move within the selection |
 | Shift + Space · Ctrl + Space · ⌘/Ctrl + A | Select the row · the column · everything |
 | ⌘/Ctrl + C · ⌘/Ctrl + Shift + C | Copy · copy with headers |

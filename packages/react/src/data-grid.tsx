@@ -21,7 +21,7 @@ import { FilterPanel } from "./components/filter-panel.js";
 import { FindBar } from "./components/find-bar.js";
 import { type Anchor, type MenuItem, MenuList, Popover } from "./components/popover.js";
 import { StatsPanel } from "./components/stats-panel.js";
-import { CopyTooLargeError, GridController, type Hit } from "./controller.js";
+import { CopyRangesError, CopyTooLargeError, GridController, type Hit } from "./controller.js";
 import type { GridCellEvent, GridColumnsEvent, GridSelectionEvent } from "./events.js";
 import { countFormat, numberFormat } from "./labels.js";
 import { type Messages, messagesFor } from "./messages.js";
@@ -361,9 +361,17 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     scrollerRef.current?.focus({ preventScroll: true });
   }
 
+  /** The copy that is reading cells, which Esc or a newer copy cancels. */
+  const copyAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => copyAbort.current?.abort(), []);
   const copy = useCallback(
     async (options: { headers?: boolean; markdown?: boolean }) => {
-      const task = controller.copySelection(options);
+      copyAbort.current?.abort();
+      const abort = new AbortController();
+      copyAbort.current = abort;
+      const task = controller.copySelection(options, abort.signal);
+      // Say how to cancel when the cells take a moment to read.
+      const slow = setTimeout(() => announce(messages.copying), 300);
       try {
         await writeClipboard(
           task.then((result) => result.text),
@@ -372,8 +380,14 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         const result = await task;
         announce(messages.copied(count(result.cells)));
       } catch (error) {
-        if (error instanceof CopyTooLargeError) announce(messages.copyTooLarge(count(error.limit)));
+        if (abort.signal.aborted) {
+          if (copyAbort.current === abort) announce(messages.copyCanceled);
+        } else if (error instanceof CopyTooLargeError) announce(messages.copyTooLarge(count(error.limit)));
+        else if (error instanceof CopyRangesError) announce(messages.copyRanges);
         else announce(messages.copyFailed);
+      } finally {
+        clearTimeout(slow);
+        if (copyAbort.current === abort) copyAbort.current = null;
       }
     },
     [announce, controller, count, messages],
@@ -677,7 +691,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         break;
       }
       case "Escape":
-        if (findOpen) setFindOpen(false);
+        if (copyAbort.current) copyAbort.current.abort();
+        else if (findOpen) setFindOpen(false);
         else if (!c.selection.single) {
           c.selection.select(c.selection.active);
           c.selectionChanged();
@@ -734,6 +749,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     pendingCopy.current = null;
     const result = controller.copySelectionSync(options);
     if (result) {
+      // A copy that is still reading would overwrite this one when it finishes.
+      const running = copyAbort.current;
+      copyAbort.current = null;
+      running?.abort();
       event.clipboardData.setData("text/plain", result.text);
       if (result.html) event.clipboardData.setData("text/html", result.html);
       announce(messages.copied(count(result.cells)));

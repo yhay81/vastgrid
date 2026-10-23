@@ -115,7 +115,7 @@ const source = new ArraySource({
 | `toolbar` | `boolean` | `true` | 検索欄、適用中の絞り込み、行数を表示します。 |
 | `statusBar` | `boolean` | `true` | アクティブなセルと選択範囲の集計を表示します。 |
 | `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。 |
-| `copyLimit` | `number` | `1000000` | 一度にコピーできるセルの数。 |
+| `copyLimit` | `number` | `1000000` | 一度にコピーできるセルの数（選択したすべての範囲の合計）。 |
 | `columnFormats` | `Record<string, ColumnFormat>` | | スキーマの列名ごとの表示設定。表示名、数値と日時の書式、配置、整形関数。 |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | コピーするのを、値とスキーマの列名にするか、表示している文字と表示名にするか。 |
 | `onQueryChange` | `(query: ViewQuery) => void` | | 並べ替え・絞り込み・検索が変わったときに呼ばれます。 |
@@ -210,7 +210,7 @@ DuckDB の処理を含み、HTTP は含みません。
 | 矢印・Page Up/Down・Home/End | アクティブなセルを動かす |
 | ⌘/Ctrl ＋ 矢印・⌘/Ctrl ＋ Home/End | 最初・最後の行や列へ移る |
 | Shift ＋ 上のキー・Shift ＋ クリック | 選択を広げる |
-| ⌘/Ctrl ＋ クリック | 範囲を足す |
+| ⌘/Ctrl ＋ クリック | 範囲を足す（行または列が同じ範囲はまとめてコピーできる） |
 | Tab・Enter（Shift で逆向き） | 選択の中を動く |
 | Shift ＋ Space・Ctrl ＋ Space・⌘/Ctrl ＋ A | 行・列・すべてを選ぶ |
 | ⌘/Ctrl ＋ C・⌘/Ctrl ＋ Shift ＋ C | コピー・見出しを含めてコピー |

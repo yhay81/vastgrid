@@ -36,6 +36,9 @@ export interface Messages {
   copied: (cells: string) => string;
   copyTooLarge: (limit: string) => string;
   copyFailed: string;
+  /** Several ranges that have neither the same rows nor the same columns. */
+  copyRanges: string;
+  copyCanceled: string;
   copying: string;
   filterToValue: string;
   excludeValue: string;
@@ -149,7 +152,9 @@ export const en: Messages = {
   copied: (cells) => `Copied ${cells} cells`,
   copyTooLarge: (limit) => `Select at most ${limit} cells to copy.`,
   copyFailed: "Could not write to the clipboard.",
-  copying: "Copying…",
+  copyRanges: "Ranges can be copied together when they have the same rows or the same columns.",
+  copyCanceled: "Copy canceled.",
+  copying: "Copying… Press Esc to cancel.",
   filterToValue: "Filter to this value",
   excludeValue: "Exclude this value",
   inspectCell: "Show full value",
@@ -288,7 +293,9 @@ export const ja: Messages = {
   copied: (cells) => `${cells} 個のセルをコピーしました`,
   copyTooLarge: (limit) => `コピーできるのは ${limit} セルまでです。`,
   copyFailed: "クリップボードに書き込めませんでした。",
-  copying: "コピーしています…",
+  copyRanges: "複数の範囲をまとめてコピーできるのは、行または列が同じ範囲だけです。",
+  copyCanceled: "コピーを取り消しました。",
+  copying: "コピーしています…（Esc で取り消し）",
   filterToValue: "この値で絞り込む",
   excludeValue: "この値を除く",
   inspectCell: "値の全体を表示",

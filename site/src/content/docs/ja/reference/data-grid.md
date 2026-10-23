@@ -24,7 +24,7 @@ import "vastgrid/styles.css";
 | `toolbar` | `boolean` | `true` | 検索欄、適用中の絞り込み、行数を表示します。 |
 | `statusBar` | `boolean` | `true` | アクティブなセルと選択範囲の集計を表示します。 |
 | `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。 |
-| `copyLimit` | `number` | `1000000` | 一度にコピーできるセルの数。 |
+| `copyLimit` | `number` | `1000000` | 一度にコピーできるセルの数（選択したすべての範囲の合計）。 |
 | `columnFormats` | `Record<string, ColumnFormat>` | | スキーマの列名ごとの表示設定。表示名、数値と日時の書式、配置、整形関数。 |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | コピーするのを、値とスキーマの列名にするか、表示している文字と表示名にするか。 |
 | `onQueryChange` | `(query: ViewQuery) => void` | | 並べ替え・絞り込み・検索が変わったときに呼ばれます。 |
@@ -200,3 +200,4 @@ const formats: Record<string, ColumnFormat> = {
 | `GridOptions`、`ColumnState`、`Hit`、`HitZone` | コントローラーの設定、列の状態、当たり判定の型。 |
 | `resolveTheme(element)`、`GridTheme` | キャンバスが要素の CSS 変数から読む、色と文字の設定。 |
 | `CopyTooLargeError` | `copyLimit` を超えるセルをコピーしようとしたときに投げられます。 |
+| `CopyRangesError` | 行も列も同じでない複数の範囲をコピーしようとしたときに投げられます。 |

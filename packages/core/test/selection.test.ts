@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { SelectionModel } from "../src/selection.ts";
+import { copyLayout, SelectionModel } from "../src/selection.ts";
 
 test("arrow keys move the active cell and collapse the selection", () => {
   const selection = new SelectionModel(10, 5);
@@ -61,4 +61,41 @@ test("an empty grid ignores selection changes", () => {
   selection.select({ row: 3, col: 3 });
   selection.selectAll();
   assert.equal(selection.ranges.length, 0);
+});
+
+test("ranges with the same rows are copied side by side in display order", () => {
+  const layout = copyLayout([
+    { top: 2, left: 4, bottom: 3, right: 5 },
+    { top: 2, left: 0, bottom: 3, right: 1 },
+    { top: 2, left: 1, bottom: 3, right: 2 },
+  ]);
+  assert.deepEqual(layout, { rows: [{ start: 2, end: 4 }], cols: [0, 1, 2, 4, 5] });
+});
+
+test("ranges with the same columns are stacked in view order and overlaps are copied once", () => {
+  const layout = copyLayout([
+    { top: 8, left: 1, bottom: 9, right: 2 },
+    { top: 0, left: 1, bottom: 2, right: 2 },
+    { top: 2, left: 1, bottom: 4, right: 2 },
+    { top: 5, left: 1, bottom: 5, right: 2 },
+  ]);
+  assert.deepEqual(layout, {
+    rows: [
+      { start: 0, end: 6 },
+      { start: 8, end: 10 },
+    ],
+    cols: [1, 2],
+  });
+});
+
+test("whole columns combine, and ranges with other rows and columns cannot be copied together", () => {
+  const selection = new SelectionModel(100, 6);
+  selection.selectCols(4, 4);
+  selection.selectCols(1, 2, "add");
+  assert.deepEqual(copyLayout(selection.ranges), { rows: [{ start: 0, end: 100 }], cols: [1, 2, 4] });
+  selection.select({ row: 0, col: 0 });
+  assert.deepEqual(copyLayout(selection.ranges), { rows: [{ start: 0, end: 1 }], cols: [0] });
+  selection.select({ row: 3, col: 3 }, "add");
+  assert.equal(copyLayout(selection.ranges), null);
+  assert.deepEqual(copyLayout([]), { rows: [], cols: [] });
 });

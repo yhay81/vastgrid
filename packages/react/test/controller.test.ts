@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ArraySource, type RowRequest, SourceError, type TableSource, type ViewQuery } from "vastgrid-core";
 import { comparable } from "../src/components/filter-panel.tsx";
-import { GridController } from "../src/controller.ts";
+import { CopyRangesError, CopyTooLargeError, GridController } from "../src/controller.ts";
 
 const options = {
   rowHeight: 24,
@@ -414,5 +414,106 @@ test("invalid column formats are refused when they are set", () => {
   const grid = new GridController(source, { ...options });
   assert.throws(() => grid.setColumnFormats({ price: { date: { timeZone: "Nowhere/City" } } }), RangeError);
   assert.deepEqual(grid.options.columnFormats, {}, "the previous settings stay");
+  grid.dispose();
+});
+
+/** A table of 8 rows whose cells read as their column name and row, such as "c3". */
+function lettered() {
+  const columns = ["a", "b", "c", "d", "e"];
+  return new ArraySource({
+    columns,
+    rows: Array.from({ length: 8 }, (_, row) => columns.map((name) => `${name}${row}`)),
+  });
+}
+
+test("ranges with the same rows copy side by side in display order, without hidden columns", async () => {
+  const grid = await readyGrid(lettered());
+  grid.moveColumn(4, 0); // e a b c d
+  grid.hideColumn(2); // e a c d
+  grid.selection.select({ row: 1, col: 2 });
+  grid.selection.select({ row: 2, col: 3 }, "extend");
+  grid.selection.select({ row: 1, col: 0 }, "add");
+  grid.selection.select({ row: 2, col: 0 }, "extend");
+  // Not loaded yet: the cells are read.
+  assert.equal(grid.copySelectionSync({}), null);
+  const copied = await grid.copySelection({ headers: true });
+  assert.equal(copied.text, "e\tc\td\ne1\tc1\td1\ne2\tc2\td2");
+  assert.equal(copied.cells, 6);
+  assert.equal(
+    copied.html,
+    '<meta charset="utf-8"><table><tr><th>e</th><th>c</th><th>d</th></tr><tr><td>e1</td><td>c1</td><td>d1</td></tr><tr><td>e2</td><td>c2</td><td>d2</td></tr></table>',
+  );
+  // Once loaded, the browser's copy event answers with the same text.
+  grid.cache.want(0, 8, [0, 1, 2, 3, 4]);
+  await until(() => grid.copySelectionSync({}) !== null);
+  assert.equal(grid.copySelectionSync({ headers: true })?.text, copied.text);
+  grid.dispose();
+});
+
+test("ranges with the same columns are stacked in view order and overlaps are copied once", async () => {
+  const grid = await readyGrid(lettered());
+  grid.selection.select({ row: 5, col: 1 });
+  grid.selection.select({ row: 6, col: 2 }, "extend");
+  grid.selection.select({ row: 0, col: 1 }, "add");
+  grid.selection.select({ row: 1, col: 2 }, "extend");
+  grid.selection.select({ row: 1, col: 1 }, "add");
+  grid.selection.select({ row: 2, col: 2 }, "extend");
+  const expected = [
+    "| b | c |",
+    "| --- | --- |",
+    "| b0 | c0 |",
+    "| b1 | c1 |",
+    "| b2 | c2 |",
+    "| b5 | c5 |",
+    "| b6 | c6 |",
+  ];
+  assert.equal((await grid.copySelection({ markdown: true })).text, expected.join("\n"));
+  grid.dispose();
+});
+
+test("ranges with other rows and columns are refused, and the limit applies to all ranges", async () => {
+  const grid = new GridController(lettered(), { ...options, copyLimit: 5 });
+  grid.start();
+  await until(() => grid.info?.status === "ready");
+  grid.selection.select({ row: 0, col: 0 });
+  grid.selection.select({ row: 1, col: 1 }, "add");
+  assert.equal(grid.copySelectionSync({}), null);
+  await assert.rejects(grid.copySelection({}), CopyRangesError);
+  grid.selection.select({ row: 0, col: 0 });
+  grid.selection.select({ row: 2, col: 0 }, "extend");
+  grid.selection.select({ row: 0, col: 2 }, "add");
+  grid.selection.select({ row: 2, col: 2 }, "extend");
+  await assert.rejects(grid.copySelection({}), CopyTooLargeError);
+  grid.dispose();
+});
+
+test("a copy of several ranges can be canceled, and a failed read is reported", async () => {
+  const source = lettered();
+  const readRows = source.readRows.bind(source);
+  const requests: RowRequest[] = [];
+  let release = () => {};
+  let fail = false;
+  source.readRows = async (request: RowRequest, signal?: AbortSignal) => {
+    if (request.textLimit === undefined) return readRows(request, signal);
+    requests.push(request);
+    if (fail) throw new Error("disk read failed");
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return readRows(request, signal);
+  };
+  const grid = await readyGrid(source);
+  grid.selection.select({ row: 0, col: 0 });
+  grid.selection.select({ row: 4, col: 0 }, "add");
+  const abort = new AbortController();
+  const task = grid.copySelection({}, abort.signal);
+  await until(() => requests.length === 1);
+  abort.abort();
+  release();
+  await assert.rejects(task, (error: unknown) => error instanceof Error && error.name === "AbortError");
+  // The second range was not read after the cancel.
+  assert.equal(requests.length, 1);
+  fail = true;
+  await assert.rejects(grid.copySelection({}), /disk read failed/);
   grid.dispose();
 });
