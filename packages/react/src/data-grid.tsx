@@ -13,7 +13,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { type CellValue, plainText, type TableSource, type ViewQuery } from "vastgrid-core";
+import type { CellValue, ColumnFormat, CopyValues, TableSource, ViewQuery } from "vastgrid-core";
 import { StatusBar, Toolbar } from "./components/bars.js";
 import { CellInspector } from "./components/cell-inspector.js";
 import { ColumnsPanel } from "./components/columns-panel.js";
@@ -50,6 +50,17 @@ export interface DataGridProps {
   reloadKey?: unknown;
   /** Cells that can be copied at once. Defaults to 1,000,000. */
   copyLimit?: number;
+  /**
+   * Display settings by schema column name: label, number and date formats, alignment, a format
+   * function. They change only what is shown; sorting, filters and statistics use the values.
+   * Keep the object stable (memoize it) to avoid comparing it on every render.
+   */
+  columnFormats?: Record<string, ColumnFormat>;
+  /**
+   * Text that copying writes for cells: the values (`raw`, the default) with the schema names as
+   * headers, or the shown text (`formatted`) with the labels. A column's `copy` setting overrides it.
+   */
+  copyValues?: CopyValues;
   onQueryChange?: (query: ViewQuery) => void;
   className?: string;
   style?: CSSProperties;
@@ -114,6 +125,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     statusBar = true,
     reloadKey,
     copyLimit = 1_000_000,
+    columnFormats,
+    copyValues = "raw",
     onQueryChange,
     className,
     style,
@@ -150,6 +163,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         minColumnWidth: 36,
         maxAutoWidth: 360,
         copyLimit,
+        columnFormats,
+        copyValues,
       }),
     [source],
   );
@@ -163,6 +178,14 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       controller.setFormat(resolvedLocale, nullText);
     }
   }, [controller, resolvedLocale, nullText]);
+
+  useEffect(() => {
+    controller.setColumnFormats(columnFormats);
+  }, [controller, columnFormats]);
+
+  useEffect(() => {
+    controller.options.copyValues = copyValues;
+  }, [controller, copyValues]);
 
   const announce = useCallback((text: string) => {
     setNotice(text);
@@ -789,8 +812,17 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   const active = c.selection.active;
   const activeSchema = c.columnSchema(active.col);
   const activeValue = c.value(active.row, active.col);
+  const activeIndex = c.visible[active.col]?.index;
   const activeText =
-    activeValue === undefined ? messages.loading : activeValue === null ? messages.blank : plainText(activeValue);
+    activeValue === undefined || activeIndex === undefined
+      ? messages.loading
+      : activeValue === null
+        ? messages.blank
+        : c.formatterOf(activeIndex).text(activeValue);
+  const labelOf = (col: number) => {
+    const state = c.visible[col];
+    return state ? c.columnLabel(state.index) : "";
+  };
 
   let overlayMessage: string | null = null;
   if (c.loadError) overlayMessage = `${messages.error} ${c.loadError}`;
@@ -874,7 +906,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                 {/* biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas. */}
                 {/* biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant). */}
                 <div role="columnheader" aria-colindex={active.col + 2}>
-                  {activeSchema.name}
+                  {labelOf(active.col)}
                 </div>
               </div>
               {/* biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas. */}
@@ -928,7 +960,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           container={rootRef}
           onClose={closeOverlay}
           returnFocus={scrollerRef}
-          label={c.columnSchema(overlay.col)?.name ?? ""}
+          label={labelOf(overlay.col)}
           role="menu"
         >
           <MenuList items={columnMenuItems(overlay.col)} onClose={closeOverlay} />
@@ -952,7 +984,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           container={rootRef}
           onClose={closeOverlay}
           returnFocus={scrollerRef}
-          label={messages.filterBy(c.schema[overlay.column].name)}
+          label={messages.filterBy(c.columnLabel(overlay.column))}
           className="vg-popover--panel"
         >
           <FilterPanel
@@ -960,7 +992,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
             schema={c.schema[overlay.column]}
             filter={c.filterOf(overlay.column)}
             messages={messages}
-            formatter={c.formatter}
+            formatter={c.formatterOf(overlay.column)}
             count={count}
             load={loadDistinct}
             onApply={(filter) => {
@@ -983,7 +1015,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           <StatsPanel
             schema={c.columnSchema(overlay.col) as NonNullable<ReturnType<typeof c.columnSchema>>}
             messages={messages}
-            formatter={c.formatter}
+            formatter={c.formatterOf(c.visible[overlay.col].index)}
             count={count}
             number={number}
             load={loadStats}
@@ -1000,9 +1032,9 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           className="vg-popover--panel vg-popover--wide"
         >
           <CellInspector
-            schema={c.columnSchema(overlay.col) as NonNullable<ReturnType<typeof c.columnSchema>>}
+            formatter={c.formatterOf(c.visible[overlay.col].index)}
             messages={messages}
-            location={messages.cell(count(overlay.row + 1), c.columnSchema(overlay.col)?.name ?? "")}
+            location={messages.cell(count(overlay.row + 1), labelOf(overlay.col))}
             load={loadCell}
             onCopy={(text) =>
               void writeClipboard(Promise.resolve(text), null).then(
@@ -1024,6 +1056,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           <ColumnsPanel
             columns={c.columns}
             schema={c.schema}
+            labelOf={(index) => c.columnLabel(index)}
             messages={messages}
             onToggle={(index, hidden) => c.setColumnHidden(index, hidden)}
             onShowAll={() => c.showAllColumns()}

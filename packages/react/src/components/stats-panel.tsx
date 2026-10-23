@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { type ColumnSchema, type ColumnStats, isAbortError, isTemporalType, type ValueFormatter } from "vastgrid-core";
+import { type ColumnFormatter, type ColumnSchema, type ColumnStats, isAbortError, isTemporalType } from "vastgrid-core";
 import type { Messages } from "../messages.js";
 
 function temporalLabel(seconds: number, type: ColumnSchema["type"]) {
@@ -20,7 +20,7 @@ export function StatsPanel({
 }: {
   schema: ColumnSchema;
   messages: Messages;
-  formatter: ValueFormatter;
+  formatter: ColumnFormatter;
   count: (value: number) => string;
   number: (value: number) => string;
   load: (signal: AbortSignal) => Promise<ColumnStats> | null;
@@ -42,19 +42,20 @@ export function StatsPanel({
   }, [load]);
 
   const s = messages.stats;
-  const value = (item: ColumnStats["min"]) =>
-    item === undefined || item === null ? "—" : formatter.format(item, schema.type);
+  const value = (item: ColumnStats["min"]) => (item === undefined || item === null ? "—" : formatter.format(item));
   const percent = (part: number, whole: number) =>
     whole === 0 ? "0%" : `${((part / whole) * 100).toFixed(part === 0 || part === whole ? 0 : 1)}%`;
   const histogram = stats?.histogram ?? null;
   const peak = histogram ? Math.max(1, ...histogram.map((bin) => bin.count)) : 1;
   const topPeak = stats?.top?.length ? Math.max(1, ...stats.top.map((item) => item.count)) : 1;
+  // Means and quartiles follow the column's number format when it has one.
+  const average = (item: number) => (formatter.settings.number ? formatter.format(item) : number(item));
   const edge = (point: number) => (isTemporalType(schema.type) ? temporalLabel(point, schema.type) : number(point));
 
   return (
     <div className="vg-stats">
       <p className="vg-panel__title">
-        {schema.name}
+        {formatter.label}
         <span className="vg-panel__muted">
           {" "}
           · {messages.types[schema.type] ?? schema.type}
@@ -83,20 +84,20 @@ export function StatsPanel({
             {stats.mean !== undefined && stats.mean !== null && !isTemporalType(schema.type) && (
               <>
                 <dt>{s.mean}</dt>
-                <dd>{number(stats.mean)}</dd>
+                <dd>{average(stats.mean)}</dd>
               </>
             )}
             {stats.stddev !== undefined && stats.stddev !== null && !isTemporalType(schema.type) && (
               <>
                 <dt>{s.stddev}</dt>
-                <dd>{number(stats.stddev)}</dd>
+                <dd>{average(stats.stddev)}</dd>
               </>
             )}
             {stats.quantiles && (
               <>
                 <dt>{s.quartiles}</dt>
                 <dd>
-                  {stats.quantiles.map((item) => (typeof item === "number" ? number(item) : value(item))).join(" / ")}
+                  {stats.quantiles.map((item) => (typeof item === "number" ? average(item) : value(item))).join(" / ")}
                 </dd>
               </>
             )}
@@ -136,9 +137,7 @@ export function StatsPanel({
                   <li key={`${typeof item.value}:${String(item.value)}`}>
                     <span className="vg-stats__top-bar" style={{ width: `${(item.count / topPeak) * 100}%` }} />
                     <span className="vg-stats__top-label">
-                      {item.value === null || item.value === ""
-                        ? messages.blank
-                        : formatter.format(item.value, schema.type)}
+                      {item.value === null || item.value === "" ? messages.blank : formatter.format(item.value)}
                     </span>
                     <span className="vg-stats__top-count">{count(item.count)}</span>
                   </li>

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- `vastgrid`: `columnFormats` sets a column's label, number format (fraction digits, currency, percent,
+  notation, prefix and suffix), date format (a pattern such as `yyyy/MM/dd HH:mm`, or `Intl` options and
+  a time zone), alignment and a format function, by schema name. Sorting, filters, statistics and
+  exports keep working on the values; changed settings redraw the column and fit its width again
+  unless it was sized by hand. `copyValues` (and a column's `copy`) chooses whether copies hold the
+  values (the default) or the shown text.
+- `vastgrid-core`: `ColumnFormat`, `NumberFormat`, `DateFormat` and `ColumnFormatter`
+  (`ValueFormatter.column(schema, format)`), which formats 64-bit integers and decimals from their
+  digits without converting them to JavaScript numbers.
+
 ## 0.1.1 — 2026-10-23
 
 Fixes.

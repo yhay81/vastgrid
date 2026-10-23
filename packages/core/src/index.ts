@@ -2,7 +2,7 @@ export { ArraySource, type ArraySourceOptions } from "./array-source.js";
 export { type BlockState, CacheBlock, RowCache, type RowCacheOptions } from "./cache.js";
 export { toHtmlTable, toMarkdownTable, toTsv } from "./clipboard.js";
 export { isNumericType, isTemporalType } from "./column-type.js";
-export { type FormatOptions, numericValue, plainText, ValueFormatter } from "./format.js";
+export { ColumnFormatter, type FormatOptions, numericValue, plainText, ValueFormatter } from "./format.js";
 export { ColumnLayout } from "./layout.js";
 export {
   ErrorCodes,
