@@ -159,6 +159,33 @@ export interface Messages {
   detailEmpty: string;
   notes: Record<string, string>;
   export: string;
+  exportFormat: string;
+  exportFormats: Record<"csv" | "tsv" | "parquet" | "json" | "xlsx", string>;
+  exportRows: string;
+  /** The rows of the current view, with its filters, search and sort. */
+  exportViewRows: (count: string) => string;
+  /** Every row of the table, in its original order. */
+  exportTableRows: (count: string) => string;
+  exportColumns: string;
+  exportVisibleColumns: (count: string) => string;
+  exportAllColumns: (count: string) => string;
+  /** Write the column labels (and, for Excel, number and date formats) of `columnFormats`. */
+  exportDisplaySettings: string;
+  exportFileName: string;
+  /** The button of a source that writes the file itself (for example on a server). */
+  exportSave: string;
+  /** The button of a source whose file the browser downloads. */
+  exportDownload: string;
+  exportSaveHint: string;
+  exportDownloadHint: string;
+  exporting: string;
+  exportCancelled: string;
+  /** The table changed (for example its file was rewritten) while it was exported. */
+  exportInterrupted: string;
+  exportFailed: (message: string) => string;
+  exported: (rows: string, target: string) => string;
+  exportXlsxRows: (rows: string) => string;
+  exportXlsxColumns: (columns: string) => string;
 }
 
 export const en: Messages = {
@@ -333,6 +360,28 @@ export const en: Messages = {
     formulas_without_values: "Some formulas were saved without a calculated value and are shown blank.",
   },
   export: "Export",
+  exportFormat: "Format",
+  exportFormats: { csv: "CSV", tsv: "TSV", parquet: "Parquet", json: "JSON", xlsx: "Excel (.xlsx)" },
+  exportRows: "Rows",
+  exportViewRows: (count) => `Current view: ${count} rows, filtered and sorted as shown`,
+  exportTableRows: (count) => `Whole table: ${count} rows, in file order`,
+  exportColumns: "Columns",
+  exportVisibleColumns: (count) => `Shown columns, in display order (${count})`,
+  exportAllColumns: (count) => `All columns (${count})`,
+  exportDisplaySettings: "Use the column labels, and number and date formats in Excel",
+  exportFileName: "File name",
+  exportSave: "Save",
+  exportDownload: "Download",
+  exportSaveHint: "The server writes the file.",
+  exportDownloadHint: "The browser downloads the file.",
+  exporting: "Exporting…",
+  exportCancelled: "Export cancelled.",
+  exportInterrupted: "The table changed while it was exported. Export it again.",
+  exportFailed: (message) => `Export failed: ${message}`,
+  exported: (rows, target) => `Exported ${rows} rows to ${target}.`,
+  exportXlsxRows: (rows) => `An Excel sheet holds at most ${rows} rows. Filter the rows or choose another format.`,
+  exportXlsxColumns: (columns) =>
+    `An Excel sheet holds at most ${columns} columns. Hide columns or choose another format.`,
 };
 
 const number = (value: string) => value;
@@ -509,6 +558,27 @@ export const ja: Messages = {
     formulas_without_values: "計算結果が保存されていない数式があり、空欄で表示しています。",
   },
   export: "書き出し",
+  exportFormat: "形式",
+  exportFormats: { csv: "CSV", tsv: "TSV", parquet: "Parquet", json: "JSON", xlsx: "Excel（.xlsx）" },
+  exportRows: "行",
+  exportViewRows: (count) => `現在のビュー：${count} 行（表示中の絞り込み・並べ替えのとおり）`,
+  exportTableRows: (count) => `表全体：${count} 行（ファイルの順）`,
+  exportColumns: "列",
+  exportVisibleColumns: (count) => `表示中の列（表示順、${count} 列）`,
+  exportAllColumns: (count) => `すべての列（${count} 列）`,
+  exportDisplaySettings: "列の表示名を見出しに使い、Excel では数値・日時の書式も付ける",
+  exportFileName: "ファイル名",
+  exportSave: "保存",
+  exportDownload: "ダウンロード",
+  exportSaveHint: "ファイルはサーバーが書き出します。",
+  exportDownloadHint: "ファイルはブラウザーでダウンロードします。",
+  exporting: "書き出しています…",
+  exportCancelled: "書き出しを取り消しました。",
+  exportInterrupted: "書き出し中に表が変わりました。もう一度書き出してください。",
+  exportFailed: (message) => `書き出せませんでした：${message}`,
+  exported: (rows, target) => `${rows} 行を ${target} に書き出しました。`,
+  exportXlsxRows: (rows) => `Excel のシートは ${rows} 行までです。行を絞り込むか、別の形式を選んでください。`,
+  exportXlsxColumns: (columns) => `Excel のシートは ${columns} 列までです。列を隠すか、別の形式を選んでください。`,
 };
 
 /** Picks the built-in messages for a locale ("ja…" → Japanese, otherwise English). */

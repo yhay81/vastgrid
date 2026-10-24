@@ -444,6 +444,10 @@
   padding: 10px;
 }
 
+.vg-popover--export {
+  width: 340px;
+}
+
 .vg-popover--wide {
   width: min(560px, calc(100% - 8px));
 }
@@ -518,6 +522,41 @@
   justify-content: flex-end;
   gap: 6px;
   margin-top: 10px;
+}
+
+.vg-export__group {
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.vg-export__legend {
+  margin-bottom: 4px;
+  padding: 0;
+  font-weight: 600;
+}
+
+.vg-export__group > select {
+  width: 100%;
+}
+
+.vg-export .vg-check {
+  padding: 2px 0;
+}
+
+.vg-export .vg-check__label {
+  white-space: normal;
+}
+
+.vg-export__field {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.vg-panel__status:empty {
+  display: none;
 }
 
 .vg-filter,

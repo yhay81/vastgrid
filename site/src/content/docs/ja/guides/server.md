@@ -92,7 +92,7 @@ app.post("/api/table", express.json({ limit: "1mb" }), async (request, response)
 | --- | --- |
 | `engine` | エンジン、またはエンジンかその Promise を返す関数。 |
 | `resolve(ref)` | 要求の `ref` をファイルの絶対パスに変えます。拒否するには例外を投げます。クライアントが何を開けるかは、ここで決めます。 |
-| `resolveTarget(target)` | 書き出し（アプリから呼ぶ `source.exportView(…)`）の書き出し先を、新しいファイルの絶対パスに変えます。これがないと書き出しは拒否され、`capabilities.export` は `false` になります。 |
+| `resolveTarget(target)` | 書き出し（グリッドの書き出しパネル、またはアプリから呼ぶ `source.exportView(…)`）の書き出し先を、許可したフォルダーの中の新しいファイルの絶対パスに変えます。[書き出し](/ja/guides/export/)を参照してください。これがないと書き出しは拒否され、`capabilities.export` は `false` になります。 |
 | `onError(error)` | 要求が原因ではないエラーを受け取ります。ログに使います。 |
 
 ## 安全性

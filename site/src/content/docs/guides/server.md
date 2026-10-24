@@ -99,7 +99,7 @@ app.post("/api/table", express.json({ limit: "1mb" }), async (request, response)
 | --- | --- |
 | `engine` | The engine, or a function that returns it or a promise of it. |
 | `resolve(ref)` | Turns the `ref` of a request into an absolute file path. Throw to refuse. This is where you decide what a client may open. |
-| `resolveTarget(target)` | Turns the target of an export (`source.exportView(…)`, called by your app) into an absolute path for a new file. Without it, exports are refused and `capabilities.export` is `false`. |
+| `resolveTarget(target)` | Turns the target of an export (from the grid's export panel, or `source.exportView(…)` called by your app) into an absolute path for a new file inside the allowed directories. See [Exporting](/guides/export/). Without it, exports are refused and `capabilities.export` is `false`. |
 | `onError(error)` | Receives errors that are not caused by the request, for logging. |
 
 ## Security

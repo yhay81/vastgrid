@@ -29,6 +29,7 @@ import "vastgrid/styles.css";
 | `copyLimit` | `number` | `1000000` | Cells that can be copied at once, over all selected ranges. |
 | `columnFormats` | `Record<string, ColumnFormat>` | | Display settings by schema column name: label, number and date formats, alignment, a format function, wrapping. |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | Copy the values with the schema names, or the shown text with the labels. |
+| `exportOptions` | `GridExportOptions \| false` | `{}` | The export panel: where files go and which formats to offer. `false` hides it. See [Exporting](/guides/export/). |
 | `drawCell` | `(args: DrawCellArgs) => void` | | Draws the visible loaded cells instead of the grid. See [Cell colors and custom drawing](#cell-colors-and-custom-drawing). |
 | `cellAction` | `(cell: GridCellContent) => CellAction \| null` | | Makes cells links or buttons (pointer, underline, screen reader role; click and Space call `onCellClick`). |
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
@@ -64,6 +65,7 @@ A ref gives a `DataGridHandle`:
 | `goToRow(row)` | Scrolls to a row of the current view and makes it active. |
 | `getRowSelection()` | The checked rows, as a `RowSelection`. |
 | `setRowSelection(selection)` | Replaces the checked rows. Returns `false` when the value is not a `RowSelection`. |
+| `openExport()` | Opens the export panel, also without the toolbar. Returns `false` when the source cannot export now. |
 | `openDetail({ focus })` | Opens the detail panel; with `focus: true`, moves the focus into it. |
 | `closeDetail()` | Closes the detail panel. |
 | `detailOpen` | Whether the detail panel is open. |
@@ -258,8 +260,9 @@ decimals that arrive as strings are formatted from their digits, never through a
 **Copying.** By default copies (TSV, HTML and Markdown) hold the values, as `plainText` writes them, with
 the schema names as headers, so that a spreadsheet reads numbers and dates. `copyValues="formatted"`
 copies the shown text in full (not cut, line breaks kept) with the labels; a column's `copy` setting
-decides for its own cells. Exports (`exportView`) are written by the source and always hold the values
-and the schema names.
+decides for its own cells. Exports (`exportView`) are written by the source and hold the values; the
+export panel can write the labels as headers and, in Excel files, the number and date formats as Excel
+number formats (see [Exporting](/guides/export/)).
 
 Invalid settings, such as a currency style without `currency` or an unknown time zone, throw a
 `RangeError` as soon as the grid receives them. `ColumnFormatter` (made by `ValueFormatter.column(schema,
@@ -509,3 +512,7 @@ helpers), so most apps install only `vastgrid`. It also exports:
 | `resolveTheme(element)`, `GridTheme` | The colors and fonts the canvas reads from the CSS variables of an element. |
 | `CopyTooLargeError` | Thrown by copies of more than `copyLimit` cells. |
 | `CopyRangesError` | Thrown by copies of several ranges that have neither the same rows nor the same columns. |
+| `GridExportOptions`, `ExportChoice`, `ExportContext` | The [export panel](/guides/export/)'s options and what it passes to them. |
+| `runExport(controller, choice, options, signal)`, `exportRequest(controller, choice)`, `exportSupport(info, exportView)` | Run an export as the panel does, or build its request, for an export UI of your own. |
+| `ExportInterruptedError` | Thrown by `runExport` when the table changed during the export. |
+| `downloadBlob(data, fileName)` | Saves a `Blob` as a browser download. |

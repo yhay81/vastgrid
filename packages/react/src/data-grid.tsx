@@ -29,6 +29,7 @@ import { StatusBar, Toolbar } from "./components/bars.js";
 import { CellInspector } from "./components/cell-inspector.js";
 import { ColumnsPanel } from "./components/columns-panel.js";
 import { DetailFields, DetailPanel, type DetailPanelProps } from "./components/detail-panel.js";
+import { ExportPanel } from "./components/export-panel.js";
 import { FilterBuilder, type FilterDraft, initialDraft } from "./components/filter-builder.js";
 import { FilterPanel } from "./components/filter-panel.js";
 import { FindBar } from "./components/find-bar.js";
@@ -37,6 +38,7 @@ import { StatsPanel } from "./components/stats-panel.js";
 import { CopyRangesError, CopyTooLargeError, GridController, type Hit, ViewBuildingError } from "./controller.js";
 import { DetailTracker, detailKeyAction } from "./detail.js";
 import type { GridCellEvent, GridColumnsEvent, GridRowSelectionEvent, GridSelectionEvent } from "./events.js";
+import { exportSupport, type GridExportOptions, offeredFormats } from "./export.js";
 import { countFormat, numberFormat } from "./labels.js";
 import { type Messages, messagesFor } from "./messages.js";
 import { CanvasRenderer } from "./renderer.js";
@@ -91,6 +93,13 @@ export interface DataGridProps {
    * headers, or the shown text (`formatted`) with the labels. A column's `copy` setting overrides it.
    */
   copyValues?: CopyValues;
+  /**
+   * The export panel (the toolbar's Export button), shown when the source can export
+   * (`capabilities.export`). The options decide where files go: see `GridExportOptions`. `false` hides
+   * the panel. Defaults to `{}`: files returned by the source are downloaded, files written by a server
+   * are named by the file name the user enters.
+   */
+  exportOptions?: GridExportOptions | false;
   /**
    * Draws loaded cells in the visible rows and columns instead of the grid, with the cell's rectangle,
    * value, type, text, selection state and theme; `args.drawDefault()` draws the standard cell. For
@@ -172,6 +181,8 @@ export interface DataGridHandle {
   getRowSelection(): RowSelection;
   /** Replaces the checked rows; returns false when the value is not a row selection. */
   setRowSelection(selection: RowSelection): boolean;
+  /** Opens the export panel (see `exportOptions`), also without the toolbar. Returns false when the source cannot export now. */
+  openExport(): boolean;
   /** Opens the detail panel; with `focus`, moves the focus to it. */
   openDetail(options?: { focus?: boolean }): void;
   /** Closes the detail panel. */
@@ -190,7 +201,8 @@ type Overlay =
   | { kind: "stats"; col: number; anchor: Anchor }
   | { kind: "inspector"; row: number; col: number; anchor: Anchor }
   | { kind: "columns"; anchor: Anchor }
-  | { kind: "conditions"; anchor: Anchor; draft: FilterDraft };
+  | { kind: "conditions"; anchor: Anchor; draft: FilterDraft }
+  | { kind: "export"; anchor: Anchor };
 
 type Drag =
   | { kind: "cells"; pointerId: number; x: number; y: number; row: number; col: number; moved: boolean }
@@ -238,6 +250,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     checkboxSelection = false,
     rowKey,
     rowSelection,
+    exportOptions = {},
     onQueryChange,
     className,
     style,
@@ -471,6 +484,31 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     }
   });
 
+  /** Whether the export panel can open now: the source can export and the host did not hide it. */
+  const canExport = useCallback(() => {
+    const options = handlers.current.exportOptions ?? {};
+    if (options === false) return false;
+    const support = exportSupport(controller.info, controller.source.exportView);
+    return support !== null && offeredFormats(support, options.formats).length > 0;
+  }, [controller]);
+
+  /** Opens the export panel below a button, or at the top right of the grid. */
+  const openExport = useCallback(
+    (button?: HTMLElement) => {
+      if (!canExport() || controller.viewPending) return false;
+      const root = rootRef.current?.getBoundingClientRect();
+      const rect = button?.getBoundingClientRect();
+      setOverlay({
+        kind: "export",
+        anchor: rect
+          ? { x: rect.right - (root?.left ?? 0) - 300, y: rect.top - (root?.top ?? 0), height: rect.height }
+          : { x: (root?.width ?? 300) - 304, y: 4 },
+      });
+      return true;
+    },
+    [canExport, controller],
+  );
+
   useImperativeHandle(
     ref,
     () => ({
@@ -486,6 +524,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       },
       getRowSelection: () => controller.getRowSelection(),
       setRowSelection: (selection) => controller.setRowSelection(selection),
+      openExport: () => openExport(),
       openDetail: (options) => setDetailOpen(true, options?.focus),
       closeDetail: () => setDetailOpen(false),
       get detailOpen() {
@@ -496,7 +535,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         return rendererRef.current;
       },
     }),
-    [controller, setDetailOpen],
+    [controller, openExport, setDetailOpen],
   );
 
   // ----- helpers -----
@@ -1214,6 +1253,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
               anchor: { x: rect.right - (root?.left ?? 0) - 260, y: rect.top - (root?.top ?? 0), height: rect.height },
             });
           }}
+          onExport={canExport() ? (button) => openExport(button) : undefined}
         />
       )}
       {(c.viewPending || c.viewBuilding || c.info?.status === "loading") && (
@@ -1525,6 +1565,17 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
               )
             }
           />
+        </Popover>
+      )}
+      {overlay?.kind === "export" && exportOptions !== false && (
+        <Popover
+          anchor={overlay.anchor}
+          container={rootRef}
+          onClose={closeOverlay}
+          label={messages.export}
+          className="vg-popover--panel vg-popover--export"
+        >
+          <ExportPanel controller={c} messages={messages} options={exportOptions} count={count} onDone={announce} />
         </Popover>
       )}
       {overlay?.kind === "columns" && (

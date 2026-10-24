@@ -1,12 +1,17 @@
 import { createHash, randomBytes } from "node:crypto";
+import { createWriteStream } from "node:fs";
 import { mkdir, open as openFile, readdir, realpath, rename, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pipeline, Readable } from "node:stream";
+import { pipeline as pipelinePromise } from "node:stream/promises";
+import zlib, { createDeflateRaw } from "node:zlib";
 import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
 import {
   type AggregateRequest,
   type CellValue,
   type ColumnStats,
+  checkXlsxSize,
   type DistinctRequest,
   type DistinctValues,
   ErrorCodes,
@@ -30,6 +35,8 @@ import {
   type ViewOptions,
   type ViewQuery,
   type ViewStatus,
+  writeXlsx,
+  XLSX_MAX_TEXT,
 } from "vastgrid-core";
 import { convertToUtf8, detectEncoding } from "./encoding.js";
 import {
@@ -47,6 +54,12 @@ import {
   wireValue,
 } from "./sql.js";
 import { convertSheet, readWorkbook, sheetList, WorkbookError } from "./xlsx.js";
+
+/**
+ * Compression of exported workbooks. Compressing takes most of the time: level 3 writes a million rows
+ * about twice as fast as the default level 6, in a file about 10% larger.
+ */
+const DEFLATE_LEVEL = 3;
 
 export type TableFormat = "csv" | "tsv" | "parquet" | "json" | "ndjson" | "xlsx";
 
@@ -532,6 +545,8 @@ export class OpenTable {
   private readonly objects: string[] = [];
   private clock = 0;
   private disposed = false;
+  /** Running exports, stopped when the table closes (for example because its file changed). */
+  private readonly exports = new Set<AbortController>();
   private ready: Promise<void> = Promise.resolve();
   private listed: () => void = () => undefined;
   private readonly sheetsKnown = new Promise<void>((resolve) => {
@@ -619,6 +634,7 @@ export class OpenTable {
         export: ready,
         conditions: ready,
       },
+      ...(ready ? { exports: { formats: ["csv", "tsv", "parquet", "json", "xlsx"], delivery: "file" } } : {}),
     };
   }
 
@@ -1520,52 +1536,130 @@ export class OpenTable {
     );
   }
 
-  /** Writes the view (or the table) to `target`, an absolute path inside the allowed directories. */
+  /**
+   * Writes the view (or the table) to `target`, an absolute path inside the allowed directories. The
+   * file is written next to it under a temporary name and renamed when complete, so a cancelled or
+   * failed export leaves nothing behind.
+   */
   async exportView(request: ExportRequest, target: string, signal?: AbortSignal): Promise<ExportResult> {
     this.requireReady();
     const view = this.view(request.view);
     this.requireBuilt(view);
+    const rows = view ? view.rowCount : (this.rowCount ?? 0);
     const { from, position } = this.relationOf(view);
     const columns = (request.columns ?? this.columns.map((_, index) => index)).map((index) => this.column(index));
-    // Columns read under another name are written under the file's own.
-    const selected = columns
-      .map((column) =>
-        column.label === undefined
-          ? quoteIdentifier(column.name)
-          : `${quoteIdentifier(column.name)} AS ${quoteIdentifier(column.label)}`,
-      )
-      .join(", ");
-    const options = {
-      csv: "FORMAT csv, HEADER true",
-      tsv: "FORMAT csv, HEADER true, DELIMITER '\\t'",
-      parquet: "FORMAT parquet, COMPRESSION zstd",
-      json: "FORMAT json, ARRAY true",
-    }[request.format];
+    if (request.format === "xlsx") checkXlsxSize(rows, columns.length);
+    // Columns are written under their name in the file, or the requested header.
+    const headers = columns.map(
+      (column, index) =>
+        (request.format === "parquet" || request.format === "json" ? undefined : request.headers?.[index]) ??
+        column.label ??
+        column.name,
+    );
     // The folder may be a link: the file is written to its real location, which must be allowed.
     const folder = await realpath(path.dirname(target)).catch(() => path.dirname(target));
     const destination = path.join(folder, path.basename(target));
     if (!this.engine.allows(destination)) throw notAllowed();
     const temporary = path.join(folder, `.${path.basename(target)}.${randomBytes(6).toString("hex")}.tmp`);
-    return this.engine.work.run(() =>
-      this.engine.withConnection(signal, async (connection) => {
-        try {
-          await connection.run(
-            `COPY (SELECT ${selected || "*"} FROM ${from} ORDER BY ${position}) TO ${quoteLiteral(temporary)} (${options})`,
-          );
-          await rename(temporary, destination);
-        } catch (error) {
-          await rm(temporary, { force: true });
-          throw error;
-        }
-        return { target: request.target, rows: view ? view.rowCount : (this.rowCount ?? 0) };
-      }),
+    // An export holds the data of one revision of the file: closing the table (also because the file
+    // changed and was opened again) stops it, and so does a change found when it ends.
+    const stop = new AbortController();
+    const forward = () => stop.abort();
+    if (signal?.aborted) stop.abort();
+    signal?.addEventListener("abort", forward, { once: true });
+    this.exports.add(stop);
+    const changed = () =>
+      new SourceError(
+        ErrorCodes.cancelled,
+        "The file changed or was closed while it was exported; export it again.",
+        409,
+      );
+    try {
+      return await this.engine.work.run(() =>
+        this.engine.withConnection(stop.signal, async (connection) => {
+          if (this.disposed) throw changed();
+          try {
+            if (request.format === "xlsx") {
+              await this.writeWorkbook(connection, from, position, columns, headers, request, temporary, stop.signal);
+            } else {
+              const selected = columns
+                .map((column, index) =>
+                  headers[index] === column.name
+                    ? quoteIdentifier(column.name)
+                    : `${quoteIdentifier(column.name)} AS ${quoteIdentifier(headers[index])}`,
+                )
+                .join(", ");
+              const options = {
+                csv: "FORMAT csv, HEADER true",
+                tsv: "FORMAT csv, HEADER true, DELIMITER '\\t'",
+                parquet: "FORMAT parquet, COMPRESSION zstd",
+                json: "FORMAT json, ARRAY true",
+              }[request.format];
+              await connection.run(
+                `COPY (SELECT ${selected || "*"} FROM ${from} ORDER BY ${position}) TO ${quoteLiteral(temporary)} (${options})`,
+              );
+            }
+            if (this.disposed || (await this.currentRevision()) !== this.revision) throw changed();
+            await rename(temporary, destination);
+          } catch (error) {
+            await rm(temporary, { force: true });
+            if (signal?.aborted) throw new SourceError(ErrorCodes.cancelled, "The request was cancelled.", 499);
+            if (this.disposed) throw changed();
+            throw error;
+          }
+          return { target: request.target, rows };
+        }),
+      );
+    } catch (error) {
+      if (!signal?.aborted && this.disposed) throw changed();
+      throw error;
+    } finally {
+      this.exports.delete(stop);
+      signal?.removeEventListener("abort", forward);
+    }
+  }
+
+  /** Streams the rows into a workbook (see `writeXlsx`): one chunk of rows from DuckDB at a time. */
+  private async writeWorkbook(
+    connection: DuckDBConnection,
+    from: string,
+    position: string,
+    columns: SqlColumn[],
+    headers: string[],
+    request: ExportRequest,
+    file: string,
+    signal?: AbortSignal,
+  ) {
+    // Text is cut to Excel's limit in DuckDB; the cut text ends with "…".
+    const expressions = columns.map((column) => selectExpression(column, XLSX_MAX_TEXT - 1));
+    const result = await connection.stream(
+      `SELECT ${expressions.length > 0 ? expressions.join(", ") : "1"} FROM ${from} ORDER BY ${position}`,
     );
+    async function* batches() {
+      for await (const rows of result.yieldRowsJs()) yield rows.map((row) => row.map(wireValue));
+    }
+    const workbook = writeXlsx(
+      columns.map((column, index) => ({
+        name: headers[index],
+        type: column.type,
+        numberFormat: request.numberFormats?.[index] ?? null,
+      })),
+      batches(),
+      {
+        deflate: (chunks) => pipeline(Readable.from(chunks), createDeflateRaw({ level: DEFLATE_LEVEL }), () => {}),
+        // Node.js 20.15 and later.
+        ...(typeof zlib.crc32 === "function" ? { crc32: zlib.crc32 } : {}),
+        signal,
+      },
+    );
+    await pipelinePromise(Readable.from(workbook), createWriteStream(file, { flags: "wx" }));
   }
 
   async dispose() {
     if (this.disposed) return;
     this.disposed = true;
     // Loads and view builds notice `disposed` and drop what they create after this point.
+    for (const running of this.exports) running.abort();
     this.loadConnection?.interrupt();
     this.viewConnection?.interrupt();
     const names = [

@@ -46,7 +46,10 @@ async function answer(
     case "info": {
       const table = await engine.open(await options.resolve(request.ref), undefined, request.read);
       const info = table.info();
-      if (!options.resolveTarget) info.capabilities.export = false;
+      if (!options.resolveTarget) {
+        info.capabilities.export = false;
+        delete info.exports;
+      }
       return { table: table.id, ...info };
     }
     case "view":

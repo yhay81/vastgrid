@@ -100,6 +100,12 @@ without changing which rows are shown; use the search box for that.
 minimum and maximum and, for numbers, the mean, standard deviation, quartiles and a histogram, or for
 text the shortest and longest length. It also lists the most common values.
 
+## Exporting
+
+"Export" in the toolbar writes the current view (as filtered and sorted) or the whole table, with the
+shown or all columns, as CSV, TSV, Parquet, JSON or Excel, depending on the source. See
+[Exporting](/guides/export/).
+
 ## Columns
 
 - Drag the edge of a header to resize a column; double-click it, or use "Fit width to content", to fit

@@ -38,6 +38,16 @@ export type {
   GridSelectionEvent,
   GridSelectionRange,
 } from "./events.js";
+export {
+  downloadBlob,
+  type ExportChoice,
+  type ExportContext,
+  ExportInterruptedError,
+  exportRequest,
+  exportSupport,
+  type GridExportOptions,
+  runExport,
+} from "./export.js";
 export { en, ja, type Messages, messagesFor } from "./messages.js";
 export { CanvasRenderer } from "./renderer.js";
 export { type GridTheme, resolveTheme } from "./theme.js";

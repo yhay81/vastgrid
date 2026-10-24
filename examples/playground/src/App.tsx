@@ -4,6 +4,8 @@ import {
   type CellValue,
   DataGrid,
   type DataGridHandle,
+  downloadBlob,
+  type GridExportOptions,
   RemoteSource,
   type SheetInfo,
   type TableSource,
@@ -25,6 +27,24 @@ type Engine = "server" | "browser";
 function readableInBrowser(file: string) {
   return /\.parquet$/i.test(file);
 }
+
+/**
+ * Exports: the table server writes files into `exports/` of the data folder, and the browser then
+ * downloads them from `/data/`. Data returned by an in-memory source is downloaded directly.
+ */
+const exportOptions: GridExportOptions = {
+  target: ({ request, delivery }) => (delivery === "file" ? `exports/${request.target}` : request.target),
+  onExported: (result) => {
+    if (result.data) {
+      downloadBlob(result.data, result.target);
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = `/data/${result.target.split("/").map(encodeURIComponent).join("/")}`;
+    link.download = result.target.split("/").pop() ?? result.target;
+    link.click();
+  },
+};
 
 function browserSource(options: { file: File } | { url: string }) {
   return new BrowserSource({ ...options, worker: () => new BrowserWorker() });
@@ -243,7 +263,16 @@ export function App() {
       </aside>
       <main className="app__grid">
         {source && (
-          <DataGrid key={`${engine}:${selected}\n${sheet ?? ""}`} ref={grid} source={source} locale={locale} />
+          <DataGrid
+            key={`${engine}:${selected}\n${sheet ?? ""}`}
+            ref={grid}
+            source={source}
+            locale={locale}
+            exportOptions={{
+              ...exportOptions,
+              fileName: selected.startsWith("\u0000") ? "export" : (selected.split("/").pop() ?? "export"),
+            }}
+          />
         )}
       </main>
     </div>

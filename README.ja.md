@@ -15,7 +15,7 @@
 - **速い。** セルはキャンバスに描きます。1,000 セル以上を表示しても 1 フレーム約 2 ms です。ブラウザーの要素の高さの上限を越えて、
   数十億行までスクロールできます。
 - **表計算ソフトの操作。** マウスと Excel のキー操作での範囲の選択、コピー（TSV・HTML・Markdown）、複数の列での並べ替え、
-  値の一覧（検索・件数つき）と条件での絞り込み、列をまたぐ AND・OR と入れ子の条件、すべての列からの絞り込み、検索（⌘F）、列の統計、選択範囲のデータの個数・合計・平均・最小・最大。
+  値の一覧（検索・件数つき）と条件での絞り込み、列をまたぐ AND・OR と入れ子の条件、すべての列からの絞り込み、検索（⌘F）、列の統計、選択範囲のデータの個数・合計・平均・最小・最大、現在のビューの CSV・TSV・Parquet・JSON・Excel への書き出し。
 - **エンジンを選べる。** グリッドは `TableSource` とだけやり取りします。ディスク上のファイルは DuckDB のサーバー（`vastgrid-duckdb`）、
   ブラウザーで開くファイルと URL の Parquet は `vastgrid-browser`、メモリ上のデータは `ArraySource`、ほかのエンジンは自作の `TableSource` で扱えます。
 - **安全。** DuckDB のエンジンは、リンクをたどった実際の場所が許可したフォルダーの中にあるファイルだけを読み、実行中は変えられません。SQL はすべて組み立てたもので、値は必ずパラメーターで渡します。
@@ -150,6 +150,7 @@ const source = new ArraySource({
 | `copyLimit` | `number` | `1000000` | 一度にコピーできるセルの数（選択したすべての範囲の合計）。 |
 | `columnFormats` | `Record<string, ColumnFormat>` | | スキーマの列名ごとの表示設定。表示名、数値と日時の書式、配置、整形関数、折り返し。 |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | コピーするのを、値とスキーマの列名にするか、表示している文字と表示名にするか。 |
+| `exportOptions` | `GridExportOptions \| false` | `{}` | 書き出しパネル。ファイルの行き先（`target`、`onExported`）と出す形式を決めます。`false` で隠します。 |
 | `drawCell` | `(args: DrawCellArgs) => void` | | 表示中の読み込み済みのセルを、グリッドの代わりに描きます。`args.drawDefault()` で標準の描画を呼べます。 |
 | `cellAction` | `(cell: GridCellContent) => CellAction \| null` | | セルをリンクやボタンにします。ポインター、下線、スクリーンリーダー向けの役割を付け、クリックと Space で `onCellClick` を呼びます。 |
 | `onQueryChange` | `(query: ViewQuery) => void` | | 並べ替え・絞り込み・検索が変わったときに呼ばれます。 |
@@ -169,7 +170,7 @@ const source = new ArraySource({
 | `aria-label` | `string` | `messages.gridLabel` | スクリーンリーダー向けのグリッドの名前。 |
 
 ref からは `DataGridHandle` を使えます。`focus()`、`reload()`、`getQuery()`、`setQuery(query)`、`getState()`、
-`applyState(state)`、`goToRow(row)`、`openDetail({ focus })`、`closeDetail()`、`detailOpen`、`getRowSelection()`、`setRowSelection(selection)`、グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()`
+`applyState(state)`、`goToRow(row)`、`openDetail({ focus })`、`closeDetail()`、`detailOpen`、`openExport()`、`getRowSelection()`、`setRowSelection(selection)`、グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()`
 などの診断用）があります。
 
 イベントは、セルのビューでの行 `row`、元の表での行 `rowId`、表示中の列の位置 `col`、表の列の番号 `column` を渡し、
@@ -309,6 +310,23 @@ const [checked, setChecked] = useState<RowSelection>({ type: "include", keys: []
   }}
 />;
 ```
+
+### 書き出し
+
+ツールバーの「書き出し」で、現在のビュー（表示中の絞り込み・検索・並べ替えのとおり）か表全体を、表示中の列（表示順）かすべての列で、source が対応する形式（`info().exports`）に書き出すパネルが開きます。DuckDB のサーバーは CSV・TSV・Parquet・JSON・Excel のファイルを許可したフォルダーに書くので（`resolveTarget` があるときだけ）、大きな結果がブラウザーを通りません。`ArraySource` は CSV・TSV・JSON・Excel のファイルを返し、ブラウザーでダウンロードします。Excel ファイルは依存なしでストリームとして書き、`columnFormats` の表示名を見出しに、数値・日時の書式を表示形式にします。文字を数式として書くことはなく、1,048,575 行を超えると断ります。
+
+```tsx
+<DataGrid
+  source={source}
+  exportOptions={{
+    // サーバーが resolveTarget で解決する。そのあとファイルをダウンロードできるようにする。
+    target: ({ request }) => `exports/${request.target}`,
+    onExported: (result) => window.location.assign(`/downloads/${encodeURIComponent(result.target)}`),
+  }}
+/>
+```
+
+詳しくは[書き出し](https://vastgrid.yhay81.com/ja/guides/export/)を参照してください。
 
 ## 性能
 

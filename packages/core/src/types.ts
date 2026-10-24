@@ -86,6 +86,8 @@ export interface TableInfo {
    * that were saved without a calculated value read as blank).
    */
   notes?: string[];
+  /** What `exportView` can write, when `capabilities.export` is true (see `ExportSupport`). */
+  exports?: ExportSupport;
   /** Workbooks: the sheets that can be read, in workbook order. */
   sheets?: SheetInfo[];
   /** Workbooks: the name of the sheet that was read. */
@@ -301,19 +303,48 @@ export interface FindResult {
   column: number;
 }
 
-export type ExportFormat = "csv" | "tsv" | "parquet" | "json";
+export type ExportFormat = "csv" | "tsv" | "parquet" | "json" | "xlsx";
 
+/**
+ * What `exportView` can write, in `TableInfo.exports`. `delivery: "file"`: the source writes a new file
+ * at `ExportRequest.target`, which the host resolves (for example a path on the server); the result
+ * holds no data. `delivery: "data"`: the source returns the file's bytes in `ExportResult.data`, for
+ * the app to download or save; `target` is only its name. Sources without `exports` that can export
+ * write `csv`, `tsv`, `parquet` and `json` files (`delivery: "file"`).
+ */
+export interface ExportSupport {
+  formats: ExportFormat[];
+  delivery: "file" | "data";
+}
+
+/**
+ * Writes the rows of a view (or of the table, `view: null`) in the view's order. Filters, the search
+ * and the sort are those of the view; `columns` picks the columns and their order.
+ */
 export interface ExportRequest {
   view: string | null;
   format: ExportFormat;
+  /** Schema column indexes in the order to write them. Defaults to every column in schema order. */
   columns?: number[];
-  /** Destination, interpreted by the host (for example a path relative to a workspace). */
+  /**
+   * The header of each written column, for `csv`, `tsv` and `xlsx` (for example the labels of
+   * `columnFormats`). Defaults to the schema names. `parquet` and `json` keep the schema names.
+   */
+  headers?: string[];
+  /**
+   * `xlsx`: an Excel number format code for each written column (`null` for the default of its type),
+   * for example made with `excelNumberFormat`. Other formats write the values as they are.
+   */
+  numberFormats?: (string | null)[];
+  /** Destination, interpreted by the host (for example a path relative to a workspace), or the file name for `delivery: "data"`. */
   target: string;
 }
 
 export interface ExportResult {
   target: string;
   rows: number;
+  /** The file, from sources whose `exports.delivery` is `data`. */
+  data?: Blob;
 }
 
 /** Horizontal alignment of a column's cells. */

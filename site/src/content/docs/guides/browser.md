@@ -45,7 +45,7 @@ effect, as above, so that it is closed when the file changes or the grid unmount
 | Rows | The row groups or blocks of 1,024 lines the grid shows | The byte ranges of the row groups and columns the grid shows |
 | Sort, filters, search, statistics, value lists, find | Yes, in the worker | Off: they would download the whole file. `fullScan: true` turns them on. |
 | Selection summary | Yes | No (a whole column would download the whole file) |
-| Export | No | No |
+| Export | No (see [Exporting](/guides/export/#vastgrid-browser)) | No |
 
 The grid enables only what `info().capabilities` says, so with a URL the sort and filter menus stay off.
 Capabilities are all off while a text file is still being counted, as with the DuckDB engine.

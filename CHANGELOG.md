@@ -12,6 +12,30 @@
   and screen readers hear the active row's checkbox.
 - `vastgrid-core`: `RowSelection`, `RowKey`, `RowSelectionModel` and `parseRowSelection`. Row positions
   (`rowIds`) are documented to stay stable for a table's `revision`.
+- `vastgrid`: an "Export" button in the toolbar opens a panel to choose the format, the rows (the current
+  view with its filters, search and sort, or the whole table), the columns (shown, in display order, or
+  all), whether to use the labels and formats of `columnFormats`, and the file name. It offers the formats
+  of the source, shows progress, failures and Excel's limits, and cancels. `exportOptions` lets the app
+  decide the target (`target`) and receive the result (`onExported`); without it, data returned by the
+  source is downloaded. `exportOptions={false}` hides the panel and `openExport()` opens it. `runExport`,
+  `exportRequest`, `exportSupport` and `downloadBlob` build other export UIs.
+- `vastgrid-core`: exports can write Excel files (`format: "xlsx"`). `ExportRequest` takes `headers` and
+  (for xlsx) `numberFormats`; `TableInfo.exports` lists the formats and whether the source writes a file
+  (`delivery: "file"`) or returns its data (`"data"`, `ExportResult.data`); `export_too_large` refuses
+  results that do not fit in an Excel sheet. The protocol, `parseProtocolRequest` and `RemoteSource` carry
+  them.
+- `vastgrid-core`: `ArraySource` exports CSV, TSV, JSON and xlsx as a `Blob` (`capabilities.export` is now
+  `true`). `writeXlsx`, `writeTableFile`, `excelNumberFormat` and `browserDeflate` write files without
+  dependencies, as streams. Excel files keep numbers that a double cannot hold as text, write dates as
+  Excel dates (timestamps with a zone in UTC), never write text as a formula, and cut text at 32,767
+  characters.
+- `vastgrid-duckdb`: `exportView` writes xlsx from a stream of DuckDB chunks (a million rows of eight
+  columns in about 7 s and 58 MB, with the memory of a CSV export), writes `headers` into CSV and TSV
+  files, refuses more than 1,048,575 rows or 16,384 columns for xlsx, and deletes the partial file when an
+  export is cancelled. An export of a file that changes (the table is closed and opened again, or the
+  file's revision differs when it ends) is stopped with `cancelled`, and the grid's panel reports
+  `ExportInterruptedError` when the source reports a change during an export. `info` reports `exports`,
+  and leaves it out when the handler has no `resolveTarget`.
 - `vastgrid`: a detail panel shows every column of the active row, with the columns' labels and
   formatted values, beside the grid (below it when the grid is narrow); rows keep their height. It follows
   the active cell, reads cut values in full for that row and cancels the read when you move on, and shows

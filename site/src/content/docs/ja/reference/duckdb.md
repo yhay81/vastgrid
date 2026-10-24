@@ -43,6 +43,8 @@ const engine = await TableEngine.create(options: TableEngineOptions);
 
 `OpenTable` には、`TableSource` のメソッド（`info`、`createView`、`readRows`、`columnStats`、`distinctValues`、`aggregate`、`find`、`exportView(request, target)`）と、`id`、読み込みの終わりを待つ Promise を返す `whenReady()` があります。`currentRevision()` はファイルの今の revision（ファイルがなければ null）を返します。ファイルが変わると `info().revision` と違う値になるので、ポーリング以外の方法でクライアントに変更を伝えるときは両者を比べてください。下の受け口はこれらを呼びます。サーバーで表を扱うときは、直接使うこともできます。
 
+`exportView` は `csv`・`tsv`・`parquet`・`json`・`xlsx` を書きます（`info().exports`）。ファイルは書き出し先のフォルダーに一時的な名前で書き、書き終えてから名前を変えます。取り消しや失敗のときは消します。Excel ファイルはエンジンが自分で、行のまとまりごとのストリームとして書き（依存なし、メモリーは表の大きさによらない）、1,048,575 行または 16,384 列を超えると `export_too_large` で断ります。[書き出し](/ja/guides/export/)を参照してください。
+
 ## `createTableHandler(options)`
 
 プロトコルの Fetch API の受け口 `(request: Request) => Promise<Response>` を返します。JSON の本文を持つ `POST` の要求を受け、`{ result }` か `{ error: { code, message } }` を、それに合うステータスで返します。
@@ -51,7 +53,7 @@ const engine = await TableEngine.create(options: TableEngineOptions);
 | --- | --- |
 | `engine` | `TableEngine \| (() => TableEngine \| Promise<TableEngine>)`。 |
 | `resolve(ref)` | 要求が指すファイルの絶対パスか、その Promise を返します。拒否するには例外を投げます。 |
-| `resolveTarget(target)` | 書き出し用の新しいファイルの絶対パスを返します。これがないと、書き出しは拒否されます。 |
+| `resolveTarget(target)` | 書き出し用の新しいファイルの絶対パスを返します。これがないと、書き出しは拒否され、`info` は `exports` なしで `capabilities.export: false` を返します。 |
 | `onError(error)` | 要求が原因ではないエラーを受け取ります。ログに使います。 |
 
 ## `handleTableRequest(body, options, signal?)`

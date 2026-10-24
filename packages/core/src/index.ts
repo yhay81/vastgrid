@@ -3,6 +3,13 @@ export { type BlockState, CacheBlock, RowCache, type RowCacheOptions } from "./c
 export { toHtmlTable, toMarkdownTable, toTsv } from "./clipboard.js";
 export { isNumericType, isTemporalType } from "./column-type.js";
 export {
+  EXPORT_EXTENSIONS,
+  EXPORT_MEDIA_TYPES,
+  TABLE_FILE_FORMATS,
+  type TableFileFormat,
+  writeTableFile,
+} from "./export-file.js";
+export {
   filterLeaves,
   isFilterGroup,
   MAX_FILTER_DEPTH,
@@ -76,3 +83,15 @@ export {
   type TableSource,
 } from "./source.js";
 export type * from "./types.js";
+export {
+  browserDeflate,
+  checkXlsxSize,
+  type ExportColumn,
+  excelNumberFormat,
+  excelSerial,
+  writeXlsx,
+  XLSX_MAX_COLUMNS,
+  XLSX_MAX_ROWS,
+  XLSX_MAX_TEXT,
+  type XlsxOptions,
+} from "./xlsx-writer.js";

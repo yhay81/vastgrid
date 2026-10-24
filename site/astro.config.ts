@@ -75,6 +75,7 @@ export default defineConfig({
             "guides/browser",
             "guides/custom-source",
             "guides/using-the-grid",
+            "guides/export",
             "guides/theming",
             "guides/localization",
           ],
