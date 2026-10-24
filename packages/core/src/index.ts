@@ -30,7 +30,7 @@ export {
   type ResolvedGridState,
   resolveGridState,
 } from "./grid-state.js";
-export { ColumnLayout } from "./layout.js";
+export { ColumnLayout, type ColumnPin, fitFrozen, MAX_FROZEN_SHARE } from "./layout.js";
 export {
   ErrorCodes,
   type InfoResult,

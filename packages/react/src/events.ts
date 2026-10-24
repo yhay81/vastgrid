@@ -12,7 +12,7 @@
  * hovering or drawing.
  */
 
-import type { CellValue, RowSelection } from "vastgrid-core";
+import type { CellValue, ColumnPin, RowSelection } from "vastgrid-core";
 
 export interface GridCell {
   /** Row in the current view. */
@@ -57,6 +57,7 @@ export type GridColumnsChangeReason =
   | "move"
   /** Columns were hidden or shown. */
   | "visibility"
+  /** Columns were frozen or unfrozen, at either side. */
   | "freeze"
   /** A state was applied (`applyState` or `initialState`). */
   | "state"
@@ -73,7 +74,10 @@ export interface GridColumn {
   hidden: boolean;
   /** The width was set by the user (it is saved in the state); otherwise the grid fits it. */
   sized: boolean;
+  /** The column is frozen at either side (see `pin`). */
   frozen: boolean;
+  /** Where the column is frozen: `"left"`, `"right"`, or `null` when it scrolls or is hidden. */
+  pin: ColumnPin;
 }
 
 export interface GridColumnsEvent {
@@ -82,6 +86,8 @@ export interface GridColumnsEvent {
   columns: GridColumn[];
   /** Visible columns frozen at the left. */
   frozenColumns: number;
+  /** Visible columns frozen at the right. */
+  frozenRightColumns: number;
 }
 
 export interface GridCellEvent extends GridCell {

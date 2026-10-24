@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `vastgrid`: columns can be frozen at the right as well as the left. `frozenRightColumns` keeps the last
+  visible columns at the grid's right edge while the columns between the two sides scroll; the column menu
+  ("Freeze from this column to the right edge"), the "Columns" panel (None, Left, Right) and
+  `controller.freezeFrom()` / `setColumnPin()` set them. Moving, hiding, resizing (at the left edge for
+  right columns), selecting, copying, menus, hit testing and keyboard scrolling follow the display order.
+  Frozen columns take at most three quarters of the grid's width; beyond that they scroll, the right ones
+  first, until the grid widens. `GridColumnsEvent` adds `frozenRightColumns` and `GridColumn.pin`, and
+  `GridColumn.frozen` is true for both sides.
+- `vastgrid-core`: `GridState.frozenRightColumns` saves the columns frozen at the right by name (states
+  without it still apply and change only the left side), and columns that a state does not list go before
+  them. `ColumnPin`, `fitFrozen` and `MAX_FROZEN_SHARE` describe the frozen sides.
 - `vastgrid`: `checkboxSelection` adds row checkboxes, separate from the cell selection. Checked rows
   are kept by key — the row's position in the file for one `revision`, or the values of a `rowKey`
   column — so the same records stay checked when the view is sorted or filtered. The corner checkbox

@@ -143,6 +143,7 @@ const source = new ArraySource({
 | `maxLines` | `number` | `3` | 折り返す列（`columnFormats` の `wrap`）のセルに表示する最大の行数（1〜20）。 |
 | `nullText` | `string` | `""` | null のセルに表示する文字。 |
 | `frozenColumns` | `number` | `0` | 表を開いたときに左に固定する列の数。 |
+| `frozenRightColumns` | `number` | `0` | 表を開いたときに右に固定する列の数。最後の列から数え、グリッドの右端に表示します。 |
 | `toolbar` | `boolean` | `true` | 検索欄、適用中の絞り込み、行数を表示します。 |
 | `statusBar` | `boolean` | `true` | アクティブなセルと選択範囲の集計を表示します。 |
 | `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。変更を通知する source は自動で読み直されます。 |
@@ -211,6 +212,18 @@ grid.current?.setQuery({
 `filters` はすべてに合う行を残し、`where` は `and`・`or` のグループ（8 段まで入れ子にできます）でできた条件木で、これにも合う行を残します。
 画面では、ツールバーの「条件…」と、列の絞り込みパネルの「条件を追加（AND / OR）」で組み立て、ツールバーに表示された条件から確認・変更・解除できます。
 条件木は `capabilities.conditions` を報告する source（DuckDB のエンジン、`vastgrid-browser`、`ArraySource`）でだけ使い、それ以外では使いません。
+
+### 列の固定
+
+`frozenColumns` は表示中の最初の列を左に、`frozenRightColumns` は最後の列（合計や操作の列など）を右に固定し、その間の列をスクロールします。
+列のメニューとツールバーの「列」パネルで左右どちらにも固定でき、アプリからは `controller.setColumnPin(column, "left" | "right" | null)` で固定できます。
+固定列はグリッドの幅の 4 分の 3 までを使い、超えるときは右、次に左の固定列を、グリッドが広がるまでスクロールする列として表示します。
+`GridState` と `onColumnsChange` は両側を含み（`frozenRightColumns`、`GridColumn.pin`）、`frozenColumns` だけで保存した状態もそのまま適用できます。
+詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#列の固定)を参照してください。
+
+```tsx
+<DataGrid source={source} frozenColumns={1} frozenRightColumns={2} />
+```
 
 ### 列の表示設定
 
@@ -374,7 +387,7 @@ DuckDB の処理を含み、HTTP は含みません。
 | Space・⌘/Ctrl ＋ Shift ＋ Space（`checkboxSelection` のとき） | アクティブな行・すべての行のチェックを切り替える（Shift ＋ クリックで範囲） |
 | ⌘/Ctrl ＋ C・⌘/Ctrl ＋ Shift ＋ C | コピー・見出しを含めてコピー |
 | ⌘/Ctrl ＋ F | 検索 |
-| Alt ＋ ↓ | 列のメニュー（並べ替え・絞り込み・統計・固定・非表示） |
+| Alt ＋ ↓ | 列のメニュー（並べ替え・絞り込み・統計・左右の固定・非表示） |
 | F2・ダブルクリック | セルの値の全体を表示 |
 | Alt ＋ Enter（もう一度でパネルへ）・Esc | アクティブな行の詳細パネルを開く・閉じる |
 | Shift ＋ F10・コンテキストメニューのキー・右クリック | セルのメニュー（コピー・この値で絞り込む・並べ替え） |

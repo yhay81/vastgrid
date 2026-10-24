@@ -65,6 +65,12 @@ export interface DataGridProps {
   nullText?: string;
   /** Columns frozen at the left when the table opens. */
   frozenColumns?: number;
+  /**
+   * Columns frozen at the right when the table opens: the last ones, which stay at the grid's right edge.
+   * Frozen columns of both sides take at most three quarters of the grid's width; beyond that, those at
+   * the right and then those at the left scroll until the grid is wide enough again.
+   */
+  frozenRightColumns?: number;
   /** Shows the search box, active filters and row count. Defaults to `true`. */
   toolbar?: boolean;
   /** Shows the active cell and the selection summary. Defaults to `true`. */
@@ -207,7 +213,7 @@ type Overlay =
 type Drag =
   | { kind: "cells"; pointerId: number; x: number; y: number; row: number; col: number; moved: boolean }
   | { kind: "rows" | "cols"; pointerId: number; x: number; y: number }
-  | { kind: "resize"; pointerId: number; col: number; startX: number; startWidth: number }
+  | { kind: "resize"; pointerId: number; col: number; startX: number; startWidth: number; direction: 1 | -1 }
   | { kind: "move"; pointerId: number; col: number; x: number; y: number; moved: boolean };
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -240,6 +246,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     maxLines,
     nullText = "",
     frozenColumns = 0,
+    frozenRightColumns = 0,
     toolbar = true,
     statusBar = true,
     reloadKey,
@@ -284,6 +291,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       locale: resolvedLocale,
       nullText,
       frozenColumns,
+      frozenRightColumns,
       minColumnWidth: 36,
       maxAutoWidth: 360,
       copyLimit,
@@ -643,7 +651,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     if (drag.kind !== "rows") {
       if (drag.x < c.gutterWidth + c.frozenWidth && c.scrollX.position > 0)
         dx = speed(drag.x - c.gutterWidth - c.frozenWidth);
-      else if (drag.x > c.width) dx = speed(drag.x - c.width);
+      else if (drag.x > c.frozenRightX && c.scrollX.position < c.scrollX.virtualRange)
+        dx = speed(drag.x - c.frozenRightX);
     }
     if (dx !== 0 || dy !== 0) {
       c.scrollToVirtual(dx === 0 ? null : c.scrollX.position + dx, dy === 0 ? null : c.scrollY.position + dy);
@@ -671,6 +680,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         col: hit.resize,
         startX: x,
         startWidth: c.layout.width(hit.resize),
+        // Columns frozen at the right are resized at their left edge, so dragging to the left widens them.
+        direction: c.isFrozenRight(hit.resize) ? -1 : 1,
       };
       c.resizing = hit.resize;
       c.requestRender();
@@ -723,7 +734,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     const drag = dragRef.current;
     if (drag && drag.pointerId === event.pointerId) {
       if (drag.kind === "resize") {
-        c.resizeColumn(drag.col, drag.startWidth + (x - drag.startX));
+        c.resizeColumn(drag.col, drag.startWidth + drag.direction * (x - drag.startX));
         return;
       }
       if (drag.kind === "move") {
@@ -1080,9 +1091,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           c.emit();
         },
       },
-      col < c.frozen && c.frozen > 0
+      c.pinOf(col) === "left"
         ? { label: messages.unfreeze, onSelect: () => c.freezeUpTo(-1) }
         : { label: messages.freezeUpTo, onSelect: () => c.freezeUpTo(col) },
+      c.pinOf(col) === "right"
+        ? { label: messages.unfreezeRight, onSelect: () => c.freezeFrom(c.visible.length) }
+        : { label: messages.freezeFrom, onSelect: () => c.freezeFrom(col) },
       { label: messages.hideColumn, disabled: c.visible.length <= 1, onSelect: () => c.hideColumn(col) },
       {
         label: messages.copyColumnName,
@@ -1591,7 +1605,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
             schema={c.schema}
             labelOf={(index) => c.columnLabel(index)}
             messages={messages}
+            pinOf={(index) => {
+              const col = c.visible.findIndex((column) => column.index === index);
+              return col < 0 ? null : c.pinOf(col);
+            }}
             onToggle={(index, hidden) => c.setColumnHidden(index, hidden)}
+            onPin={(index, pin) => c.setColumnPin(index, pin)}
             onShowAll={() => c.showAllColumns()}
           />
         </Popover>

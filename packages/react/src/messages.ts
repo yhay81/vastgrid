@@ -32,6 +32,13 @@ export interface Messages {
   hideColumn: string;
   freezeUpTo: string;
   unfreeze: string;
+  freezeFrom: string;
+  unfreezeRight: string;
+  /** Label of the choice in the columns panel where a column is frozen. */
+  columnPin: (column: string) => string;
+  pinNone: string;
+  pinLeft: string;
+  pinRight: string;
   autoFit: string;
   copy: string;
   copyWithHeaders: string;
@@ -219,6 +226,12 @@ export const en: Messages = {
   hideColumn: "Hide column",
   freezeUpTo: "Freeze up to this column",
   unfreeze: "Unfreeze columns",
+  freezeFrom: "Freeze from this column to the right edge",
+  unfreezeRight: "Unfreeze right columns",
+  columnPin: (column) => `Freeze ${column}`,
+  pinNone: "None",
+  pinLeft: "Left",
+  pinRight: "Right",
   autoFit: "Fit width to content",
   copy: "Copy",
   copyWithHeaders: "Copy with headers",
@@ -417,6 +430,12 @@ export const ja: Messages = {
   hideColumn: "列を隠す",
   freezeUpTo: "この列までを固定",
   unfreeze: "列の固定を解除",
+  freezeFrom: "この列から右端までを固定",
+  unfreezeRight: "右側の列の固定を解除",
+  columnPin: (column) => `${column} の固定`,
+  pinNone: "なし",
+  pinLeft: "左",
+  pinRight: "右",
   autoFit: "幅を内容に合わせる",
   copy: "コピー",
   copyWithHeaders: "見出しを含めてコピー",

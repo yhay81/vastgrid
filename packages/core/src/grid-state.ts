@@ -35,12 +35,14 @@ export interface GridState {
   /**
    * Columns in display order. Columns of the table that are not listed (for example added to the file
    * later) keep their current settings and follow the listed ones in their current order (table order
-   * in a new grid); listed columns that the table no longer has are skipped. At least one column stays
-   * visible.
+   * in a new grid), before the columns frozen at the right; listed columns that the table no longer has
+   * are skipped. At least one column stays visible.
    */
   columns?: GridColumnSetting[];
   /** Visible columns frozen at the left. */
   frozenColumns?: number;
+  /** Visible columns frozen at the right. States saved before right freezing existed leave it out. */
+  frozenRightColumns?: number;
 }
 
 /** A state mapped onto a table's columns, with schema indexes instead of names. */
@@ -52,6 +54,7 @@ export interface ResolvedGridState {
    */
   columns?: { index: number; width?: number; hidden: boolean }[];
   frozenColumns?: number;
+  frozenRightColumns?: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -100,6 +103,10 @@ export function parseGridState(value: unknown): GridState | null {
   }
   const frozen = value.frozenColumns;
   if (typeof frozen === "number" && Number.isSafeInteger(frozen) && frozen >= 0) state.frozenColumns = frozen;
+  const frozenRight = value.frozenRightColumns;
+  if (typeof frozenRight === "number" && Number.isSafeInteger(frozenRight) && frozenRight >= 0) {
+    state.frozenRightColumns = frozenRight;
+  }
   return state;
 }
 
@@ -162,17 +169,23 @@ export function resolveGridState(state: GridState, names: readonly string[]): Re
     result.query = query;
   }
   let frozenPositions: Set<number> | null = null;
+  let frozenRightPositions: Set<number> | null = null;
   if (state.columns) {
     const available = namePositions(names);
     const columns: NonNullable<ResolvedGridState["columns"]> = [];
-    // Positions in `columns` of the saved frozen columns.
+    // Positions in `columns` of the saved frozen columns, at the left and at the right.
     const frozen = new Set<number>();
+    const frozenRight = new Set<number>();
+    const visibleCount = state.columns.filter((setting) => !setting.hidden).length;
     let visibleSaved = 0;
     for (const setting of state.columns) {
-      const savedFrozen = !setting.hidden && visibleSaved++ < (state.frozenColumns ?? 0);
+      const position = setting.hidden ? -1 : visibleSaved++;
+      const savedFrozen = position >= 0 && position < (state.frozenColumns ?? 0);
+      const savedFrozenRight = position >= 0 && position >= visibleCount - (state.frozenRightColumns ?? 0);
       const index = available.get(setting.name)?.shift();
       if (index === undefined) continue;
       if (savedFrozen) frozen.add(columns.length);
+      if (savedFrozenRight) frozenRight.add(columns.length);
       columns.push({
         index,
         hidden: setting.hidden === true,
@@ -181,6 +194,7 @@ export function resolveGridState(state: GridState, names: readonly string[]): Re
     }
     result.columns = columns;
     frozenPositions = frozen;
+    frozenRightPositions = frozenRight;
   }
   if (state.frozenColumns !== undefined) {
     if (result.columns && frozenPositions) {
@@ -194,6 +208,19 @@ export function resolveGridState(state: GridState, names: readonly string[]): Re
       result.frozenColumns = count;
     } else {
       result.frozenColumns = state.frozenColumns;
+    }
+  }
+  if (state.frozenRightColumns !== undefined) {
+    if (result.columns && frozenRightPositions) {
+      let count = 0;
+      for (let position = result.columns.length - 1; position >= 0; position--) {
+        if (result.columns[position].hidden) continue;
+        if (!frozenRightPositions.has(position)) break;
+        count++;
+      }
+      result.frozenRightColumns = count;
+    } else {
+      result.frozenRightColumns = state.frozenRightColumns;
     }
   }
   return result;
