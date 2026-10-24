@@ -442,6 +442,15 @@ export class GridStore {
           rowCount: event.rowCount as number | null,
         },
       });
+      // A view still being made reads its rows again once the table is read, also without `view` events (§9).
+      const view = this.current;
+      if (event.status === "ready" && view?.info && view.info.status !== "ready") {
+        const columns = this.withKeyFor(view, this.viewport.columns);
+        void this.read(view, this.around(this.viewport.top, null, columns)).then(
+          () => this.scheduleReads(),
+          () => {},
+        );
+      }
     } else if (event.event === "view") {
       const view = this.current;
       if (view?.info && event.hash === view.info.hash) {

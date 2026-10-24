@@ -130,9 +130,15 @@ export class ViewCache {
     };
     for (let index = Math.floor(start / BLOCK_ROWS); index <= last; index++) {
       const block = this.blocks.get(index);
-      const missing = block
-        ? columns.filter((column) => !block.values.has(column) && !block.reading.has(column))
-        : [...columns];
+      // A block read while the view was shorter (a table or view still being made, §9) is read again whole.
+      const short =
+        block !== undefined &&
+        block.rowIds !== undefined &&
+        block.length < Math.min(BLOCK_ROWS, rowCount - index * BLOCK_ROWS);
+      const missing =
+        block && !short
+          ? columns.filter((column) => !block.values.has(column) && !block.reading.has(column))
+          : columns.filter((column) => !block?.reading.has(column));
       if (missing.length === 0) {
         flush();
         continue;

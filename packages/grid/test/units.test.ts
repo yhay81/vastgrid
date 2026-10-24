@@ -160,3 +160,10 @@ test("a worker serves an engine through a MessagePort, events included", async (
   channel.port1.close();
   channel.port2.close();
 });
+
+test("a block read while the view was shorter is read again once the view has more rows (§9)", () => {
+  const cache = new ViewCache();
+  cache.receive(0, [0, 1, 2], ["a"], [["x"], ["y"], ["z"]], undefined);
+  assert.deepEqual(cache.reads(0, 3, ["a"], 3), []);
+  assert.deepEqual(cache.reads(0, 300, ["a"], 1_000), [{ start: 0, end: 512, columns: ["a"] }]);
+});

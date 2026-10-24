@@ -261,7 +261,7 @@ export class GridCanvas {
     this.schedule();
   }
 
-  /** Fits the columns without a width to the values on screen, growing them only, once per view. */
+  /** Fits the columns without a width to the values on screen, growing them only. */
   private measure() {
     const store = this.store;
     const fitter = this.cellText;
@@ -272,10 +272,12 @@ export class GridCanvas {
     let changed = false;
     this.columns.forEach((item) => {
       const name = item.column.name;
-      if (item.setting.width !== undefined || this.measured.has(name)) return;
+      if (item.setting.width !== undefined) return;
+      const before = this.measured.get(name);
+      if (before !== undefined && before >= MAX_AUTO_WIDTH) return;
       let loaded = false;
       context.font = header.font;
-      let widest = header.width(item.setting.format?.label ?? name) + PADDING * 2 + 18;
+      let widest = Math.max(before ?? 0, header.width(item.setting.format?.label ?? name) + PADDING * 2 + 18);
       context.font = fitter.font;
       for (let row = first; row < Math.min(last, first + 200); row++) {
         const value = store.cell(row, name);
@@ -285,7 +287,10 @@ export class GridCanvas {
         if (text) widest = Math.max(widest, fitter.width(text.length > 120 ? text.slice(0, 120) : text) + PADDING * 2);
       }
       if (!loaded) return;
-      this.measured.set(name, Math.min(MAX_AUTO_WIDTH, Math.max(MIN_WIDTH, Math.ceil(widest))));
+      // Columns grow to fit the rows that come on screen, and never shrink while the view stays.
+      const width = Math.min(MAX_AUTO_WIDTH, Math.max(MIN_WIDTH, Math.ceil(widest)));
+      if (width === before) return;
+      this.measured.set(name, width);
       changed = true;
     });
     if (changed) this.relayout();
