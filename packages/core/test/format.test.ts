@@ -169,3 +169,17 @@ test("copied text is the value or the shown text", () => {
   assert.equal(plain.format("9007199254740993"), format.format("9007199254740993", "bigint"));
   assert.equal(plain.text("9007199254740993"), "9,007,199,254,740,993");
 });
+
+test("columns that wrap keep line breaks in the drawn text", () => {
+  const base = new ValueFormatter({ locale: "en-US" });
+  const note = { name: "note", type: "string" } as const;
+  assert.equal(base.column(note).format("a\r\nb\tc"), "a ↵ b ⇥ c");
+  const wrapped = base.column(note, { wrap: true });
+  assert.equal(wrapped.wrap, true);
+  assert.equal(wrapped.format("a\r\nb\rc d\te"), "a\nb\nc\nd ⇥ e");
+  assert.equal(wrapped.format(null), "");
+  assert.equal(base.column(note, { wrap: true, format: (_, { text }) => `${text}\n!` }).format("x"), "x\n!");
+  const amount = base.column({ name: "amount", type: "float" }, { wrap: true, number: { fractionDigits: 2 } });
+  assert.equal(amount.format(1234.5), "1,234.50");
+  assert.equal(base.column({ name: "count", type: "integer" }, { wrap: true }).format(1234567), "1,234,567");
+});

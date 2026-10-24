@@ -82,6 +82,7 @@ export class CanvasRenderer {
     this.headerText = new TextFitter(this.context, theme.headerFont);
     this.smallText = new TextFitter(this.context, theme.smallFont);
     this.formatKey = "";
+    this.controller.options.lineHeight = theme.lineHeight;
     this.controller.updateLayout();
     this.schedule();
   }
@@ -226,10 +227,13 @@ export class CanvasRenderer {
     if (!schema) return;
     const x = c.columnX(col);
     const width = c.layout.width(col);
-    const rowHeight = c.options.rowHeight;
+    const rowHeight = c.rowHeight;
     const formatter = c.formatterOf(state.index);
     const numeric = formatter.numeric;
     const align = formatter.align;
+    const wrap = formatter.wrap;
+    const maxLines = c.maxLines;
+    const lineHeight = c.options.lineHeight ?? 18;
     const textWidth = width - PADDING * 2;
     const find = c.findText ? (c.findCaseSensitive ? c.findText : c.findText.toLowerCase()) : "";
     ctx.save();
@@ -269,7 +273,17 @@ export class CanvasRenderer {
         const needed = this.cellText.width(text) + PADDING * 2 + 2;
         if (needed > width && needed > (this.needed.get(col) ?? 0)) this.needed.set(col, needed);
       }
-      ctx.fillText(this.cellText.fit(text, textWidth), textX, y + rowHeight / 2 + 0.5);
+      if (wrap) {
+        // The lines are centered in the row, so that one line is level with the other columns.
+        const lines = this.cellText.lines(text, textWidth, maxLines);
+        let lineY = y + (rowHeight - lines.length * lineHeight) / 2 + lineHeight / 2 + 0.5;
+        for (const line of lines) {
+          ctx.fillText(line, textX, lineY);
+          lineY += lineHeight;
+        }
+      } else {
+        ctx.fillText(this.cellText.fit(text, textWidth), textX, y + rowHeight / 2 + 0.5);
+      }
     }
     ctx.restore();
   }
@@ -492,7 +506,7 @@ export class CanvasRenderer {
     const t = this.theme;
     const width = c.gutterWidth;
     const top = c.options.headerHeight;
-    const rowHeight = c.options.rowHeight;
+    const rowHeight = c.rowHeight;
     ctx.fillStyle = t.gutterBackground;
     ctx.fillRect(0, top, width, c.height - top);
     this.clipped(0, top, width, c.height - top, () => {

@@ -359,8 +359,14 @@ export interface ColumnFormat {
   /** Defaults to `right` for numeric columns and `left` otherwise. */
   align?: ColumnAlign;
   /**
+   * Wraps the text onto as many lines as the grid's `maxLines` allows, breaking at spaces and between
+   * CJK characters, with line breaks in the value starting new lines. Text that does not fit ends with
+   * "…". Rows of the grid are all as high as the lines need while a visible column wraps.
+   */
+  wrap?: boolean;
+  /**
    * Makes the text of a value. `text` is the text the other settings make. The result is shown in one
-   * line; keep the function stable (define it outside components or memoize it), since a new function
+   * line (or wrapped, with `wrap`); keep the function stable (define it outside components or memoize it), since a new function
    * redraws the column.
    */
   format?: (value: CellValue, context: { column: ColumnSchema; text: string }) => string;

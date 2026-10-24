@@ -39,6 +39,12 @@ export interface DataGridProps {
   rowHeight?: number;
   /** Header height in pixels. Defaults to `--vg-header-height` or 32. */
   headerHeight?: number;
+  /**
+   * Lines shown at most in cells of columns that wrap (`wrap` in `columnFormats`), from 1 to 20.
+   * Defaults to 3. While a visible column wraps, every row is `rowHeight` plus `--vg-line-height` (1.4
+   * times the font size) for each further line; longer text ends with "…" and the cell inspector shows it all.
+   */
+  maxLines?: number;
   /** Text shown for null cells. Defaults to an empty cell. */
   nullText?: string;
   /** Columns frozen at the left when the table opens. */
@@ -143,6 +149,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     locale,
     rowHeight,
     headerHeight,
+    maxLines,
     nullText = "",
     frozenColumns = 0,
     toolbar = true,
@@ -180,6 +187,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     const grid = new GridController(source, {
       rowHeight: rowHeight ?? 24,
       headerHeight: headerHeight ?? 32,
+      maxLines,
       locale: resolvedLocale,
       nullText,
       frozenColumns,
@@ -206,6 +214,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   useEffect(() => {
     controller.setColumnFormats(columnFormats);
   }, [controller, columnFormats]);
+
+  useEffect(() => {
+    controller.setMaxLines(maxLines);
+  }, [controller, maxLines]);
 
   useEffect(() => {
     controller.options.copyValues = copyValues;
@@ -354,7 +366,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   function cellAnchor(row: number, col: number): Anchor {
     const x = Math.max(controller.gutterWidth, controller.columnX(col));
     const y = Math.max(controller.options.headerHeight, Math.min(controller.height - 8, controller.rowY(row)));
-    return anchorAt(x, y, controller.options.rowHeight);
+    return anchorAt(x, y, controller.rowHeight);
   }
 
   function focusGrid() {

@@ -140,13 +140,14 @@ const source = new ArraySource({
 | `messages` | `Partial<Messages>` | | 組み込みの文言の一部を置き換えます（`en` と `ja` を参照）。 |
 | `rowHeight` | `number` | `--vg-row-height` か 24 | 行の高さ（px）。 |
 | `headerHeight` | `number` | `--vg-header-height` か 32 | 見出しの高さ（px）。 |
+| `maxLines` | `number` | `3` | 折り返す列（`columnFormats` の `wrap`）のセルに表示する最大の行数（1〜20）。 |
 | `nullText` | `string` | `""` | null のセルに表示する文字。 |
 | `frozenColumns` | `number` | `0` | 表を開いたときに左に固定する列の数。 |
 | `toolbar` | `boolean` | `true` | 検索欄、適用中の絞り込み、行数を表示します。 |
 | `statusBar` | `boolean` | `true` | アクティブなセルと選択範囲の集計を表示します。 |
 | `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。 |
 | `copyLimit` | `number` | `1000000` | 一度にコピーできるセルの数（選択したすべての範囲の合計）。 |
-| `columnFormats` | `Record<string, ColumnFormat>` | | スキーマの列名ごとの表示設定。表示名、数値と日時の書式、配置、整形関数。 |
+| `columnFormats` | `Record<string, ColumnFormat>` | | スキーマの列名ごとの表示設定。表示名、数値と日時の書式、配置、整形関数、折り返し。 |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | コピーするのを、値とスキーマの列名にするか、表示している文字と表示名にするか。 |
 | `onQueryChange` | `(query: ViewQuery) => void` | | 並べ替え・絞り込み・検索が変わったときに呼ばれます。 |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | 選択範囲かアクティブなセルが変わったときに呼ばれます。 |
@@ -199,7 +200,9 @@ const formats: Record<string, ColumnFormat> = {
 <DataGrid source={source} columnFormats={formats} />;
 ```
 
-コピーには値とスキーマの列名が入ります。表示している文字と表示名をコピーするには、`copyValues="formatted"`（列ごとには `copy`）を指定します。詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#列の表示設定)を参照してください。
+コピーには値とスキーマの列名が入ります。表示している文字と表示名をコピーするには、`copyValues="formatted"`（列ごとには `copy`）を指定します。
+
+`wrap: true` を指定した列は、文字を `maxLines`（既定は 3）行まで折り返して表示します。空白と、日本語・中国語・韓国語の文字の間、値の中の改行で行を改め、収まらない分は「…」で示します。行の高さは全行で同じ（表示中の列が折り返す間は `rowHeight` に 2 行目以降の 1 行ごとに `--vg-line-height` を足した高さ）なので、行数にかかわらずスクロールは正確です。詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#列の表示設定)を参照してください。
 
 ## 性能
 

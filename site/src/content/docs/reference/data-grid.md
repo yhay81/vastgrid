@@ -18,6 +18,7 @@ import "vastgrid/styles.css";
 | `locale` | `string` | the browser's language | Locale for numbers and the built-in texts: Japanese for `ja`, English otherwise. |
 | `messages` | `Partial<Messages>` | | Replaces some of the built-in texts (see `en` and `ja`). |
 | `rowHeight` | `number` | `--vg-row-height` or 24 | Row height in pixels. |
+| `maxLines` | `number` | `3` | Lines shown at most in cells of columns that wrap (`wrap` in `columnFormats`), 1 to 20. |
 | `headerHeight` | `number` | `--vg-header-height` or 32 | Header height in pixels. |
 | `nullText` | `string` | `""` | Text shown for null cells. |
 | `frozenColumns` | `number` | `0` | Columns frozen at the left when the table opens. |
@@ -25,7 +26,7 @@ import "vastgrid/styles.css";
 | `statusBar` | `boolean` | `true` | Shows the active cell and the selection summary. |
 | `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. |
 | `copyLimit` | `number` | `1000000` | Cells that can be copied at once, over all selected ranges. |
-| `columnFormats` | `Record<string, ColumnFormat>` | | Display settings by schema column name: label, number and date formats, alignment, a format function. |
+| `columnFormats` | `Record<string, ColumnFormat>` | | Display settings by schema column name: label, number and date formats, alignment, a format function, wrapping. |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | Copy the values with the schema names, or the shown text with the labels. |
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | Called when the selection or the active cell changes. See [Events](#events). |
@@ -206,13 +207,28 @@ const formats: Record<string, ColumnFormat> = {
 | `number` | For numbers and numeric strings: `style` (`decimal`, `percent`, `currency` with `currency`), `currencyDisplay`, `fractionDigits` (or `minimumFractionDigits` and `maximumFractionDigits`), `grouping`, `notation`, `signDisplay`, `prefix` and `suffix`. Text that is not a number keeps its text. |
 | `date` | For dates and times: a `pattern`, or `Intl.DateTimeFormat` options (`dateStyle`, `timeStyle`, `year`, `month`, `day`, `hour`, …). `timeZone` is where values with an offset (`timestamptz`) are shown; values without one are shown as they are. Text that is not a date keeps its text. |
 | `align` | `left`, `center` or `right`. Defaults to `right` for numbers. |
-| `format(value, { column, text })` | Returns the text of a value. `text` is what the other settings make. The result is shown in one line. |
+| `format(value, { column, text })` | Returns the text of a value. `text` is what the other settings make. The result is shown in one line, or wrapped with `wrap`. |
 | `copy` | `raw` or `formatted`: overrides `copyValues` for the column's cells. |
+| `wrap` | `true` wraps the text onto up to `maxLines` lines (see below). |
 
 Patterns use `yyyy` `yy` (year), `M` `MM` `MMM` `MMMM` (month), `d` `dd` (day), `EEE` `EEEE` (weekday),
 `H` `HH` (0–23), `h` `hh` with `a` (1–12 and AM/PM), `m` `mm`, `s` `ss`, and `S`, `SS`, `SSS`… (fraction
 digits). Text in single quotes is kept: `yyyy-MM-dd 'at' HH:mm`. Month and weekday names follow
 `locale`.
+
+**Wrapping.** `wrap: true` shows a column's text on several lines, up to `maxLines` (3 by default):
+lines break at spaces and between Japanese, Chinese and Korean characters (not before closing
+punctuation such as `。` or `」`, nor after opening brackets), words longer than the column are cut, and
+line breaks in the value start new lines. Text that needs more lines ends with "…"; the cell inspector
+shows it all. All rows keep one height, so that scrolling and jumping to a row stay exact for hundreds
+of millions of rows: while a visible column wraps, every row is `rowHeight` plus `--vg-line-height` (1.4
+times the font size) for each further line, and when this height changes the first visible row stays
+in place. Only the visible cells are wrapped. `wrap` and `maxLines` are settings of the app, like the
+other formats, and are not part of `GridState`.
+
+```tsx
+<DataGrid source={source} columnFormats={{ comment: { wrap: true } }} maxLines={4} />
+```
 
 **Values and shown text.** The settings change only what is shown. Sorting, filters (also the values
 typed into a condition), search, finding, column statistics, the selection summary and exports work on

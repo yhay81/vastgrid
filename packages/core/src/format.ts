@@ -93,6 +93,13 @@ export class ValueFormatter {
     return text;
   }
 
+  /** Shortens text like `oneLine`, but keeps line breaks (as "\n") for text that wraps. */
+  lines(value: string) {
+    let text = value.length > this.maxLength ? `${value.slice(0, this.maxLength)}…` : value;
+    text = text.replace(lineBreaks, "\n").replace(/\t/g, " ⇥ ").replace(controls, "�");
+    return text;
+  }
+
   format(value: CellValue, type: ColumnType): string {
     if (value === null) return this.nullText;
     if (typeof value === "number") return this.formatNumber(value, type);
@@ -387,6 +394,8 @@ export class ColumnFormatter {
   readonly numeric: boolean;
   /** The column's display settings, for code that builds on them (exports, custom drawing). */
   readonly settings: ColumnFormat;
+  /** Whether the column wraps its text (`format` then keeps line breaks as "\n"). */
+  readonly wrap: boolean;
   /** The copy setting of the column, if it has one. */
   readonly copy: CopyValues | undefined;
   private readonly base: ValueFormatter;
@@ -402,6 +411,7 @@ export class ColumnFormatter {
     this.numeric = isNumericType(schema.type) || format.number !== undefined;
     this.align = format.align ?? (this.numeric ? "right" : "left");
     this.copy = format.copy;
+    this.wrap = format.wrap === true;
     this.number = format.number ? numberFormatter(base.locale, format.number, base.grouping) : null;
     this.date = format.date ? dateFormatter(base.locale, format.date) : null;
     this.custom = format.format;
@@ -434,8 +444,14 @@ export class ColumnFormatter {
     return this.custom ? this.custom(value, { column: this.schema, text }) : text;
   }
 
-  /** The text drawn in a cell: one line, long text shortened. */
+  /** The text drawn in a cell: one line (with `wrap`, its line breaks kept), long text shortened. */
   format(value: CellValue): string {
+    if (this.wrap) {
+      const text = this.custom
+        ? this.text(value)
+        : (this.formatted(value) ?? (typeof value === "string" && !isNumericType(this.schema.type) ? value : null));
+      return text === null ? this.base.format(value, this.schema.type) : this.base.lines(text);
+    }
     if (!this.custom) {
       const formatted = this.formatted(value);
       return formatted === null ? this.base.format(value, this.schema.type) : this.base.oneLine(formatted);
