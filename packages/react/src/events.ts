@@ -62,7 +62,9 @@ export type GridColumnsChangeReason =
   /** A state was applied (`applyState` or `initialState`). */
   | "state"
   /** The table was read again and its columns changed. */
-  | "schema";
+  | "schema"
+  /** Formula columns were added, changed or removed (`formulas`, `setFormulas`). */
+  | "formulas";
 
 export interface GridColumn {
   /** Index in the table schema. */

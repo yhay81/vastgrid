@@ -166,6 +166,28 @@
   column's filter panel) builds AND / OR groups, and the toolbar shows the conditions to change or remove
   them. Columns used in the conditions show the filter mark. The builder is offered only for sources that
   report `capabilities.conditions`. The controller has `condition`, `setCondition()` and `isFiltered()`.
+- `vastgrid-core`: formula columns. `ViewQuery.formulas` (`{ name, expression }[]`) adds columns computed
+  per row, after the table's columns, that every request of the view can read, sort, filter (also in
+  condition trees), summarize, find and export. The expressions are a small language of their own
+  (`parseFormula`, `compileFormulas`): columns by name, numbers, text, `TRUE`/`FALSE`/`NULL`, arithmetic,
+  `&`, comparisons, `AND`/`OR`/`NOT`, and `FORMULA_FUNCTIONS` for numbers, text, dates and blanks, with type
+  checks, errors that name the place (`FormulaError`), formulas that use other formulas and refused cycles.
+  `formulaEvaluator` evaluates a checked formula without running any code; `queryFormulas` checks a query
+  for sources. `capabilities.formulas` tells which sources evaluate them; `ArraySource` does. The protocol
+  and `parseProtocolRequest` carry them and limit their number (32), length (2,000 characters) and depth
+  (64 levels). `GridState.formulas` keeps them, and selections of every matching row keep the formulas
+  their filters use.
+- `vastgrid-duckdb`: evaluates formula columns in SQL, without moving the table to the browser: column
+  names are quoted identifiers, literals are parameters (in a one-row table of constants per view) and only
+  the listed functions are called. Results match `ArraySource`; infinities and NaN become blanks. A view
+  with only formulas reads the table in place; sorts and filters on formulas build views as before,
+  with previews of large sorts.
+- `vastgrid`: "Add formula column…", "Edit formula…" and "Delete formula column" in the column menu, with an
+  editor that checks the name and the formula as they are typed and shows errors at the field. `formulas`,
+  `onFormulasChange`, `getFormulas()` and `setFormulas()` let the app set and follow them; formulas that
+  cannot be evaluated (for example after a column they use was removed) are listed in the Columns panel to
+  fix. Exports of the whole table include formula columns.
+- `vastgrid-browser`: reports `capabilities.formulas: false` and refuses queries with formulas.
 
 ## 0.1.1 — 2026-10-23
 

@@ -196,6 +196,13 @@ export async function runExport(
   });
   let result: ExportResult;
   try {
+    // Formula columns exist in views only: the whole table is written from a view with only them.
+    const tableColumns = controller.tableInfo?.columns.length ?? 0;
+    const formulas = controller.query.formulas;
+    if (context.request.view === null && formulas && context.request.columns?.some((index) => index >= tableColumns)) {
+      const view = await controller.source.createView({ formulas }, running.signal);
+      context.request = { ...context.request, view: view.id };
+    }
     result = await exportView(context.request, running.signal);
   } catch (error) {
     // The server cancels exports of a table it closed, for example because its file changed.

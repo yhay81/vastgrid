@@ -19,6 +19,7 @@ import {
   type ColumnFormat,
   type ColumnGroup,
   type CopyValues,
+  type FormulaColumn,
   filterLeaves,
   type GridState,
   type RowSelection,
@@ -34,6 +35,7 @@ import { ExportPanel } from "./components/export-panel.js";
 import { FilterBuilder, type FilterDraft, initialDraft } from "./components/filter-builder.js";
 import { FilterPanel } from "./components/filter-panel.js";
 import { FindBar } from "./components/find-bar.js";
+import { FormulaEditor, formulaErrorText, formulaUsers } from "./components/formula-editor.js";
 import { type Anchor, type MenuItem, MenuList, Popover } from "./components/popover.js";
 import { StatsPanel } from "./components/stats-panel.js";
 import { CopyRangesError, CopyTooLargeError, GridController, type Hit, ViewBuildingError } from "./controller.js";
@@ -132,6 +134,17 @@ export interface DataGridProps {
    */
   cellAction?: CellActionHook;
   onQueryChange?: (query: ViewQuery) => void;
+  /**
+   * Formula columns: columns computed per row by an expression over the other columns (for example
+   * `qty * price`), which the source evaluates, so that they sort, filter, summarize and export like the
+   * others. Applied on start and whenever a different value is passed; pass back what
+   * `onFormulasChange` reports to control them. Users add, edit and delete them from the column menu
+   * when the source evaluates formulas (`capabilities.formulas`). They are part of `GridState`. The query
+   * of the grid (`onQueryChange`) carries them as `formulas`, which `setQuery` ignores.
+   */
+  formulas?: FormulaColumn[];
+  /** Called when formula columns are added, edited or deleted, by the user or the app. */
+  onFormulasChange?: (formulas: FormulaColumn[]) => void;
   /** Called when the selection or the active cell changes, by the user or by the app. */
   onSelectionChange?: (event: GridSelectionEvent) => void;
   /** Called when the columns' width, order, visibility or freezing change. */
@@ -197,6 +210,10 @@ export interface DataGridHandle {
   applyState(state: GridState): boolean;
   /** Scrolls to a row of the current view and makes it active. */
   goToRow(row: number): void;
+  /** The formula columns, also ones with errors (see `formulas`). */
+  getFormulas(): FormulaColumn[];
+  /** Replaces the formula columns. */
+  setFormulas(formulas: FormulaColumn[]): void;
   /** The checked rows, as keys. */
   getRowSelection(): RowSelection;
   /** Replaces the checked rows; returns false when the value is not a row selection. */
@@ -222,7 +239,9 @@ type Overlay =
   | { kind: "inspector"; row: number; col: number; anchor: Anchor }
   | { kind: "columns"; anchor: Anchor }
   | { kind: "conditions"; anchor: Anchor; draft: FilterDraft }
-  | { kind: "export"; anchor: Anchor };
+  | { kind: "export"; anchor: Anchor }
+  /** Adds a formula column after the schema column `after`, or edits the formula `name`. */
+  | { kind: "formula"; anchor: Anchor; name: string | null; after?: number };
 
 type Drag =
   | { kind: "cells"; pointerId: number; x: number; y: number; row: number; col: number; moved: boolean }
@@ -274,6 +293,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     checkboxSelection = false,
     rowKey,
     rowSelection,
+    formulas,
     exportOptions = {},
     onQueryChange,
     className,
@@ -321,6 +341,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       followTail,
     });
     if (props.initialState) grid.applyState(props.initialState);
+    if (formulas) grid.setFormulas(formulas);
     if (rowSelection) grid.setRowSelection(rowSelection);
     return grid;
   }, [source]);
@@ -363,6 +384,11 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   useEffect(() => {
     if (rowSelection) controller.setRowSelection(rowSelection);
   }, [controller, rowSelection]);
+
+  // Equal formulas change nothing, so passing back what was reported is safe.
+  useEffect(() => {
+    if (formulas) controller.setFormulas(formulas);
+  }, [controller, formulas]);
 
   useEffect(() => {
     controller.options.followTail = followTail;
@@ -463,6 +489,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       controller.onColumnsChange((event) => handlers.current.onColumnsChange?.(event)),
       controller.onStateChange((state) => handlers.current.onStateChange?.(state)),
       controller.onRowSelectionChange((event) => handlers.current.onRowSelectionChange?.(event)),
+      controller.onFormulasChange((list) => handlers.current.onFormulasChange?.(list)),
     ];
     return () => {
       for (const stop of stops) stop();
@@ -554,6 +581,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         controller.selection.select({ row, col: controller.selection.active.col });
         controller.selectionChanged({ row, col: controller.selection.active.col });
       },
+      getFormulas: () => controller.formulas.map((formula) => ({ ...formula })),
+      setFormulas: (list) => controller.setFormulas(list),
       getRowSelection: () => controller.getRowSelection(),
       setRowSelection: (selection) => controller.setRowSelection(selection),
       openExport: () => openExport(),
@@ -1166,6 +1195,30 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           ),
       },
     );
+    // Formula columns, when the source evaluates them.
+    const formula = c.formulaOf(state.index);
+    if (c.formulasAvailable || formula) {
+      items.push({
+        label: messages.addFormula,
+        separator: true,
+        disabled: !c.formulasAvailable,
+        onSelect: () => setOverlay({ kind: "formula", anchor: headerAnchor(col), name: null, after: state.index }),
+      });
+    }
+    if (formula) {
+      const users = formulaUsers(c.formulas, formula.name);
+      items.push(
+        {
+          label: messages.editFormula,
+          onSelect: () => setOverlay({ kind: "formula", anchor: headerAnchor(col), name: formula.name }),
+        },
+        {
+          label: messages.deleteFormula,
+          disabled: users.length > 0,
+          onSelect: () => c.setFormulas(c.formulas.filter((item) => item !== formula)),
+        },
+      );
+    }
     return items;
   }
 
@@ -1670,6 +1723,34 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           <ExportPanel controller={c} messages={messages} options={exportOptions} count={count} onDone={announce} />
         </Popover>
       )}
+      {overlay?.kind === "formula" && c.tableInfo && (
+        <Popover
+          anchor={overlay.anchor}
+          container={rootRef}
+          onClose={closeOverlay}
+          returnFocus={scrollerRef}
+          label={overlay.name === null ? messages.formulaAddTitle : messages.formulaEditTitle}
+          className="vg-popover--panel vg-popover--wide"
+        >
+          <FormulaEditor
+            table={c.tableInfo.columns}
+            formulas={c.formulas}
+            formula={overlay.name === null ? null : (c.formulas.find((item) => item.name === overlay.name) ?? null)}
+            messages={messages}
+            onCancel={closeOverlay}
+            onSave={(saved) => {
+              const editing = overlay.name === null ? -1 : c.formulas.findIndex((item) => item.name === overlay.name);
+              const next =
+                editing < 0
+                  ? [...c.formulas, saved]
+                  : c.formulas.map((item, index) => (index === editing ? saved : item));
+              c.setFormulas(next, overlay.after === undefined ? {} : { after: overlay.after });
+              setOverlay(null);
+              focusGrid();
+            }}
+          />
+        </Popover>
+      )}
       {overlay?.kind === "columns" && (
         <Popover
           anchor={overlay.anchor}
@@ -1690,6 +1771,15 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
             onToggle={(index, hidden) => c.setColumnHidden(index, hidden)}
             onPin={(index, pin) => c.setColumnPin(index, pin)}
             onShowAll={() => c.showAllColumns()}
+            broken={c.formulaResults.flatMap((result) =>
+              result.error ? [{ name: result.name, error: formulaErrorText(result.error, messages) }] : [],
+            )}
+            onAddFormula={
+              c.formulasAvailable
+                ? () => setOverlay({ kind: "formula", anchor: overlay.anchor, name: null })
+                : undefined
+            }
+            onEditFormula={(name) => setOverlay({ kind: "formula", anchor: overlay.anchor, name })}
           />
         </Popover>
       )}

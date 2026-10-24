@@ -10,19 +10,23 @@ import {
   type ColumnPin,
   type ColumnSchema,
   type ColumnStats,
+  type CompiledFormula,
   type CopyValues,
   columnGroupDepth,
   columnGroupPaths,
   columnGroupSpans,
+  compileFormulas,
   copyLayout,
   type DistinctValues,
   ErrorCodes,
   type Filter,
   type FilterGroup,
   type FilterNode,
+  type FormulaColumn,
   filterLeaves,
   filtersRows,
   fitFrozen,
+  formulaSchema,
   GRID_STATE_VERSION,
   type GridState,
   isAbortError,
@@ -224,6 +228,11 @@ function supportedQuery(query: ViewQuery, capabilities: TableCapabilities): View
   };
 }
 
+/** Formula columns as plain values, without other properties. */
+function plainFormulas(formulas: readonly FormulaColumn[]): FormulaColumn[] {
+  return formulas.map((formula) => ({ name: formula.name, expression: formula.expression }));
+}
+
 /** Whether two display settings are the same. Functions are compared by identity. */
 function sameFormat(a: ColumnFormat | undefined, b: ColumnFormat | undefined) {
   if (a === b) return true;
@@ -262,7 +271,14 @@ export class GridController {
   /** Formatters of the schema columns, with their display settings. */
   private formatters: ColumnFormatter[] = [];
 
+  /** The table with the formula columns that can be evaluated after its own columns. */
   info: TableInfo | null = null;
+  /** The table as the source reports it, without formula columns. */
+  tableInfo: TableInfo | null = null;
+  /** Formula columns as set, also ones with errors; see `formulaResults`. */
+  formulas: FormulaColumn[] = [];
+  /** Each formula checked over the table's columns, in the order of `formulas`. */
+  formulaResults: CompiledFormula[] = [];
   loadError: string | null = null;
   query: ViewQuery = {};
   view: ViewInfo = { id: null, rowCount: 0, query: {} };
@@ -312,6 +328,9 @@ export class GridController {
   private readonly columnsListeners = new Set<(event: GridColumnsEvent) => void>();
   private readonly gridStateListeners = new Set<(state: GridState) => void>();
   private readonly rowSelectionListeners = new Set<(event: GridRowSelectionEvent) => void>();
+  private readonly formulasListeners = new Set<(formulas: FormulaColumn[]) => void>();
+  /** The formula columns in the query and the schema: the ones without errors, when the source evaluates them. */
+  private shownFormulas: FormulaColumn[] = [];
   /** The last change of the checked rows not yet reported. */
   private rowSelectionChange: GridRowSelectionChangeReason | null = null;
   /** Rows matching the query of an `exclude` selection, when the grid counted them. */
@@ -482,6 +501,14 @@ export class GridController {
   }
 
   /** Calls `listener` with `getState()` when the query or the column settings change. */
+  /** Called when the formula columns change (by the user or `setFormulas`). */
+  onFormulasChange(listener: (formulas: FormulaColumn[]) => void) {
+    this.formulasListeners.add(listener);
+    return () => {
+      this.formulasListeners.delete(listener);
+    };
+  }
+
   onStateChange(listener: (state: GridState) => void) {
     this.gridStateListeners.add(listener);
     return () => {
@@ -638,6 +665,7 @@ export class GridController {
     this.columnsListeners.clear();
     this.gridStateListeners.clear();
     this.rowSelectionListeners.clear();
+    this.formulasListeners.clear();
   }
 
   private async poll(signal: AbortSignal) {
@@ -666,7 +694,33 @@ export class GridController {
     }
   }
 
-  private applyInfo(info: TableInfo) {
+  /** Checks the formulas over the table's columns and adds the ones the source can evaluate to its columns. */
+  private withFormulas(table: TableInfo): TableInfo {
+    this.formulaResults = compileFormulas(table.columns, this.formulas);
+    // While loading, the source's capabilities are not known yet.
+    const evaluated = table.status === "loading" || table.capabilities.formulas === true;
+    const valid = evaluated ? this.formulaResults.filter((formula) => formula.tree) : [];
+    this.shownFormulas = plainFormulas(valid);
+    return valid.length === 0 ? table : { ...table, columns: formulaSchema(table.columns, valid) };
+  }
+
+  /** The query with the formula columns that the schema has. */
+  private formulaQuery(query: ViewQuery): ViewQuery {
+    if (JSON.stringify(query.formulas ?? []) === JSON.stringify(this.shownFormulas)) return query;
+    const { formulas: _, ...rest } = query;
+    return this.shownFormulas.length > 0 ? { formulas: this.shownFormulas, ...rest } : rest;
+  }
+
+  private applyInfo(table: TableInfo) {
+    // A reopened file may not have its preview schema yet. Keep the old names until new names arrive.
+    if (this.tableInfo && table.status === "loading" && table.columns.length === 0) {
+      table = { ...table, columns: this.tableInfo.columns };
+    }
+    // A state applied before the columns were known brings its formula columns.
+    const waiting = this.pendingState;
+    if (waiting?.state.formulas && table.columns.length > 0) this.formulas = plainFormulas(waiting.state.formulas);
+    this.tableInfo = table;
+    let info = this.withFormulas(table);
     const shown = this.info;
     // A source that reported a change but has no revision cannot tell the new data from the old: read it
     // as a new revision, so that cached rows and checked rows keyed by position are not kept.
@@ -677,6 +731,8 @@ export class GridController {
     this.changeReported = false;
     const names = (table: TableInfo | null) => table?.columns.map((column) => column.name).join("\u0000");
     const types = (table: TableInfo | null) => table?.columns.map((column) => column.type).join("\u0000");
+    const expressions = (table: TableInfo | null) =>
+      table?.columns.map((column) => column.expression ?? "").join("\u0000");
     // A reopened file may not have its preview schema yet. Keep the old names until new names arrive.
     if (previous && info.status === "loading" && info.columns.length === 0) {
       info = { ...info, columns: previous.columns };
@@ -687,7 +743,11 @@ export class GridController {
       this.formatters = [];
       this.formatVersion++;
     }
-    const reset = !previous || previous.revision !== info.revision || names(previous) !== names(info);
+    const reset =
+      !previous ||
+      previous.revision !== info.revision ||
+      names(previous) !== names(info) ||
+      expressions(previous) !== expressions(info);
     if (previous) this.keepRowSelection(previous, info);
     if (reset) {
       if (previous?.columns.length && names(previous) !== names(info)) {
@@ -716,7 +776,7 @@ export class GridController {
           ...(filters ? { filters } : {}),
           ...(where ? { where } : {}),
         };
-        this.columnsChanged("schema");
+        this.columnsChanged(this.columnChange === "formulas" ? "formulas" : "schema");
       }
       // Settings follow their columns by name, also when the file's columns moved.
       const old = new Map(this.columns.map((column) => [previous?.columns[column.index]?.name ?? "", column]));
@@ -732,6 +792,13 @@ export class GridController {
           sized: kept?.sized ?? false,
         };
       });
+      if (previous && this.columnChange === "formulas") {
+        // Columns keep their order when formula columns come and go; new ones follow.
+        const order = new Map([...old.keys()].map((name, position) => [name, position]));
+        const rank = (state: ColumnState) =>
+          order.get(info.columns[state.index]?.name ?? "") ?? order.size + state.index;
+        this.columns.sort((a, b) => rank(a) - rank(b));
+      }
       if (!previous) {
         this.pinned.left = Math.min(this.options.frozenColumns, this.columns.length);
         this.pinned.right = Math.min(this.options.frozenRightColumns ?? 0, this.columns.length - this.pinned.left);
@@ -756,6 +823,7 @@ export class GridController {
       // The final types differ from the preview's (for example all columns read as text).
       this.cache.clear();
     }
+    this.query = this.formulaQuery(this.query);
     if (this.view.id === null) {
       this.view = { id: null, rowCount: info.rowCount ?? info.readableRows, query: {} };
     }
@@ -800,11 +868,74 @@ export class GridController {
 
   /** Whether the statistics of a column can be computed now. */
   get statsAvailable() {
+    // Formula columns are counted in their view, once it exists.
+    if (this.view.id === null && this.shownFormulas.length > 0) return false;
     return !this.viewBuilding || !filtersRows(this.view.query);
   }
 
   get totalRows() {
     return this.info?.rowCount ?? null;
+  }
+
+  /** Whether formula columns can be added now: the table is ready and its source evaluates them. */
+  get formulasAvailable() {
+    return this.info?.status === "ready" && this.info.capabilities.formulas === true;
+  }
+
+  /** The formula of a schema column, or null for a column of the table. */
+  formulaOf(index: number): FormulaColumn | null {
+    const name = this.schema[index]?.expression === undefined ? undefined : this.schema[index].name;
+    return name === undefined ? null : (this.formulas.find((formula) => formula.name === name) ?? null);
+  }
+
+  /**
+   * Replaces the formula columns. Each is a column computed per row by an expression over the table's
+   * columns (see `FormulaColumn`); the source evaluates it, so it sorts, filters and exports like the
+   * others. Formulas with an error stay in `formulas` (with `formulaResults` telling why) but are not
+   * shown until they are fixed, for example when a column they use is gone. Sorts, filters and settings of
+   * columns follow their names; the scroll position and the active cell stay.
+   */
+  setFormulas(formulas: readonly FormulaColumn[], options: { after?: number } = {}) {
+    const next = plainFormulas(formulas);
+    if (JSON.stringify(next) === JSON.stringify(this.formulas)) return;
+    const added = next.filter((formula) => !this.formulas.some((item) => item.name === formula.name));
+    const after = options.after === undefined ? undefined : this.schema[options.after]?.name;
+    this.formulas = next;
+    this.columnsChanged("formulas");
+    const table = this.tableInfo;
+    if (table && this.info) {
+      if (!this.restore) {
+        this.restore = {
+          top: this.scrollY.position,
+          left: this.scrollX.position,
+          active: this.selection.active,
+          tail: false,
+          lastRow: false,
+        };
+      }
+      this.applyInfo(table);
+      // A new column is placed after the column it was added from.
+      if (after !== undefined && added.length > 0)
+        this.placeAfter(
+          added.map((formula) => formula.name),
+          after,
+        );
+    } else {
+      this.emit();
+    }
+    for (const listener of this.formulasListeners) listener(this.formulas);
+  }
+
+  /** Moves the columns with these names after the column named `after`, in display order. */
+  private placeAfter(names: string[], after: string) {
+    const moved = this.columns.filter((column) => names.includes(this.schema[column.index]?.name ?? ""));
+    const rest = this.columns.filter((column) => !moved.includes(column));
+    const at = rest.findIndex((column) => this.schema[column.index]?.name === after);
+    if (moved.length === 0 || at < 0) return;
+    rest.splice(at + 1, 0, ...moved);
+    this.columns = rest;
+    this.updateLayout();
+    this.emit();
   }
 
   columnSchema(col: number): ColumnSchema | undefined {
@@ -1056,7 +1187,9 @@ export class GridController {
       this.checkboxWidth;
     this.fitFrozen();
     this.selection.setBounds(this.rowCount, this.visible.length);
-    this.cache.setView(this.view.id, this.rowCount, this.readableRows, this.schema.length);
+    // Formula columns are read from views only.
+    const columns = this.view.id === null ? (this.tableInfo?.columns.length ?? 0) : this.schema.length;
+    this.cache.setView(this.view.id, this.rowCount, this.readableRows, columns);
     this.syncSizer();
   }
 
@@ -1700,8 +1833,9 @@ export class GridController {
       this.emit();
       return;
     }
-    // A saved query may ask for what this source cannot do; those parts are left out.
-    query = supportedQuery(query, this.info.capabilities);
+    // A saved query may ask for what this source cannot do; those parts are left out. The formula
+    // columns are the grid's own (see `setFormulas`).
+    query = this.formulaQuery(supportedQuery(query, this.info.capabilities));
     this.query = query;
     const controller = new AbortController();
     this.viewAbort = controller;
@@ -2040,10 +2174,12 @@ export class GridController {
    */
   getState(): GridState {
     if (this.schema.length === 0) return this.pendingState?.state ?? { version: GRID_STATE_VERSION, query: this.query };
+    const { formulas: _, ...query } = this.query;
     return {
       version: GRID_STATE_VERSION,
       schema: this.schema.map((column) => column.name),
-      query: this.query,
+      ...(this.formulas.length > 0 ? { formulas: plainFormulas(this.formulas) } : {}),
+      query,
       columns: this.columns.map((state) => ({
         name: this.schema[state.index]?.name ?? "",
         ...(state.sized ? { width: state.width } : {}),
@@ -2067,6 +2203,7 @@ export class GridController {
       return true;
     }
     this.pendingState = null;
+    if (parsed.formulas) this.setFormulas(parsed.formulas);
     const query = this.applyColumns(parsed);
     this.updateLayout();
     this.autoSize();
