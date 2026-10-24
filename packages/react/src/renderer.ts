@@ -397,7 +397,7 @@ export class CanvasRenderer {
     // Indicators on the right: menu (while hovered or active), filter, sort.
     let right = x + width - 6;
     const sort = c.sortOf(state.index);
-    const filtered = c.filterOf(state.index) !== null;
+    const filtered = c.isFiltered(state.index);
     if (hovered || c.selection.active.col === col) {
       if (hovered && c.hover?.menu) {
         ctx.fillStyle = t.headerActive;

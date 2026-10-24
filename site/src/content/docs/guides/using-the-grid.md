@@ -70,10 +70,18 @@ tell you to wait, the selection summary shows "…", and the statistics of a fil
   "Begins with", "Ends with" and others (optionally matching case), and any column by "Is blank" or "Is
   not blank".
 - **From a cell.** The cell menu filters to the cell's value, or excludes it.
+- **AND / OR conditions.** "Add condition (AND)…" or "Add condition (OR)…" in a column's filter panel
+  opens the condition builder with that filter and a new condition, for example "region is Tokyo *or*
+  sales over 100,000". "Conditions…" in the toolbar opens it with every filter. A group keeps the rows
+  that match all of its conditions (AND) or any of them (OR); groups nest, and a column can have several
+  conditions. Conditions without a value are left out when you apply.
 - **Search.** The box in the toolbar keeps the rows where any column contains the text, ignoring case.
 
-Filters on several columns all apply. The toolbar shows each one, with a button to remove it, and the
-number of rows left.
+Filters on several columns all apply. The toolbar shows each one, and the AND / OR conditions, with a
+button to remove it, and the number of rows left; click the conditions to change them. A column used in
+the conditions shows the filter mark in its header. Statistics, selection summaries, copies and exports
+work on the rows left. Sources that cannot evaluate conditions (`capabilities.conditions`) keep the
+builder disabled.
 
 ## Finding
 

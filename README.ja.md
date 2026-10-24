@@ -15,7 +15,7 @@
 - **速い。** セルはキャンバスに描きます。1,000 セル以上を表示しても 1 フレーム約 2 ms です。ブラウザーの要素の高さの上限を越えて、
   数十億行までスクロールできます。
 - **表計算ソフトの操作。** マウスと Excel のキー操作での範囲の選択、コピー（TSV・HTML・Markdown）、複数の列での並べ替え、
-  値の一覧（検索・件数つき）と条件での絞り込み、すべての列からの絞り込み、検索（⌘F）、列の統計、選択範囲のデータの個数・合計・平均・最小・最大。
+  値の一覧（検索・件数つき）と条件での絞り込み、列をまたぐ AND・OR と入れ子の条件、すべての列からの絞り込み、検索（⌘F）、列の統計、選択範囲のデータの個数・合計・平均・最小・最大。
 - **エンジンを選べる。** グリッドは `TableSource` とだけやり取りします。ディスク上のファイルは DuckDB のサーバー（`vastgrid-duckdb`）、
   ブラウザーで開くファイルと URL の Parquet は `vastgrid-browser`、メモリ上のデータは `ArraySource`、ほかのエンジンは自作の `TableSource` で扱えます。
 - **安全。** DuckDB のエンジンは、リンクをたどった実際の場所が許可したフォルダーの中にあるファイルだけを読み、実行中は変えられません。SQL はすべて組み立てたもので、値は必ずパラメーターで渡します。
@@ -182,7 +182,23 @@ const grid = useRef<DataGridHandle>(null);
 
 // 3 列目の大きい順に並べ、「東京」を含む行だけを表示する。
 grid.current?.setQuery({ sort: [{ column: 2, direction: "desc" }], search: "東京" });
+
+// (1 列目が東京 または 2 列目が 10 万超) かつ 3 列目が「取消」以外。
+grid.current?.setQuery({
+  filters: [{ type: "values", column: 2, values: ["取消"], exclude: true }],
+  where: {
+    type: "or",
+    filters: [
+      { type: "values", column: 0, values: ["東京"] },
+      { type: "compare", column: 1, op: "gt", value: 100_000 },
+    ],
+  },
+});
 ```
+
+`filters` はすべてに合う行を残し、`where` は `and`・`or` のグループ（8 段まで入れ子にできます）でできた条件木で、これにも合う行を残します。
+画面では、ツールバーの「条件…」と、列の絞り込みパネルの「条件を追加（AND / OR）」で組み立て、ツールバーに表示された条件から確認・変更・解除できます。
+条件木は `capabilities.conditions` を報告する source（DuckDB のエンジン、`vastgrid-browser`、`ArraySource`）でだけ使い、それ以外では使いません。
 
 ### 列の表示設定
 

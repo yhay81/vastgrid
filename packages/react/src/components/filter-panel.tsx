@@ -13,7 +13,7 @@ import {
 } from "vastgrid-core";
 import type { Messages } from "../messages.js";
 
-type Operator = keyof Messages["operators"] | "none";
+export type Operator = keyof Messages["operators"] | "none";
 
 const numericOperators: Operator[] = ["none", "eq", "ne", "gt", "ge", "lt", "le", "between", "blank", "notBlank"];
 const textOperators: Operator[] = [
@@ -34,7 +34,20 @@ function keyOf(value: CellValue) {
   return value === null ? NULL_KEY : plainText(value);
 }
 
-function initialCondition(filter: Filter | null): { operator: Operator; first: string; second: string } {
+/** A condition as the panels edit it: an operator and the typed text of its one or two values. */
+export interface Condition {
+  operator: Operator;
+  first: string;
+  second: string;
+}
+
+/** The condition operators offered for a column type, starting with `none`. */
+export function operatorsFor(type: ColumnType): Operator[] {
+  if (isNumericType(type) || isTemporalType(type)) return numericOperators;
+  return type === "boolean" ? ["none", "blank", "notBlank"] : textOperators;
+}
+
+export function initialCondition(filter: Filter | null): Condition {
   if (!filter) return { operator: "none", first: "", second: "" };
   switch (filter.type) {
     case "compare":
@@ -67,6 +80,35 @@ export function comparable(text: string, type: ColumnType): string | number {
   return number;
 }
 
+/** The filter a condition makes, or null when it is incomplete. */
+export function conditionFilter(column: number, type: ColumnType, condition: Condition): Filter | null {
+  const { operator, first, second } = condition;
+  switch (operator) {
+    case "none":
+      return null;
+    case "blank":
+    case "notBlank":
+      return { type: "blank", column, blank: operator === "blank" };
+    case "between":
+      if (!first && !second) return null;
+      return {
+        type: "between",
+        column,
+        ...(first ? { min: comparable(first, type) } : {}),
+        ...(second ? { max: comparable(second, type) } : {}),
+      };
+    case "eq":
+    case "ne":
+    case "lt":
+    case "le":
+    case "gt":
+    case "ge":
+      return first === "" ? null : { type: "compare", column, op: operator, value: comparable(first, type) };
+    default:
+      return first === "" ? null : { type: "text", column, op: operator, value: first };
+  }
+}
+
 /**
  * The filter for one column, in the manner of spreadsheet filters: a searchable list of values with
  * check boxes, or a condition (comparison, text match, range, blank).
@@ -79,7 +121,10 @@ export function FilterPanel({
   formatter,
   count,
   load,
+  inConditions = false,
   onApply,
+  onCombine,
+  onEditConditions,
 }: {
   column: number;
   schema: ColumnSchema;
@@ -88,15 +133,15 @@ export function FilterPanel({
   formatter: ColumnFormatter;
   count: (value: number) => string;
   load: (search: string, signal: AbortSignal) => Promise<DistinctValues> | null;
+  /** Whether the condition tree also uses this column. */
+  inConditions?: boolean;
   onApply: (filter: Filter | null) => void;
+  /** Opens the conditions builder with this panel's filter and a new condition joined by `type`. */
+  onCombine?: (filter: Filter | null, type: "and" | "or") => void;
+  onEditConditions?: () => void;
 }) {
   const id = useId();
-  const numeric = isNumericType(schema.type) || isTemporalType(schema.type);
-  const operators = numeric
-    ? numericOperators
-    : schema.type === "boolean"
-      ? (["none", "blank", "notBlank"] as Operator[])
-      : textOperators;
+  const operators = operatorsFor(schema.type);
   const [search, setSearch] = useState("");
   const [values, setValues] = useState<DistinctValues | null>(null);
   const [loading, setLoading] = useState(true);
@@ -166,37 +211,13 @@ export function FilterPanel({
     return { type: "values", column, values: list };
   }, [base, toggled, column]);
 
-  function conditionFilter(): Filter | null {
-    const { operator, first, second } = condition;
-    switch (operator) {
-      case "none":
-        return null;
-      case "blank":
-      case "notBlank":
-        return { type: "blank", column, blank: operator === "blank" };
-      case "between":
-        if (!first && !second) return null;
-        return {
-          type: "between",
-          column,
-          ...(first ? { min: comparable(first, schema.type) } : {}),
-          ...(second ? { max: comparable(second, schema.type) } : {}),
-        };
-      case "eq":
-      case "ne":
-      case "lt":
-      case "le":
-      case "gt":
-      case "ge":
-        return first === "" ? null : { type: "compare", column, op: operator, value: comparable(first, schema.type) };
-      default:
-        return first === "" ? null : { type: "text", column, op: operator, value: first };
-    }
+  function current() {
+    return condition.operator === "none" ? valuesFilter : conditionFilter(column, schema.type, condition);
   }
 
   function apply(event: FormEvent) {
     event.preventDefault();
-    onApply(condition.operator === "none" ? valuesFilter : conditionFilter());
+    onApply(current());
   }
 
   const needsValue =
@@ -280,6 +301,26 @@ export function FilterPanel({
           />
         )}
       </fieldset>
+      {onCombine && (
+        <div className="vg-filter__combine">
+          <button type="button" className="vg-button vg-button--small" onClick={() => onCombine(current(), "and")}>
+            {messages.addAnd}
+          </button>
+          <button type="button" className="vg-button vg-button--small" onClick={() => onCombine(current(), "or")}>
+            {messages.addOr}
+          </button>
+        </div>
+      )}
+      {inConditions && (
+        <p className="vg-panel__muted vg-filter__note">
+          {messages.inConditions}{" "}
+          {onEditConditions && (
+            <button type="button" className="vg-link" onClick={onEditConditions}>
+              {messages.editConditions}
+            </button>
+          )}
+        </p>
+      )}
       <div className="vg-panel__actions">
         <button type="button" className="vg-button" onClick={() => onApply(null)}>
           {messages.clear}

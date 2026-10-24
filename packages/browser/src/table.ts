@@ -12,12 +12,14 @@ import {
   type Filter,
   type FindRequest,
   type FindResult,
+  filterLeaves,
   isAbortError,
   isEmptyQuery,
   isNumericType,
   MAX_TEXT_LIMIT,
   numericValue,
   plainText,
+  pruneFilterNode,
   type RowBlock,
   type RowRequest,
   type SelectionSummary,
@@ -256,6 +258,7 @@ export class BrowserTable implements TableSource {
       aggregate: scan,
       find: scan,
       export: false,
+      conditions: scan,
     };
   }
 
@@ -390,27 +393,31 @@ export class BrowserTable implements TableSource {
       const state = this.requireReady(reader);
       const schema = state.columns;
       const filters = query.filters ?? [];
+      const where = pruneFilterNode(query.where);
+      const conditions = [...filters, ...filterLeaves(where)];
       const sort = query.sort ?? [];
       const search = query.search?.trim() ?? "";
-      this.checkColumns(reader, [...filters.map((filter) => filter.column), ...sort.map((key) => key.column)]);
-      this.checkFilters(schema, filters);
-      const key = JSON.stringify({ filters, sort, search });
+      this.checkColumns(reader, [...conditions.map((filter) => filter.column), ...sort.map((key) => key.column)]);
+      this.checkFilters(schema, conditions);
+      const key = JSON.stringify({ filters, where, sort, search });
       for (const view of this.views.values()) {
         if (view.key === key) return { id: view.id, rowCount: view.rows.length, query: view.query };
       }
-      const filterColumns = search ? schema.map((_, index) => index) : [...new Set(filters.map((item) => item.column))];
+      const filterColumns = search
+        ? schema.map((_, index) => index)
+        : [...new Set(conditions.map((item) => item.column))];
       const sortColumns = [...new Set(sort.map((item) => item.column))];
       const columns = [...new Set([...filterColumns, ...sortColumns])];
       const kept = new Positions();
       const sortValues = sortColumns.map(() => [] as CellValue[]);
-      const filtering = filters.length > 0 || search !== "";
+      const filtering = conditions.length > 0 || search !== "";
       for (const [start, end] of reader.scanRanges()) {
         if (signal?.aborted) throw abortError();
         const data = await reader.read(start, end, columns, signal);
         let local: ArrayLike<number> | null = null;
         if (filtering) {
           const chunk = new ArraySource({ columns: schema, columnData: widen(schema, columns, data) });
-          const view = await chunk.createView({ filters, search });
+          const view = await chunk.createView({ filters, ...(where ? { where } : {}), search });
           local =
             view.id === null
               ? null

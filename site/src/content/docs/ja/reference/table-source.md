@@ -105,6 +105,7 @@ interface TableInfo {
     aggregate: boolean;
     find: boolean;
     export: boolean;
+    conditions?: boolean; // `ViewQuery.where` を評価できる。省略は false
   };
 }
 ```
@@ -115,6 +116,7 @@ interface TableInfo {
 interface ViewQuery {
   sort?: { column: number; direction: "asc" | "desc" }[]; // 空白は昇順でも降順でも最後
   filters?: Filter[];                                     // すべてに合う行を残す
+  where?: FilterNode;                                     // 条件木。filters と AND で組み合わせる
   search?: string;                                        // どれかの列が含む行を残す。大文字と小文字は区別しない
 }
 
@@ -134,6 +136,9 @@ type Filter =
   /** 空白は `null` か空の文字列。 */
   | { type: "blank"; column: number; blank: boolean };
 
+/** `and` はすべての条件に、`or` はどれかの条件に合う行を残す。条件のないグループは、ないものとして扱う。 */
+type FilterNode = Filter | { type: "and" | "or"; filters: FilterNode[] };
+
 interface ViewInfo {
   id: string | null;      // null は元の順番の表
   rowCount: number;       // 作っている途中でも、ビュー全体の行数
@@ -146,6 +151,22 @@ interface ViewInfo {
 
 グリッドはビューを `{ preview: true }` 付きで求めます。ソースは、すべての行を並べ終える前に並べ替えに答えてもかまいません。そのときは `status: "building"` と、先頭の `readableRows` 行を返します。この行は、完成したビューの先頭の行と同じでなければなりません（同じ値の行は、表での位置の順にします）。グリッドはそれをすぐに表示し、`viewInfo` を繰り返し呼び（ないときは、オプションなしの `createView` をもう一度呼んで待ちます）、ビューが `ready` になると残りの行を読めるようにします。それまでは、`readableRows` より先の行は読み込み中と表示します。選択とスクロールはすべての行でできますが、その先の行を含むコピーと選択範囲の集計、検索、絞り込んだビューの統計は、完成を待ちます。オプションを無視するソースは、ビューが完成してから答えれば十分です。
 
+`where` は、`filters` では表せない、列をまたぐ OR、入れ子のグループ、同じ列の複数の条件を表します。「(地域が東京 または 売上が10万超) かつ 状態が取消以外」は次のとおりです。
+
+```ts
+const query: ViewQuery = {
+  filters: [{ type: "values", column: 2, values: ["取消"], exclude: true }],
+  where: {
+    type: "or",
+    filters: [
+      { type: "values", column: 0, values: ["東京"] },
+      { type: "compare", column: 1, op: "gt", value: 100_000 },
+    ],
+  },
+};
+```
+
+それぞれの条件の意味は `filters` と同じです。`where` を評価できる source は `capabilities.conditions` を報告します。グリッドはそうした source にだけ条件木を送るので、条件木より前に書かれた source もそのまま動きます。source は、1 つの条件を自分で判定する関数 `test` を渡して `matchesFilterNode(where, test)` で木を評価できます（`ArraySource` もこの方法です）。木の大きさの上限は[プロトコル](/ja/reference/protocol/#viewquery)にあります。
 ## 行
 
 ```ts
@@ -243,8 +264,12 @@ class SourceError extends Error {
 
 | エクスポート | 説明 |
 | --- | --- |
-| `isEmptyQuery(query)` | クエリーに並べ替え・絞り込み・検索がないかどうか。 |
-| `filtersRows(query)` | クエリーが、並べ替えだけでなく行を除く（絞り込みか検索がある）かどうか。 |
+| `isEmptyQuery(query)` | クエリーに並べ替え・絞り込み・条件木・検索がないかどうか。 |
+| `filtersRows(query)` | クエリーが、並べ替えだけでなく行を除く（絞り込み・条件木・検索がある）かどうか。 |
+| `matchesFilterNode(node, test)` | 1 つの条件を判定する関数を使って、条件木に合うかどうかを返します。 |
+| `pruneFilterNode(node)`、`mapFilterNode(node, map)` | 空のグループを除いた木。条件を置き換えたり除いたりした木。 |
+| `filterLeaves(node)`、`queryFilters(query)`、`queryCondition(query)` | 木やクエリーの条件の一覧。クエリーの `filters` と `where` を 1 つにした木。 |
+| `isFilterGroup(node)` | ノードが `and` か `or` のグループかどうか。 |
 | `plainText(value)` | クリップボード用の値の文字列。桁の区切りも切り詰めもしない。 |
 | `numericValue(value, type)` | 値を JavaScript の数値にしたもの。数値でなければ `null`。 |
 | `ValueFormatter` | グリッドと同じように、ロケールに合わせて値を表示用に整えます。 |

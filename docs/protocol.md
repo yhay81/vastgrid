@@ -64,7 +64,7 @@ a `values` filter.
   notes?: string[];            // encoding:shift_jis, all_varchar, invalid_utf8_replaced, merged_cells, formulas_without_values
   sheets?: { name: string; hidden?: boolean }[]; // workbooks: the sheets, in workbook order
   sheet?: string;              // workbooks: the sheet that was read
-  capabilities: { sort, filter, search, stats, distinct, aggregate, find, export: boolean };
+  capabilities: { sort, filter, search, stats, distinct, aggregate, find, export: boolean; conditions?: boolean };
 }
 ```
 
@@ -138,6 +138,7 @@ values.
 {
   sort?: { column: number; direction: "asc" | "desc" }[];   // blanks last in both directions
   filters?: Filter[];                                       // all must match
+  where?: FilterNode;                                       // a condition tree, combined with filters by AND
   search?: string;                                          // any column contains it, case-insensitive
 }
 
@@ -147,7 +148,36 @@ type Filter =
   | { type: "between"; column; min?; max? }                           // inclusive
   | { type: "text"; column; op: "contains" | "notContains" | "startsWith" | "endsWith" | "equals" | "notEquals"; value: string; caseSensitive?: boolean }
   | { type: "blank"; column; blank: boolean };                        // blank: null or ""
+
+type FilterNode = Filter | { type: "and" | "or"; filters: FilterNode[] };
 ```
+
+`where` expresses what `filters` cannot: OR across columns, nested groups, and several conditions on one
+column. An `and` group keeps the rows that match all of its conditions, an `or` group those that match at
+least one. A group without conditions is left out, as if it were not there (also inside other groups), so
+a tree without conditions keeps every row. Each condition means the same as in `filters`: a row whose
+value a condition cannot compare (a blank in a comparison) does not match it, and value lists match `""`
+only to empty text. For example, "(region is Tokyo or sales over 100,000) and status is not cancelled":
+
+```json
+{
+  "filters": [{ "type": "values", "column": 2, "values": ["cancelled"], "exclude": true }],
+  "where": {
+    "type": "or",
+    "filters": [
+      { "type": "values", "column": 0, "values": ["Tokyo"] },
+      { "type": "compare", "column": 1, "op": "gt", "value": 100000 }
+    ]
+  }
+}
+```
+
+A tree may nest groups up to 8 levels (`MAX_FILTER_DEPTH`), have up to 256 groups and conditions
+(`MAX_FILTER_NODES`) and list up to 100,000 values in its value lists together (`MAX_FILTER_TREE_VALUES`);
+`parseProtocolRequest` refuses larger trees with `invalid_request` and drops empty groups. Servers that
+evaluate `where` report the `conditions` capability; servers written before it existed ignore `where`,
+so clients send it only to tables that report `conditions: true`. Statistics, value lists, selection summaries, find and exports of a view use its
+whole query, `where` included.
 
 ## Error codes
 

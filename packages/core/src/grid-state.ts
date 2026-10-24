@@ -12,6 +12,7 @@
  * then converts older versions.
  */
 
+import { mapFilterNode } from "./filter-tree.js";
 import { parseViewQuery } from "./protocol.js";
 import type { ViewQuery } from "./types.js";
 
@@ -29,7 +30,7 @@ export interface GridState {
   version: typeof GRID_STATE_VERSION;
   /** The table's column names when the state was saved, in table order. `query` refers to these. */
   schema?: string[];
-  /** Sort, filters and search. Column indexes are positions in `schema`. */
+  /** Sort, filters, the condition tree and search. Column indexes are positions in `schema`. */
   query?: ViewQuery;
   /**
    * Columns in display order. Columns of the table that are not listed (for example added to the file
@@ -76,7 +77,7 @@ export function parseGridState(value: unknown): GridState | null {
   if (value.version === undefined) {
     // A query saved before states existed. Its columns are indexes into the table as it is now.
     const keys = Object.keys(value);
-    if (!keys.every((key) => key === "sort" || key === "filters" || key === "search")) return null;
+    if (!keys.every((key) => key === "sort" || key === "filters" || key === "where" || key === "search")) return null;
     const query = viewQuery(value);
     return query ? { version: GRID_STATE_VERSION, query } : null;
   }
@@ -114,8 +115,8 @@ function namePositions(names: readonly string[]) {
 }
 
 /**
- * Maps a state onto a table with these column names. Query keys and columns whose name the table no
- * longer has are dropped. Without `schema` (a state made from a plain query), query indexes are kept
+ * Maps a state onto a table with these column names. Query keys, conditions and columns whose name the
+ * table no longer has are dropped. Without `schema` (a state made from a plain query), query indexes are kept
  * where the table has such a column.
  */
 export function resolveGridState(state: GridState, names: readonly string[]): ResolvedGridState {
@@ -147,8 +148,16 @@ export function resolveGridState(state: GridState, names: readonly string[]): Re
       const column = indexOf(filter.column);
       return column < 0 ? [] : [{ ...filter, column }];
     });
+    // Conditions on columns the table no longer has are left out, and so are groups left without conditions.
+    const where =
+      state.query.where &&
+      mapFilterNode(state.query.where, (filter) => {
+        const column = indexOf(filter.column);
+        return column < 0 ? null : { ...filter, column };
+      });
     if (sort?.length) query.sort = sort;
     if (filters?.length) query.filters = filters;
+    if (where) query.where = where;
     if (state.query.search) query.search = state.query.search;
     result.query = query;
   }

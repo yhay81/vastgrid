@@ -13,10 +13,19 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { CellValue, ColumnFormat, CopyValues, GridState, TableSource, ViewQuery } from "vastgrid-core";
+import {
+  type CellValue,
+  type ColumnFormat,
+  type CopyValues,
+  filterLeaves,
+  type GridState,
+  type TableSource,
+  type ViewQuery,
+} from "vastgrid-core";
 import { StatusBar, Toolbar } from "./components/bars.js";
 import { CellInspector } from "./components/cell-inspector.js";
 import { ColumnsPanel } from "./components/columns-panel.js";
+import { FilterBuilder, type FilterDraft, initialDraft } from "./components/filter-builder.js";
 import { FilterPanel } from "./components/filter-panel.js";
 import { FindBar } from "./components/find-bar.js";
 import { type Anchor, type MenuItem, MenuList, Popover } from "./components/popover.js";
@@ -108,7 +117,8 @@ type Overlay =
   | { kind: "filter"; column: number; anchor: Anchor }
   | { kind: "stats"; col: number; anchor: Anchor }
   | { kind: "inspector"; row: number; col: number; anchor: Anchor }
-  | { kind: "columns"; anchor: Anchor };
+  | { kind: "columns"; anchor: Anchor }
+  | { kind: "conditions"; anchor: Anchor; draft: FilterDraft };
 
 type Drag =
   | { kind: "cells"; pointerId: number; x: number; y: number; row: number; col: number; moved: boolean }
@@ -933,6 +943,15 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         <Toolbar
           controller={c}
           messages={messages}
+          onConditions={(button) => {
+            const root = rootRef.current?.getBoundingClientRect();
+            const rect = button.getBoundingClientRect();
+            setOverlay({
+              kind: "conditions",
+              anchor: { x: rect.left - (root?.left ?? 0), y: rect.top - (root?.top ?? 0), height: rect.height },
+              draft: initialDraft(c.condition, c.schema),
+            });
+          }}
           onColumns={(button) => {
             const root = rootRef.current?.getBoundingClientRect();
             const rect = button.getBoundingClientRect();
@@ -1088,11 +1107,49 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
             formatter={c.formatterOf(overlay.column)}
             count={count}
             load={loadDistinct}
+            inConditions={filterLeaves(c.query.where).some((filter) => filter.column === overlay.column)}
             onApply={(filter) => {
               c.setFilter(overlay.column, filter);
               setOverlay(null);
               focusGrid();
             }}
+            // Sources that cannot run condition trees offer only the column's own filter.
+            onCombine={
+              c.info?.capabilities.conditions
+                ? (filter, type) =>
+                    setOverlay({
+                      kind: "conditions",
+                      anchor: overlay.anchor,
+                      draft: initialDraft(c.condition, c.schema, { column: overlay.column, filter, type }),
+                    })
+                : undefined
+            }
+            onEditConditions={() =>
+              setOverlay({ kind: "conditions", anchor: overlay.anchor, draft: initialDraft(c.condition, c.schema) })
+            }
+          />
+        </Popover>
+      )}
+      {overlay?.kind === "conditions" && (
+        <Popover
+          anchor={overlay.anchor}
+          container={rootRef}
+          onClose={closeOverlay}
+          returnFocus={scrollerRef}
+          label={messages.conditionsTitle}
+          className="vg-popover--panel vg-popover--builder"
+        >
+          <FilterBuilder
+            schema={c.schema}
+            initial={overlay.draft}
+            messages={messages}
+            formatterOf={(column) => c.formatterOf(column)}
+            onApply={(condition) => {
+              void c.setCondition(condition);
+              setOverlay(null);
+              focusGrid();
+            }}
+            onCancel={closeOverlay}
           />
         </Popover>
       )}

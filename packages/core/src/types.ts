@@ -49,6 +49,11 @@ export interface TableCapabilities {
   aggregate: boolean;
   find: boolean;
   export: boolean;
+  /**
+   * Evaluates condition trees (`ViewQuery.where`). Absent means false: sources written before condition
+   * trees existed ignore them, so the grid sends them only to sources that report this.
+   */
+  conditions?: boolean;
 }
 
 export type TableStatus = "loading" | "ready" | "error";
@@ -129,9 +134,27 @@ export type Filter =
   /** Blank means `null` or an empty string. */
   | { type: "blank"; column: number; blank: boolean };
 
+/**
+ * Conditions combined with AND (every one matches) or OR (at least one matches). A group without
+ * conditions is left out, as if it were not there. Groups nest up to `MAX_FILTER_DEPTH` levels.
+ */
+export interface FilterGroup {
+  type: "and" | "or";
+  filters: FilterNode[];
+}
+
+/** A condition tree: a filter on one column, or a group of conditions. */
+export type FilterNode = Filter | FilterGroup;
+
 export interface ViewQuery {
   sort?: SortKey[];
+  /** Conditions that every kept row matches (AND). */
   filters?: Filter[];
+  /**
+   * A condition tree that kept rows also match, combined with `filters` by AND. It expresses OR,
+   * nesting and several conditions on one column.
+   */
+  where?: FilterNode;
   /** Keep rows where any column contains this text (case-insensitive). */
   search?: string;
 }
