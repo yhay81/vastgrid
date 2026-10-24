@@ -39,6 +39,7 @@ const source = useMemo(() => new ArraySource({ columns, rows, editable: true }),
 | Esc | Cancel, keeping the value |
 | Delete · Backspace | Clear the selected cells (every range) |
 | ⌘/Ctrl + V | Paste from the selection's top-left cell (see [Pasting](#pasting)) |
+| ⌘/Ctrl + D · ⌘/Ctrl + R | Fill down · right (see [Filling](#filling)) |
 | ⌘/Ctrl + Z · ⌘/Ctrl + Shift + Z (also Ctrl + Y) | Undo · redo the last write (see [Undo and redo](#undo-and-redo)) |
 
 Clicking elsewhere saves too. Keys that end an IME composition (Enter, Esc) are left to the IME. The
@@ -125,9 +126,28 @@ sorted or filtered again and while cells are written, so checked rows stay check
 table's `revision` and change `info().edits.version` instead; other grids of the same source learn of
 them through `subscribe` (`RemoteSource` asks the server every 2 seconds) and read the rows again.
 
+## Filling
+
+⌘/Ctrl + D fills down: the first row of each selected range is copied into the rows below it. ⌘/Ctrl + R
+fills right: the first column is copied into the columns right of it. A range of one row (one column)
+takes the row above it (the column left of it), as in spreadsheets. The context menu has "Fill down" and
+"Fill right". While the grid has focus, these keys fill instead of the browser's bookmark and reload
+shortcuts; in a read-only grid they are left to the browser.
+
+- **Values are copied as they are.** Nothing is counted up: numbers and dates are repeated, not extended
+  into a series, so a fill never guesses. Values are copied whole (also text cut for display) and checked
+  for the target column like typed values; a fill right across columns of other types is refused when a
+  value does not fit. A read-only column among the targets refuses the fill.
+- **Every range and every row.** Several ranges are filled at once, and rows that are not loaded (or
+  scrolled away) are read first, so the result does not depend on what is on the screen.
+- **One write, one undo.** The cells are written as one write and undone with one ⌘/Ctrl + Z.
+- **Limit.** At most `copyLimit` cells (and 100,000) are filled at once.
+
+There is no fill handle to drag; select the range and press the keys instead.
+
 ## Undo and redo
 
-Every saved write — a typed value, a cleared selection, a paste — is one step of the history, so a paste
+Every saved write — a typed value, a cleared selection, a paste, a fill — is one step of the history, so a paste
 of thousands of cells is undone at once. ⌘/Ctrl + Z undoes it by writing the values before as a new
 write; ⌘/Ctrl + Shift + Z (or Ctrl + Y) writes it again. The context menu has both, disabled when there
 is nothing to do. Inside the cell editor, these keys undo typing in the editor instead.

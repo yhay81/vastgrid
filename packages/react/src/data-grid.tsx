@@ -970,6 +970,28 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     }
   }
 
+  /**
+   * Fills down (⌘/Ctrl + D) or right (⌘/Ctrl + R): copies the first row or column of each selected range
+   * into the rest of it, as one write (see `GridEdits.fillTargets`).
+   */
+  async function fill(direction: "down" | "right") {
+    const c = controller;
+    try {
+      const inputs = await c.edits.fillTargets(direction, c.options.copyLimit);
+      if (inputs.length === 0) {
+        announce(messages.fillEmpty);
+        return;
+      }
+      await writeCells(inputs, "fill");
+    } catch (error) {
+      announce(
+        error instanceof EditTooLargeError
+          ? messages.editTooLarge(count(error.limit))
+          : messages.editFailed(error instanceof Error ? error.message : String(error)),
+      );
+    }
+  }
+
   /** Checks and writes cells as one write, telling the user what failed. Resolves whether it was written. */
   async function writeCells(inputs: (TargetCell & { text: string })[], reason: GridEditReason, signal?: AbortSignal) {
     const c = controller;
@@ -1370,6 +1392,9 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
             ...c.selection.active,
             anchor: cellAnchor(c.selection.active.row, c.selection.active.col),
           });
+        } else if (primary && !event.altKey && !event.shiftKey && /^[dr]$/i.test(event.key) && c.edits.enabled) {
+          // Instead of the browser's bookmark and reload shortcuts, while the grid has focus.
+          void fill(event.key.toLowerCase() === "d" ? "down" : "right");
         } else if (primary && !event.altKey && event.key.toLowerCase() === "z" && c.edits.enabled) {
           void undoRedo(event.shiftKey ? "redo" : "undo");
         } else if (
@@ -1571,6 +1596,16 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
               label: messages.paste,
               shortcut: isMac ? "⌘V" : "Ctrl+V",
               onSelect: () => void pasteFromClipboard(),
+            },
+            {
+              label: messages.fillDown,
+              shortcut: isMac ? "⌘D" : "Ctrl+D",
+              onSelect: () => void fill("down"),
+            },
+            {
+              label: messages.fillRight,
+              shortcut: isMac ? "⌘R" : "Ctrl+R",
+              onSelect: () => void fill("right"),
             },
             {
               label: messages.clearCells,

@@ -388,7 +388,8 @@ and the DuckDB server when its engine is created with `editable: true`; other so
 Typing replaces the active cell (IMEs work: the editor is a text field over the cell), F2 or a double
 click edits it, Enter or Tab saves and moves, Esc cancels, Delete clears the selected cells, and ⌘/Ctrl +
 V pastes ranges copied from Excel or Google Sheets (TSV or HTML tables), checking every value first. ⌘/Ctrl
-+ Z and ⌘/Ctrl + Shift + Z undo and redo whole writes (a paste at once), keeping types and digits. Values
++ D and ⌘/Ctrl + R fill the first row or column of the selection down or right, and ⌘/Ctrl + Z and ⌘/Ctrl +
+Shift + Z undo and redo whole writes (a paste or a fill at once), keeping types and digits. Values
 are checked against the column's type without losing digits (64-bit integers and decimals stay text) and
 by `validateCell`, which may be asynchronous. Writes show while they save, and failures and conflicts with
 other users' changes offer Retry, Overwrite or Discard. After a write the grid reads the rows again and,
@@ -474,6 +475,7 @@ flowchart LR
 | Alt + ↓ | Column menu (sort, filter, statistics, freeze, hide) |
 | F2 · double click | Show the full value of the cell (edit it, in a grid that edits) |
 | Typing · Delete · ⌘/Ctrl + V (in a grid that edits) | Replace the active cell's value · clear the selected cells · paste |
+| ⌘/Ctrl + D · ⌘/Ctrl + R (in a grid that edits) | Fill down · right from the selection's first row or column |
 | ⌘/Ctrl + Z · ⌘/Ctrl + Shift + Z or Ctrl + Y (in a grid that edits) | Undo · redo the last write |
 | Alt + Enter (again: into the panel) · Esc | Open the detail panel of the active row · close it |
 | Shift + F10 · context menu key · right click | Cell menu (copy, filter to value, sort) |

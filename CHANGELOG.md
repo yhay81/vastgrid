@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `vastgrid`: ⌘/Ctrl + D fills down and ⌘/Ctrl + R fills right in a grid that edits (also "Fill down" and
+  "Fill right" in the context menu): the first row (column) of each selected range is copied into the
+  rest of it, and a range of one row (column) takes the one above (left of) it. Values are copied as
+  they are, never extended into a series, checked for their target columns, and written as one write that
+  one undo reverts, also into rows that are not loaded, up to `copyLimit` cells. There is no fill handle.
+
 - `vastgrid`: ⌘/Ctrl + Z undoes the last saved write in a grid that edits, and ⌘/Ctrl + Shift + Z (or
   Ctrl + Y) redoes it, also from the context menu. Each write is one step (a paste or a cleared range at
   once), and undoing writes the values before, with their types and digits, as a new write: a cell

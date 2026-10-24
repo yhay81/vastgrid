@@ -229,6 +229,11 @@ export interface Messages {
   /** Nothing to undo, or a write is still saving or failed. */
   nothingToUndo: string;
   nothingToRedo: string;
+  /** Copy the first row (column) of the selection into the rest of it. */
+  fillDown: string;
+  fillRight: string;
+  /** The selection has no cells to fill (for example one cell in the first row). */
+  fillEmpty: string;
 }
 
 export const en: Messages = {
@@ -468,6 +473,9 @@ export const en: Messages = {
   redone: (cells) => `Redone: ${cells} cells.`,
   nothingToUndo: "Nothing to undo now.",
   nothingToRedo: "Nothing to redo now.",
+  fillDown: "Fill down",
+  fillRight: "Fill right",
+  fillEmpty: "Select the cells to fill, with the values to copy in the first row or column.",
 };
 
 const number = (value: string) => value;
@@ -708,6 +716,9 @@ export const ja: Messages = {
   redone: (cells) => `${cells} セルをやり直しました。`,
   nothingToUndo: "いま元に戻せる操作はありません。",
   nothingToRedo: "いまやり直せる操作はありません。",
+  fillDown: "下方向へコピー",
+  fillRight: "右方向へコピー",
+  fillEmpty: "埋めるセルを選んでください。コピーする値は選択範囲の先頭の行か列から取ります。",
 };
 
 /** Picks the built-in messages for a locale ("ja…" → Japanese, otherwise English). */

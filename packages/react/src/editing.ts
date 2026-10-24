@@ -19,6 +19,7 @@ import {
   EditHistory,
   ErrorCodes,
   editableColumn,
+  editText,
   type HistoryEntry,
   isAbortError,
   MAX_TEXT_LIMIT,
@@ -453,6 +454,66 @@ export class GridEdits {
       }
     }
     return { inputs, cutRows: Math.max(0, cutRows), cutCols: Math.max(0, cutCols) };
+  }
+
+  /**
+   * The cells a fill writes, with the text of the value each one takes, for every selected range:
+   * `down` copies the range's first row into the rows below it (Ctrl+D), `right` its first column into
+   * the columns right of it (Ctrl+R). A range of one row (one column) takes the row above it (the
+   * column left of it) instead, as in spreadsheets. Values are copied as they are: nothing is counted
+   * up. At most `limit` cells are filled (`EditTooLargeError`).
+   */
+  async fillTargets(
+    direction: "down" | "right",
+    limit = MAX_UPDATE_CELLS,
+    signal?: AbortSignal,
+  ): Promise<(TargetCell & { text: string })[]> {
+    const c = this.controller;
+    const max = Math.min(limit, MAX_UPDATE_CELLS);
+    const down = direction === "down";
+    /**
+     * Along the fill: the line filled from (`from`) and the lines filled (`start` to `end`), rows for
+     * `down` and columns for `right`; across it, the other axis from `first` to `last`.
+     */
+    const areas = c.selection.ranges.flatMap((range) => {
+      const lastRow = Math.min(range.bottom, c.rowCount - 1);
+      const lastCol = Math.min(range.right, c.visible.length - 1);
+      const [low, high, first, last] = down
+        ? [range.top, lastRow, range.left, lastCol]
+        : [range.left, lastCol, range.top, lastRow];
+      // A range of one line is filled from the line before it.
+      const from = low === high ? low - 1 : low;
+      const start = low === high ? low : low + 1;
+      return from < 0 || start > high || first > last ? [] : [{ from, start, end: high + 1, first, last }];
+    });
+    const cells = areas.reduce((total, area) => total + (area.end - area.start) * (area.last - area.first + 1), 0);
+    if (cells > max) throw new EditTooLargeError(max);
+    const inputs: (TargetCell & { text: string })[] = [];
+    const span = (first: number, last: number) => Array.from({ length: last - first + 1 }, (_, index) => first + index);
+    for (const area of areas) {
+      // Read-only columns are included: the source line may be one, and a target that is one refuses the fill.
+      if (down) {
+        const cols = span(area.first, area.last);
+        const sources = await this.targetCells(area.from, area.from + 1, cols, signal, true);
+        const targets = await this.targetCells(area.start, area.end, cols, signal, true);
+        const values = new Map(sources.map((cell) => [cell.col, cell]));
+        for (const target of targets) inputs.push({ ...target, text: this.fillText(values.get(target.col)) });
+      } else {
+        const cols = [area.from, ...span(area.start, area.end - 1)];
+        const read = await this.targetCells(area.first, area.last + 1, cols, signal, true);
+        const values = new Map(read.filter((cell) => cell.col === area.from).map((cell) => [cell.row, cell]));
+        for (const cell of read) {
+          if (cell.col !== area.from) inputs.push({ ...cell, text: this.fillText(values.get(cell.row)) });
+        }
+      }
+    }
+    return inputs;
+  }
+
+  /** The text a filled cell takes: the value of the cell it is filled from, which `targetCells` read whole. */
+  private fillText(cell: TargetCell | undefined) {
+    if (!cell || cell.previous === undefined) throw new Error("The cells to fill from could not be read.");
+    return editText(cell.previous);
   }
 
   /**

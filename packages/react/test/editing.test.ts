@@ -371,3 +371,73 @@ test("a new revision of the table forgets what can be undone", async () => {
   assert.equal(grid.edits.historyState.canUndo, false);
   grid.dispose();
 });
+
+test("fill down and right copy the first row or column of each range, and undo at once", async () => {
+  const source = people();
+  const grid = await mounted(source);
+  const fill = async (direction: "down" | "right", limit?: number) => {
+    const inputs = await grid.edits.fillTargets(direction, limit);
+    const prepared = await grid.edits.prepare(inputs, "fill");
+    assert.ok(prepared.ok, JSON.stringify(prepared));
+    await grid.edits.write(prepared.changes, "fill");
+    return inputs;
+  };
+  // Rows 0–2 of name and age: the first row goes down.
+  grid.selection.select({ row: 0, col: 0 });
+  grid.selection.select({ row: 2, col: 1 }, "extend");
+  const filled = await fill("down");
+  assert.deepEqual(
+    filled.map((cell) => [cell.row, cell.column, cell.text]),
+    [
+      [1, 0, "Ada"],
+      [1, 1, "36"],
+      [2, 0, "Ada"],
+      [2, 1, "36"],
+    ],
+  );
+  assert.deepEqual(await read(source, 0), ["Ada", "Ada", "Ada"]);
+  assert.deepEqual(await read(source, 1), [36, 36, 36]);
+  assert.equal(grid.edits.historyState.undoReason, "fill");
+  assert.equal(await grid.edits.undo(), true);
+  assert.deepEqual(await read(source, 1), [36, 85, 54], "one undo");
+  // One cell takes the value above it; the decimal keeps its digits.
+  await until(() => grid.value(1, 2) === "2.00");
+  grid.selection.select({ row: 1, col: 2 });
+  await fill("down");
+  assert.deepEqual(await read(source, 2), ["1.50", "1.50", "3.25"]);
+  // Right: the first column of the range into the columns right of it; a read-only target refuses the fill.
+  grid.selection.select({ row: 0, col: 2 });
+  grid.selection.select({ row: 0, col: 3 }, "extend");
+  const refused = await grid.edits.prepare(await grid.edits.fillTargets("right"), "fill");
+  assert.equal(refused.ok, false);
+  // The age (an integer) filled into the price (a decimal) of the same row.
+  grid.selection.select({ row: 2, col: 1 });
+  grid.selection.select({ row: 2, col: 2 }, "extend");
+  await fill("right");
+  assert.deepEqual((await read(source, 2))[2], "54");
+  // Nothing to fill from, and the limit.
+  grid.selection.select({ row: 0, col: 0 });
+  assert.deepEqual(await grid.edits.fillTargets("down"), []);
+  grid.selection.select({ row: 0, col: 0 });
+  grid.selection.select({ row: 2, col: 1 }, "extend");
+  await assert.rejects(grid.edits.fillTargets("down", 3), { message: /at most 3/ });
+  grid.dispose();
+});
+
+test("fill reads the rows it fills when they are not loaded", async () => {
+  const columnData: CellValue[][] = [Array.from({ length: 2000 }, (_, index) => `v${index}`)];
+  const source = new ArraySource({ columns: [{ name: "s", type: "string" }], columnData, editable: true });
+  const grid = await mounted(source);
+  grid.selection.select({ row: 0, col: 0 });
+  grid.selection.select({ row: 1999, col: 0 }, "extend");
+  const inputs = await grid.edits.fillTargets("down");
+  assert.equal(inputs.length, 1999);
+  assert.equal(inputs[1998].previous, "v1999", "the values before, for undo");
+  const prepared = await grid.edits.prepare(inputs, "fill");
+  assert.ok(prepared.ok);
+  await grid.edits.write(prepared.changes, "fill");
+  assert.equal(columnData[0][1999], "v0");
+  assert.equal(await grid.edits.undo(), true);
+  assert.equal(columnData[0][1999], "v1999");
+  grid.dispose();
+});
