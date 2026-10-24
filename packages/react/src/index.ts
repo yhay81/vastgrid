@@ -1,4 +1,13 @@
 export * from "vastgrid-core";
+export type {
+  CellAction,
+  CellActionHook,
+  CellRect,
+  DrawCell,
+  DrawCellArgs,
+  DrawDefaultOptions,
+  GridCellContent,
+} from "./cell-render.js";
 export {
   type ColumnState,
   CopyRangesError,

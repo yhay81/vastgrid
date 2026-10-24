@@ -14,6 +14,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { CellValue, ColumnFormat, CopyValues, GridState, TableSource, ViewQuery } from "vastgrid-core";
+import type { CellActionHook, DrawCell } from "./cell-render.js";
 import { StatusBar, Toolbar } from "./components/bars.js";
 import { CellInspector } from "./components/cell-inspector.js";
 import { ColumnsPanel } from "./components/columns-panel.js";
@@ -62,6 +63,17 @@ export interface DataGridProps {
    * headers, or the shown text (`formatted`) with the labels. A column's `copy` setting overrides it.
    */
   copyValues?: CopyValues;
+  /**
+   * Draws loaded cells in the visible rows and columns instead of the grid, with the cell's rectangle,
+   * value, type, text, selection state and theme; `args.drawDefault()` draws the standard cell. For
+   * colors by value, a column's `style` setting in `columnFormats` is enough. Keep the function stable.
+   */
+  drawCell?: DrawCell;
+  /**
+   * Makes cells links or buttons: their pointer, their role for screen readers, and links drawn
+   * underlined in `--vg-link-fg`. Clicking them or pressing Space calls `onCellClick`. Keep the function stable.
+   */
+  cellAction?: CellActionHook;
   onQueryChange?: (query: ViewQuery) => void;
   /** Called when the selection or the active cell changes, by the user or by the app. */
   onSelectionChange?: (event: GridSelectionEvent) => void;
@@ -210,6 +222,13 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   useEffect(() => {
     controller.options.copyValues = copyValues;
   }, [controller, copyValues]);
+
+  useEffect(() => {
+    controller.options.drawCell = props.drawCell;
+    controller.options.cellAction = props.cellAction;
+    controller.requestRender();
+    controller.emit();
+  }, [controller, props.drawCell, props.cellAction]);
 
   const announce = useCallback((text: string) => {
     setNotice(text);
@@ -533,8 +552,20 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         : c.hitTest(x, y);
     const previous = c.hover;
     c.hover = hit;
-    scroller.style.cursor = hit.resize >= 0 ? "col-resize" : hit.menu ? "pointer" : "";
-    if (previous?.zone !== hit.zone || previous.col !== hit.col || previous.menu !== hit.menu) c.requestRender();
+    let cursor = hit.resize >= 0 ? "col-resize" : hit.menu ? "pointer" : "";
+    if (!cursor && hit.zone === "cell" && c.options.cellAction) {
+      const action = c.cellActionAt(hit.row, hit.col);
+      if (action) cursor = action.cursor ?? "pointer";
+    }
+    scroller.style.cursor = cursor;
+    if (
+      previous?.zone !== hit.zone ||
+      previous.col !== hit.col ||
+      previous.menu !== hit.menu ||
+      // A drawCell hook may draw the hovered cell differently.
+      (c.options.drawCell && previous.row !== hit.row)
+    )
+      c.requestRender();
   }
 
   function endDrag(event: PointerEvent<HTMLDivElement>) {
@@ -908,6 +939,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       : activeValue === null
         ? messages.blank
         : c.formatterOf(activeIndex).text(activeValue);
+  const activeAction = c.cellActionAt(active.row, active.col);
+  const activeDescription = c.cellStyleAt(active.row, active.col)?.description;
   const labelOf = (col: number) => {
     const state = c.visible[col];
     return state ? c.columnLabel(state.index) : "";
@@ -1008,7 +1041,31 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                 {/* biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas. */}
                 {/* biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant). */}
                 <div role="gridcell" id={cellId} aria-colindex={active.col + 2} aria-selected="true">
-                  {activeText}
+                  {/* Focus stays on the grid, and Space activates the cell (see cell-render.ts). */}
+                  {activeAction?.kind === "link" ? (
+                    // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
+                    // biome-ignore lint/a11y/useSemanticElements: the link is drawn on the canvas; the app opens it.
+                    <span
+                      role="link"
+                      aria-label={activeAction.label}
+                      aria-keyshortcuts={props.onCellClick ? "Space" : undefined}
+                    >
+                      {activeText}
+                    </span>
+                  ) : activeAction?.kind === "button" ? (
+                    // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
+                    // biome-ignore lint/a11y/useSemanticElements: the button is drawn on the canvas.
+                    <span
+                      role="button"
+                      aria-label={activeAction.label}
+                      aria-keyshortcuts={props.onCellClick ? "Space" : undefined}
+                    >
+                      {activeText}
+                    </span>
+                  ) : (
+                    activeText
+                  )}
+                  {activeDescription ? `, ${activeDescription}` : null}
                 </div>
               </div>
             </div>

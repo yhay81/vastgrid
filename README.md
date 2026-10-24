@@ -157,6 +157,8 @@ rows.
 | `copyLimit` | `number` | `1000000` | Cells that can be copied at once, over all selected ranges. |
 | `columnFormats` | `Record<string, ColumnFormat>` | | Display settings by schema column name: label, number and date formats, alignment, a format function. |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | Copy the values with the schema names, or the shown text with the labels. |
+| `drawCell` | `(args: DrawCellArgs) => void` | | Draws the visible loaded cells instead of the grid; `args.drawDefault()` draws the standard cell. |
+| `cellAction` | `(cell: GridCellContent) => CellAction \| null` | | Makes cells links or buttons: pointer, underline, screen reader role, `onCellClick` on click and Space. |
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | Called when the selection or the active cell changes. |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | Called when the columns' width, order, visibility or freezing change. |
@@ -213,6 +215,39 @@ const formats: Record<string, ColumnFormat> = {
 Copies hold the values and the schema names unless `copyValues="formatted"` (or a column's `copy`
 setting) asks for the shown text and the labels. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#column-formats).
 
+### Cell colors and custom drawing
+
+A column's `style` colors cells by value and keeps the standard drawing. `drawCell` draws cells on the
+canvas itself, with the cell's rectangle, value, type, text, selection state and theme, and can call the
+standard drawing first. `cellAction` makes cells links or buttons: the pointer changes over them,
+links are underlined, the active cell gets the `link` or `button` role for screen readers, and a click
+or Space calls `onCellClick` (Enter and the arrows still move, as in spreadsheets). The hooks run only
+for the loaded cells on screen.
+
+```tsx
+const formats: Record<string, ColumnFormat> = {
+  balance: { style: (value) => (Number(value) < 0 ? { color: "#b42318", background: "#fdecea", description: "Overdrawn" } : null) },
+};
+const drawCell: DrawCell = (args) => {
+  args.drawDefault();
+  if (args.schema.name === "status" && args.value === "new") {
+    args.ctx.fillStyle = args.theme.accent;
+    args.ctx.fillRect(args.rect.x + 2, args.rect.y + 6, 3, args.rect.height - 12);
+  }
+};
+const cellAction: CellActionHook = (cell) => (cell.schema.name === "url" ? { kind: "link", label: `Open ${cell.text}` } : null);
+
+<DataGrid
+  source={source}
+  columnFormats={formats}
+  drawCell={drawCell}
+  cellAction={cellAction}
+  onCellClick={(event) => event.column === urlColumn && window.open(String(event.value))}
+/>;
+```
+
+See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#cell-colors-and-custom-drawing).
+
 ## Performance
 
 `npm run bench -- --csv-rows=10000000 --parquet-rows=100000000` on an Apple M2 Pro (12 threads, 32 GB),
@@ -233,7 +268,9 @@ Node.js 24, DuckDB 1.5. Times include DuckDB but not HTTP.
 | Parquet sorted: 256 rows at a random position (median / 95th percentile) | 147 ms / 208 ms |
 
 Rendering a 2280 × 1371 px viewport (56 rows × 20 columns) takes 2.0 ms per frame at the median and
-3.0 ms at the 99th percentile, measured with the canvas flushed after every frame.
+3.0 ms at the 99th percentile, measured with the canvas flushed after every frame. Column styles,
+`cellAction` and a `drawCell` that adds a mark to the standard drawing keep a frame of 1,349 cells
+within the variation of the measurement (2.5–2.8 ms against 2.7–2.8 ms without them).
 
 ## How it works
 
