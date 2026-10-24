@@ -38,6 +38,8 @@ export interface ColumnSchema {
   type: ColumnType;
   /** The engine's own type name, for example `DECIMAL(10,2)`. */
   sourceType?: string;
+  /** Formula columns (see `ViewQuery.formulas`): the expression that computes the values. */
+  expression?: string;
 }
 
 export interface TableCapabilities {
@@ -54,6 +56,11 @@ export interface TableCapabilities {
    * trees existed ignore them, so the grid sends them only to sources that report this.
    */
   conditions?: boolean;
+  /**
+   * Evaluates formula columns (`ViewQuery.formulas`) for reading, sorting, filtering, statistics,
+   * summaries, find and export. Absent means false.
+   */
+  formulas?: boolean;
 }
 
 export type TableStatus = "loading" | "ready" | "error";
@@ -152,7 +159,23 @@ export interface FilterGroup {
 /** A condition tree: a filter on one column, or a group of conditions. */
 export type FilterNode = Filter | FilterGroup;
 
+/**
+ * A column computed for each row from the row's other columns, by an expression (see `parseFormula` for the
+ * language). Its name must differ from the table's columns and the other formulas.
+ */
+export interface FormulaColumn {
+  name: string;
+  expression: string;
+}
+
 export interface ViewQuery {
+  /**
+   * Formula columns of the view. Formula `i` is the column `TableInfo.columns.length + i` in the view's
+   * requests (rows, sort, filters, statistics, export, …); requests without the view do not have them.
+   * A formula may use the table's columns and the other formulas, by name. The search does not look in
+   * formula columns.
+   */
+  formulas?: FormulaColumn[];
   sort?: SortKey[];
   /** Conditions that every kept row matches (AND). */
   filters?: Filter[];

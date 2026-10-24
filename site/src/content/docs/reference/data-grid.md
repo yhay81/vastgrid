@@ -43,6 +43,8 @@ import "vastgrid/styles.css";
 | `rowKey` | `string` | the row's position | Schema column whose values identify the rows (a primary key). Checked rows then survive new data. |
 | `rowSelection` | `RowSelection` | | Checked rows to apply on start and whenever a different value is passed. |
 | `onRowSelectionChange` | `(event: GridRowSelectionEvent) => void` | | Called when rows are checked or unchecked, by the user, the app or the grid. |
+| `formulas` | `FormulaColumn[]` | | Formula columns (`{ name, expression }`), applied on start and whenever a different value is passed. See [Formula columns](/guides/formulas/). |
+| `onFormulasChange` | `(formulas: FormulaColumn[]) => void` | | Called when formula columns are added, edited or deleted, by the user or the app. |
 | `detailOpen` | `boolean` | | Shows the [detail panel](#detail-panel) (controlled). Without it, the grid keeps the state. |
 | `defaultDetailOpen` | `boolean` | `false` | Whether the detail panel is open when the grid mounts, when `detailOpen` is not set. |
 | `onDetailOpenChange` | `(open: boolean) => void` | | Called when the detail panel is opened or closed by the user or the handle. |
@@ -63,6 +65,8 @@ A ref gives a `DataGridHandle`:
 | `getState()` | The query and the column settings, as a `GridState` to save. |
 | `applyState(state)` | Applies a saved `GridState`. Returns `false` when the value is not a state this version reads. |
 | `goToRow(row)` | Scrolls to a row of the current view and makes it active. |
+| `getFormulas()` | The formula columns, also ones that cannot be evaluated now. |
+| `setFormulas(formulas)` | Replaces the formula columns. |
 | `getRowSelection()` | The checked rows, as a `RowSelection`. |
 | `setRowSelection(selection)` | Replaces the checked rows. Returns `false` when the value is not a `RowSelection`. |
 | `openExport()` | Opens the export panel, also without the toolbar. Returns `false` when the source cannot export now. |

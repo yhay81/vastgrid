@@ -18,7 +18,8 @@ Every request is a `POST` of a JSON object to one endpoint, with `content-type: 
 - `row` is a position in a view (0-based). The table itself is the view `null`.
 - `column` is an index into the table schema (`columns` of `info`), never a display position, so that
   hiding or reordering columns in the UI does not change what is asked for. A list of `columns` names
-  each column at most once.
+  each column at most once. In a view with formula columns, the indexes after the table's columns are the
+  formulas of the view's query (see [Formula columns](#formula-columns)).
 - Ranges are `[start, end)`.
 
 ## Handles
@@ -96,7 +97,7 @@ deletes the partial file and answers `cancelled`. `xlsx` refuses more than 1,048
   notes?: string[];            // encoding:shift_jis, all_varchar, invalid_utf8_replaced, merged_cells, formulas_without_values
   sheets?: { name: string; hidden?: boolean }[]; // workbooks: the sheets, in workbook order
   sheet?: string;              // workbooks: the sheet that was read
-  capabilities: { sort, filter, search, stats, distinct, aggregate, find, export: boolean; conditions?: boolean };
+  capabilities: { sort, filter, search, stats, distinct, aggregate, find, export: boolean; conditions?: boolean; formulas?: boolean };
   exports?: { formats: ExportFormat[]; delivery: "file" | "data" }; // what export can write, when it can
 }
 ```
@@ -174,10 +175,11 @@ values.
 
 ```ts
 {
+  formulas?: { name: string; expression: string }[];        // formula columns, see below
   sort?: { column: number; direction: "asc" | "desc" }[];   // blanks last in both directions
   filters?: Filter[];                                       // all must match
   where?: FilterNode;                                       // a condition tree, combined with filters by AND
-  search?: string;                                          // any column contains it, case-insensitive
+  search?: string;                                          // any table column contains it, case-insensitive
 }
 
 type Filter =
@@ -216,6 +218,49 @@ A tree may nest groups up to 8 levels (`MAX_FILTER_DEPTH`), have up to 256 group
 evaluate `where` report the `conditions` capability; servers written before it existed ignore `where`,
 so clients send it only to tables that report `conditions: true`. Statistics, value lists, selection summaries, find and exports of a view use its
 whole query, `where` included.
+
+### Formula columns
+
+`formulas` adds columns that are computed for each row from the other columns of the row, with an
+expression such as `qty * price` or `IF(status = 'open', ROUND(total * 1.1, 2), 0)`. Formula `i` is
+column `columns.length + i` of the view: `rows`, `sort`, `filters`, `where`, `stats`, `distinct`,
+`aggregate`, `find` and `export` of the view use it like a column of the table. Requests without the view
+(`view: null`) do not have formula columns, so a query with only `formulas` still makes a view (in the
+table's order, with every row). The search looks in the table's columns only.
+
+```json
+{
+  "formulas": [
+    { "name": "total", "expression": "qty * price" },
+    { "name": "with tax", "expression": "ROUND(total * 1.1, 2)" }
+  ],
+  "sort": [{ "column": 4, "direction": "desc" }],
+  "filters": [{ "type": "compare", "column": 5, "op": "ge", "value": 1000 }]
+}
+```
+
+The language is defined in `vastgrid-core` (`parseFormula`, `compileFormulas`) and described in the
+[formula guide](https://vastgrid.yhay81.com/guides/formulas/): columns by name (`price`, `[unit price]`),
+number, text, `TRUE`/`FALSE` and `NULL` literals, arithmetic, `&` to join text, comparisons, `AND`, `OR`,
+`NOT`, and a fixed list of functions (`FORMULA_FUNCTIONS`). Values are numbers (64-bit floating point),
+text, booleans, dates and timestamps; results are sent as such (`float`, `string`, `boolean`, `date`,
+`timestamp` columns). Division by zero, numbers out of range and text that cannot be read as a number or
+a date give `null`. A formula may use other formulas of the query by name, but not itself through others.
+
+`parseProtocolRequest` refuses with `invalid_request` more than 32 formulas (`MAX_FORMULAS`), names that are
+empty, repeated or longer than 256 characters, expressions longer than 2,000 characters
+(`MAX_FORMULA_LENGTH`), nested more than 64 levels (`MAX_FORMULA_DEPTH`), and expressions that are not
+written correctly. The server then checks the names, functions and types over the table's columns, and
+refuses a formula that uses a column the table does not have, has a value of the wrong type (for example
+text multiplied by a number), uses itself, has the name of another column, or has more than 1,000
+operations once the formulas it uses are put in place (`MAX_FORMULA_NODES`); the `message` names the
+formula and the reason.
+
+Servers never run the expression as code. `vastgrid-duckdb` translates the checked expression into SQL:
+columns become quoted identifiers, every literal is a parameter (held in a one-row table of constants for
+the view), and only the functions of the list are called, each mapped to a fixed SQL expression. Servers
+that evaluate formulas report `capabilities.formulas`; servers written before it existed drop `formulas`
+from queries, so clients send them only to tables that report `formulas: true`.
 
 ## Error codes
 

@@ -18,8 +18,8 @@ hundreds of millions of rows — and Excel workbooks, and works like a spreadshe
 - **A spreadsheet's way of working.** Range selection with the mouse and Excel's keyboard shortcuts,
   copy as TSV / HTML / Markdown, multi-column sort, filters with a searchable value list or conditions,
   AND / OR conditions across columns and nested groups, search across all columns, find (⌘F), column
-  statistics, a running count, sum, average, min and max of the selection, and export of the current
-  view to CSV, TSV, Parquet, JSON or Excel.
+  statistics, a running count, sum, average, min and max of the selection, formula columns
+  (`qty * price`) computed by the engine, and export of the current view to CSV, TSV, Parquet, JSON or Excel.
 - **Bring your engine.** The grid talks to a `TableSource`. Use the DuckDB server engine for files on
   disk, `vastgrid-browser` for files opened in the browser and Parquet URLs, `ArraySource` for data already
   in memory, or implement your own.
@@ -163,6 +163,8 @@ rows.
 | `exportOptions` | `GridExportOptions \| false` | `{}` | The export panel: where files go (`target`, `onExported`) and which formats to offer. `false` hides it. |
 | `drawCell` | `(args: DrawCellArgs) => void` | | Draws the visible loaded cells instead of the grid; `args.drawDefault()` draws the standard cell. |
 | `cellAction` | `(cell: GridCellContent) => CellAction \| null` | | Makes cells links or buttons: pointer, underline, screen reader role, `onCellClick` on click and Space. |
+| `formulas` | `FormulaColumn[]` | | Formula columns (`{ name, expression }`), applied on start and whenever a different value is passed. |
+| `onFormulasChange` | `(formulas: FormulaColumn[]) => void` | | Called when formula columns are added, edited or deleted. |
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | Called when the selection or the active cell changes. |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | Called when the columns' width, order, visibility or freezing change. |
@@ -180,7 +182,7 @@ rows.
 | `aria-label` | `string` | `messages.gridLabel` | The grid's name for screen readers. |
 
 A ref gives a `DataGridHandle`: `focus()`, `reload()`, `getQuery()`, `setQuery(query)`, `getState()`,
-`applyState(state)`, `goToRow(row)`, `openDetail({ focus })`, `closeDetail()`, `detailOpen`, `openExport()`, `getRowSelection()`, `setRowSelection(selection)`, the `controller` with the grid's state, and the canvas `renderer` (for
+`applyState(state)`, `goToRow(row)`, `openDetail({ focus })`, `closeDetail()`, `detailOpen`, `openExport()`, `getFormulas()`, `setFormulas(formulas)`, `getRowSelection()`, `setRowSelection(selection)`, the `controller` with the grid's state, and the canvas `renderer` (for
 diagnostics such as `renderer.timings()`).
 
 Events give a cell's `row` in the view, its `rowId` in the original table, its visible column `col` and its
@@ -377,6 +379,32 @@ date formats; text is never written as a formula, and more than 1,048,575 rows a
 
 See [Exporting](https://vastgrid.yhay81.com/guides/export/).
 
+### Formula columns
+
+"Add formula column…" in a column's menu adds a column computed per row by an expression, such as
+`qty * price` or `IF(due < '2024-07-01', 'late', '')`. The source evaluates it — the DuckDB engine in SQL,
+without moving the table to the browser — so it sorts, filters, shows statistics and selection summaries,
+and is exported like a column of the file. The editor checks the formula as it is typed and shows what is
+wrong. Formulas are a small language of their own (columns by name, arithmetic, `&` for text,
+comparisons, `AND` / `OR` / `NOT`, and functions for numbers, text, dates and blanks); they are never run
+as JavaScript or SQL, and the engine makes SQL from them with quoted names, parameters and a fixed list of
+functions.
+
+```tsx
+<DataGrid
+  source={source}
+  formulas={[
+    { name: "total", expression: "qty * price" },
+    { name: "with tax", expression: "ROUND(total * 1.1, 2)" },
+  ]}
+  onFormulasChange={(formulas) => save(formulas)}
+/>
+```
+
+Formula columns follow the table's columns (formula `i` is column `info.columns.length + i`), are kept in
+`GridState` and follow their columns by name. The DuckDB engine and `ArraySource` evaluate them
+(`capabilities.formulas`); `vastgrid-browser` does not yet. See [Formula columns](https://vastgrid.yhay81.com/guides/formulas/).
+
 ## Performance
 
 `npm run bench -- --csv-rows=10000000 --parquet-rows=100000000` on an Apple M2 Pro (12 threads, 32 GB),
@@ -485,7 +513,6 @@ npm run bench
 ## Roadmap
 
 - Editing cells, with CSV write-back that keeps untouched rows byte for byte.
-- Formula columns.
 
 See [docs/research.ja.md](docs/research.ja.md) (Japanese) for the survey of existing viewers and grids
 that shaped these choices.

@@ -131,6 +131,7 @@ interface TableInfo {
     find: boolean;
     export: boolean;
     conditions?: boolean; // evaluates `ViewQuery.where`; absent means false
+    formulas?: boolean;   // evaluates `ViewQuery.formulas`; absent means false
   };
   exports?: { formats: ExportFormat[]; delivery: "file" | "data" }; // what exportView writes, when it can
 }
@@ -144,10 +145,11 @@ request's `target` (a server), `"data"` sources return its bytes (`ExportResult.
 
 ```ts
 interface ViewQuery {
+  formulas?: { name: string; expression: string }[];      // formula columns, after the table's columns
   sort?: { column: number; direction: "asc" | "desc" }[]; // blanks last in both directions
   filters?: Filter[];                                     // all must match
   where?: FilterNode;                                     // a condition tree, combined with filters by AND
-  search?: string;                                        // any column contains it, ignoring case
+  search?: string;                                        // any table column contains it, ignoring case
 }
 
 type Filter =
@@ -208,6 +210,13 @@ Each condition means what it means in `filters`. A source that evaluates `where`
 condition trees existed keep working. A source can evaluate a tree with `matchesFilterNode(where, test)`,
 where `test` is its own check of one filter, as `ArraySource` does; the
 [protocol](/reference/protocol/#viewquery) has the limits on a tree's size.
+
+`formulas` adds columns computed per row by an expression. Formula `i` is column `columns.length + i` of
+the view, for every request that names the view; requests without a view do not have them, so a query
+with only formulas makes a view in the table's order. A source that evaluates them reports
+`capabilities.formulas`, checks them with `queryFormulas(info.columns, query)` (which throws
+`invalid_request` for an unknown column, a type error or a cycle) and evaluates the checked trees, for
+example with `formulaEvaluator`; see [Formula columns](/guides/formulas/#custom-sources).
 
 ## Rows
 

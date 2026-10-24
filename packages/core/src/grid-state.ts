@@ -13,8 +13,9 @@
  */
 
 import { mapFilterNode } from "./filter-tree.js";
+import { MAX_FORMULA_LENGTH, MAX_FORMULA_NAME_LENGTH, MAX_FORMULAS } from "./formula.js";
 import { parseViewQuery } from "./protocol.js";
-import type { ViewQuery } from "./types.js";
+import type { FormulaColumn, ViewQuery } from "./types.js";
 
 export const GRID_STATE_VERSION = 1;
 
@@ -28,8 +29,16 @@ export interface GridColumnSetting {
 
 export interface GridState {
   version: typeof GRID_STATE_VERSION;
-  /** The table's column names when the state was saved, in table order. `query` refers to these. */
+  /**
+   * The grid's column names when the state was saved, in order: the table's columns, then the formula
+   * columns that could be evaluated. `query` refers to these.
+   */
   schema?: string[];
+  /**
+   * Formula columns (see `FormulaColumn`), also ones that cannot be evaluated now (for example because a
+   * column they use is gone). They use columns by name, so they follow the columns when the file changes.
+   */
+  formulas?: FormulaColumn[];
   /** Sort, filters, the condition tree and search. Column indexes are positions in `schema`. */
   query?: ViewQuery;
   /**
@@ -86,8 +95,25 @@ export function parseGridState(value: unknown): GridState | null {
   if (Array.isArray(value.schema) && value.schema.every((name) => typeof name === "string")) {
     state.schema = value.schema as string[];
   }
+  if (Array.isArray(value.formulas)) {
+    state.formulas = value.formulas
+      .flatMap((item): FormulaColumn[] =>
+        isRecord(item) &&
+        typeof item.name === "string" &&
+        typeof item.expression === "string" &&
+        item.name.length <= MAX_FORMULA_NAME_LENGTH &&
+        item.expression.length <= MAX_FORMULA_LENGTH
+          ? [{ name: item.name, expression: item.expression }]
+          : [],
+      )
+      .slice(0, MAX_FORMULAS);
+  }
   const query = value.query === undefined ? undefined : viewQuery(value.query);
-  if (query) state.query = query;
+  if (query) {
+    // The grid's formulas are the state's own part.
+    delete query.formulas;
+    state.query = query;
+  }
   if (Array.isArray(value.columns)) {
     state.columns = value.columns.flatMap((item): GridColumnSetting[] => {
       if (!isRecord(item) || typeof item.name !== "string") return [];

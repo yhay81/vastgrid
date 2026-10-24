@@ -158,6 +158,8 @@ including hyparquet and the zstd, gzip, brotli, lz4 and snappy decoders; the pag
   millions of rows takes seconds. For that, serve the file with `vastgrid-duckdb`.
 - Sorting runs in the worker on the values of the sort columns; tens of millions of rows need hundreds of
   megabytes of memory in the worker.
+- [Formula columns](/guides/formulas/) are not evaluated yet (`capabilities.formulas` is false), so the
+  grid does not offer them; serve the file with `vastgrid-duckdb` for them.
 - Changes are seen for files at a URL only. A local `File` is a snapshot: once the file changes on disk the
   browser refuses to read it, so open it again (for example from the file picker). For URLs, servers on
   another origin must list `ETag` (or `Last-Modified`) in `Access-Control-Expose-Headers`.

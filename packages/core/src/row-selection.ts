@@ -14,13 +14,17 @@
 
 import { isFilterGroup, pruneFilterNode } from "./filter-tree.js";
 import { parseViewQuery } from "./protocol.js";
-import type { CellValue, Filter, FilterNode, ViewQuery } from "./types.js";
+import type { CellValue, Filter, FilterNode, FormulaColumn, ViewQuery } from "./types.js";
 
 /** Identifies a record: its position in the table, or its value in the key column. */
 export type RowKey = string | number;
 
-/** The filters, condition tree and search that limit an `exclude` selection. Column indexes are schema indexes. */
+/**
+ * The filters, condition tree and search that limit an `exclude` selection. Column indexes are schema
+ * indexes; indexes after the table's columns are the formula columns in `formulas`.
+ */
 export interface RowSelectionQuery {
+  formulas?: FormulaColumn[];
   filters?: Filter[];
   where?: FilterNode;
   search?: string;
@@ -45,6 +49,7 @@ export function rowSelectionQuery(query: ViewQuery): RowSelectionQuery | undefin
   const search = query.search?.trim() ?? "";
   if (filters.length === 0 && !where && !search) return undefined;
   return {
+    ...(query.formulas?.length ? { formulas: query.formulas } : {}),
     ...(filters.length > 0 ? { filters } : {}),
     ...(where ? { where } : {}),
     ...(search ? { search } : {}),
@@ -70,6 +75,7 @@ function filterKey(filter: Filter) {
 export function sameRowQuery(a: RowSelectionQuery | undefined, b: RowSelectionQuery | undefined) {
   const key = (query: RowSelectionQuery | undefined) =>
     JSON.stringify([
+      query?.formulas ?? [],
       (query?.filters ?? []).map(filterKey),
       treeKey(pruneFilterNode(query?.where)),
       query?.search?.trim() ?? "",
@@ -84,6 +90,8 @@ export function sameRowQuery(a: RowSelectionQuery | undefined, b: RowSelectionQu
  */
 export function impliesRowQuery(view: ViewQuery, query: RowSelectionQuery | undefined) {
   if (!query) return true;
+  // Filters on formula columns mean the same only with the same formulas.
+  if (query.formulas?.length && JSON.stringify(query.formulas) !== JSON.stringify(view.formulas ?? [])) return false;
   const where = pruneFilterNode(query.where);
   if (where && treeKey(where) !== treeKey(pruneFilterNode(view.where))) return false;
   const filters = new Set((view.filters ?? []).map(filterKey));

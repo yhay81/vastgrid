@@ -15,7 +15,7 @@
 - **速い。** セルはキャンバスに描きます。1,000 セル以上を表示しても 1 フレーム約 2 ms です。ブラウザーの要素の高さの上限を越えて、
   数十億行までスクロールできます。
 - **表計算ソフトの操作。** マウスと Excel のキー操作での範囲の選択、コピー（TSV・HTML・Markdown）、複数の列での並べ替え、
-  値の一覧（検索・件数つき）と条件での絞り込み、列をまたぐ AND・OR と入れ子の条件、すべての列からの絞り込み、検索（⌘F）、列の統計、選択範囲のデータの個数・合計・平均・最小・最大、現在のビューの CSV・TSV・Parquet・JSON・Excel への書き出し。
+  値の一覧（検索・件数つき）と条件での絞り込み、列をまたぐ AND・OR と入れ子の条件、すべての列からの絞り込み、検索（⌘F）、列の統計、選択範囲のデータの個数・合計・平均・最小・最大、エンジンが計算する計算列（`qty * price`）、現在のビューの CSV・TSV・Parquet・JSON・Excel への書き出し。
 - **エンジンを選べる。** グリッドは `TableSource` とだけやり取りします。ディスク上のファイルは DuckDB のサーバー（`vastgrid-duckdb`）、
   ブラウザーで開くファイルと URL の Parquet は `vastgrid-browser`、メモリ上のデータは `ArraySource`、ほかのエンジンは自作の `TableSource` で扱えます。
 - **安全。** DuckDB のエンジンは、リンクをたどった実際の場所が許可したフォルダーの中にあるファイルだけを読み、実行中は変えられません。SQL はすべて組み立てたもので、値は必ずパラメーターで渡します。
@@ -157,6 +157,8 @@ const source = new ArraySource({
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | 選択範囲かアクティブなセルが変わったときに呼ばれます。 |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | 列の幅・順序・表示・固定が変わったときに呼ばれます。 |
 | `onCellClick`、`onCellDoubleClick` | `(event: GridCellEvent) => void` | | セルのクリック（または Space）とダブルクリック（または F2）で呼ばれます。ダブルクリックで `preventDefault()` を呼ぶと、セルの詳細を開きません。 |
+| `formulas` | `FormulaColumn[]` | | 計算列（`{ name, expression }`）。最初と、違う値を渡したときに適用します。 |
+| `onFormulasChange` | `(formulas: FormulaColumn[]) => void` | | 計算列が追加・編集・削除されたときに呼ばれます。 |
 | `initialState` | `GridState` | | グリッドを作るときに、表の列がわかった時点で適用する設定。 |
 | `onStateChange` | `(state: GridState) => void` | | クエリーか列の設定が変わったときに、その設定を渡して呼ばれます。 |
 | `checkboxSelection` | `boolean` | `false` | 行ごとのチェックボックスと、左上にすべての行のチェックボックスを表示します。 |
@@ -170,7 +172,7 @@ const source = new ArraySource({
 | `aria-label` | `string` | `messages.gridLabel` | スクリーンリーダー向けのグリッドの名前。 |
 
 ref からは `DataGridHandle` を使えます。`focus()`、`reload()`、`getQuery()`、`setQuery(query)`、`getState()`、
-`applyState(state)`、`goToRow(row)`、`openDetail({ focus })`、`closeDetail()`、`detailOpen`、`openExport()`、`getRowSelection()`、`setRowSelection(selection)`、グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()`
+`applyState(state)`、`goToRow(row)`、`openDetail({ focus })`、`closeDetail()`、`detailOpen`、`openExport()`、`getFormulas()`、`setFormulas(formulas)`、`getRowSelection()`、`setRowSelection(selection)`、グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()`
 などの診断用）があります。
 
 イベントは、セルのビューでの行 `row`、元の表での行 `rowId`、表示中の列の位置 `col`、表の列の番号 `column` を渡し、
@@ -328,6 +330,23 @@ const [checked, setChecked] = useState<RowSelection>({ type: "include", keys: []
 
 詳しくは[書き出し](https://vastgrid.yhay81.com/ja/guides/export/)を参照してください。
 
+### 計算列
+
+列メニューの「計算列を追加…」で、`qty * price` や `IF(due < '2024-07-01', '遅れ', '')` のような式で行ごとに計算する列を追加できます。計算は source が行い（DuckDB のエンジンは SQL で計算し、表をブラウザーに移しません）、ファイルの列と同じように並べ替え・絞り込み・統計・選択範囲の集計・書き出しができます。編集画面は入力中の式を確かめ、間違いを示します。式は独自の小さな言語（列名、四則演算、文字列をつなぐ `&`、比較、`AND`・`OR`・`NOT`、数値・文字列・日時・空白の関数）で、JavaScript や SQL として実行することはありません。エンジンは引用した列名・パラメーター・決まった関数の一覧だけで SQL を作ります。
+
+```tsx
+<DataGrid
+  source={source}
+  formulas={[
+    { name: "total", expression: "qty * price" },
+    { name: "税込", expression: "ROUND(total * 1.1, 2)" },
+  ]}
+  onFormulasChange={(formulas) => save(formulas)}
+/>
+```
+
+計算列は表の列の後ろに並び（式 `i` は列 `info.columns.length + i`）、`GridState` に保存され、列名で付け直されます。DuckDB のエンジンと `ArraySource` が計算します（`capabilities.formulas`）。`vastgrid-browser` はまだ対応していません。詳しくは[計算列](https://vastgrid.yhay81.com/ja/guides/formulas/)を参照してください。
+
 ## 性能
 
 Apple M2 Pro（12 スレッド・32 GB）、Node.js 24、DuckDB 1.5 で `npm run bench -- --csv-rows=10000000 --parquet-rows=100000000` を実行した結果です。
@@ -410,7 +429,6 @@ npm run bench
 ## 今後
 
 - セルの編集と、変えていない行を 1 バイトも変えない CSV への書き戻し
-- 式の列
 
 既存のビューワーとグリッドの調査は [docs/research.ja.md](docs/research.ja.md) にあります。
 

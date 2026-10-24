@@ -43,6 +43,8 @@ import "vastgrid/styles.css";
 | `rowKey` | `string` | 行の位置 | 行を識別する値（主キー）の列名。データが新しくなっても行の選択が残ります。 |
 | `rowSelection` | `RowSelection` | | 選択する行。最初と、違う値を渡したときに適用します。 |
 | `onRowSelectionChange` | `(event: GridRowSelectionEvent) => void` | | ユーザー・アプリ・グリッドが行の選択を変えたときに呼ばれます。 |
+| `formulas` | `FormulaColumn[]` | | 計算列（`{ name, expression }`）。最初と、違う値を渡したときに適用します。[計算列](/ja/guides/formulas/)を参照してください。 |
+| `onFormulasChange` | `(formulas: FormulaColumn[]) => void` | | 利用者かアプリが計算列を追加・編集・削除したときに呼ばれます。 |
 | `detailOpen` | `boolean` | | [詳細パネル](#詳細パネル)を開きます（制御する値）。指定しなければグリッドが状態を持ちます。 |
 | `defaultDetailOpen` | `boolean` | `false` | `detailOpen` を指定しないときに、マウントした時点で詳細パネルを開くかどうか。 |
 | `onDetailOpenChange` | `(open: boolean) => void` | | 利用者か handle が詳細パネルを開閉したときに呼ばれます。 |
@@ -63,6 +65,8 @@ ref からは `DataGridHandle` を使えます。
 | `getState()` | クエリーと列の設定。保存用の `GridState` です。 |
 | `applyState(state)` | 保存した `GridState` を適用します。このバージョンで読めない値なら `false` を返します。 |
 | `goToRow(row)` | 現在のビューのその行までスクロールし、アクティブにします。 |
+| `getFormulas()` | 計算列。今は計算できない式も含みます。 |
+| `setFormulas(formulas)` | 計算列を置き換えます。 |
 | `getRowSelection()` | 選んだ行。`RowSelection` で返します。 |
 | `setRowSelection(selection)` | 選ぶ行を置き換えます。`RowSelection` でない値なら `false` を返します。 |
 | `openExport()` | ツールバーがなくても、書き出しパネルを開きます。source が今書き出せないときは `false` を返します。 |

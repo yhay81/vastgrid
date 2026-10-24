@@ -2,8 +2,9 @@ import { isNumericType } from "./column-type.js";
 import { EXPORT_MEDIA_TYPES, TABLE_FILE_FORMATS, type TableFileFormat, writeTableFile } from "./export-file.js";
 import { matchesFilterNode, pruneFilterNode } from "./filter-tree.js";
 import { numericValue, plainText } from "./format.js";
+import { formulaEvaluator, formulaSchema } from "./formula.js";
 import { ErrorCodes } from "./protocol.js";
-import { abortError, isEmptyQuery, SourceError, type TableSource } from "./source.js";
+import { abortError, isEmptyQuery, queryFormulas, SourceError, type TableSource } from "./source.js";
 import type {
   AggregateRequest,
   CellValue,
@@ -134,6 +135,15 @@ interface View {
   id: string;
   rows: Uint32Array;
   query: ViewQuery;
+  /** The table's columns, then the formula columns of the query. */
+  schema: ColumnSchema[];
+  data: CellValue[][];
+}
+
+/** The columns a request reads: the table's, or a view's with its formula columns. */
+interface Columns {
+  schema: ColumnSchema[];
+  data: CellValue[][];
 }
 
 /** Rows written per batch when exporting. */
@@ -152,6 +162,9 @@ export class ArraySource implements TableSource {
   private readonly rowTotal: number;
   private readonly views = new Map<string, View>();
   private nextView = 1;
+  /** Values of the formula columns of recent queries, by their formulas. */
+  private readonly formulaData = new Map<string, CellValue[][]>();
+  private readonly table: Columns;
 
   constructor(options: ArraySourceOptions) {
     const columnCount = options.columns.length;
@@ -166,10 +179,43 @@ export class ArraySource implements TableSource {
     this.schema = options.columns.map((column, index) =>
       typeof column === "string" ? { name: column, type: inferType(this.data[index]) } : column,
     );
+    this.table = { schema: this.schema, data: this.data };
   }
 
-  private value(row: number, column: number): CellValue {
-    return this.data[column]?.[row] ?? null;
+  private value(row: number, column: number, columns: Columns = this.table): CellValue {
+    return columns.data[column]?.[row] ?? null;
+  }
+
+  private columnsOf(view: View | null): Columns {
+    return view ?? this.table;
+  }
+
+  /** The table's columns with a query's formula columns, computed for every row. */
+  private formulaColumns(query: ViewQuery, signal?: AbortSignal): Columns {
+    const compiled = queryFormulas(this.schema, query);
+    if (compiled.length === 0) return this.table;
+    const key = JSON.stringify(query.formulas);
+    let extra = this.formulaData.get(key);
+    if (!extra) {
+      extra = [];
+      // Formulas may use earlier ones only through their expanded trees, so each reads the table's columns.
+      for (const formula of compiled) {
+        const evaluate = formulaEvaluator(formula.tree as NonNullable<typeof formula.tree>);
+        const values = new Array<CellValue>(this.rowTotal);
+        for (let row = 0; row < this.rowTotal; row++) {
+          if ((row & 0xffff) === 0 && signal?.aborted) throw abortError();
+          values[row] = evaluate((column) => this.data[column]?.[row] ?? null);
+        }
+        extra.push(values);
+      }
+      this.formulaData.delete(key);
+      this.formulaData.set(key, extra);
+      for (const old of this.formulaData.keys()) {
+        if (this.formulaData.size <= 2) break;
+        this.formulaData.delete(old);
+      }
+    }
+    return { schema: formulaSchema(this.schema, compiled), data: [...this.data, ...extra] };
   }
 
   async info(): Promise<TableInfo> {
@@ -189,6 +235,7 @@ export class ArraySource implements TableSource {
         find: true,
         export: true,
         conditions: true,
+        formulas: true,
       },
       exports: { formats: [...TABLE_FILE_FORMATS], delivery: "data" },
     };
@@ -209,9 +256,9 @@ export class ArraySource implements TableSource {
     return view ? view.rows.length : this.rowTotal;
   }
 
-  private matches(filter: Filter, row: number): boolean {
-    const value = this.value(row, filter.column);
-    const type = this.schema[filter.column]?.type ?? "string";
+  private matches(filter: Filter, row: number, columns: Columns): boolean {
+    const value = this.value(row, filter.column, columns);
+    const type = columns.schema[filter.column]?.type ?? "string";
     switch (filter.type) {
       case "values": {
         // Numbers match by value ("1.5" matches the decimal 1.50), as in SQL.
@@ -286,14 +333,15 @@ export class ArraySource implements TableSource {
 
   async createView(query: ViewQuery, signal?: AbortSignal): Promise<ViewInfo> {
     if (isEmptyQuery(query)) return { id: null, rowCount: this.rowTotal, query: {} };
+    const columns = this.formulaColumns(query, signal);
     const filters = query.filters ?? [];
     const where = pruneFilterNode(query.where);
     const search = query.search?.trim().toLowerCase();
     const kept: number[] = [];
     for (let row = 0; row < this.rowTotal; row++) {
       if (signal?.aborted) throw abortError();
-      if (!filters.every((filter) => this.matches(filter, row))) continue;
-      if (where && !matchesFilterNode(where, (filter) => this.matches(filter, row))) continue;
+      if (!filters.every((filter) => this.matches(filter, row, columns))) continue;
+      if (where && !matchesFilterNode(where, (filter) => this.matches(filter, row, columns))) continue;
       if (
         search &&
         !this.data.some((column) =>
@@ -307,13 +355,13 @@ export class ArraySource implements TableSource {
     }
     const sort = query.sort ?? [];
     if (sort.length > 0) {
-      const types = sort.map((key) => this.schema[key.column]?.type ?? "string");
+      const types = sort.map((key) => columns.schema[key.column]?.type ?? "string");
       kept.sort((a, b) => {
         for (let index = 0; index < sort.length; index++) {
           const key = sort[index];
           const type = types[index];
-          let left: OrderedValue = this.value(a, key.column);
-          let right: OrderedValue = this.value(b, key.column);
+          let left: OrderedValue = this.value(a, key.column, columns);
+          let right: OrderedValue = this.value(b, key.column, columns);
           // Numbers sort by value, exactly also beyond 2^53; what is not a number counts as blank.
           if (isNumericType(type)) {
             left = exactNumber(left, type);
@@ -333,7 +381,7 @@ export class ArraySource implements TableSource {
       });
     }
     const id = `v${this.nextView++}`;
-    const view: View = { id, rows: Uint32Array.from(kept), query };
+    const view: View = { id, rows: Uint32Array.from(kept), query, schema: columns.schema, data: columns.data };
     this.views.set(id, view);
     // Keep the few most recent views.
     for (const key of this.views.keys()) {
@@ -345,12 +393,13 @@ export class ArraySource implements TableSource {
 
   async readRows(request: RowRequest): Promise<RowBlock> {
     const view = this.view(request.view);
+    const data = this.columnsOf(view);
     const end = Math.min(request.end, this.viewSize(view));
     const start = Math.min(request.start, end);
     const columns = request.columns.map((column) => {
       const values: CellValue[] = [];
       for (let position = start; position < end; position++)
-        values.push(this.value(this.rowAt(view, position), column));
+        values.push(this.value(this.rowAt(view, position), column, data));
       return values;
     });
     const rowIds = view ? Array.from(view.rows.subarray(start, end)) : null;
@@ -359,8 +408,9 @@ export class ArraySource implements TableSource {
 
   async columnStats(viewId: string | null, column: number): Promise<ColumnStats> {
     const view = this.view(viewId);
+    const data = this.columnsOf(view);
     const size = this.viewSize(view);
-    const type = this.schema[column]?.type ?? "string";
+    const type = data.schema[column]?.type ?? "string";
     const counts = new Map<string, { value: CellValue; count: number }>();
     let nulls = 0;
     let min: CellValue | undefined;
@@ -373,7 +423,7 @@ export class ArraySource implements TableSource {
     // Numbers compare by value, also decimals and large integers that arrive as text.
     const rank = (item: CellValue) => (isNumericType(type) ? (exactNumber(item, type) ?? item) : item);
     for (let position = 0; position < size; position++) {
-      const value = this.value(this.rowAt(view, position), column);
+      const value = this.value(this.rowAt(view, position), column, data);
       if (value === null) {
         nulls++;
         continue;
@@ -428,11 +478,12 @@ export class ArraySource implements TableSource {
 
   async distinctValues(request: DistinctRequest): Promise<DistinctValues> {
     const view = this.view(request.view);
+    const data = this.columnsOf(view);
     const size = this.viewSize(view);
     const counts = new Map<string, { value: CellValue; count: number }>();
     const search = request.search?.toLowerCase();
     for (let position = 0; position < size; position++) {
-      const value = this.value(this.rowAt(view, position), request.column);
+      const value = this.value(this.rowAt(view, position), request.column, data);
       const key = value === null ? "\u0000null" : plainText(value);
       if (search && !key.toLowerCase().includes(search)) continue;
       const entry = counts.get(key);
@@ -446,6 +497,7 @@ export class ArraySource implements TableSource {
 
   async aggregate(request: AggregateRequest): Promise<SelectionSummary> {
     const view = this.view(request.view);
+    const data = this.columnsOf(view);
     const size = this.viewSize(view);
     let count = 0;
     let numericCount = 0;
@@ -456,10 +508,10 @@ export class ArraySource implements TableSource {
       for (let position = range.start; position < Math.min(range.end, size); position++) {
         const row = this.rowAt(view, position);
         for (const column of range.columns) {
-          const value = this.value(row, column);
+          const value = this.value(row, column, data);
           if (isBlank(value)) continue;
           count++;
-          const number = numericValue(value, this.schema[column]?.type);
+          const number = numericValue(value, data.schema[column]?.type);
           if (number === null || typeof value === "boolean") continue;
           numericCount++;
           sum += number;
@@ -480,6 +532,7 @@ export class ArraySource implements TableSource {
 
   async find(request: FindRequest): Promise<FindResult | null> {
     const view = this.view(request.view);
+    const data = this.columnsOf(view);
     const size = this.viewSize(view);
     const needle = request.caseSensitive ? request.text : request.text.toLowerCase();
     if (!needle || request.columns.length === 0 || size === 0) return null;
@@ -490,7 +543,7 @@ export class ArraySource implements TableSource {
       position = (position + request.direction + total) % total;
       const row = Math.floor(position / width);
       const column = position % width;
-      const text = plainText(this.value(this.rowAt(view, row), request.columns[column]));
+      const text = plainText(this.value(this.rowAt(view, row), request.columns[column], data));
       if ((request.caseSensitive ? text : text.toLowerCase()).includes(needle)) return { row, column };
     }
     return null;
@@ -501,10 +554,11 @@ export class ArraySource implements TableSource {
       throw new SourceError(ErrorCodes.invalidRequest, `This table cannot be exported as ${request.format}.`, 400);
     }
     const view = this.view(request.view);
+    const table = this.columnsOf(view);
     const size = this.viewSize(view);
-    const indexes = request.columns ?? this.schema.map((_, index) => index);
+    const indexes = request.columns ?? table.schema.map((_, index) => index);
     const columns = indexes.map((index, position) => {
-      const schema = this.schema[index];
+      const schema = table.schema[index];
       if (!schema) throw new SourceError(ErrorCodes.invalidRequest, `Column ${index} does not exist.`, 400);
       const keepNames = request.format === "json";
       return {
@@ -521,7 +575,7 @@ export class ArraySource implements TableSource {
         const rows: CellValue[][] = [];
         for (let position = start; position < Math.min(size, start + EXPORT_BATCH); position++) {
           const row = source.rowAt(view, position);
-          rows.push(indexes.map((column) => source.value(row, column)));
+          rows.push(indexes.map((column) => source.value(row, column, table)));
         }
         yield rows;
       }

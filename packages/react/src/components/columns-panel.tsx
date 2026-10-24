@@ -11,6 +11,9 @@ export function ColumnsPanel({
   messages,
   onToggle,
   onShowAll,
+  broken = [],
+  onAddFormula,
+  onEditFormula,
 }: {
   columns: ColumnState[];
   schema: ColumnSchema[];
@@ -19,6 +22,11 @@ export function ColumnsPanel({
   messages: Messages;
   onToggle: (index: number, hidden: boolean) => void;
   onShowAll: () => void;
+  /** Formula columns not shown because of an error, with its text. */
+  broken?: { name: string; error: string }[];
+  /** Opens the editor of a new formula column; left out when the source does not evaluate formulas. */
+  onAddFormula?: () => void;
+  onEditFormula?: (name: string) => void;
 }) {
   const [search, setSearch] = useState("");
   const needle = search.trim().toLowerCase();
@@ -55,7 +63,29 @@ export function ColumnsPanel({
           </label>
         ))}
       </div>
+      {broken.length > 0 && (
+        <div className="vg-columns__broken">
+          <p className="vg-panel__muted">{messages.formulaBroken}</p>
+          {broken.map((item) => (
+            <button
+              type="button"
+              key={item.name}
+              className="vg-columns__formula"
+              title={item.error}
+              onClick={() => onEditFormula?.(item.name)}
+            >
+              <span className="vg-check__label">{item.name}</span>
+              <span className="vg-panel__error">{item.error}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="vg-panel__actions">
+        {onAddFormula && (
+          <button type="button" className="vg-button" onClick={onAddFormula}>
+            {messages.addFormula}
+          </button>
+        )}
         <button type="button" className="vg-button" onClick={onShowAll} disabled={visibleCount === columns.length}>
           {messages.showAllColumns}
         </button>
