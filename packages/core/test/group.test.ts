@@ -227,3 +227,46 @@ test("cross tabulations name their columns by values and keep them in the state"
     undefined,
   );
 });
+
+test("a grouped source groups the formula columns of its query", async () => {
+  const grouped = new GroupedSource(orders(), {
+    query: {
+      formulas: [{ name: "double", expression: "qty * 2" }],
+      filters: [{ type: "compare", column: 4, op: "ge", value: 4 }],
+    },
+    keys: [0],
+    aggregates: [{ fn: "sum", column: 4 }],
+  });
+  const info = await grouped.info();
+  assert.equal(info.status, "ready", info.error);
+  assert.deepEqual(
+    info.columns.map((column) => column.name),
+    ["region", "sum(double)"],
+  );
+  assert.deepEqual((await grouped.readRows({ view: null, start: 0, end: 4, columns: [0, 1] })).columns, [
+    ["East", "North", "West", ""],
+    [6, 4, 10, 8],
+  ]);
+});
+
+test("states keep formulas, grouping, totals and both frozen sides together", () => {
+  const value = {
+    version: 1,
+    schema: ["region", "qty", "double"],
+    formulas: [{ name: "double", expression: "qty * 2" }],
+    query: { sort: [{ column: 2, direction: "desc" }] },
+    columns: [{ name: "double", total: "sum" }, { name: "region" }],
+    frozenColumns: 1,
+    frozenRightColumns: 1,
+    group: {
+      keys: ["region"],
+      aggregates: [{ fn: "sum", column: "double" }],
+      pivot: ["qty"],
+      state: { version: 1, frozenRightColumns: 2, columns: [{ name: "region", width: 90 }] },
+    },
+  };
+  const state = parseGridState(JSON.parse(JSON.stringify(value)));
+  assert.deepEqual(state, value);
+  // A state saved before grouping, formulas and right freezing still reads.
+  assert.deepEqual(parseGridState({ version: 1, frozenColumns: 2 }), { version: 1, frozenColumns: 2 });
+});

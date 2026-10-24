@@ -380,3 +380,49 @@ test("cross tabulations that would make too many columns are refused", async () 
     }),
   );
 });
+
+test("formula columns of a view group, aggregate and pivot the same in DuckDB and ArraySource", async () => {
+  const table = await parquet("sales-formulas.parquet", sales);
+  const array = await mirror(table);
+  // Formula 0 is column 8 of the view, formula 1 column 9.
+  const query: ViewQuery = {
+    formulas: [
+      { name: "amount", expression: "qty * 2" },
+      { name: "size", expression: "IF(qty >= 4, 'large', 'small')" },
+    ],
+  };
+  const grouped = await both(
+    table,
+    array,
+    { keys: [9], aggregates: [{ fn: "count" }, { fn: "sum", column: 8 }, { fn: "max", column: 8 }] },
+    query,
+  );
+  assert.deepEqual(
+    grouped.columns.map((column) => column.name),
+    ["size", "count(*)", "sum(amount)", "max(amount)"],
+  );
+  assert.deepEqual(
+    grouped.rows.map((row) => row.slice(0, 3)),
+    // A blank quantity is not >= 4, so its row is "small" with a blank amount.
+    [
+      ["large", 3, 32],
+      ["small", 4, 12],
+    ],
+  );
+  await both(
+    table,
+    array,
+    { keys: [], aggregates: [{ fn: "avg", column: 8 }] },
+    { ...query, filters: [{ type: "compare", column: 8, op: "ge", value: 4 }] },
+  );
+  const pivot = await both(
+    table,
+    array,
+    { keys: [1], aggregates: [{ fn: "sum", column: 8 }], pivot: { columns: [9] } },
+    query,
+  );
+  assert.deepEqual(
+    pivot.columns.map((column) => column.name),
+    ["cat", "large / sum(amount)", "small / sum(amount)"],
+  );
+});

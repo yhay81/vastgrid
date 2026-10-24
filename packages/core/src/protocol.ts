@@ -1,4 +1,5 @@
 import { MAX_FILTER_DEPTH, MAX_FILTER_NODES, MAX_FILTER_TREE_VALUES, pruneFilterNode } from "./filter-tree.js";
+import { FormulaError, MAX_FORMULA_LENGTH, MAX_FORMULA_NAME_LENGTH, MAX_FORMULAS, parseFormula } from "./formula.js";
 import type {
   AggregateFunction,
   AggregateRange,
@@ -6,6 +7,7 @@ import type {
   ExportFormat,
   Filter,
   FilterNode,
+  FormulaColumn,
   GroupAggregate,
   ReadOptions,
   SortKey,
@@ -287,11 +289,39 @@ function filterNode(item: unknown, name: string, depth: number, budget: { nodes:
   return result;
 }
 
+/**
+ * Validates formula columns: their number, names and lengths, and the syntax of each expression. Names and
+ * types are checked by the source against the table (see `compileFormulas`).
+ */
+function formulas(value: unknown): FormulaColumn[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) fail("formulas must be an array");
+  if (value.length > MAX_FORMULAS) fail(`formulas must not have more than ${MAX_FORMULAS} columns`);
+  const names = new Set<string>();
+  return value.map((item, position) => {
+    if (!isRecord(item)) fail(`formulas[${position}] must be an object`);
+    const name = string(item.name, `formulas[${position}].name`, MAX_FORMULA_NAME_LENGTH);
+    if (!name.trim()) fail(`formulas[${position}].name must not be empty`);
+    if (names.has(name)) fail(`formulas[${position}].name repeats a name`);
+    names.add(name);
+    const expression = string(item.expression, `formulas[${position}].expression`, MAX_FORMULA_LENGTH);
+    try {
+      parseFormula(expression);
+    } catch (error) {
+      if (error instanceof FormulaError) fail(`formulas[${position}].expression: ${error.message}`);
+      throw error;
+    }
+    return { name, expression };
+  });
+}
+
 function query(value: unknown): ViewQuery {
   if (!isRecord(value)) fail("query must be an object");
   const filters = value.filters;
   if (filters !== undefined && (!Array.isArray(filters) || filters.length > 256)) fail("filters must be an array");
   const result: ViewQuery = {};
+  const columns = formulas(value.formulas);
+  if (columns?.length) result.formulas = columns;
   const sort = sortKeys(value.sort);
   if (sort?.length) result.sort = sort;
   if (filters?.length) result.filters = filters.map((item, position) => filter(item, `filters[${position}]`));

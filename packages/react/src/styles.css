@@ -8,6 +8,7 @@
   --vg-font-size: 13px;
   --vg-row-height: 24px;
   --vg-header-height: 32px;
+  --vg-group-header-height: 24px;
   --vg-radius: 6px;
   --vg-bg: light-dark(#ffffff, #16161a);
   --vg-fg: light-dark(#1f2328, #e6e6eb);
@@ -389,7 +390,8 @@
 
 .vg-find {
   position: absolute;
-  top: calc(var(--vg-header-height) + 6px);
+  /* Below the whole header, group rows included (set by the grid). */
+  top: calc(var(--vg-header-total, var(--vg-header-height)) + 6px);
   right: 18px;
   z-index: 3;
   display: flex;
@@ -569,6 +571,13 @@
 .vg-filter > .vg-input,
 .vg-columns > .vg-input {
   width: 100%;
+}
+
+.vg-columns__pin {
+  flex: none;
+  min-height: 22px;
+  padding: 0 4px;
+  font-size: 0.92em;
 }
 
 .vg-filter__values {
@@ -1078,4 +1087,58 @@
 
 .vg-chip--group {
   font-weight: 600;
+}
+
+.vg-formula__field {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.vg-formula__expression {
+  min-height: 4.5em;
+  resize: vertical;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+.vg-formula__expression[aria-invalid="true"],
+.vg-formula .vg-input[aria-invalid="true"] {
+  border-color: var(--vg-error-fg);
+}
+
+.vg-formula__tools {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.vg-formula__tools > select {
+  flex: 1;
+  min-width: 0;
+}
+
+.vg-columns__broken {
+  margin-top: 6px;
+}
+
+.vg-columns__formula {
+  display: grid;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vg-columns__formula:hover {
+  background: var(--vg-surface-muted);
+}
+
+.vg-columns__formula .vg-panel__error {
+  margin: 0;
+  font-size: 0.9em;
 }

@@ -34,6 +34,13 @@ export interface Messages {
   hideColumn: string;
   freezeUpTo: string;
   unfreeze: string;
+  freezeFrom: string;
+  unfreezeRight: string;
+  /** Label of the choice in the columns panel where a column is frozen. */
+  columnPin: (column: string) => string;
+  pinNone: string;
+  pinLeft: string;
+  pinRight: string;
   autoFit: string;
   copy: string;
   copyWithHeaders: string;
@@ -228,6 +235,31 @@ export interface Messages {
   pivotedBy: (columns: string) => string;
   /** A cross tabulation would make more columns than the limit. */
   pivotTooWide: (limit: string) => string;
+  /** Column menu items for formula columns (computed per row by an expression). */
+  addFormula: string;
+  editFormula: string;
+  deleteFormula: string;
+  formulaAddTitle: string;
+  formulaEditTitle: string;
+  formulaName: string;
+  formulaExpression: string;
+  /** A list of the columns, to insert one into the formula. */
+  formulaInsertColumn: string;
+  formulaFunctions: string;
+  formulaHelp: string;
+  formulaResult: (type: string) => string;
+  formulaTypes: Record<"number" | "text" | "boolean" | "date" | "timestamp" | "null", string>;
+  /** Why a formula cannot be evaluated; `expected` and `actual` are names from `formulaTypes`. */
+  formulaError: (
+    code: string,
+    detail: { subject?: string; expected?: string; actual?: string; position?: string },
+  ) => string;
+  /** The column cannot be deleted or renamed while other formulas use it. */
+  formulaInUse: (names: string) => string;
+  formulaSave: string;
+  formulaAdd: string;
+  /** In the columns panel: formula columns that are not shown because of an error. */
+  formulaBroken: string;
 }
 
 export const en: Messages = {
@@ -261,6 +293,12 @@ export const en: Messages = {
   hideColumn: "Hide column",
   freezeUpTo: "Freeze up to this column",
   unfreeze: "Unfreeze columns",
+  freezeFrom: "Freeze from this column to the right edge",
+  unfreezeRight: "Unfreeze right columns",
+  columnPin: (column) => `Freeze ${column}`,
+  pinNone: "None",
+  pinLeft: "Left",
+  pinRight: "Right",
   autoFit: "Fit width to content",
   copy: "Copy",
   copyWithHeaders: "Copy with headers",
@@ -451,6 +489,65 @@ export const en: Messages = {
   pivotedBy: (columns) => `across ${columns}`,
   pivotTooWide: (limit) =>
     `The cross tabulation would make more than ${limit} columns. Filter the rows or pick columns with fewer values.`,
+  addFormula: "Add formula column…",
+  editFormula: "Edit formula…",
+  deleteFormula: "Delete formula column",
+  formulaAddTitle: "New formula column",
+  formulaEditTitle: "Edit formula column",
+  formulaName: "Column name",
+  formulaExpression: "Formula",
+  formulaInsertColumn: "Insert a column…",
+  formulaFunctions: "Functions",
+  formulaHelp:
+    "Use columns by name ([unit price] for names with spaces), + - * / %, & to join text, = <> < > comparisons, AND, OR, NOT and functions. Ctrl+Enter saves.",
+  formulaResult: (type) => `Result: ${type}`,
+  formulaTypes: {
+    number: "number",
+    text: "text",
+    boolean: "TRUE or FALSE",
+    date: "date",
+    timestamp: "date and time",
+    null: "blank",
+  },
+  formulaError: (code, { subject = "", expected = "", actual = "", position }) => {
+    const at = position ? ` (at character ${position})` : "";
+    switch (code) {
+      case "syntax":
+        return `The formula is not written correctly${at}.`;
+      case "unknown_column":
+        return `No column is named "${subject}"${at}.`;
+      case "unknown_function":
+        return `There is no function ${subject}${at}.`;
+      case "arguments":
+        return `${subject} has too few or too many values${at}.`;
+      case "type":
+        return `${subject} takes ${expected}, not ${actual}${at}.`;
+      case "circular":
+        return `The formula uses itself: ${subject}.`;
+      case "dependency":
+        return `The formula column "${subject}" has an error.`;
+      case "name_empty":
+        return "Enter a column name.";
+      case "name_taken":
+        return `Another column is named "${subject}".`;
+      case "name_too_long":
+        return "The column name is too long.";
+      case "too_long":
+        return "The formula is too long.";
+      case "too_deep":
+        return `The formula nests too deeply${at}.`;
+      case "too_complex":
+        return "With the formula columns it uses, the formula is too long.";
+      case "too_many":
+        return "There are too many formula columns.";
+      default:
+        return "The formula cannot be computed.";
+    }
+  },
+  formulaInUse: (names) => `Used by ${names}. Change those formulas first.`,
+  formulaSave: "Save",
+  formulaAdd: "Add",
+  formulaBroken: "Formula columns with errors",
 };
 
 const number = (value: string) => value;
@@ -486,6 +583,12 @@ export const ja: Messages = {
   hideColumn: "列を隠す",
   freezeUpTo: "この列までを固定",
   unfreeze: "列の固定を解除",
+  freezeFrom: "この列から右端までを固定",
+  unfreezeRight: "右側の列の固定を解除",
+  columnPin: (column) => `${column} の固定`,
+  pinNone: "なし",
+  pinLeft: "左",
+  pinRight: "右",
   autoFit: "幅を内容に合わせる",
   copy: "コピー",
   copyWithHeaders: "見出しを含めてコピー",
@@ -674,6 +777,65 @@ export const ja: Messages = {
   pivotHint: "この列の値ごとに、集計値の列を作ります。",
   pivotedBy: (columns) => `${columns} の値で列を作成`,
   pivotTooWide: (limit) => `クロス集計の列が ${limit} 列を超えます。行を絞り込むか、値の少ない列を選んでください。`,
+  addFormula: "計算列を追加…",
+  editFormula: "式を編集…",
+  deleteFormula: "計算列を削除",
+  formulaAddTitle: "計算列の追加",
+  formulaEditTitle: "計算列の編集",
+  formulaName: "列名",
+  formulaExpression: "式",
+  formulaInsertColumn: "列を挿入…",
+  formulaFunctions: "関数",
+  formulaHelp:
+    "列は名前で書きます（空白などを含む名前は [単価 税込] のように角かっこで囲む）。+ - * / %、文字列をつなぐ &、= <> < > の比較、AND・OR・NOT と関数を使えます。Ctrl+Enter で保存します。",
+  formulaResult: (type) => `結果：${type}`,
+  formulaTypes: {
+    number: "数値",
+    text: "文字列",
+    boolean: "TRUE か FALSE",
+    date: "日付",
+    timestamp: "日時",
+    null: "空白",
+  },
+  formulaError: (code, { subject = "", expected = "", actual = "", position }) => {
+    const at = position ? `（${position} 文字目）` : "";
+    switch (code) {
+      case "syntax":
+        return `式の書き方が正しくありません${at}。`;
+      case "unknown_column":
+        return `「${subject}」という列はありません${at}。`;
+      case "unknown_function":
+        return `${subject} という関数はありません${at}。`;
+      case "arguments":
+        return `${subject} の引数の数が正しくありません${at}。`;
+      case "type":
+        return `${subject} には${expected}が必要です（${actual}が渡されています）${at}。`;
+      case "circular":
+        return `式が自分自身を参照しています：${subject}。`;
+      case "dependency":
+        return `計算列「${subject}」にエラーがあります。`;
+      case "name_empty":
+        return "列名を入力してください。";
+      case "name_taken":
+        return `「${subject}」という列はすでにあります。`;
+      case "name_too_long":
+        return "列名が長すぎます。";
+      case "too_long":
+        return "式が長すぎます。";
+      case "too_deep":
+        return `式の入れ子が深すぎます${at}。`;
+      case "too_complex":
+        return "参照している計算列を含めると、式が長すぎます。";
+      case "too_many":
+        return "計算列が多すぎます。";
+      default:
+        return "この式は計算できません。";
+    }
+  },
+  formulaInUse: (names) => `${names} で使われています。先にその式を変えてください。`,
+  formulaSave: "保存",
+  formulaAdd: "追加",
+  formulaBroken: "エラーのある計算列",
 };
 
 /** Picks the built-in messages for a locale ("ja…" → Japanese, otherwise English). */

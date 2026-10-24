@@ -94,3 +94,31 @@ test("columns are matched by name, repeated names by occurrence, and frozen colu
   assert.equal(resolved.frozenColumns, 1);
   assert.deepEqual(resolveGridState({ version: 1, frozenColumns: 3 }, ["a"]), { frozenColumns: 3 });
 });
+
+test("columns frozen at the right are kept by name, and states without them still read", () => {
+  assert.deepEqual(parseGridState({ version: 1, frozenColumns: 1, frozenRightColumns: 2 }), {
+    version: 1,
+    frozenColumns: 1,
+    frozenRightColumns: 2,
+  });
+  assert.deepEqual(parseGridState({ version: 1, frozenRightColumns: -1 }), { version: 1 });
+  // A state saved before right freezing existed has only the left part.
+  const legacy = resolveGridState(
+    { version: 1, columns: [{ name: "a" }, { name: "b" }, { name: "c" }], frozenColumns: 1 },
+    ["a", "b", "c"],
+  );
+  assert.equal(legacy.frozenColumns, 1);
+  assert.equal(legacy.frozenRightColumns, undefined);
+  const state: GridState = {
+    version: 1,
+    columns: [{ name: "a" }, { name: "b" }, { name: "total" }, { name: "hidden", hidden: true }, { name: "actions" }],
+    frozenColumns: 1,
+    frozenRightColumns: 2,
+  };
+  assert.equal(resolveGridState(state, ["a", "b", "total", "hidden", "actions"]).frozenRightColumns, 2);
+  // Frozen columns that the table no longer has are not replaced by the ones before them.
+  assert.equal(resolveGridState(state, ["a", "b", "hidden", "actions"]).frozenRightColumns, 1);
+  assert.equal(resolveGridState(state, ["a", "b", "total", "hidden"]).frozenRightColumns, 1);
+  assert.equal(resolveGridState(state, ["a", "b", "hidden"]).frozenRightColumns, 0);
+  assert.deepEqual(resolveGridState({ version: 1, frozenRightColumns: 3 }, ["a"]), { frozenRightColumns: 3 });
+});

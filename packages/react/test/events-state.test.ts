@@ -110,6 +110,7 @@ test("column events report each change by the user, a drag of a column's edge on
       hidden: false,
       sized: true,
       frozen: false,
+      pin: null,
     });
     // Pressing an edge without moving it changes nothing.
     grid.resizing = 0;
@@ -177,6 +178,7 @@ test("a saved state restores the query and the columns in a new grid, applied be
       query: { sort: [{ column: 1, direction: "desc" }], search: "n" },
       columns: [{ name: "city" }, { name: "name", width: 210 }, { name: "born", hidden: true }],
       frozenColumns: 1,
+      frozenRightColumns: 0,
     });
   } finally {
     first.dispose();

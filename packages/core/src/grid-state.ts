@@ -13,9 +13,10 @@
  */
 
 import { mapFilterNode } from "./filter-tree.js";
+import { MAX_FORMULA_LENGTH, MAX_FORMULA_NAME_LENGTH, MAX_FORMULAS } from "./formula.js";
 import { AGGREGATE_FUNCTIONS } from "./group.js";
 import { parseViewQuery } from "./protocol.js";
-import type { AggregateFunction, ViewQuery } from "./types.js";
+import type { AggregateFunction, FormulaColumn, ViewQuery } from "./types.js";
 
 export const GRID_STATE_VERSION = 1;
 
@@ -45,21 +46,31 @@ export interface GridGroupState {
 
 export interface GridState {
   version: typeof GRID_STATE_VERSION;
-  /** The table's column names when the state was saved, in table order. `query` refers to these. */
+  /**
+   * The grid's column names when the state was saved, in order: the table's columns, then the formula
+   * columns that could be evaluated. `query` refers to these.
+   */
   schema?: string[];
+  /**
+   * Formula columns (see `FormulaColumn`), also ones that cannot be evaluated now (for example because a
+   * column they use is gone). They use columns by name, so they follow the columns when the file changes.
+   */
+  formulas?: FormulaColumn[];
   /** Sort, filters, the condition tree and search. Column indexes are positions in `schema`. */
   query?: ViewQuery;
   /**
    * Columns in display order. Columns of the table that are not listed (for example added to the file
    * later) keep their current settings and follow the listed ones in their current order (table order
-   * in a new grid); listed columns that the table no longer has are skipped. At least one column stays
-   * visible.
+   * in a new grid), before the columns frozen at the right; listed columns that the table no longer has
+   * are skipped. At least one column stays visible.
    */
   columns?: GridColumnSetting[];
   /** Visible columns frozen at the left. */
   frozenColumns?: number;
   /** The rows are shown grouped; `null` shows them as they are. */
   group?: GridGroupState | null;
+  /** Visible columns frozen at the right. States saved before right freezing existed leave it out. */
+  frozenRightColumns?: number;
 }
 
 /** A state mapped onto a table's columns, with schema indexes instead of names. */
@@ -71,6 +82,7 @@ export interface ResolvedGridState {
    */
   columns?: { index: number; width?: number; hidden: boolean; total?: AggregateFunction }[];
   frozenColumns?: number;
+  frozenRightColumns?: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -105,8 +117,25 @@ export function parseGridState(value: unknown): GridState | null {
   if (Array.isArray(value.schema) && value.schema.every((name) => typeof name === "string")) {
     state.schema = value.schema as string[];
   }
+  if (Array.isArray(value.formulas)) {
+    state.formulas = value.formulas
+      .flatMap((item): FormulaColumn[] =>
+        isRecord(item) &&
+        typeof item.name === "string" &&
+        typeof item.expression === "string" &&
+        item.name.length <= MAX_FORMULA_NAME_LENGTH &&
+        item.expression.length <= MAX_FORMULA_LENGTH
+          ? [{ name: item.name, expression: item.expression }]
+          : [],
+      )
+      .slice(0, MAX_FORMULAS);
+  }
   const query = value.query === undefined ? undefined : viewQuery(value.query);
-  if (query) state.query = query;
+  if (query) {
+    // The grid's formulas are the state's own part.
+    delete query.formulas;
+    state.query = query;
+  }
   if (Array.isArray(value.columns)) {
     state.columns = value.columns.flatMap((item): GridColumnSetting[] => {
       if (!isRecord(item) || typeof item.name !== "string") return [];
@@ -124,6 +153,10 @@ export function parseGridState(value: unknown): GridState | null {
   else if (value.group !== undefined) {
     const group = groupState(value.group);
     if (group) state.group = group;
+  }
+  const frozenRight = value.frozenRightColumns;
+  if (typeof frozenRight === "number" && Number.isSafeInteger(frozenRight) && frozenRight >= 0) {
+    state.frozenRightColumns = frozenRight;
   }
   return state;
 }
@@ -216,17 +249,23 @@ export function resolveGridState(state: GridState, names: readonly string[]): Re
     result.query = query;
   }
   let frozenPositions: Set<number> | null = null;
+  let frozenRightPositions: Set<number> | null = null;
   if (state.columns) {
     const available = namePositions(names);
     const columns: NonNullable<ResolvedGridState["columns"]> = [];
-    // Positions in `columns` of the saved frozen columns.
+    // Positions in `columns` of the saved frozen columns, at the left and at the right.
     const frozen = new Set<number>();
+    const frozenRight = new Set<number>();
+    const visibleCount = state.columns.filter((setting) => !setting.hidden).length;
     let visibleSaved = 0;
     for (const setting of state.columns) {
-      const savedFrozen = !setting.hidden && visibleSaved++ < (state.frozenColumns ?? 0);
+      const position = setting.hidden ? -1 : visibleSaved++;
+      const savedFrozen = position >= 0 && position < (state.frozenColumns ?? 0);
+      const savedFrozenRight = position >= 0 && position >= visibleCount - (state.frozenRightColumns ?? 0);
       const index = available.get(setting.name)?.shift();
       if (index === undefined) continue;
       if (savedFrozen) frozen.add(columns.length);
+      if (savedFrozenRight) frozenRight.add(columns.length);
       columns.push({
         index,
         hidden: setting.hidden === true,
@@ -236,6 +275,7 @@ export function resolveGridState(state: GridState, names: readonly string[]): Re
     }
     result.columns = columns;
     frozenPositions = frozen;
+    frozenRightPositions = frozenRight;
   }
   if (state.frozenColumns !== undefined) {
     if (result.columns && frozenPositions) {
@@ -249,6 +289,19 @@ export function resolveGridState(state: GridState, names: readonly string[]): Re
       result.frozenColumns = count;
     } else {
       result.frozenColumns = state.frozenColumns;
+    }
+  }
+  if (state.frozenRightColumns !== undefined) {
+    if (result.columns && frozenRightPositions) {
+      let count = 0;
+      for (let position = result.columns.length - 1; position >= 0; position--) {
+        if (result.columns[position].hidden) continue;
+        if (!frozenRightPositions.has(position)) break;
+        count++;
+      }
+      result.frozenRightColumns = count;
+    } else {
+      result.frozenRightColumns = state.frozenRightColumns;
     }
   }
   return result;

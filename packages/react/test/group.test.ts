@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { ArraySource, type GridState, GroupedSource, type GroupRequest, type TableSource } from "vastgrid-core";
 import { totalText } from "../src/components/totals-row.tsx";
 import { GridController } from "../src/controller.ts";
+import { pivotColumnFormats, pivotColumnGroups } from "../src/grouping.ts";
 
 const options = {
   rowHeight: 24,
@@ -151,6 +152,67 @@ test("a grid of groups sorts, filters and totals them", async () => {
     ]);
     grid.setTotal(2, "sum");
     await until(() => grid.totalValues?.get(2) === 23);
+  } finally {
+    grid.dispose();
+  }
+});
+
+test("totals read the formula columns of the view", async () => {
+  const grid = await readyGrid(sales());
+  try {
+    grid.setFormulas([{ name: "double", expression: "amount * 2" }]);
+    await until(() => grid.schema.length === 4 && !grid.viewPending && grid.view.id !== null);
+    grid.setTotal(3, "sum");
+    await until(() => grid.totalValues?.get(3) === 46);
+    // The totals follow a filter on the formula column.
+    await grid.setQuery({ ...grid.query, filters: [{ type: "compare", column: 3, op: "ge", value: 14 }] });
+    await until(() => grid.totalValues?.get(3) === 34);
+  } finally {
+    grid.dispose();
+  }
+});
+
+test("a cross tabulation's grid groups its generated columns under their values and freezes the keys", async () => {
+  const schema = [
+    { name: "region", type: "string" as const },
+    { name: "year", type: "integer" as const },
+    { name: "amount", type: "integer" as const },
+  ];
+  const base = new ArraySource({
+    columns: schema,
+    rows: [
+      ["East", 2023, 1],
+      ["East", 2024, 2],
+      ["West", 2024, 3],
+    ],
+  });
+  const draft = { keys: [0], aggregates: [{ fn: "count" as const }, { fn: "sum" as const, column: 2 }], pivot: [1] };
+  const grouped = new GroupedSource(base, { ...draft, pivot: { columns: draft.pivot } });
+  const result = await grouped.load();
+  const columnGroups = pivotColumnGroups(result);
+  assert.deepEqual(columnGroups, [
+    { name: "2023", children: ["2023 / count(*)", "2023 / sum(amount)"] },
+    { name: "2024", children: ["2024 / count(*)", "2024 / sum(amount)"] },
+  ]);
+  const columnFormats = pivotColumnFormats(
+    { source: grouped, draft, schema },
+    { "2024 / count(*)": { label: "Mine" } },
+  );
+  const grid = new GridController(grouped, { ...options, columnGroups, columnFormats, frozenColumns: 1 });
+  grid.start();
+  await until(() => grid.info?.status === "ready");
+  try {
+    assert.equal(grid.columnLabel(1), "count(*)");
+    assert.equal(grid.columnLabel(3), "Mine");
+    assert.deepEqual(
+      grid.groupSpans()[0].map((span) => [span.group.name, span.start, span.end]),
+      [
+        ["2023", 1, 2],
+        ["2024", 3, 4],
+      ],
+    );
+    assert.equal(grid.frozen, 1);
+    assert.equal(grid.getState().frozenColumns, 1);
   } finally {
     grid.dispose();
   }

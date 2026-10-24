@@ -55,6 +55,14 @@ The grid offers the features only when the source reports `capabilities.group`.
   by the browser). They are offered only when every group was read; with more groups than the limit,
   sorting, find and the selection summary remain.
 - **Checked rows** (`checkboxSelection`) belong to the rows of the table: groups have no checkboxes.
+- **Formula columns** of the rows (see [Formula columns](/guides/formulas/)) are columns like the
+  table's: they can be keys, values, column-axis columns and totals. The grouped table has no formula
+  columns of its own; `formulas` and `setFormulas` keep applying to the rows, and changing them groups the
+  rows again.
+- **Column groups and freezing**: the grid's `columnGroups` describe the table's columns and do not apply to
+  the grouped table, and neither do `frozenColumns` and `frozenRightColumns`. The grouped table freezes its
+  key columns at the left; a cross tabulation groups its generated columns under headers of their values,
+  each labeled by its aggregate. Its own freezing, widths and sort are kept in `group.state`.
 
 ## Cross tabulations
 

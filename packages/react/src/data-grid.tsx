@@ -19,12 +19,16 @@ import {
   aggregateApplies,
   type CellValue,
   type ColumnFormat,
+  type ColumnGroup,
   type ColumnSchema,
   type CopyValues,
+  compileFormulas,
   DEFAULT_PIVOT_COLUMNS,
   ErrorCodes,
+  type FormulaColumn,
   filterLeaves,
   filtersRows,
+  formulaSchema,
   type GridGroupState,
   type GridState,
   type GroupAggregate,
@@ -34,6 +38,7 @@ import {
   parseGridState,
   type RowSelection,
   resolveGridState,
+  type TableInfo,
   type TableSource,
   type ViewQuery,
 } from "vastgrid-core";
@@ -46,6 +51,7 @@ import { ExportPanel } from "./components/export-panel.js";
 import { FilterBuilder, type FilterDraft, initialDraft } from "./components/filter-builder.js";
 import { FilterPanel } from "./components/filter-panel.js";
 import { FindBar } from "./components/find-bar.js";
+import { FormulaEditor, formulaErrorText, formulaUsers } from "./components/formula-editor.js";
 import { type GroupDraft, GroupPanel } from "./components/group-panel.js";
 import { type Anchor, type MenuItem, MenuList, Popover } from "./components/popover.js";
 import { StatsPanel } from "./components/stats-panel.js";
@@ -54,6 +60,7 @@ import { CopyRangesError, CopyTooLargeError, GridController, type Hit, ViewBuild
 import { DetailTracker, detailKeyAction } from "./detail.js";
 import type { GridCellEvent, GridColumnsEvent, GridRowSelectionEvent, GridSelectionEvent } from "./events.js";
 import { exportSupport, type GridExportOptions, offeredFormats } from "./export.js";
+import { pivotColumnFormats, pivotColumnGroups } from "./grouping.js";
 import { countFormat, numberFormat } from "./labels.js";
 import { type Messages, messagesFor } from "./messages.js";
 import { CanvasRenderer } from "./renderer.js";
@@ -68,8 +75,21 @@ export interface DataGridProps {
   messages?: Partial<Messages>;
   /** Row height in pixels. Defaults to `--vg-row-height` or 24. */
   rowHeight?: number;
-  /** Header height in pixels. Defaults to `--vg-header-height` or 32. */
+  /**
+   * Height of the row of column names in pixels. Defaults to `--vg-header-height` or 32. Rows of
+   * `columnGroups` add to the header.
+   */
   headerHeight?: number;
+  /**
+   * Groups of columns, named in header rows above the column names; nested groups add rows. Members are
+   * schema column names. Groups follow their columns: moving, hiding or freezing columns so that a
+   * group's columns are no longer side by side splits its header, each part showing its name. Clicking a
+   * group header selects its columns; dragging a selected one moves them together. Groups are not part
+   * of `GridState`. Keep the array stable (memoize it).
+   */
+  columnGroups?: readonly ColumnGroup[];
+  /** Height of each header row of groups in pixels. Defaults to `--vg-group-header-height` or 24. */
+  groupHeaderHeight?: number;
   /**
    * Lines shown at most in cells of columns that wrap (`wrap` in `columnFormats`), from 1 to 20.
    * Defaults to 3. While a visible column wraps, every row is `rowHeight` plus `--vg-line-height` (1.4
@@ -80,6 +100,12 @@ export interface DataGridProps {
   nullText?: string;
   /** Columns frozen at the left when the table opens. */
   frozenColumns?: number;
+  /**
+   * Columns frozen at the right when the table opens: the last ones, which stay at the grid's right edge.
+   * Frozen columns of both sides take at most three quarters of the grid's width; beyond that, those at
+   * the right and then those at the left scroll until the grid is wide enough again.
+   */
+  frozenRightColumns?: number;
   /** Shows the search box, active filters and row count. Defaults to `true`. */
   toolbar?: boolean;
   /** Shows the active cell and the selection summary. Defaults to `true`. */
@@ -127,6 +153,17 @@ export interface DataGridProps {
    */
   cellAction?: CellActionHook;
   onQueryChange?: (query: ViewQuery) => void;
+  /**
+   * Formula columns: columns computed per row by an expression over the other columns (for example
+   * `qty * price`), which the source evaluates, so that they sort, filter, summarize and export like the
+   * others. Applied on start and whenever a different value is passed; pass back what
+   * `onFormulasChange` reports to control them. Users add, edit and delete them from the column menu
+   * when the source evaluates formulas (`capabilities.formulas`). They are part of `GridState`. The query
+   * of the grid (`onQueryChange`) carries them as `formulas`, which `setQuery` ignores.
+   */
+  formulas?: FormulaColumn[];
+  /** Called when formula columns are added, edited or deleted, by the user or the app. */
+  onFormulasChange?: (formulas: FormulaColumn[]) => void;
   /** Called when the selection or the active cell changes, by the user or by the app. */
   onSelectionChange?: (event: GridSelectionEvent) => void;
   /** Called when the columns' width, order, visibility or freezing change. */
@@ -192,6 +229,10 @@ export interface DataGridHandle {
   applyState(state: GridState): boolean;
   /** Scrolls to a row of the current view and makes it active. */
   goToRow(row: number): void;
+  /** The formula columns, also ones with errors (see `formulas`). */
+  getFormulas(): FormulaColumn[];
+  /** Replaces the formula columns. */
+  setFormulas(formulas: FormulaColumn[]): void;
   /** The checked rows, as keys. */
   getRowSelection(): RowSelection;
   /** Replaces the checked rows; returns false when the value is not a row selection. */
@@ -219,7 +260,9 @@ type Overlay =
   | { kind: "conditions"; anchor: Anchor; draft: FilterDraft }
   | { kind: "export"; anchor: Anchor }
   | { kind: "group"; anchor: Anchor }
-  | { kind: "total"; col: number; anchor: Anchor };
+  | { kind: "total"; col: number; anchor: Anchor }
+  /** Adds a formula column after the schema column `after`, or edits the formula `name`. */
+  | { kind: "formula"; anchor: Anchor; name: string | null; after?: number };
 
 /**
  * The grid shows the groups of `base` (see `GroupedSource`). `baseState` is the state of the rows'
@@ -249,6 +292,19 @@ async function readyInfo(source: TableSource, signal: AbortSignal) {
   }
 }
 
+/**
+ * The columns of the rows that a state shows: the table's, then the state's formula columns that the
+ * source evaluates (as the grid adds them), with those formulas.
+ */
+function rowColumns(info: TableInfo, state: GridState) {
+  if (!info.capabilities.formulas || !state.formulas?.length) return { columns: info.columns, formulas: [] };
+  const valid = compileFormulas(info.columns, state.formulas).filter((formula) => formula.tree);
+  return {
+    columns: formulaSchema(info.columns, valid),
+    formulas: valid.map((formula) => ({ name: formula.name, expression: formula.expression })),
+  };
+}
+
 /** A state with the parts of `next` that it has, over `current`. */
 function mergeState(current: GridState, next: GridState): GridState {
   const merged: GridState = { ...current, ...next };
@@ -261,8 +317,9 @@ function mergeState(current: GridState, next: GridState): GridState {
 type Drag =
   | { kind: "cells"; pointerId: number; x: number; y: number; row: number; col: number; moved: boolean }
   | { kind: "rows" | "cols"; pointerId: number; x: number; y: number }
-  | { kind: "resize"; pointerId: number; col: number; startX: number; startWidth: number }
-  | { kind: "move"; pointerId: number; col: number; x: number; y: number; moved: boolean };
+  | { kind: "resize"; pointerId: number; col: number; startX: number; startWidth: number; direction: 1 | -1 }
+  | { kind: "move"; pointerId: number; col: number; x: number; y: number; moved: boolean }
+  | { kind: "moveGroup"; pointerId: number; first: number; last: number; x: number; y: number; moved: boolean };
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
@@ -291,9 +348,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     locale,
     rowHeight,
     headerHeight,
+    columnGroups,
+    groupHeaderHeight,
     maxLines,
     nullText = "",
     frozenColumns = 0,
+    frozenRightColumns = 0,
     toolbar = true,
     statusBar = true,
     reloadKey,
@@ -304,6 +364,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     checkboxSelection = false,
     rowKey,
     rowSelection,
+    formulas,
     exportOptions = {},
     onQueryChange,
     className,
@@ -341,20 +402,35 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   const groupAbort = useRef<AbortController | null>(null);
   useEffect(() => () => groupAbort.current?.abort(), []);
 
+  // The grid of groups has columns of its own: the table's `columnGroups` do not apply to it. A cross
+  // tabulation groups its generated columns under their column-axis values instead, each labeled by its
+  // aggregate, and the key columns are frozen at the left (until its own state says otherwise).
+  const gridColumnGroups = useMemo(
+    () => (grouped ? pivotColumnGroups(grouped.source.result) : columnGroups),
+    [grouped, columnGroups],
+  );
+  const gridColumnFormats = useMemo(
+    () => (grouped ? pivotColumnFormats(grouped, columnFormats) : columnFormats),
+    [grouped, columnFormats],
+  );
+
   // One controller per source (and per grouping). Options that can change later are applied in effects below.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the other options are applied without recreating the grid.
   const controller = useMemo(() => {
     const grid = new GridController(gridSource, {
       rowHeight: rowHeight ?? 24,
       headerHeight: headerHeight ?? 32,
+      columnGroups: gridColumnGroups,
+      groupHeaderHeight,
       maxLines,
       locale: resolvedLocale,
       nullText,
-      frozenColumns,
+      frozenColumns: grouped ? grouped.draft.keys.length : frozenColumns,
+      frozenRightColumns: grouped ? 0 : frozenRightColumns,
       minColumnWidth: 36,
       maxAutoWidth: 360,
       copyLimit,
-      columnFormats,
+      columnFormats: gridColumnFormats,
       copyValues,
       // Groups are not rows of the table: they have no checkboxes.
       checkboxSelection: checkboxSelection && gridSource === source,
@@ -364,7 +440,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     const state = nextState.current ?? (gridSource === source ? props.initialState : undefined);
     nextState.current = null;
     if (state) grid.applyState(state);
-    // Checked rows are rows of the table; groups start unchecked.
+    // Formula columns and checked rows belong to the table's rows, not to its groups.
+    if (formulas && gridSource === source) grid.setFormulas(formulas);
     if (rowSelection && gridSource === source) grid.setRowSelection(rowSelection);
     return grid;
   }, [gridSource]);
@@ -380,12 +457,16 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   }, [controller, resolvedLocale, nullText]);
 
   useEffect(() => {
-    controller.setColumnFormats(columnFormats);
-  }, [controller, columnFormats]);
+    controller.setColumnFormats(gridColumnFormats);
+  }, [controller, gridColumnFormats]);
 
   useEffect(() => {
     controller.setMaxLines(maxLines);
   }, [controller, maxLines]);
+
+  useEffect(() => {
+    controller.setColumnGroups(gridColumnGroups);
+  }, [controller, gridColumnGroups]);
 
   useEffect(() => {
     controller.options.copyValues = copyValues;
@@ -403,6 +484,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   useEffect(() => {
     if (rowSelection && controller.source === source) controller.setRowSelection(rowSelection);
   }, [controller, rowSelection, source]);
+
+  // Equal formulas change nothing, so passing back what was reported is safe.
+  // While grouped, formula columns are those of the rows that are grouped (see `startGrouping`).
+  useEffect(() => {
+    if (formulas && controller.source === source) controller.setFormulas(formulas);
+  }, [controller, formulas, source]);
 
   useEffect(() => {
     controller.options.followTail = followTail;
@@ -457,8 +544,11 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       try {
         const info = await readyInfo(source, abort.signal);
         if (info.status !== "ready") throw new Error(info.error ?? messages.error);
-        const names = info.columns.map((column) => column.name);
-        const query: ViewQuery = resolveGridState(baseState, names).query ?? {};
+        // Formula columns of the rows are columns to group by and aggregate, like the table's.
+        const rows = rowColumns(info, baseState);
+        const names = rows.columns.map((column) => column.name);
+        const resolved = resolveGridState(baseState, names).query ?? {};
+        const query: ViewQuery = rows.formulas.length > 0 ? { formulas: rows.formulas, ...resolved } : resolved;
         const pivotable = info.capabilities.pivot === true;
         if (draft.pivot?.length && !pivotable) throw new Error(messages.error);
         const grouped = new GroupedSource(source, {
@@ -470,7 +560,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         await grouped.load(abort.signal);
         if (abort.signal.aborted) return false;
         nextState.current = inner ?? null;
-        setGrouping({ base: source, source: grouped, draft, baseState, schema: info.columns, query, pivotable });
+        setGrouping({ base: source, source: grouped, draft, baseState, schema: rows.columns, query, pivotable });
         setOverlay(null);
         return true;
       } catch (error) {
@@ -536,13 +626,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         return true;
       }
       void (async () => {
-        let schema = grouped?.schema ?? controller.schema;
-        if (schema.length === 0) {
-          try {
-            schema = (await readyInfo(source, new AbortController().signal)).columns;
-          } catch {
-            return;
-          }
+        let schema: ColumnSchema[];
+        try {
+          // The names of the state's group refer to the rows' columns, formula columns included.
+          schema = rowColumns(await readyInfo(source, new AbortController().signal), base).columns;
+        } catch {
+          return;
         }
         if (group === undefined) {
           // Other rows of the same grouping: the grouped grid keeps its own settings.
@@ -583,6 +672,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     if (!root || !canvas || !scroller || !sizer) return;
     controller.options.rowHeight = rowHeight ?? cssLength(root, "--vg-row-height", 24);
     controller.options.headerHeight = headerHeight ?? cssLength(root, "--vg-header-height", 32);
+    controller.setGroupHeaderHeight(groupHeaderHeight ?? cssLength(root, "--vg-group-header-height", 24));
     const renderer = new CanvasRenderer(canvas, controller, resolveTheme(root));
     rendererRef.current = renderer;
     controller.attach(scroller, sizer);
@@ -626,7 +716,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       renderer.dispose();
       rendererRef.current = null;
     };
-  }, [controller, rowHeight, headerHeight]);
+  }, [controller, rowHeight, headerHeight, groupHeaderHeight]);
 
   // Theme changes through the grid's own class or style.
   // biome-ignore lint/correctness/useExhaustiveDependencies: className and style are the triggers.
@@ -654,6 +744,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       controller.onColumnsChange((event) => handlers.current.onColumnsChange?.(event)),
       controller.onStateChange((state) => handlers.current.onStateChange?.(fullStateRef.current(state))),
       controller.onRowSelectionChange((event) => handlers.current.onRowSelectionChange?.(event)),
+      // The grid of groups has no formula columns of its own.
+      controller.onFormulasChange((list) => {
+        if (controller.source === handlers.current.source) handlers.current.onFormulasChange?.(list);
+      }),
     ];
     return () => {
       for (const stop of stops) stop();
@@ -747,6 +841,13 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         controller.selection.select({ row, col: controller.selection.active.col });
         controller.selectionChanged({ row, col: controller.selection.active.col });
       },
+      getFormulas: () =>
+        (grouped ? (grouped.baseState.formulas ?? []) : controller.formulas).map((formula) => ({ ...formula })),
+      setFormulas: (list) => {
+        // The groups are made again with the rows' new formula columns.
+        if (grouped) void startGrouping(grouped.draft, { ...grouped.baseState, formulas: list }, controller.getState());
+        else controller.setFormulas(list);
+      },
       getRowSelection: () => controller.getRowSelection(),
       setRowSelection: (selection) => controller.setRowSelection(selection),
       openExport: () => openExport(),
@@ -760,7 +861,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         return rendererRef.current;
       },
     }),
-    [controller, openExport, setDetailOpen, fullState, applyFullState, grouped],
+    [controller, openExport, setDetailOpen, fullState, applyFullState, grouped, startGrouping],
   );
 
   // ----- helpers -----
@@ -779,12 +880,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
 
   function headerAnchor(col: number): Anchor {
     const x = Math.max(controller.gutterWidth, controller.columnX(col));
-    return anchorAt(x, 0, controller.options.headerHeight);
+    return anchorAt(x, 0, controller.headerHeight);
   }
 
   function cellAnchor(row: number, col: number): Anchor {
     const x = Math.max(controller.gutterWidth, controller.columnX(col));
-    const y = Math.max(controller.options.headerHeight, Math.min(controller.height - 8, controller.rowY(row)));
+    const y = Math.max(controller.headerHeight, Math.min(controller.height - 8, controller.rowY(row)));
     return anchorAt(x, y, controller.rowHeight);
   }
 
@@ -841,7 +942,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     if (!drag || (drag.kind !== "cells" && drag.kind !== "rows" && drag.kind !== "cols")) return;
     const c = controller;
     const clampedX = Math.min(Math.max(x, c.gutterWidth + 1), c.width - 1);
-    const clampedY = Math.min(Math.max(y, c.options.headerHeight + 1), c.height - 1);
+    const clampedY = Math.min(Math.max(y, c.headerHeight + 1), c.height - 1);
     const col = c.columnAt(clampedX);
     const row = c.rowAt(clampedY);
     if (drag.kind === "rows" && row >= 0) c.selection.selectRows(row, row, "extend");
@@ -863,12 +964,13 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     const speed = (distance: number) => Math.sign(distance) * Math.min(80, Math.abs(distance) * 0.6);
     let dx = 0;
     let dy = 0;
-    if (drag.y < c.options.headerHeight) dy = speed(drag.y - c.options.headerHeight);
+    if (drag.y < c.headerHeight) dy = speed(drag.y - c.headerHeight);
     else if (drag.y > c.height) dy = speed(drag.y - c.height);
     if (drag.kind !== "rows") {
       if (drag.x < c.gutterWidth + c.frozenWidth && c.scrollX.position > 0)
         dx = speed(drag.x - c.gutterWidth - c.frozenWidth);
-      else if (drag.x > c.width) dx = speed(drag.x - c.width);
+      else if (drag.x > c.frozenRightX && c.scrollX.position < c.scrollX.virtualRange)
+        dx = speed(drag.x - c.frozenRightX);
     }
     if (dx !== 0 || dy !== 0) {
       c.scrollToVirtual(dx === 0 ? null : c.scrollX.position + dx, dy === 0 ? null : c.scrollY.position + dy);
@@ -896,6 +998,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         col: hit.resize,
         startX: x,
         startWidth: c.layout.width(hit.resize),
+        // Columns frozen at the right are resized at their left edge, so dragging to the left widens them.
+        direction: c.isFrozenRight(hit.resize) ? -1 : 1,
       };
       c.resizing = hit.resize;
       c.requestRender();
@@ -925,6 +1029,27 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           dragRef.current = { kind: "cols", pointerId: event.pointerId, x, y };
         }
         break;
+      case "group": {
+        // A group header selects its columns; pressing one whose columns are selected drags them.
+        const span = hit.group;
+        if (!span) return;
+        let selected = mode === "replace";
+        for (let col = span.start; col <= span.end && selected; col++) selected = c.selection.colSelected(col);
+        if (selected) {
+          const { start: first, end: last } = span;
+          dragRef.current = { kind: "moveGroup", pointerId: event.pointerId, first, last, x, y, moved: false };
+        } else {
+          // Shift extends the selection over the whole group, toward the side the group is on.
+          if (mode === "extend") {
+            const right = span.start > c.selection.active.col;
+            c.selection.selectCols(span.start, right ? span.end : span.start, mode);
+          } else {
+            c.selection.selectCols(span.start, span.end, mode);
+          }
+          dragRef.current = { kind: "cols", pointerId: event.pointerId, x, y };
+        }
+        break;
+      }
       case "gutter":
         c.selection.selectRows(hit.row, hit.row, mode);
         dragRef.current = { kind: "rows", pointerId: event.pointerId, x, y };
@@ -948,10 +1073,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     const drag = dragRef.current;
     if (drag && drag.pointerId === event.pointerId) {
       if (drag.kind === "resize") {
-        c.resizeColumn(drag.col, drag.startWidth + (x - drag.startX));
+        c.resizeColumn(drag.col, drag.startWidth + drag.direction * (x - drag.startX));
         return;
       }
-      if (drag.kind === "move") {
+      if (drag.kind === "move" || drag.kind === "moveGroup") {
         drag.moved = drag.moved || Math.abs(x - drag.x) > 4;
         drag.x = x;
         drag.y = y;
@@ -981,6 +1106,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       previous.col !== hit.col ||
       previous.menu !== hit.menu ||
       previous.checkbox !== hit.checkbox ||
+      previous.group !== hit.group ||
       (hit.checkbox && previous.row !== hit.row) ||
       // A drawCell hook may draw the hovered cell differently.
       (c.options.drawCell && previous.row !== hit.row)
@@ -1021,6 +1147,19 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         c.selectionChanged();
       } else if (!drag.moved) {
         c.selection.selectCols(drag.col, drag.col);
+        c.selectionChanged();
+      }
+    } else if (drag.kind === "moveGroup") {
+      const { first, last } = drag;
+      const target = c.columnAt(local(event).x);
+      if (drag.moved && target >= 0 && (target < first || target > last)) {
+        c.moveColumns(first, last, target);
+        // The columns now end at the target when moved right, and start there when moved left.
+        const start = target > last ? target - (last - first) : target;
+        c.selection.selectCols(start, start + last - first);
+        c.selectionChanged();
+      } else if (!drag.moved) {
+        c.selection.selectCols(first, last);
         c.selectionChanged();
       }
     }
@@ -1317,9 +1456,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           c.emit();
         },
       },
-      col < c.frozen && c.frozen > 0
+      c.pinOf(col) === "left"
         ? { label: messages.unfreeze, onSelect: () => c.freezeUpTo(-1) }
         : { label: messages.freezeUpTo, onSelect: () => c.freezeUpTo(col) },
+      c.pinOf(col) === "right"
+        ? { label: messages.unfreezeRight, onSelect: () => c.freezeFrom(c.visible.length) }
+        : { label: messages.freezeFrom, onSelect: () => c.freezeFrom(col) },
       { label: messages.hideColumn, disabled: c.visible.length <= 1, onSelect: () => c.hideColumn(col) },
       {
         label: messages.copyColumnName,
@@ -1330,6 +1472,30 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           ),
       },
     );
+    // Formula columns, when the source evaluates them.
+    const formula = c.formulaOf(state.index);
+    if (c.formulasAvailable || formula) {
+      items.push({
+        label: messages.addFormula,
+        separator: true,
+        disabled: !c.formulasAvailable,
+        onSelect: () => setOverlay({ kind: "formula", anchor: headerAnchor(col), name: null, after: state.index }),
+      });
+    }
+    if (formula) {
+      const users = formulaUsers(c.formulas, formula.name);
+      items.push(
+        {
+          label: messages.editFormula,
+          onSelect: () => setOverlay({ kind: "formula", anchor: headerAnchor(col), name: formula.name }),
+        },
+        {
+          label: messages.deleteFormula,
+          disabled: users.length > 0,
+          onSelect: () => c.setFormulas(c.formulas.filter((item) => item !== formula)),
+        },
+      );
+    }
     return items;
   }
 
@@ -1492,6 +1658,9 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     const state = c.visible[col];
     return state ? c.columnLabel(state.index) : "";
   };
+  // Header rows of groups come first: the row of column names is row `groupRows + 1`.
+  const groupRows = c.groupRows;
+  const activeGroups = activeSchema ? c.groupsOf(active.col) : [];
 
   const record = detailOpen ? tracker.record : null;
   const detailProps: DetailPanelProps | null = record && {
@@ -1587,7 +1756,14 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         className="vg-body"
         data-detail={detailOpen || undefined}
         data-totals={showTotals || undefined}
-        style={showTotals ? ({ "--vg-totals-height": `${c.options.rowHeight}px` } as CSSProperties) : undefined}
+        style={
+          showTotals || groupRows > 0
+            ? ({
+                ...(showTotals ? { "--vg-totals-height": `${c.options.rowHeight}px` } : {}),
+                ...(groupRows > 0 ? { "--vg-header-total": `${c.headerHeight}px` } : {}),
+              } as CSSProperties)
+            : undefined
+        }
       >
         <canvas ref={canvasRef} className="vg-canvas" />
         {/* biome-ignore lint/a11y/useSemanticElements: a canvas grid cannot use table elements; ARIA grid roles describe it. */}
@@ -1597,7 +1773,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           role="grid"
           tabIndex={0}
           aria-label={props["aria-label"] ?? messages.gridLabel}
-          aria-rowcount={c.rowCount + 1}
+          aria-rowcount={c.rowCount + groupRows + 1}
           aria-colcount={c.visible.length + 1}
           aria-multiselectable="true"
           aria-activedescendant={c.rowCount > 0 && activeSchema ? cellId : undefined}
@@ -1619,9 +1795,20 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           {activeSchema && c.rowCount > 0 && (
             // biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas (see above).
             <div className="vg-sr-only" role="rowgroup">
+              {activeGroups.map((span) => (
+                // biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas.
+                // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
+                <div role="row" aria-rowindex={span.level + 1} key={span.level}>
+                  {/* biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas. */}
+                  {/* biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant). */}
+                  <div role="columnheader" aria-colindex={span.start + 2} aria-colspan={span.end - span.start + 1}>
+                    {span.group.name}
+                  </div>
+                </div>
+              ))}
               {/* biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas. */}
               {/* biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant). */}
-              <div role="row" aria-rowindex={1}>
+              <div role="row" aria-rowindex={groupRows + 1}>
                 {checkboxSelection && (
                   // biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas.
                   // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
@@ -1641,7 +1828,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
               {/* biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant). */}
               <div
                 role="row"
-                aria-rowindex={active.row + 2}
+                aria-rowindex={active.row + groupRows + 2}
                 aria-selected={checkboxSelection && activeChecked !== null ? activeChecked : undefined}
               >
                 {checkboxSelection && (
@@ -1952,6 +2139,34 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           />
         </Popover>
       )}
+      {overlay?.kind === "formula" && c.tableInfo && (
+        <Popover
+          anchor={overlay.anchor}
+          container={rootRef}
+          onClose={closeOverlay}
+          returnFocus={scrollerRef}
+          label={overlay.name === null ? messages.formulaAddTitle : messages.formulaEditTitle}
+          className="vg-popover--panel vg-popover--wide"
+        >
+          <FormulaEditor
+            table={c.tableInfo.columns}
+            formulas={c.formulas}
+            formula={overlay.name === null ? null : (c.formulas.find((item) => item.name === overlay.name) ?? null)}
+            messages={messages}
+            onCancel={closeOverlay}
+            onSave={(saved) => {
+              const editing = overlay.name === null ? -1 : c.formulas.findIndex((item) => item.name === overlay.name);
+              const next =
+                editing < 0
+                  ? [...c.formulas, saved]
+                  : c.formulas.map((item, index) => (index === editing ? saved : item));
+              c.setFormulas(next, overlay.after === undefined ? {} : { after: overlay.after });
+              setOverlay(null);
+              focusGrid();
+            }}
+          />
+        </Popover>
+      )}
       {overlay?.kind === "columns" && (
         <Popover
           anchor={overlay.anchor}
@@ -1965,8 +2180,22 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
             schema={c.schema}
             labelOf={(index) => c.columnLabel(index)}
             messages={messages}
+            pinOf={(index) => {
+              const col = c.visible.findIndex((column) => column.index === index);
+              return col < 0 ? null : c.pinOf(col);
+            }}
             onToggle={(index, hidden) => c.setColumnHidden(index, hidden)}
+            onPin={(index, pin) => c.setColumnPin(index, pin)}
             onShowAll={() => c.showAllColumns()}
+            broken={c.formulaResults.flatMap((result) =>
+              result.error ? [{ name: result.name, error: formulaErrorText(result.error, messages) }] : [],
+            )}
+            onAddFormula={
+              c.formulasAvailable
+                ? () => setOverlay({ kind: "formula", anchor: overlay.anchor, name: null })
+                : undefined
+            }
+            onEditFormula={(name) => setOverlay({ kind: "formula", anchor: overlay.anchor, name })}
           />
         </Popover>
       )}

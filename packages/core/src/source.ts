@@ -1,6 +1,9 @@
 import { pruneFilterNode } from "./filter-tree.js";
+import { type CompiledFormula, compileFormulas } from "./formula.js";
+import { ErrorCodes } from "./protocol.js";
 import type {
   AggregateRequest,
+  ColumnSchema,
   ColumnStats,
   DistinctRequest,
   DistinctValues,
@@ -94,12 +97,25 @@ export function abortError() {
   return new DOMException("The operation was aborted.", "AbortError");
 }
 
-/** Whether a query leaves the table as it is: no sort, filters, condition tree or search. */
+/** Whether a query leaves the table as it is: no formula columns, sort, filters, condition tree or search. */
 export function isEmptyQuery(query: ViewQuery) {
-  return !query.sort?.length && !filtersRows(query);
+  return !query.formulas?.length && !query.sort?.length && !filtersRows(query);
 }
 
 /** Whether a query leaves out rows (with filters or a search) rather than only sorting them. */
 export function filtersRows(query: ViewQuery) {
   return Boolean(query.filters?.length || pruneFilterNode(query.where) || query.search?.trim());
+}
+
+/**
+ * Checks a query's formula columns against the table's columns (see `compileFormulas`), for sources that
+ * evaluate them. Throws `invalid_request` for the first formula with an error.
+ */
+export function queryFormulas(columns: readonly ColumnSchema[], query: ViewQuery): CompiledFormula[] {
+  const compiled = compileFormulas(columns, query.formulas ?? []);
+  const failed = compiled.find((formula) => formula.error);
+  if (failed?.error) {
+    throw new SourceError(ErrorCodes.invalidRequest, `Formula column "${failed.name}": ${failed.error.message}`, 400);
+  }
+  return compiled;
 }

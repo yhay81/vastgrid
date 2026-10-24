@@ -23,7 +23,7 @@ import type {
 
 /** What a `GroupedSource` shows: the rows of `query` of the base table, grouped. */
 export interface GroupedSourceOptions extends Omit<GroupRequest, "view" | "sort"> {
-  /** The rows to group: filters, condition tree and search (the sort does not matter). */
+  /** The rows to group: formula columns, filters, condition tree and search (the sort does not matter). */
   query?: ViewQuery;
 }
 
@@ -67,7 +67,9 @@ export class GroupedSource implements TableSource {
     const group = this.base.group?.bind(this.base);
     if (!group) throw new SourceError(ErrorCodes.invalidRequest, "This table cannot group its rows.", 400);
     const { query = {}, ...request } = this.options;
+    // Formula columns of the query are columns of its view, which can be keys and aggregated.
     const rows: ViewQuery = {
+      ...(query.formulas?.length ? { formulas: query.formulas } : {}),
       ...(query.filters?.length ? { filters: query.filters } : {}),
       ...(query.where ? { where: query.where } : {}),
       ...(query.search ? { search: query.search } : {}),

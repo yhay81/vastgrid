@@ -34,6 +34,7 @@ import {
   type PivotColumn,
   pivotColumns,
   pivotLimit,
+  queryFormulas,
   type ReadOptions,
   type RowBlock,
   type RowRequest,
@@ -51,6 +52,7 @@ import {
   XLSX_MAX_TEXT,
 } from "vastgrid-core";
 import { convertToUtf8, detectEncoding } from "./encoding.js";
+import { formulaSelect } from "./formula.js";
 import {
   columnTypeOf,
   conditionExpression,
@@ -449,15 +451,35 @@ export class TableEngine {
   }
 }
 
+/**
+ * The rows a view reads from: the table's relation, or the table with the formula columns of the view's
+ * query computed over it.
+ */
+interface Scope {
+  /** The table's columns, then the formula columns. */
+  columns: SqlColumn[];
+  relation: string;
+  /** The column giving each row's position in the table. */
+  position: string;
+  /** The formula columns over a relation of the table's rows (that has `position`); the relation itself without formulas. */
+  over: (from: string) => string;
+  /** Tables to drop with the view (the formulas' constants). */
+  tables: string[];
+}
+
 interface View {
   id: string;
   /** The table that reads go to. While building, it holds the first `readable` rows with every column. */
   name: string;
   rowCount: number;
   query: ViewQuery;
+  scope: Scope;
   used: number;
-  /** `rows`: the view's table holds every column in view order. `positions`: only the rows' positions in the table. */
-  kind: "rows" | "positions";
+  /**
+   * `rows`: the view's table holds every column in view order. `positions`: only the rows' positions in the
+   * table. `table`: formula columns over the table in its own order, without a table of the view's own.
+   */
+  kind: "rows" | "positions" | "table";
   status: ViewStatus;
   /** Rows that can be read, from the start of the view. */
   readable: number;
@@ -612,6 +634,52 @@ export class OpenTable {
     return this.ready;
   }
 
+  /** The rows of the table without formula columns. */
+  private tableScope(): Scope {
+    return {
+      columns: this.columns,
+      relation: this.relation,
+      position: this.position,
+      over: (from) => from,
+      tables: [],
+    };
+  }
+
+  /**
+   * The rows of the table with the query's formula columns. Their literals go into a table of constants
+   * (one row, filled with parameters), so that the queries reading the scope need no parameters of their own.
+   */
+  private async scopeOf(query: ViewQuery, signal?: AbortSignal): Promise<Scope> {
+    const table = this.tableScope();
+    const compiled = queryFormulas(this.info().columns, query);
+    if (compiled.length === 0) return table;
+    const select = formulaSelect(compiled, this.columns);
+    let constants = "";
+    if (select.constants.length > 0) {
+      const name = this.engine.createId("vg_k");
+      const params = new Parameters();
+      const values = select.constants.map(
+        // Numbers go as text, which reads back exactly: a whole JS number would be bound as a 64-bit integer.
+        (item, index) =>
+          `CAST(${params.add(typeof item.value === "number" ? String(item.value) : item.value)} AS ${item.sqlType}) AS ${quoteIdentifier(`c${index}`)}`,
+      );
+      await this.engine.withConnection(signal, (connection) =>
+        connection.run(`CREATE TABLE ${quoteIdentifier(name)} AS SELECT ${values.join(", ")}`, params.values),
+      );
+      constants = `, ${quoteIdentifier(name)} k`;
+      table.tables = [name];
+    }
+    const over = (from: string) =>
+      select.layers.reduce(
+        (relation, layer) =>
+          layer.length === 0 ? relation : `(SELECT f.*, ${layer.join(", ")} FROM ${relation} f${constants})`,
+        from,
+      );
+    // A table's positions are its `rowid`, which a subquery has only when it selects it.
+    const rows = this.position === "rowid" ? `(SELECT b.rowid AS rowid, b.* FROM ${this.relation} b)` : this.relation;
+    return { ...table, columns: [...this.columns, ...select.columns], relation: over(rows), over };
+  }
+
   /** Workbooks: waits until the sheets are known (or the load failed before). */
   whenListed() {
     return Promise.race([this.sheetsKnown, this.ready]);
@@ -650,6 +718,7 @@ export class OpenTable {
         conditions: ready,
         group: ready,
         pivot: ready,
+        formulas: ready,
       },
       ...(ready ? { exports: { formats: ["csv", "tsv", "parquet", "json", "xlsx"], delivery: "file" } } : {}),
     };
@@ -904,30 +973,50 @@ export class OpenTable {
   private relationOf(view: View | null): { from: string; position: string } {
     if (!view) return { from: this.relation, position: this.position };
     if (view.kind === "rows") return { from: quoteIdentifier(view.name), position: "rowid" };
+    if (view.kind === "table") return { from: view.scope.relation, position: view.scope.position };
     return {
-      from: `(SELECT w.rowid AS ${POSITION_COLUMN}, b.* FROM ${quoteIdentifier(view.name)} w JOIN ${this.relation} b ON b.${this.position} = w.${quoteIdentifier(ROW_COLUMN)})`,
+      from: `(SELECT w.rowid AS ${POSITION_COLUMN}, b.* FROM ${quoteIdentifier(view.name)} w JOIN ${view.scope.relation} b ON b.${this.position} = w.${quoteIdentifier(ROW_COLUMN)})`,
       position: POSITION_COLUMN,
     };
+  }
+
+  /** The table's rows (`b`) of a view that holds positions, with the formula columns, under a condition on them. */
+  private positionRows(view: View, condition: string) {
+    if (view.scope.tables.length === 0 && view.scope.columns.length === this.columns.length) {
+      return `(SELECT b.* FROM ${this.relation} b ${condition})`;
+    }
+    const position = this.position === "rowid" ? "b.rowid AS rowid, " : "";
+    return view.scope.over(`(SELECT ${position}b.* FROM ${this.relation} b ${condition})`);
   }
 
   /** The rows of a view in any order, for statistics. */
   private unorderedRelation(view: View | null): string {
     // A view that only sorts has the same rows as the table, also while it is building.
-    if (view && !filtersRows(view.query)) return this.relation;
+    if (view && !filtersRows(view.query)) return view.scope.relation;
     this.requireBuilt(view);
-    if (!view || view.kind === "rows") return this.relationOf(view).from;
-    return `(SELECT b.* FROM ${this.relation} b SEMI JOIN ${quoteIdentifier(view.name)} w ON b.${this.position} = w.${quoteIdentifier(ROW_COLUMN)})`;
+    if (view?.kind !== "positions") return this.relationOf(view).from;
+    return this.positionRows(
+      view,
+      `SEMI JOIN ${quoteIdentifier(view.name)} w ON b.${this.position} = w.${quoteIdentifier(ROW_COLUMN)}`,
+    );
   }
 
   /** Rows `[$1, $2)` of a view, in any order, for selection summaries. */
   private rangeRelation(view: View | null): string {
     if (!view) return `(SELECT * FROM ${this.relation} WHERE ${this.position} >= $1 AND ${this.position} < $2)`;
     if (view.kind === "rows") return `(SELECT * FROM ${quoteIdentifier(view.name)} WHERE rowid >= $1 AND rowid < $2)`;
-    return `(SELECT b.* FROM ${this.relation} b WHERE b.${this.position} IN (SELECT ${quoteIdentifier(ROW_COLUMN)} FROM ${quoteIdentifier(view.name)} WHERE rowid >= $1 AND rowid < $2))`;
+    if (view.kind === "table") {
+      return `(SELECT * FROM ${view.scope.relation} WHERE ${view.scope.position} >= $1 AND ${view.scope.position} < $2)`;
+    }
+    return this.positionRows(
+      view,
+      `WHERE b.${this.position} IN (SELECT ${quoteIdentifier(ROW_COLUMN)} FROM ${quoteIdentifier(view.name)} WHERE rowid >= $1 AND rowid < $2)`,
+    );
   }
 
-  private column(index: number) {
-    const column = this.columns[index];
+  /** A column of the table, or of a view with formula columns. */
+  private column(index: number, view: View | null = null) {
+    const column = (view?.scope.columns ?? this.columns)[index];
     if (!column) throw new SourceError(ErrorCodes.invalidRequest, `Column ${index} does not exist.`, 400);
     return column;
   }
@@ -968,12 +1057,12 @@ export class OpenTable {
     if (request.end - request.start > 1_000_000) {
       throw new SourceError(ErrorCodes.invalidRequest, "Read at most a million rows at a time.", 400);
     }
-    const columns = request.columns.map((index) => this.column(index));
+    const columns = request.columns.map((index) => this.column(index, view));
     if (end === start) return { start, end, columns: columns.map(() => []), rowIds: view ? [] : null };
     if (view?.kind === "positions") return this.readPositions(view, start, end, columns, limit, signal);
     const { from, position } = this.relationOf(view);
     const expressions = columns.map((column) => selectExpression(column, limit));
-    if (view) expressions.push(quoteIdentifier(ROW_COLUMN));
+    if (view) expressions.push(view.kind === "table" ? position : quoteIdentifier(ROW_COLUMN));
     const sql = `SELECT ${expressions.length > 0 ? expressions.join(", ") : "1"} FROM ${from} WHERE ${position} >= $1 AND ${position} < $2 ORDER BY ${position}`;
     return this.engine.withConnection(signal, async (connection) => {
       const result = await connection.runAndReadAll(sql, [start, end]);
@@ -1008,7 +1097,7 @@ export class OpenTable {
         const batch = ids.slice(from, from + LOOKUP_BATCH);
         // The positions are integers read from DuckDB, so listing them inline is safe.
         const result = await connection.runAndReadAll(
-          `SELECT ${this.position}${expressions.length > 0 ? `, ${expressions.join(", ")}` : ""} FROM ${this.relation} WHERE ${this.position} IN (${batch.join(", ")})`,
+          `SELECT ${view.scope.position}${expressions.length > 0 ? `, ${expressions.join(", ")}` : ""} FROM ${view.scope.relation} WHERE ${view.scope.position} IN (${batch.join(", ")})`,
         );
         const data = result.getColumnsJS();
         const place = new Map<number, number>();
@@ -1025,10 +1114,10 @@ export class OpenTable {
     });
   }
 
-  /** Builds the WHERE clause of a query. */
-  private where(query: ViewQuery, params: Parameters) {
-    const parts = (query.filters ?? []).map((filter) => filterExpression(filter, this.columns, params));
-    const condition = conditionExpression(query.where, this.columns, params);
+  /** Builds the WHERE clause of a query, over the scope's columns. The search looks in the table's columns only. */
+  private where(query: ViewQuery, params: Parameters, scope: Scope) {
+    const parts = (query.filters ?? []).map((filter) => filterExpression(filter, scope.columns, params));
+    const condition = conditionExpression(query.where, scope.columns, params);
     if (condition) parts.push(condition);
     if (query.search?.trim()) parts.push(searchExpression(query.search.trim(), this.columns, params));
     return parts.length > 0 ? `WHERE ${parts.join(" AND ")}` : "";
@@ -1052,6 +1141,8 @@ export class OpenTable {
       Boolean(query.sort?.length) &&
       (this.rowCount ?? 0) >= this.engine.options.viewPreviewMinRows;
     let view = this.sameView(key);
+    // Formula columns alone need no table of the view's own.
+    if (!view && !query.sort?.length && !filtersRows(query)) view = await this.formulaView(query, signal);
     if (!view && preview) view = await this.startPreview(query, key, signal);
     if (!view) {
       // A request that waited behind a build of the same query gets that view.
@@ -1065,6 +1156,27 @@ export class OpenTable {
     }
     if (options?.preview) return this.infoOf(view);
     return this.whenBuilt(view, signal);
+  }
+
+  /** A view of the table in its own order with formula columns. */
+  private async formulaView(query: ViewQuery, signal?: AbortSignal): Promise<View> {
+    const scope = await this.scopeOf(query, signal);
+    const rowCount = this.rowCount ?? 0;
+    const view = this.newView(this.engine.createId("v"), query, {
+      name: "",
+      kind: "table",
+      scope,
+      rowCount,
+      readable: rowCount,
+    });
+    view.settle();
+    if (this.disposed) {
+      await this.dropViews([view]);
+      throw cancelledView();
+    }
+    this.views.set(view.id, view);
+    await this.trimViews();
+    return view;
   }
 
   /** The state of a view, for clients that poll a view while it is building. */
@@ -1112,7 +1224,11 @@ export class OpenTable {
     return this.infoOf(view);
   }
 
-  private newView(id: string, query: ViewQuery, fields: Pick<View, "name" | "kind" | "rowCount" | "readable">): View {
+  private newView(
+    id: string,
+    query: ViewQuery,
+    fields: Pick<View, "name" | "kind" | "scope" | "rowCount" | "readable">,
+  ): View {
     let settle: View["settle"] = () => undefined;
     const done = new Promise<void>((resolve, reject) => {
       settle = (error?: unknown) => (error === undefined ? resolve() : reject(error));
@@ -1129,7 +1245,7 @@ export class OpenTable {
       waiters: 0,
       done,
       settle,
-      tables: [fields.name],
+      tables: [...(fields.name ? [fields.name] : []), ...fields.scope.tables],
       dropped: false,
       interrupt: null,
     };
@@ -1137,8 +1253,15 @@ export class OpenTable {
 
   private async buildView(query: ViewQuery, signal?: AbortSignal): Promise<View> {
     return this.engine.work.run(async () => {
-      const built = await this.materialize(query, signal, null);
-      const view = this.newView(this.engine.createId("v"), query, { ...built, readable: built.rowCount });
+      const scope = await this.scopeOf(query, signal);
+      let built: Awaited<ReturnType<OpenTable["materialize"]>>;
+      try {
+        built = await this.materialize(query, signal, null, scope);
+      } catch (error) {
+        await this.dropTables(scope.tables);
+        throw error;
+      }
+      const view = this.newView(this.engine.createId("v"), query, { ...built, scope, readable: built.rowCount });
       view.settle();
       if (this.disposed) {
         await this.dropViews([view]);
@@ -1155,16 +1278,16 @@ export class OpenTable {
    * every column or (for large tables) only the positions. `watch` is a view whose background build
    * this is: dropping or abandoning it stops the build.
    */
-  private async materialize(query: ViewQuery, signal: AbortSignal | undefined, watch: View | null) {
+  private async materialize(query: ViewQuery, signal: AbortSignal | undefined, watch: View | null, scope: Scope) {
     const engine = this.engine;
     const params = new Parameters();
-    const where = this.where(query, params);
-    const order = [...orderTerms(query.sort ?? [], this.columns), this.position];
+    const where = this.where(query, params, scope);
+    const order = [...orderTerms(query.sort ?? [], scope.columns), scope.position];
     const name = engine.createId("vg_v");
     // Large tables keep only the order: sorting every column of 100M rows takes minutes and gigabytes.
     const kind: View["kind"] = (this.rowCount ?? 0) > engine.options.materializeRows ? "positions" : "rows";
-    const selected = kind === "rows" ? this.columns.map((column) => quoteIdentifier(column.name)).join(", ") : "";
-    const sql = `CREATE TABLE ${quoteIdentifier(name)} AS SELECT ${this.position} AS ${quoteIdentifier(ROW_COLUMN)}${selected ? `, ${selected}` : ""} FROM ${this.relation} ${where} ORDER BY ${order.join(", ")}`;
+    const selected = kind === "rows" ? scope.columns.map((column) => quoteIdentifier(column.name)).join(", ") : "";
+    const sql = `CREATE TABLE ${quoteIdentifier(name)} AS SELECT ${scope.position} AS ${quoteIdentifier(ROW_COLUMN)}${selected ? `, ${selected}` : ""} FROM ${scope.relation} ${where} ORDER BY ${order.join(", ")}`;
     const connection = await engine.connect();
     this.viewConnection = connection;
     const interrupt = () => connection.interrupt();
@@ -1215,6 +1338,15 @@ export class OpenTable {
    * every row) and registers the view as building; the rest is built in the background, in turn with
    * the other builds of the table.
    */
+  private async dropTables(tables: string[]) {
+    if (tables.length === 0) return;
+    await this.engine
+      .withConnection(undefined, async (connection) => {
+        for (const table of tables) await connection.run(`DROP TABLE IF EXISTS ${quoteIdentifier(table)}`);
+      })
+      .catch(() => undefined);
+  }
+
   private startPreview(query: ViewQuery, key: string, signal?: AbortSignal): Promise<View> {
     let shared = this.previews.get(key);
     if (!shared) {
@@ -1233,36 +1365,42 @@ export class OpenTable {
 
   private async buildPreview(query: ViewQuery, signal?: AbortSignal): Promise<View> {
     const engine = this.engine;
+    const scope = await this.scopeOf(query, signal);
     const params = new Parameters();
-    const where = this.where(query, params);
+    const where = this.where(query, params, scope);
     // The same order as the finished view, so that the first rows are the view's first rows.
-    const order = [...orderTerms(query.sort ?? [], this.columns), this.position];
+    const order = [...orderTerms(query.sort ?? [], scope.columns), scope.position];
     const name = engine.createId("vg_p");
-    const selected = this.columns.map((column) => quoteIdentifier(column.name)).join(", ");
+    const selected = scope.columns.map((column) => quoteIdentifier(column.name)).join(", ");
     const limit = params.add(engine.options.viewPreviewRows);
-    const sql = `CREATE TABLE ${quoteIdentifier(name)} AS SELECT ${this.position} AS ${quoteIdentifier(ROW_COLUMN)}${selected ? `, ${selected}` : ""} FROM ${this.relation} ${where} ORDER BY ${order.join(", ")} LIMIT ${limit}`;
-    const view = await engine.withConnection(signal, async (connection) => {
-      if (this.disposed) throw cancelledView();
-      await connection.run(sql, params.values);
-      try {
-        const count = await connection.runAndReadAll(`SELECT count(*) FROM ${quoteIdentifier(name)}`);
-        const readable = Number(count.getRowsJS()[0][0]);
-        let rowCount = readable;
-        if (readable >= engine.options.viewPreviewRows) {
-          if (!filtersRows(query)) rowCount = this.rowCount ?? 0;
-          else {
-            const counting = new Parameters();
-            const filtered = `SELECT count(*) FROM ${this.relation} ${this.where(query, counting)}`;
-            rowCount = Number((await connection.runAndReadAll(filtered, counting.values)).getRowsJS()[0][0]);
-          }
-        }
+    const sql = `CREATE TABLE ${quoteIdentifier(name)} AS SELECT ${scope.position} AS ${quoteIdentifier(ROW_COLUMN)}${selected ? `, ${selected}` : ""} FROM ${scope.relation} ${where} ORDER BY ${order.join(", ")} LIMIT ${limit}`;
+    const view = await engine
+      .withConnection(signal, async (connection) => {
         if (this.disposed) throw cancelledView();
-        return this.newView(engine.createId("v"), query, { name, kind: "rows", rowCount, readable });
-      } catch (error) {
-        await connection.run(`DROP TABLE IF EXISTS ${quoteIdentifier(name)}`).catch(() => undefined);
+        await connection.run(sql, params.values);
+        try {
+          const count = await connection.runAndReadAll(`SELECT count(*) FROM ${quoteIdentifier(name)}`);
+          const readable = Number(count.getRowsJS()[0][0]);
+          let rowCount = readable;
+          if (readable >= engine.options.viewPreviewRows) {
+            if (!filtersRows(query)) rowCount = this.rowCount ?? 0;
+            else {
+              const counting = new Parameters();
+              const filtered = `SELECT count(*) FROM ${scope.relation} ${this.where(query, counting, scope)}`;
+              rowCount = Number((await connection.runAndReadAll(filtered, counting.values)).getRowsJS()[0][0]);
+            }
+          }
+          if (this.disposed) throw cancelledView();
+          return this.newView(engine.createId("v"), query, { name, kind: "rows", scope, rowCount, readable });
+        } catch (error) {
+          await connection.run(`DROP TABLE IF EXISTS ${quoteIdentifier(name)}`).catch(() => undefined);
+          throw error;
+        }
+      })
+      .catch(async (error: unknown) => {
+        await this.dropTables(scope.tables);
         throw error;
-      }
-    });
+      });
     if (view.status === "ready") view.settle();
     this.views.set(view.id, view);
     await this.trimViews();
@@ -1282,7 +1420,7 @@ export class OpenTable {
       return;
     }
     try {
-      const built = await this.engine.work.run(() => this.materialize(view.query, undefined, view));
+      const built = await this.engine.work.run(() => this.materialize(view.query, undefined, view, view.scope));
       view.name = built.name;
       view.kind = built.kind;
       view.rowCount = built.rowCount;
@@ -1329,7 +1467,7 @@ export class OpenTable {
   async columnStats(viewId: string | null, columnIndex: number, signal?: AbortSignal): Promise<ColumnStats> {
     this.requireReady();
     const view = this.view(viewId);
-    const column = this.column(columnIndex);
+    const column = this.column(columnIndex, view);
     const from = this.unorderedRelation(view);
     const id = quoteIdentifier(column.name);
     const rows = view ? view.rowCount : (this.rowCount ?? 0);
@@ -1407,7 +1545,7 @@ export class OpenTable {
   async distinctValues(request: DistinctRequest, signal?: AbortSignal): Promise<DistinctValues> {
     this.requireReady();
     const view = this.view(request.view);
-    const column = this.column(request.column);
+    const column = this.column(request.column, view);
     const from = this.unorderedRelation(view);
     const limit = Math.min(request.limit ?? 1000, 100_000);
     const params = new Parameters();
@@ -1444,7 +1582,7 @@ export class OpenTable {
     return this.engine.work.run(() =>
       this.engine.withConnection(signal, async (connection) => {
         for (const range of request.ranges) {
-          const columns = [...new Set(range.columns)].map((index) => this.column(index));
+          const columns = [...new Set(range.columns)].map((index) => this.column(index, view));
           if (columns.length === 0 || range.end <= range.start) continue;
           const parts: string[] = [];
           for (const column of columns) {
@@ -1496,7 +1634,13 @@ export class OpenTable {
   async group(request: GroupRequest, signal?: AbortSignal): Promise<GroupResult> {
     this.requireReady();
     const view = this.view(request.view);
-    const schema = this.info().columns;
+    // A view's formula columns can be keys and aggregated like the table's columns.
+    const columns = view?.scope.columns ?? this.columns;
+    const schema = columns.map((column) => ({
+      name: column.label ?? column.name,
+      type: column.type,
+      sourceType: column.sqlType,
+    }));
     checkGroupRequest(schema, request);
     const from = this.unorderedRelation(view);
     const limit = groupLimit(request);
@@ -1515,7 +1659,7 @@ export class OpenTable {
           // The combinations of column-axis values first: they make the columns, and too many are refused.
           const most = pivotLimit(request);
           const perAggregate = Math.floor(most / request.aggregates.length);
-          const combinations = pivotStatement(request.pivot.columns, this.columns, from, perAggregate + 1);
+          const combinations = pivotStatement(request.pivot.columns, columns, from, perAggregate + 1);
           const found = (await connection.runAndReadAll(combinations.sql)).getRowsJS();
           const total = found.length > 0 ? Number(found[0][combinations.outputs.length]) : 0;
           if (total > perAggregate) throw tooManyColumns(total * request.aggregates.length, most);
@@ -1529,7 +1673,7 @@ export class OpenTable {
           cells = values.length;
           checkGroupSort(request, result.length);
         }
-        const { sql, outputs } = groupStatement(request, this.columns, result, from, limit, cells);
+        const { sql, outputs } = groupStatement(request, columns, result, from, limit, cells);
         const data = (await connection.runAndReadAll(sql)).getRowsJS();
         const rows = data.map((row) => read(row, outputs));
         const groups = data.length > 0 ? Number(data[0][outputs.length]) : 0;
@@ -1547,7 +1691,7 @@ export class OpenTable {
     const view = this.view(request.view);
     this.requireBuilt(view);
     const { from, position } = this.relationOf(view);
-    const columns = request.columns.map((index) => this.column(index));
+    const columns = request.columns.map((index) => this.column(index, view));
     const text = request.text;
     if (!text || columns.length === 0) return null;
     const params = new Parameters();
@@ -1613,7 +1757,9 @@ export class OpenTable {
     this.requireBuilt(view);
     const rows = view ? view.rowCount : (this.rowCount ?? 0);
     const { from, position } = this.relationOf(view);
-    const columns = (request.columns ?? this.columns.map((_, index) => index)).map((index) => this.column(index));
+    const columns = (request.columns ?? (view?.scope.columns ?? this.columns).map((_, index) => index)).map((index) =>
+      this.column(index, view),
+    );
     if (request.format === "xlsx") checkXlsxSize(rows, columns.length);
     // Columns are written under their name in the file, or the requested header.
     const headers = columns.map(

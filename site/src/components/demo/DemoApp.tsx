@@ -1,5 +1,5 @@
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
-import { DataGrid, type DataGridHandle, type TableSource } from "vastgrid";
+import { type ColumnGroup, DataGrid, type DataGridHandle, type TableSource } from "vastgrid";
 import "vastgrid/styles.css";
 import { ComputedSource } from "../../data/computed.ts";
 import { ordersSource } from "../../data/orders.ts";
@@ -75,6 +75,21 @@ function updateAddress(update: (url: URL) => void) {
   history.replaceState(null, "", url);
 }
 
+/** Header groups over the orders' columns, in the demo's language. */
+function orderGroups(language: Language): ColumnGroup[] {
+  const ja = language === "ja";
+  return [
+    {
+      name: ja ? "顧客" : "Customer",
+      children: ["customer", { name: ja ? "所在地" : "Location", children: ["city", "country"] }],
+    },
+    {
+      name: ja ? "明細" : "Line",
+      children: ["category", "product", "quantity", "unit_price", "total"],
+    },
+  ];
+}
+
 function createSource(dataset: Dataset): TableSource {
   return dataset === "orders" ? ordersSource(ORDER_ROWS) : new ComputedSource();
 }
@@ -109,6 +124,7 @@ export default function DemoApp({ language: pageLanguage }: { language: Language
   const [theme, setTheme] = useState<Theme>(readTheme);
   const grid = useRef<DataGridHandle>(null);
   const source = useMemo(() => createSource(dataset), [dataset]);
+  const groups = useMemo(() => (dataset === "orders" ? orderGroups(language) : undefined), [dataset, language]);
   const t = texts[language];
 
   useEffect(() => {
@@ -199,7 +215,15 @@ export default function DemoApp({ language: pageLanguage }: { language: Language
         <p className="demo__note">{dataset === "orders" ? t.ordersNote : t.readingsNote}</p>
       </header>
       <main className="demo__grid">
-        <DataGrid key={dataset} ref={grid} source={source} locale={language} frozenColumns={1} checkboxSelection />
+        <DataGrid
+          key={dataset}
+          ref={grid}
+          source={source}
+          locale={language}
+          frozenColumns={1}
+          checkboxSelection
+          columnGroups={groups}
+        />
       </main>
     </div>
   );

@@ -52,14 +52,21 @@ export function TotalsRow({
   const columns: number[] = [];
   for (let col = 0; col < c.frozen; col++) columns.push(col);
   for (let col = Math.max(first, c.frozen); col <= last; col++) columns.push(col);
+  // Columns frozen at the right stay at the right edge, as in the grid.
+  const rightStart = c.rightStart;
+  for (let col = rightStart; col < c.visible.length; col++) columns.push(col);
   const scrollLeft = c.gutterWidth + c.frozenWidth;
 
   function cell(col: number) {
     const state = c.visible[col];
     if (!state) return null;
     const fn = c.totalOf(state.index);
-    const frozen = col < c.frozen;
-    const left = frozen ? c.columnX(col) - c.gutterWidth : c.columnX(col) - scrollLeft;
+    const left =
+      col < c.frozen
+        ? c.columnX(col) - c.gutterWidth
+        : col >= rightStart
+          ? c.columnX(col) - c.frozenRightX
+          : c.columnX(col) - scrollLeft;
     const label = c.columnLabel(state.index);
     const text = totalText(c, state.index);
     const style: CSSProperties = { left, width: c.layout.width(col) };
@@ -90,9 +97,14 @@ export function TotalsRow({
       <div className="vg-totals__frozen" style={{ left: c.gutterWidth, width: c.frozenWidth }}>
         {columns.filter((col) => col < c.frozen).map(cell)}
       </div>
-      <div className="vg-totals__scroll" style={{ left: scrollLeft }}>
-        {columns.filter((col) => col >= c.frozen).map(cell)}
+      <div className="vg-totals__scroll" style={{ left: scrollLeft, right: c.frozenRightWidth }}>
+        {columns.filter((col) => col >= c.frozen && col < rightStart).map(cell)}
       </div>
+      {rightStart < c.visible.length && (
+        <div className="vg-totals__frozen" style={{ left: c.frozenRightX, width: c.frozenRightWidth }}>
+          {columns.filter((col) => col >= rightStart).map(cell)}
+        </div>
+      )}
     </div>
   );
 }

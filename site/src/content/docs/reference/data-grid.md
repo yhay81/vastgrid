@@ -19,9 +19,12 @@ import "vastgrid/styles.css";
 | `messages` | `Partial<Messages>` | | Replaces some of the built-in texts (see `en` and `ja`). |
 | `rowHeight` | `number` | `--vg-row-height` or 24 | Row height in pixels. |
 | `maxLines` | `number` | `3` | Lines shown at most in cells of columns that wrap (`wrap` in `columnFormats`), 1 to 20. |
-| `headerHeight` | `number` | `--vg-header-height` or 32 | Header height in pixels. |
+| `headerHeight` | `number` | `--vg-header-height` or 32 | Height of the row of column names in pixels. Rows of `columnGroups` add to the header. |
+| `columnGroups` | `ColumnGroup[]` | | Groups of columns named in header rows above the column names (see [Column groups](#column-groups)). |
+| `groupHeaderHeight` | `number` | `--vg-group-header-height` or 24 | Height of each header row of groups in pixels. |
 | `nullText` | `string` | `""` | Text shown for null cells. |
 | `frozenColumns` | `number` | `0` | Columns frozen at the left when the table opens. |
+| `frozenRightColumns` | `number` | `0` | Columns frozen at the right when the table opens: the last ones, kept at the grid's right edge. |
 | `toolbar` | `boolean` | `true` | Shows the search box, active filters and row count. |
 | `statusBar` | `boolean` | `true` | Shows the active cell and the selection summary. |
 | `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. Sources that report their changes (`subscribe`) are read again by themselves. Either way the query, the column settings, the scroll position and the active cell stay. |
@@ -43,6 +46,8 @@ import "vastgrid/styles.css";
 | `rowKey` | `string` | the row's position | Schema column whose values identify the rows (a primary key). Checked rows then survive new data. |
 | `rowSelection` | `RowSelection` | | Checked rows to apply on start and whenever a different value is passed. |
 | `onRowSelectionChange` | `(event: GridRowSelectionEvent) => void` | | Called when rows are checked or unchecked, by the user, the app or the grid. |
+| `formulas` | `FormulaColumn[]` | | Formula columns (`{ name, expression }`), applied on start and whenever a different value is passed. See [Formula columns](/guides/formulas/). |
+| `onFormulasChange` | `(formulas: FormulaColumn[]) => void` | | Called when formula columns are added, edited or deleted, by the user or the app. |
 | `detailOpen` | `boolean` | | Shows the [detail panel](#detail-panel) (controlled). Without it, the grid keeps the state. |
 | `defaultDetailOpen` | `boolean` | `false` | Whether the detail panel is open when the grid mounts, when `detailOpen` is not set. |
 | `onDetailOpenChange` | `(open: boolean) => void` | | Called when the detail panel is opened or closed by the user or the handle. |
@@ -63,6 +68,8 @@ A ref gives a `DataGridHandle`:
 | `getState()` | The query and the column settings, as a `GridState` to save. |
 | `applyState(state)` | Applies a saved `GridState`. Returns `false` when the value is not a state this version reads. |
 | `goToRow(row)` | Scrolls to a row of the current view and makes it active. |
+| `getFormulas()` | The formula columns, also ones that cannot be evaluated now. |
+| `setFormulas(formulas)` | Replaces the formula columns. |
 | `getRowSelection()` | The checked rows, as a `RowSelection`. |
 | `setRowSelection(selection)` | Replaces the checked rows. Returns `false` when the value is not a `RowSelection`. |
 | `openExport()` | Opens the export panel, also without the toolbar. Returns `false` when the source cannot export now. |
@@ -111,8 +118,9 @@ A cell has three kinds of coordinates:
   to its first row, and when moving or hiding columns puts another column under the active cell.
 - `GridColumnsEvent`: `reason` (`"resize"`, `"move"`, `"visibility"`, `"freeze"`, `"state"` when a state
   was applied, `"schema"` when the table was read again with other columns), `columns` (every column in
-  display order with `column`, `name`, `col` (-1 when hidden), `width`, `hidden`, `sized`, `frozen`) and
-  `frozenColumns`. Dragging a column's edge reports the width once, when the drag ends. Widths that the
+  display order with `column`, `name`, `col` (-1 when hidden), `width`, `hidden`, `sized`, `frozen` and
+  `pin`, the side it is frozen at: `"left"`, `"right"` or `null`), `frozenColumns` and `frozenRightColumns`.
+  Dragging a column's edge reports the width once, when the drag ends. Widths that the
   grid fits by itself are not reported.
 - `GridCellEvent`: the cell's coordinates, its loaded `value` (`undefined` while it is not loaded),
   `trigger` (`"pointer"` or `"keyboard"`), the modifier keys and `preventDefault()`. A click is a press and
@@ -173,7 +181,8 @@ function read(text: string | null) {
   "schema": ["id", "name", "price"],
   "query": { "sort": [{ "column": 2, "direction": "desc" }] },
   "columns": [{ "name": "name", "width": 220 }, { "name": "id", "hidden": true }, { "name": "price" }],
-  "frozenColumns": 1
+  "frozenColumns": 1,
+  "frozenRightColumns": 0
 }
 ```
 
@@ -181,7 +190,7 @@ function read(text: string | null) {
   indexes refer to it, so they are mapped onto the table's columns by name. Of repeated names, the nth
   matches the nth.
 - Columns of the table that the state does not list (added to the file later) keep their settings and
-  follow the listed ones. Listed columns, sort keys and filters whose column the table no longer has are
+  follow the listed ones, before the columns frozen at the right. Listed columns, sort keys and filters whose column the table no longer has are
   dropped, and frozen columns that are gone are not replaced by others. At least one column stays visible.
 - A width is saved only for columns the user sized; the others are fitted again to their values.
 - Every part except `version` is optional: applying a state changes only the parts it has. A
@@ -201,6 +210,36 @@ column, and `group` with the grouped table's own settings.
 
 `renderer.timings()` returns `{ frames, average, slowest }` in milliseconds over the last 120 frames
 drawn. The [demo](/demo/) shows it in its toolbar.
+
+## Frozen columns
+
+Columns can be frozen at the left (`frozenColumns`), at the right (`frozenRightColumns`), or not at all,
+for example to keep an ID at the left and a total or actions column at the right while the columns
+between them scroll. Each count is of visible columns from its end, so a column's place in the display
+order decides its side: `GridColumn.pin` in `onColumnsChange` is `"left"`, `"right"` or `null`.
+
+- The column menu offers "Freeze up to this column" and "Freeze from this column to the right edge" (and
+  their "Unfreeze"), and the "Columns" panel sets each column's side (None, Left, Right). The controller
+  does the same: `freezeUpTo(col)`, `freezeFrom(col)` and `setColumnPin(column, "left" | "right" | null)`,
+  which moves the column to the inner end of that side.
+- Moving, hiding, resizing, selecting, copying and the menus use the display order, whichever side a
+  column is on. Columns frozen at the right are resized at their left edge. Keyboard moves scroll only the
+  columns between the frozen ones.
+- The horizontal scrollbar covers the whole width of the columns, as without frozen columns; at its end,
+  the last scrolling column meets the columns frozen at the right.
+- Frozen columns take at most three quarters of the grid's width without the row header. When they need
+  more, those at the right and then those at the left scroll with the others, from the inner side, until
+  the grid is wide enough again. The settings, the events and the saved state keep the counts as set.
+- `GridState` keeps both counts (`frozenColumns`, `frozenRightColumns`). States saved before right freezing
+  existed have only `frozenColumns` and change only the left side.
+
+```tsx
+<DataGrid source={source} frozenColumns={1} frozenRightColumns={2} />;
+
+// Freeze the table column 5 at the right, or let it scroll again.
+grid.current?.controller.setColumnPin(5, "right");
+grid.current?.controller.setColumnPin(5, null);
+```
 
 ## Column formats
 
@@ -271,6 +310,73 @@ Invalid settings, such as a currency style without `currency` or an unknown time
 `RangeError` as soon as the grid receives them. `ColumnFormatter` (made by `ValueFormatter.column(schema,
 format)`, and `controller.formatterOf(index)` in the grid) formats values with the settings outside the
 grid, and keeps them in `settings`.
+
+## Column groups
+
+`columnGroups` names groups of columns in header rows above the column names. A `ColumnGroup` has a
+`name` and `children`: schema column names (`ColumnSchema.name`) and nested groups. Each level of
+nesting adds a header row of `groupHeaderHeight` pixels, so the whole header is `headerHeight` plus
+that for each level (`controller.headerHeight`); rows, scrolling, `goToRow` and the row checkboxes
+start below it.
+
+```tsx
+import { type ColumnGroup, DataGrid } from "vastgrid";
+
+const groups: ColumnGroup[] = [
+  { name: "Sales", children: [
+    { name: "Q1", children: ["jan", "feb", "mar"] },
+    { name: "Q2", children: ["apr", "may", "jun"] },
+  ] },
+  { name: "Notes", children: ["comment"] },
+];
+
+<DataGrid source={source} columnGroups={groups} />;
+```
+
+Keep the array stable (memoize it or define it outside components). Names the table does not have are
+ignored, so one definition can serve similar files. A column listed twice, a group without `children`
+or groups nested deeper than 8 levels throw a `RangeError` when the grid receives them.
+
+**Groups follow their columns.** The groups are a display definition separate from the schema and from
+the column settings. The header is computed from the visible columns in their current order:
+
+- A group's header spans its visible columns that are side by side. Moving a column between them, or
+  moving one of them away, splits the header; each part shows the group's name. Hiding a column leaves it
+  out, and hiding all of a group's columns hides the group.
+- Frozen columns split a group that continues into the scrolling columns, so each region shows its own
+  part. In the scrolling part, the name stays at the left edge while the columns scroll under it.
+- Resizing columns never splits a group; a narrow group cuts its name with "…".
+- The header's height depends only on how deep the groups nest, not on which columns are shown, so it
+  does not jump when columns are hidden.
+- A column with fewer groups than the header has rows has its header reach up through the empty rows.
+  Its name, sort and filter marks and menu stay in the row of column names.
+
+**Pointer.** Clicking a group header selects its columns, as clicking column headers does: Shift extends
+the selection over the group, ⌘/Ctrl (Ctrl on Windows and Linux) adds it as another range. Dragging the
+header of a group whose columns are selected moves them together, keeping their order
+(`controller.moveColumns(first, last, to)`); dropping it on one of its own columns does nothing. Moves
+are reported with the reason `move`, as for one column. Group headers have no menu and no resize
+handle: the column headers below them have.
+
+**Sorting, filters and events.** Group headers are only drawn: sorting, filters, the column menu,
+statistics, find and selection work on the columns under them. `controller.hitTest(x, y)` reports
+`zone: "group"` with the group's span (`hit.group`: `group`, `level`, and its first and last visible
+columns `start` and `end`) and `col`, the column under the pointer. Events give `col` and `column` for
+the columns, as without groups; `controller.groupSpans()` and `controller.groupsOf(col)` give the spans.
+
+**Keyboard and screen readers.** The keyboard moves between cells as before; group headers are not
+focused. For the active cell, the hidden ARIA rows describe each group above its column as a
+`columnheader` with `aria-colspan` (its visible columns) in its own header row, then the row of column
+names, so that screen readers can announce the groups with the column. `aria-rowcount` counts the
+group rows.
+
+**Copies and exports.** Copies with headers (TSV, HTML, Markdown) and exports (CSV, TSV, JSON, Parquet,
+Excel) keep one header row with the column names or labels: the files stay tables that other programs,
+and the grid itself, read back with the right column names. Groups are not written as merged cells.
+
+**Saved settings.** Groups are not part of `GridState`: they are the app's definition, given by a prop
+like `columnFormats`, while the state keeps what the user changes. The state keeps the columns' order,
+visibility and freezing by name, so applying it shows the same group headers, split where they were.
 
 ## Detail panel
 

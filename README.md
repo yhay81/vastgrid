@@ -18,9 +18,10 @@ hundreds of millions of rows — and Excel workbooks, and works like a spreadshe
 - **A spreadsheet's way of working.** Range selection with the mouse and Excel's keyboard shortcuts,
   copy as TSV / HTML / Markdown, multi-column sort, filters with a searchable value list or conditions,
   AND / OR conditions across columns and nested groups, search across all columns, find (⌘F), column
-  statistics, a running count, sum, average, min and max of the selection, grouping by columns with
-  counts, sums, averages, minimums and maximums and a totals row (computed by the engine), and export of
-  the current view to CSV, TSV, Parquet, JSON or Excel.
+  statistics, a running count, sum, average, min and max of the selection, formula columns
+  (`qty * price`) computed by the engine, grouping by columns with counts, sums, averages, minimums and
+  maximums and a totals row (computed by the engine), and export of the current view to CSV, TSV,
+  Parquet, JSON or Excel.
 - **Bring your engine.** The grid talks to a `TableSource`. Use the DuckDB server engine for files on
   disk, `vastgrid-browser` for files opened in the browser and Parquet URLs, `ArraySource` for data already
   in memory, or implement your own.
@@ -150,10 +151,13 @@ rows.
 | `locale` | `string` | the browser's language | Locale for numbers and the built-in texts: Japanese for `ja`, English otherwise. |
 | `messages` | `Partial<Messages>` | | Replaces some of the built-in texts (see `en` and `ja`). |
 | `rowHeight` | `number` | `--vg-row-height` or 24 | Row height in pixels. |
-| `headerHeight` | `number` | `--vg-header-height` or 32 | Header height in pixels. |
+| `headerHeight` | `number` | `--vg-header-height` or 32 | Height of the row of column names in pixels. Rows of `columnGroups` add to the header. |
+| `columnGroups` | `ColumnGroup[]` | | Groups of columns named in header rows above the column names; nested groups add rows. |
+| `groupHeaderHeight` | `number` | `--vg-group-header-height` or 24 | Height of each header row of groups in pixels. |
 | `maxLines` | `number` | `3` | Lines shown at most in cells of columns that wrap (`wrap` in `columnFormats`), 1 to 20. |
 | `nullText` | `string` | `""` | Text shown for null cells. |
 | `frozenColumns` | `number` | `0` | Columns frozen at the left when the table opens. |
+| `frozenRightColumns` | `number` | `0` | Columns frozen at the right when the table opens: the last ones, kept at the grid's right edge. |
 | `toolbar` | `boolean` | `true` | Shows the search box, active filters and row count. |
 | `statusBar` | `boolean` | `true` | Shows the active cell and the selection summary. |
 | `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. Sources that report their changes are read again by themselves. |
@@ -164,6 +168,8 @@ rows.
 | `exportOptions` | `GridExportOptions \| false` | `{}` | The export panel: where files go (`target`, `onExported`) and which formats to offer. `false` hides it. |
 | `drawCell` | `(args: DrawCellArgs) => void` | | Draws the visible loaded cells instead of the grid; `args.drawDefault()` draws the standard cell. |
 | `cellAction` | `(cell: GridCellContent) => CellAction \| null` | | Makes cells links or buttons: pointer, underline, screen reader role, `onCellClick` on click and Space. |
+| `formulas` | `FormulaColumn[]` | | Formula columns (`{ name, expression }`), applied on start and whenever a different value is passed. |
+| `onFormulasChange` | `(formulas: FormulaColumn[]) => void` | | Called when formula columns are added, edited or deleted. |
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | Called when the selection or the active cell changes. |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | Called when the columns' width, order, visibility or freezing change. |
@@ -181,7 +187,7 @@ rows.
 | `aria-label` | `string` | `messages.gridLabel` | The grid's name for screen readers. |
 
 A ref gives a `DataGridHandle`: `focus()`, `reload()`, `getQuery()`, `setQuery(query)`, `getState()`,
-`applyState(state)`, `goToRow(row)`, `openDetail({ focus })`, `closeDetail()`, `detailOpen`, `openExport()`, `getRowSelection()`, `setRowSelection(selection)`, the `controller` with the grid's state, and the canvas `renderer` (for
+`applyState(state)`, `goToRow(row)`, `openDetail({ focus })`, `closeDetail()`, `detailOpen`, `openExport()`, `getFormulas()`, `setFormulas(formulas)`, `getRowSelection()`, `setRowSelection(selection)`, the `controller` with the grid's state, and the canvas `renderer` (for
 diagnostics such as `renderer.timings()`).
 
 Events give a cell's `row` in the view, its `rowId` in the original table, its visible column `col` and its
@@ -225,6 +231,21 @@ panel build one, and the toolbar shows it with a button to remove it. Sources ru
 they report `capabilities.conditions` (the DuckDB engine, `vastgrid-browser` and `ArraySource` do); the
 grid leaves them out otherwise.
 
+### Frozen columns
+
+`frozenColumns` keeps the first visible columns at the left and `frozenRightColumns` the last ones at the
+right (a total or an actions column), while the columns between them scroll. The column menu and the
+"Columns" panel freeze columns at either side, and `controller.setColumnPin(column, "left" | "right" |
+null)` does it from the app. Frozen columns take at most three quarters of the grid's width; beyond that,
+those at the right and then those at the left scroll until the grid is wide enough again. `GridState`
+and `onColumnsChange` include both sides (`frozenRightColumns`, `GridColumn.pin`), and states saved with
+only `frozenColumns` still apply. See the
+[DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#frozen-columns).
+
+```tsx
+<DataGrid source={source} frozenColumns={1} frozenRightColumns={2} />
+```
+
 ### Column formats
 
 `columnFormats` sets how columns look, by their schema names. The settings change only what is shown:
@@ -249,6 +270,30 @@ setting) asks for the shown text and the labels.
 between Japanese, Chinese and Korean characters and at line breaks in the value; longer text ends with
 "…". All rows keep one height (`rowHeight` plus `--vg-line-height` per further line while a visible
 column wraps), so scrolling stays exact for any number of rows. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#column-formats).
+
+### Column groups
+
+`columnGroups` names groups of columns in header rows above the column names (multi-row headers).
+Members are schema column names or nested groups, which add a row each. Groups change only the header:
+sorting, filters, column menus, selection, events (`col` and `column`) and `GridState` work on the
+columns as before.
+
+```tsx
+const groups: ColumnGroup[] = [
+  { name: "Sales", children: [
+    { name: "Q1", children: ["jan", "feb", "mar"] },
+    { name: "Q2", children: ["apr", "may", "jun"] },
+  ] },
+];
+
+<DataGrid source={source} columnGroups={groups} groupHeaderHeight={24} />;
+```
+
+Groups follow their columns. When moving, hiding or freezing columns leaves a group's visible columns
+apart, or some frozen and some scrolling, its header is split and each part shows the name. Clicking a
+group header selects its columns (Shift extends, ⌘/Ctrl adds); dragging the header of a selected group
+moves its columns together. Copies and exports keep one header row, the column names. See the
+[DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#column-groups).
 
 ### Detail panel
 
@@ -378,6 +423,31 @@ date formats; text is never written as a formula, and more than 1,048,575 rows a
 
 See [Exporting](https://vastgrid.yhay81.com/guides/export/).
 
+### Formula columns
+
+"Add formula column…" in a column's menu adds a column computed per row by an expression, such as
+`qty * price` or `IF(due < '2024-07-01', 'late', '')`. The source evaluates it — the DuckDB engine in SQL,
+without moving the table to the browser — so it sorts, filters, shows statistics and selection summaries,
+and is exported like a column of the file. The editor checks the formula as it is typed and shows what is
+wrong. Formulas are a small language of their own (columns by name, arithmetic, `&` for text,
+comparisons, `AND` / `OR` / `NOT`, and functions for numbers, text, dates and blanks); they are never run
+as JavaScript or SQL, and the engine makes SQL from them with quoted names, parameters and a fixed list of
+functions.
+
+```tsx
+<DataGrid
+  source={source}
+  formulas={[
+    { name: "total", expression: "qty * price" },
+    { name: "with tax", expression: "ROUND(total * 1.1, 2)" },
+  ]}
+  onFormulasChange={(formulas) => save(formulas)}
+/>
+```
+
+Formula columns follow the table's columns (formula `i` is column `info.columns.length + i`), are kept in
+`GridState` and follow their columns by name. The DuckDB engine and `ArraySource` evaluate them
+(`capabilities.formulas`); `vastgrid-browser` does not yet. See [Formula columns](https://vastgrid.yhay81.com/guides/formulas/).
 ### Grouping and totals
 
 "Group" in the toolbar groups the rows that the filters keep by one or more columns and shows the
@@ -469,7 +539,7 @@ flowchart LR
 | Space · ⌘/Ctrl + Shift + Space (with `checkboxSelection`) | Check the active row · every row (shift-click checks a range) |
 | ⌘/Ctrl + C · ⌘/Ctrl + Shift + C | Copy · copy with headers |
 | ⌘/Ctrl + F | Find |
-| Alt + ↓ | Column menu (sort, filter, statistics, freeze, hide) |
+| Alt + ↓ | Column menu (sort, filter, statistics, freeze at the left or the right, hide) |
 | F2 · double click | Show the full value of the cell |
 | Alt + Enter (again: into the panel) · Esc | Open the detail panel of the active row · close it |
 | Shift + F10 · context menu key · right click | Cell menu (copy, filter to value, sort) |
@@ -507,7 +577,6 @@ npm run bench
 ## Roadmap
 
 - Editing cells, with CSV write-back that keeps untouched rows byte for byte.
-- Formula columns.
 
 See [docs/research.ja.md](docs/research.ja.md) (Japanese) for the survey of existing viewers and grids
 that shaped these choices.

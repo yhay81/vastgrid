@@ -38,6 +38,8 @@ export interface ColumnSchema {
   type: ColumnType;
   /** The engine's own type name, for example `DECIMAL(10,2)`. */
   sourceType?: string;
+  /** Formula columns (see `ViewQuery.formulas`): the expression that computes the values. */
+  expression?: string;
 }
 
 export interface TableCapabilities {
@@ -58,6 +60,11 @@ export interface TableCapabilities {
   group?: boolean;
   /** Answers `group` with `pivot` (cross tabulations). Absent means false. */
   pivot?: boolean;
+  /**
+   * Evaluates formula columns (`ViewQuery.formulas`) for reading, sorting, filtering, statistics,
+   * summaries, find and export. Absent means false.
+   */
+  formulas?: boolean;
 }
 
 export type TableStatus = "loading" | "ready" | "error";
@@ -156,7 +163,23 @@ export interface FilterGroup {
 /** A condition tree: a filter on one column, or a group of conditions. */
 export type FilterNode = Filter | FilterGroup;
 
+/**
+ * A column computed for each row from the row's other columns, by an expression (see `parseFormula` for the
+ * language). Its name must differ from the table's columns and the other formulas.
+ */
+export interface FormulaColumn {
+  name: string;
+  expression: string;
+}
+
 export interface ViewQuery {
+  /**
+   * Formula columns of the view. Formula `i` is the column `TableInfo.columns.length + i` in the view's
+   * requests (rows, sort, filters, statistics, export, …); requests without the view do not have them.
+   * A formula may use the table's columns and the other formulas, by name. The search does not look in
+   * formula columns.
+   */
+  formulas?: FormulaColumn[];
   sort?: SortKey[];
   /** Conditions that every kept row matches (AND). */
   filters?: Filter[];
@@ -538,4 +561,18 @@ export interface ColumnFormat {
   style?: (value: CellValue, context: { column: ColumnSchema; text: string }) => CellStyle | null | undefined;
   /** Overrides the grid's `copyValues` for this column's cells. */
   copy?: CopyValues;
+}
+
+/**
+ * A group of columns shown under one name in a header row above the column names (multi-row headers).
+ * Groups only change the headers: the schema, the query, the selection and copies use the columns.
+ */
+export interface ColumnGroup {
+  /** Shown in the group's header. */
+  name: string;
+  /**
+   * The group's members: schema column names and nested groups, which add a header row below this one.
+   * Names that the table does not have are ignored, so one definition can serve similar tables.
+   */
+  children: readonly (string | ColumnGroup)[];
 }

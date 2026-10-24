@@ -46,3 +46,32 @@ export class ColumnLayout {
     return low;
   }
 }
+
+/** Where a column is frozen: at the left, at the right, or not (`null`, it scrolls). */
+export type ColumnPin = "left" | "right" | null;
+
+/**
+ * Share of the body's width (without the row header) that frozen columns may take together. Columns
+ * frozen beyond it scroll with the others until the grid is wide enough again, so that the scrolling
+ * columns always keep some room.
+ */
+export const MAX_FROZEN_SHARE = 0.75;
+
+/**
+ * The columns drawn frozen at each side: the first `left` and the last `right` columns of `layout`, fewer
+ * when together they are wider than `MAX_FROZEN_SHARE` of `available` (the body's width). Columns frozen
+ * at the right give way first, then those at the left, each from the scrolling side. With an unknown
+ * width (`available` 0 or less) every frozen column stays frozen.
+ */
+export function fitFrozen(layout: ColumnLayout, left: number, right: number, available: number) {
+  const count = layout.count;
+  let fittedLeft = Math.max(0, Math.min(Math.floor(left), count));
+  let fittedRight = Math.max(0, Math.min(Math.floor(right), count - fittedLeft));
+  if (available > 0) {
+    const limit = available * MAX_FROZEN_SHARE;
+    const width = () => layout.left(fittedLeft) + layout.total - layout.left(count - fittedRight);
+    while (fittedRight > 0 && width() > limit) fittedRight--;
+    while (fittedLeft > 0 && width() > limit) fittedLeft--;
+  }
+  return { left: fittedLeft, right: fittedRight };
+}
