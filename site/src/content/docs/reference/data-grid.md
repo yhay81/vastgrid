@@ -23,7 +23,8 @@ import "vastgrid/styles.css";
 | `frozenColumns` | `number` | `0` | Columns frozen at the left when the table opens. |
 | `toolbar` | `boolean` | `true` | Shows the search box, active filters and row count. |
 | `statusBar` | `boolean` | `true` | Shows the active cell and the selection summary. |
-| `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. |
+| `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. Sources that report their changes (`subscribe`) are read again by themselves. Either way the query, the column settings, the scroll position and the active cell stay. |
+| `followTail` | `boolean` | `false` | After the table changed, show its end when the last row was shown before (for appended rows, as `tail -f`). |
 | `copyLimit` | `number` | `1000000` | Cells that can be copied at once, over all selected ranges. |
 | `columnFormats` | `Record<string, ColumnFormat>` | | Display settings by schema column name: label, number and date formats, alignment, a format function. |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | Copy the values with the schema names, or the shown text with the labels. |

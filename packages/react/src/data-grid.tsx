@@ -50,8 +50,17 @@ export interface DataGridProps {
   toolbar?: boolean;
   /** Shows the active cell and the selection summary. Defaults to `true`. */
   statusBar?: boolean;
-  /** Changing this value reads the table again, for example when the file changed on disk. */
+  /**
+   * Changing this value reads the table again, for example when the file changed on disk. Sources that
+   * report their changes (`TableSource.subscribe`) are read again by themselves. Either way the grid
+   * keeps the query, the column settings, the scroll position and the active cell.
+   */
   reloadKey?: unknown;
+  /**
+   * After the table changed, show its end when the last row was shown before, as `tail -f` does for
+   * rows appended to a log. Defaults to `false`.
+   */
+  followTail?: boolean;
   /** Cells that can be copied at once. Defaults to 1,000,000. */
   copyLimit?: number;
   /**
@@ -169,6 +178,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     toolbar = true,
     statusBar = true,
     reloadKey,
+    followTail = false,
     copyLimit = 1_000_000,
     columnFormats,
     copyValues = "raw",
@@ -209,6 +219,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       copyLimit,
       columnFormats,
       copyValues,
+      followTail,
     });
     if (props.initialState) grid.applyState(props.initialState);
     return grid;
@@ -231,6 +242,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   useEffect(() => {
     controller.options.copyValues = copyValues;
   }, [controller, copyValues]);
+
+  useEffect(() => {
+    controller.options.followTail = followTail;
+  }, [controller, followTail]);
 
   const announce = useCallback((text: string) => {
     setNotice(text);

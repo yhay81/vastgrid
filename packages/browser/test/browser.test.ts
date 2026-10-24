@@ -586,3 +586,35 @@ test("BrowserSource reads through the worker messages, cancels and closes", asyn
   source.close();
   await assert.rejects(source.info(), (error: Error & { code?: string }) => error.code === "table_not_found");
 });
+
+test("a file at a URL that changed on the server is reported to subscribers and opened again", async () => {
+  const served = await serve(path.join(root, "big.parquet"));
+  try {
+    const table = new BrowserTable({ url: served.url });
+    assert.equal(await table.checkChanges(), false, "a file that is not open is not compared");
+    await table.info();
+    assert.equal(await table.checkChanges(), false);
+    served.replace(await readFile(path.join(root, "mixed.parquet")));
+    assert.equal(await table.checkChanges(), true);
+    assert.equal((await table.info()).rowCount, 5);
+    assert.equal(await new BrowserTable({ file: new Blob(["a\n1\n"]) }).checkChanges(), false);
+  } finally {
+    await served.close();
+  }
+
+  const watched = await serve(path.join(root, "big.parquet"));
+  const source = sourceOverChannel({ url: watched.url, changeInterval: 500 });
+  try {
+    assert.equal((await source.info()).revision, '"1"');
+    let changes = 0;
+    const stop = source.subscribe(() => changes++);
+    watched.replace(await readFile(path.join(root, "mixed.parquet")));
+    for (let wait = 0; wait < 100 && changes === 0; wait++) await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(changes, 1);
+    assert.equal((await source.info()).revision, '"2"');
+    stop();
+  } finally {
+    source.close();
+    await watched.close();
+  }
+});

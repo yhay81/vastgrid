@@ -65,6 +65,21 @@
   `vastgrid-duckdb`; URLs read only what the grid shows, check the file's `ETag`, and handle servers
   without `Range` or `HEAD`, unknown sizes and authentication headers. Requests can be cancelled, and
   `close()` ends the worker.
+- `vastgrid-core`: `TableSource.subscribe(listener)`, optional, reports that a whole table changed
+  (`TableChange`, with the new revision when known); single rows are not reported. `RemoteSource` watches
+  its table while it has subscribers with a replaceable `changes` transport: `pollChanges()` (the
+  default, every 2 seconds) sends the new `revision` request, reports each new revision once, catches up
+  after failed requests and stops for servers without the request; `changes: false` turns it off.
+- `vastgrid-duckdb`: the `revision` request answers a file's current revision, and `OpenTable` has
+  `currentRevision()`. A file's revision (`fileRevision`) now includes a hash of its first 64 KiB, so a
+  rewrite with the same size and modification time is seen too.
+- `vastgrid`: a grid whose source reports a change reads the table again, merging changes within
+  `changeDelay` (300 ms), and stops listening when it stops or unmounts. Reloads, including `reloadKey`,
+  keep the query, the column settings, the scroll position and the active cell instead of going back
+  to the first row. `followTail` shows the new end after a change when the last row was shown.
+- `vastgrid-browser`: files at a URL are watched while a grid subscribes, by a `HEAD` request comparing
+  their `ETag`, `Last-Modified` or size every `changeInterval` milliseconds (5,000); a changed file is
+  opened again. Local files cannot be watched.
 
 ## 0.1.1 — 2026-10-23
 
