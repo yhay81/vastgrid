@@ -7,6 +7,7 @@ import {
   type ColumnGroup,
   type ColumnGroupSpan,
   ColumnLayout,
+  type ColumnPin,
   type ColumnSchema,
   type ColumnStats,
   type CopyValues,
@@ -21,6 +22,7 @@ import {
   type FilterNode,
   filterLeaves,
   filtersRows,
+  fitFrozen,
   GRID_STATE_VERSION,
   type GridState,
   isAbortError,
@@ -81,6 +83,8 @@ export interface GridOptions {
   locale?: string;
   nullText: string;
   frozenColumns: number;
+  /** Columns frozen at the right when the table opens. */
+  frozenRightColumns?: number;
   minColumnWidth: number;
   maxAutoWidth: number;
   /** Cells copied at most at once. */
@@ -267,8 +271,18 @@ export class GridController {
   columns: ColumnState[] = [];
   visible: ColumnState[] = [];
   layout = new ColumnLayout([]);
+  /**
+   * Visible columns frozen at each side, as the user or the app set them: the first `left` and the last
+   * `right` ones. `frozen` and `frozenRight` are the columns drawn frozen, fewer when the grid is too
+   * narrow for them (see `fitFrozen`).
+   */
+  readonly pinned = { left: 0, right: 0 };
+  /** Visible columns drawn frozen at the left. */
   frozen = 0;
   frozenWidth = 0;
+  /** Visible columns drawn frozen at the right: the last `frozenRight` ones. */
+  frozenRight = 0;
+  frozenRightWidth = 0;
   gutterWidth = 48;
   width = 0;
   height = 0;
@@ -718,7 +732,10 @@ export class GridController {
           sized: kept?.sized ?? false,
         };
       });
-      if (!previous) this.frozen = Math.min(this.options.frozenColumns, this.columns.length);
+      if (!previous) {
+        this.pinned.left = Math.min(this.options.frozenColumns, this.columns.length);
+        this.pinned.right = Math.min(this.options.frozenRightColumns ?? 0, this.columns.length - this.pinned.left);
+      }
       const pending = this.pendingState;
       if (pending && info.columns.length > 0) {
         this.pendingState = null;
@@ -873,7 +890,12 @@ export class GridController {
 
   /** The first visible column of each region that scrolls apart, where group headers are split. */
   private groupBreaks() {
-    return this.frozen > 0 ? [this.frozen] : [];
+    const breaks: number[] = [];
+    if (this.frozen > 0) breaks.push(this.frozen);
+    // Columns frozen at the right start a part of their own too.
+    const right = this.visible.length - this.frozenRight;
+    if (this.frozenRight > 0 && right > 0 && right !== this.frozen) breaks.push(right);
+    return breaks;
   }
 
   /**
@@ -1001,10 +1023,12 @@ export class GridController {
           width: state.width,
           hidden: state.hidden,
           sized: state.sized,
-          frozen: position >= 0 && position < this.frozen,
+          frozen: position >= 0 && this.pinOf(position) !== null,
+          pin: position >= 0 ? this.pinOf(position) : null,
         };
       }),
-      frozenColumns: this.frozen,
+      frozenColumns: this.pinned.left,
+      frozenRightColumns: this.pinned.right,
     };
   }
 
@@ -1022,17 +1046,39 @@ export class GridController {
       this.visibleKey = visibleKey;
       this.visibleRevision++;
     }
-    this.frozen = Math.min(this.frozen, this.visible.length);
+    this.pinned.left = Math.min(this.pinned.left, this.visible.length);
+    this.pinned.right = Math.min(this.pinned.right, this.visible.length - this.pinned.left);
     this.layout = new ColumnLayout(this.visible.map((column) => column.width));
-    this.frozenWidth = this.layout.left(this.frozen);
     const largest = Math.max(this.info?.rowCount ?? 0, this.rowCount, 1);
     const digits = String(largest).length;
     this.gutterWidth =
       Math.max(44, Math.ceil(this.measure ? this.measure("0".repeat(digits), false) : digits * 8) + 22) +
       this.checkboxWidth;
+    this.fitFrozen();
     this.selection.setBounds(this.rowCount, this.visible.length);
     this.cache.setView(this.view.id, this.rowCount, this.readableRows, this.schema.length);
     this.syncSizer();
+  }
+
+  /** Sets the columns drawn frozen from the settings and the grid's width. */
+  private fitFrozen() {
+    const fitted = fitFrozen(this.layout, this.pinned.left, this.pinned.right, this.width - this.gutterWidth);
+    this.frozen = fitted.left;
+    this.frozenRight = fitted.right;
+    this.frozenWidth = this.layout.left(this.frozen);
+    this.frozenRightWidth = this.layout.total - this.layout.left(this.visible.length - this.frozenRight);
+  }
+
+  /** The first visible column frozen at the right (the number of visible columns without any). */
+  get rightStart() {
+    return this.visible.length - this.frozenRight;
+  }
+
+  /** Where a visible column is set to be frozen (`pinned`), whether or not it is drawn frozen now. */
+  pinOf(col: number): ColumnPin {
+    if (col < this.pinned.left) return "left";
+    if (col >= this.visible.length - this.pinned.right) return "right";
+    return null;
   }
 
   /**
@@ -1064,6 +1110,7 @@ export class GridController {
     if (width === this.width && height === this.height) return;
     this.width = width;
     this.height = height;
+    this.fitFrozen();
     this.syncSizer();
     this.requestRender();
   }
@@ -1085,21 +1132,37 @@ export class GridController {
 
   /** Visible scrollable columns `[first, last]` (inclusive), or `[0, -1]`. */
   visibleScrollColumns(): [number, number] {
-    const count = this.visible.length;
-    if (count <= this.frozen) return [0, -1];
+    const rightStart = this.rightStart;
+    if (rightStart <= this.frozen) return [0, -1];
     const start = this.frozenWidth + this.scrollX.position;
-    const end = this.scrollX.position + this.width - this.gutterWidth;
-    if (start >= this.layout.total) return [0, -1];
+    const end = Math.min(
+      this.scrollX.position + this.width - this.gutterWidth - this.frozenRightWidth,
+      this.layout.left(rightStart),
+    );
+    if (start >= this.layout.left(rightStart)) return [0, -1];
     const first = Math.max(this.frozen, this.layout.indexAt(start));
-    const last = Math.min(count - 1, this.layout.indexAt(Math.max(start, end - 0.001)));
+    const last = Math.min(rightStart - 1, this.layout.indexAt(Math.max(start, end - 0.001)));
     return [first, last];
   }
 
-  /** Screen x of a visible column's left edge. */
+  /** Screen x where the columns frozen at the right start (the grid's width without any). */
+  get frozenRightX() {
+    return this.width - this.frozenRightWidth;
+  }
+
+  /** Whether a visible column is drawn frozen at the right. */
+  isFrozenRight(col: number) {
+    return this.frozenRight > 0 && col >= this.rightStart && col < this.visible.length;
+  }
+
+  /**
+   * Screen x of a visible column's left edge. Columns frozen at the left follow the row header, those
+   * frozen at the right end at the grid's right edge, and the others scroll between them.
+   */
   columnX(col: number) {
-    return col < this.frozen
-      ? this.gutterWidth + this.layout.left(col)
-      : this.gutterWidth + this.layout.left(col) - this.scrollX.position;
+    if (col < this.frozen) return this.gutterWidth + this.layout.left(col);
+    if (this.isFrozenRight(col)) return this.frozenRightX + this.layout.left(col) - this.layout.left(this.rightStart);
+    return this.gutterWidth + this.layout.left(col) - this.scrollX.position;
   }
 
   rowY(row: number) {
@@ -1109,10 +1172,15 @@ export class GridController {
   /** The visible column at screen x, or -1. */
   columnAt(x: number) {
     if (x < this.gutterWidth || this.visible.length === 0) return -1;
-    const frozenRight = this.gutterWidth + this.frozenWidth;
-    if (x < frozenRight) return this.layout.indexAt(x - this.gutterWidth);
+    if (x < this.gutterWidth + this.frozenWidth) return this.layout.indexAt(x - this.gutterWidth);
+    const rightStart = this.rightStart;
+    if (this.frozenRight > 0 && x >= this.frozenRightX) {
+      if (x >= this.width) return -1;
+      const position = this.layout.left(rightStart) + x - this.frozenRightX;
+      return Math.max(rightStart, this.layout.indexAt(position));
+    }
     const position = x - this.gutterWidth + this.scrollX.position;
-    if (position >= this.layout.total) return -1;
+    if (position >= this.layout.left(rightStart)) return -1;
     return Math.max(this.frozen, this.layout.indexAt(position));
   }
 
@@ -1139,11 +1207,21 @@ export class GridController {
     let resize = -1;
     let menu = false;
     const checkbox = (zone === "gutter" || zone === "corner") && x < this.checkboxWidth;
-    if (header && !gutter) {
-      const nearest = col >= 0 ? col : this.visible.length - 1;
+    if (header && !gutter && this.frozenRight > 0 && x >= this.frozenRightX - 5) {
+      // Columns frozen at the right are resized at their left edge, since their right edge stays in place.
+      const nearest = col >= this.rightStart ? col : this.rightStart;
+      const left = this.columnX(nearest);
+      const right = left + this.layout.width(nearest);
+      if (Math.abs(x - left) <= 5) resize = nearest;
+      else if (nearest + 1 < this.visible.length && Math.abs(x - right) <= 5) resize = nearest + 1;
+      menu = col >= 0 && resize < 0 && x >= right - 24 && x < right - 4;
+    } else if (header && !gutter) {
+      const nearest = col >= 0 ? col : this.rightStart - 1;
       const right = this.columnX(nearest) + this.layout.width(nearest);
       const left = this.columnX(nearest);
-      if (Math.abs(x - right) <= 5) resize = nearest;
+      if (nearest < 0) {
+        // Every column is frozen at the right.
+      } else if (Math.abs(x - right) <= 5) resize = nearest;
       else if (nearest > 0 && Math.abs(x - left) <= 5 && (nearest !== this.frozen || this.scrollX.position === 0))
         resize = nearest - 1;
       // The menu button is in the row of column names.
@@ -1172,10 +1250,10 @@ export class GridController {
       else if (y + rowHeight > this.scrollY.position + this.bodyHeight) top = y + rowHeight - this.bodyHeight;
     }
     let left: number | null = null;
-    if (col >= this.frozen && col < this.visible.length) {
+    if (col >= this.frozen && col < this.rightStart) {
       const start = this.layout.left(col) - this.frozenWidth;
       const end = this.layout.right(col) - this.frozenWidth;
-      const view = this.width - this.gutterWidth - this.frozenWidth;
+      const view = this.width - this.gutterWidth - this.frozenWidth - this.frozenRightWidth;
       if (start < this.scrollX.position) left = start;
       else if (end > this.scrollX.position + view) left = Math.min(start, end - view);
     }
@@ -1857,8 +1935,10 @@ export class GridController {
   hideColumn(col: number) {
     const state = this.visible[col];
     if (!state || this.visible.length <= 1) return;
+    const pin = this.pinOf(col);
     state.hidden = true;
-    if (col < this.frozen) this.frozen--;
+    if (pin === "left") this.pinned.left--;
+    else if (pin === "right") this.pinned.right--;
     this.changeColumns("visibility");
   }
 
@@ -1876,12 +1956,51 @@ export class GridController {
     this.changeColumns(changed ? "visibility" : null);
   }
 
+  /** Freezes the visible columns up to `col` at the left (none with -1). */
   freezeUpTo(col: number) {
-    const frozen = Math.max(0, Math.min(col + 1, this.visible.length));
-    const changed = frozen !== this.frozen;
-    this.frozen = frozen;
+    const left = Math.max(0, Math.min(col + 1, this.visible.length));
+    const right = Math.min(this.pinned.right, this.visible.length - left);
+    const changed = left !== this.pinned.left || right !== this.pinned.right;
+    this.pinned.left = left;
+    this.pinned.right = right;
     this.scrollToVirtual(0, null);
     this.changeColumns(changed ? "freeze" : null);
+  }
+
+  /** Freezes the visible columns from `col` to the last one at the right (none with the column count). */
+  freezeFrom(col: number) {
+    const count = this.visible.length;
+    const right = Math.max(0, Math.min(count - col, count));
+    const left = Math.min(this.pinned.left, count - right);
+    const changed = left !== this.pinned.left || right !== this.pinned.right;
+    this.pinned.left = left;
+    this.pinned.right = right;
+    this.changeColumns(changed ? "freeze" : null);
+  }
+
+  /**
+   * Freezes a column (by schema index) at the left or the right, or makes it scroll (`null`). The column
+   * moves to the inner end of the frozen columns of that side, or to the scrolling column next to the
+   * side it leaves. Hidden columns are left as they are.
+   */
+  setColumnPin(index: number, pin: ColumnPin) {
+    const moving = this.columns.find((column) => column.index === index);
+    const col = moving ? this.visible.indexOf(moving) : -1;
+    if (!moving || col < 0) return;
+    const current = this.pinOf(col);
+    if (current === pin) return;
+    if (current === "left") this.pinned.left--;
+    else if (current === "right") this.pinned.right--;
+    const rest = this.visible.filter((column) => column !== moving);
+    const at =
+      pin === "left" || (pin === null && current === "left") ? this.pinned.left : rest.length - this.pinned.right;
+    const target = rest[at];
+    const list = this.columns.filter((column) => column !== moving);
+    list.splice(target ? list.indexOf(target) : list.length, 0, moving);
+    this.columns = list;
+    if (pin === "left") this.pinned.left++;
+    else if (pin === "right") this.pinned.right++;
+    this.changeColumns("freeze");
   }
 
   /** Moves a visible column before another visible column. */
@@ -1930,7 +2049,8 @@ export class GridController {
         ...(state.sized ? { width: state.width } : {}),
         ...(state.hidden ? { hidden: true } : {}),
       })),
-      frozenColumns: this.frozen,
+      frozenColumns: this.pinned.left,
+      frozenRightColumns: this.pinned.right,
     };
   }
 
@@ -1974,12 +2094,22 @@ export class GridController {
         const automatic = column.sized ? ((type && defaultWidths[type]) ?? 150) : column.width;
         return [{ index, hidden, sized: false, width: automatic }];
       });
-      this.columns = [...listed, ...this.columns.filter((column) => current.has(column.index))];
+      // Columns the state does not list go before the columns frozen at the right.
+      let split = listed.length;
+      for (let right = resolved.frozenRightColumns ?? this.pinned.right; right > 0 && split > 0; ) {
+        split--;
+        if (!listed[split].hidden) right--;
+      }
+      const others = this.columns.filter((column) => current.has(column.index));
+      this.columns = [...listed.slice(0, split), ...others, ...listed.slice(split)];
       if (this.columns.length > 0 && this.columns.every((column) => column.hidden)) this.columns[0].hidden = false;
       this.autoSized = this.columns.every((column) => column.sized);
     }
-    if (resolved.frozenColumns !== undefined) this.frozen = resolved.frozenColumns;
-    if (resolved.columns || resolved.frozenColumns !== undefined) this.columnsChanged("state");
+    if (resolved.frozenColumns !== undefined) this.pinned.left = resolved.frozenColumns;
+    if (resolved.frozenRightColumns !== undefined) this.pinned.right = resolved.frozenRightColumns;
+    if (resolved.columns || resolved.frozenColumns !== undefined || resolved.frozenRightColumns !== undefined) {
+      this.columnsChanged("state");
+    }
     return resolved.query;
   }
 

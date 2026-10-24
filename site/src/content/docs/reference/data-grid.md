@@ -24,6 +24,7 @@ import "vastgrid/styles.css";
 | `groupHeaderHeight` | `number` | `--vg-group-header-height` or 24 | Height of each header row of groups in pixels. |
 | `nullText` | `string` | `""` | Text shown for null cells. |
 | `frozenColumns` | `number` | `0` | Columns frozen at the left when the table opens. |
+| `frozenRightColumns` | `number` | `0` | Columns frozen at the right when the table opens: the last ones, kept at the grid's right edge. |
 | `toolbar` | `boolean` | `true` | Shows the search box, active filters and row count. |
 | `statusBar` | `boolean` | `true` | Shows the active cell and the selection summary. |
 | `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. Sources that report their changes (`subscribe`) are read again by themselves. Either way the query, the column settings, the scroll position and the active cell stay. |
@@ -113,8 +114,9 @@ A cell has three kinds of coordinates:
   to its first row, and when moving or hiding columns puts another column under the active cell.
 - `GridColumnsEvent`: `reason` (`"resize"`, `"move"`, `"visibility"`, `"freeze"`, `"state"` when a state
   was applied, `"schema"` when the table was read again with other columns), `columns` (every column in
-  display order with `column`, `name`, `col` (-1 when hidden), `width`, `hidden`, `sized`, `frozen`) and
-  `frozenColumns`. Dragging a column's edge reports the width once, when the drag ends. Widths that the
+  display order with `column`, `name`, `col` (-1 when hidden), `width`, `hidden`, `sized`, `frozen` and
+  `pin`, the side it is frozen at: `"left"`, `"right"` or `null`), `frozenColumns` and `frozenRightColumns`.
+  Dragging a column's edge reports the width once, when the drag ends. Widths that the
   grid fits by itself are not reported.
 - `GridCellEvent`: the cell's coordinates, its loaded `value` (`undefined` while it is not loaded),
   `trigger` (`"pointer"` or `"keyboard"`), the modifier keys and `preventDefault()`. A click is a press and
@@ -175,7 +177,8 @@ function read(text: string | null) {
   "schema": ["id", "name", "price"],
   "query": { "sort": [{ "column": 2, "direction": "desc" }] },
   "columns": [{ "name": "name", "width": 220 }, { "name": "id", "hidden": true }, { "name": "price" }],
-  "frozenColumns": 1
+  "frozenColumns": 1,
+  "frozenRightColumns": 0
 }
 ```
 
@@ -183,7 +186,7 @@ function read(text: string | null) {
   indexes refer to it, so they are mapped onto the table's columns by name. Of repeated names, the nth
   matches the nth.
 - Columns of the table that the state does not list (added to the file later) keep their settings and
-  follow the listed ones. Listed columns, sort keys and filters whose column the table no longer has are
+  follow the listed ones, before the columns frozen at the right. Listed columns, sort keys and filters whose column the table no longer has are
   dropped, and frozen columns that are gone are not replaced by others. At least one column stays visible.
 - A width is saved only for columns the user sized; the others are fitted again to their values.
 - Every part except `version` is optional: applying a state changes only the parts it has. A
@@ -200,6 +203,36 @@ function read(text: string | null) {
 
 `renderer.timings()` returns `{ frames, average, slowest }` in milliseconds over the last 120 frames
 drawn. The [demo](/demo/) shows it in its toolbar.
+
+## Frozen columns
+
+Columns can be frozen at the left (`frozenColumns`), at the right (`frozenRightColumns`), or not at all,
+for example to keep an ID at the left and a total or actions column at the right while the columns
+between them scroll. Each count is of visible columns from its end, so a column's place in the display
+order decides its side: `GridColumn.pin` in `onColumnsChange` is `"left"`, `"right"` or `null`.
+
+- The column menu offers "Freeze up to this column" and "Freeze from this column to the right edge" (and
+  their "Unfreeze"), and the "Columns" panel sets each column's side (None, Left, Right). The controller
+  does the same: `freezeUpTo(col)`, `freezeFrom(col)` and `setColumnPin(column, "left" | "right" | null)`,
+  which moves the column to the inner end of that side.
+- Moving, hiding, resizing, selecting, copying and the menus use the display order, whichever side a
+  column is on. Columns frozen at the right are resized at their left edge. Keyboard moves scroll only the
+  columns between the frozen ones.
+- The horizontal scrollbar covers the whole width of the columns, as without frozen columns; at its end,
+  the last scrolling column meets the columns frozen at the right.
+- Frozen columns take at most three quarters of the grid's width without the row header. When they need
+  more, those at the right and then those at the left scroll with the others, from the inner side, until
+  the grid is wide enough again. The settings, the events and the saved state keep the counts as set.
+- `GridState` keeps both counts (`frozenColumns`, `frozenRightColumns`). States saved before right freezing
+  existed have only `frozenColumns` and change only the left side.
+
+```tsx
+<DataGrid source={source} frozenColumns={1} frozenRightColumns={2} />;
+
+// Freeze the table column 5 at the right, or let it scroll again.
+grid.current?.controller.setColumnPin(5, "right");
+grid.current?.controller.setColumnPin(5, null);
+```
 
 ## Column formats
 

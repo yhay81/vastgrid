@@ -155,6 +155,7 @@ rows.
 | `maxLines` | `number` | `3` | Lines shown at most in cells of columns that wrap (`wrap` in `columnFormats`), 1 to 20. |
 | `nullText` | `string` | `""` | Text shown for null cells. |
 | `frozenColumns` | `number` | `0` | Columns frozen at the left when the table opens. |
+| `frozenRightColumns` | `number` | `0` | Columns frozen at the right when the table opens: the last ones, kept at the grid's right edge. |
 | `toolbar` | `boolean` | `true` | Shows the search box, active filters and row count. |
 | `statusBar` | `boolean` | `true` | Shows the active cell and the selection summary. |
 | `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. Sources that report their changes are read again by themselves. |
@@ -225,6 +226,21 @@ also applies. In the grid, "Conditions…" in the toolbar and "Add condition (AN
 panel build one, and the toolbar shows it with a button to remove it. Sources run condition trees when
 they report `capabilities.conditions` (the DuckDB engine, `vastgrid-browser` and `ArraySource` do); the
 grid leaves them out otherwise.
+
+### Frozen columns
+
+`frozenColumns` keeps the first visible columns at the left and `frozenRightColumns` the last ones at the
+right (a total or an actions column), while the columns between them scroll. The column menu and the
+"Columns" panel freeze columns at either side, and `controller.setColumnPin(column, "left" | "right" |
+null)` does it from the app. Frozen columns take at most three quarters of the grid's width; beyond that,
+those at the right and then those at the left scroll until the grid is wide enough again. `GridState`
+and `onColumnsChange` include both sides (`frozenRightColumns`, `GridColumn.pin`), and states saved with
+only `frozenColumns` still apply. See the
+[DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#frozen-columns).
+
+```tsx
+<DataGrid source={source} frozenColumns={1} frozenRightColumns={2} />
+```
 
 ### Column formats
 
@@ -473,7 +489,7 @@ flowchart LR
 | Space · ⌘/Ctrl + Shift + Space (with `checkboxSelection`) | Check the active row · every row (shift-click checks a range) |
 | ⌘/Ctrl + C · ⌘/Ctrl + Shift + C | Copy · copy with headers |
 | ⌘/Ctrl + F | Find |
-| Alt + ↓ | Column menu (sort, filter, statistics, freeze, hide) |
+| Alt + ↓ | Column menu (sort, filter, statistics, freeze at the left or the right, hide) |
 | F2 · double click | Show the full value of the cell |
 | Alt + Enter (again: into the panel) · Esc | Open the detail panel of the active row · close it |
 | Shift + F10 · context menu key · right click | Cell menu (copy, filter to value, sort) |

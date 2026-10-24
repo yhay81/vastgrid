@@ -24,6 +24,7 @@ import "vastgrid/styles.css";
 | `groupHeaderHeight` | `number` | `--vg-group-header-height` か 24 | グループの段 1 段の高さ（px）。 |
 | `nullText` | `string` | `""` | null のセルに表示する文字。 |
 | `frozenColumns` | `number` | `0` | 表を開いたときに左に固定する列の数。 |
+| `frozenRightColumns` | `number` | `0` | 表を開いたときに右に固定する列の数。最後の列から数え、グリッドの右端に表示します。 |
 | `toolbar` | `boolean` | `true` | 検索欄、適用中の絞り込み、行数を表示します。 |
 | `statusBar` | `boolean` | `true` | アクティブなセルと選択範囲の集計を表示します。 |
 | `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。変更を通知する source（`subscribe`）は自動で読み直されます。どちらの場合も、クエリー・列の設定・スクロール位置・アクティブなセルはそのままです。 |
@@ -102,7 +103,7 @@ grid.current?.setQuery({ sort: [{ column: 2, direction: "desc" }], search: "Toky
 | `column` | 表の列（`TableInfo.columns`）の番号で、`ViewQuery` と同じものです。列を動かしたり隠したりしても変わりません。 |
 
 - `GridSelectionEvent`：`active` はアクティブなセル（`row`、`rowId`、`col`、`column`）、`ranges` は選択範囲の一覧です。範囲ごとに `top`、`bottom`、`left`、`right`（両端を含む、ビューの行と表示中の列の位置）、`columns`（その列の表の番号）、列全体・行全体の選択を表す `allRows`・`allCols` があります。表の列が初めて届いたとき（アクティブなセルに列ができたとき）、新しいビューでアクティブなセルが先頭の行に移ったとき、列を動かしたり隠したりしてアクティブなセルの列が変わったときにも呼ばれます。
-- `GridColumnsEvent`：`reason`（`"resize"`、`"move"`、`"visibility"`、`"freeze"`、状態を適用したときの `"state"`、表を読み直して列が変わったときの `"schema"`）、`columns`（全列を表示順に。`column`、`name`、`col`（隠した列は -1）、`width`、`hidden`、`sized`、`frozen`）、`frozenColumns` です。列の端をドラッグしたときは、ドラッグを終えたときに 1 回だけ知らせます。グリッドが自動で合わせた幅は知らせません。
+- `GridColumnsEvent`：`reason`（`"resize"`、`"move"`、`"visibility"`、`"freeze"`、状態を適用したときの `"state"`、表を読み直して列が変わったときの `"schema"`）、`columns`（全列を表示順に。`column`、`name`、`col`（隠した列は -1）、`width`、`hidden`、`sized`、`frozen`、固定している側を表す `pin`（`"left"`、`"right"`、`null`））、`frozenColumns`、`frozenRightColumns` です。列の端をドラッグしたときは、ドラッグを終えたときに 1 回だけ知らせます。グリッドが自動で合わせた幅は知らせません。
 - `GridCellEvent`：セルの位置、読み込み済みの値 `value`（読み込む前は `undefined`）、`trigger`（`"pointer"` か `"keyboard"`）、修飾キー、`preventDefault()` です。クリックは、同じセルで押して離したときです。DOM と同じく、ダブルクリックの前にはクリックが 2 回届きます。アクティブなセルでの Space は、`onCellClick` があるときだけクリックとして扱います（ないときはこれまでどおりブラウザーに任せます）。F2 はダブルクリックとして扱います。`checkboxSelection` のときは、ハンドラーが `preventDefault()` を呼ばない限り、Space でアクティブな行も選びます。
 - `GridRowSelectionEvent`：[行の選択](#行の選択チェックボックス)を参照してください。
 
@@ -155,12 +156,13 @@ function read(text: string | null) {
   "schema": ["id", "name", "price"],
   "query": { "sort": [{ "column": 2, "direction": "desc" }] },
   "columns": [{ "name": "name", "width": 220 }, { "name": "id", "hidden": true }, { "name": "price" }],
-  "frozenColumns": 1
+  "frozenColumns": 1,
+  "frozenRightColumns": 0
 }
 ```
 
 - 列は名前で覚えます。`schema` は保存したときの列名の一覧で、クエリーの列の番号はこれを指します。適用するときは、名前で表の列に対応させます。同じ名前の列が複数あるときは、n 番目どうしを対応させます。
-- 状態に載っていない表の列（あとからファイルに足された列など）は、今の設定のまま、載っている列のあとに並びます。表にもうない列・並べ替えのキー・絞り込みは捨てます。固定していた列がなくなっても、ほかの列を代わりに固定しません。少なくとも 1 列は表示したままにします。
+- 状態に載っていない表の列（あとからファイルに足された列など）は、今の設定のまま、載っている列のあと、右に固定した列の前に並びます。表にもうない列・並べ替えのキー・絞り込みは捨てます。固定していた列がなくなっても、ほかの列を代わりに固定しません。少なくとも 1 列は表示したままにします。
 - 幅は、利用者が決めた列だけ保存します。それ以外の列は、値に合わせてもう一度幅を決めます。
 - `version` 以外の項目はどれも省略できます。状態を適用すると、含まれている項目だけを変えます。`onQueryChange` や `getQuery()` で保存した `ViewQuery` も、そのクエリーを持つ状態として読みます。
 - `applyState`（と `initialState`）は表を読み込む前でも使えます。状態は列がわかるまで、クエリーは表の準備ができるまで待ってから適用します。その間に `setQuery` で設定したクエリーは、状態のクエリーより優先します。
@@ -169,6 +171,24 @@ function read(text: string | null) {
 `onStateChange` は、`initialState` を含め、状態を適用したときにも呼ばれます。
 
 `renderer.timings()` は、直近に描いた 120 フレームについて `{ frames, average, slowest }`（時間はミリ秒）を返します。[デモ](/ja/demo/)では、これをツールバーに表示しています。
+
+## 列の固定
+
+列は左（`frozenColumns`）、右（`frozenRightColumns`）に固定するか、固定しないでおけます。たとえば ID を左に、合計や操作の列を右に残し、その間の列をスクロールできます。どちらも表示中の列をそれぞれの端から数えた数なので、表示順の位置で固定する側が決まります。`onColumnsChange` の `GridColumn.pin` は `"left"`、`"right"`、`null` のいずれかです。
+
+- 列のメニューの「この列までを固定」「この列から右端までを固定」（と、それぞれの解除）、ツールバーの「列」パネルの各列の選択（なし・左・右）で固定できます。controller の `freezeUpTo(col)`、`freezeFrom(col)`、`setColumnPin(column, "left" | "right" | null)` も同じ操作です。`setColumnPin` は列をその側の内側の端へ動かします。
+- 列の移動・非表示・幅の変更・選択・コピー・メニューは、どちら側の列でも表示順で扱います。右に固定した列は、左の端をドラッグして幅を変えます。キーボードで動いたときは、固定列の間の列だけをスクロールします。
+- 横のスクロールバーは、固定列がないときと同じく、列全体の幅を表します。右端までスクロールすると、最後のスクロールする列が右の固定列に接します。
+- 固定列は合わせて、行見出しを除いたグリッドの幅の 4 分の 3 までを使います。それを超えるときは、右、次に左の固定列を内側から順にスクロールする列として表示し、グリッドが広がると元に戻します。設定・イベント・保存する状態は、設定したままの数を保ちます。
+- `GridState` は両方の数（`frozenColumns`、`frozenRightColumns`）を持ちます。右の固定ができる前に保存した状態は `frozenColumns` だけを持ち、左の固定だけを変えます。
+
+```tsx
+<DataGrid source={source} frozenColumns={1} frozenRightColumns={2} />;
+
+// 表の 5 番の列を右に固定する。固定をやめるときは null。
+grid.current?.controller.setColumnPin(5, "right");
+grid.current?.controller.setColumnPin(5, null);
+```
 
 ## 列の表示設定
 

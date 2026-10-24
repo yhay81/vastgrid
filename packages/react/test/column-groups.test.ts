@@ -189,3 +189,18 @@ test("copies have one header row: the column names", async () => {
     grid.dispose();
   }
 });
+
+test("freezing columns at the right splits group headers there too", async () => {
+  const grid = await mountedGrid();
+  try {
+    // Freezing from feb to the right edge: feb, apr and note stay at the right.
+    grid.freezeFrom(2);
+    assert.equal(grid.frozenRight, 3);
+    assert.deepEqual(labels(grid), [
+      ["Sales:1-1", "Sales:2-3"],
+      ["Q1:1-1", "Q1:2-2", "Q2:3-3"],
+    ]);
+  } finally {
+    grid.dispose();
+  }
+});

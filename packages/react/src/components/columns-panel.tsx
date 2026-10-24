@@ -1,15 +1,17 @@
 import { useState } from "react";
-import type { ColumnSchema } from "vastgrid-core";
+import type { ColumnPin, ColumnSchema } from "vastgrid-core";
 import type { ColumnState } from "../controller.js";
 import type { Messages } from "../messages.js";
 
-/** Shows and hides columns. */
+/** Shows and hides columns, and freezes them at the left or the right. */
 export function ColumnsPanel({
   columns,
   schema,
   labelOf,
   messages,
+  pinOf,
   onToggle,
+  onPin,
   onShowAll,
 }: {
   columns: ColumnState[];
@@ -17,7 +19,10 @@ export function ColumnsPanel({
   /** The name shown for a schema column. */
   labelOf: (index: number) => string;
   messages: Messages;
+  /** Where a schema column is frozen. */
+  pinOf: (index: number) => ColumnPin;
   onToggle: (index: number, hidden: boolean) => void;
+  onPin: (index: number, pin: ColumnPin) => void;
   onShowAll: () => void;
 }) {
   const [search, setSearch] = useState("");
@@ -52,6 +57,20 @@ export function ColumnsPanel({
             />
             <span className="vg-check__label">{labelOf(column.index)}</span>
             <span className="vg-check__count">{messages.types[schema[column.index]?.type ?? "unknown"]}</span>
+            <select
+              className="vg-input vg-columns__pin"
+              aria-label={messages.columnPin(labelOf(column.index))}
+              value={pinOf(column.index) ?? ""}
+              disabled={column.hidden}
+              onChange={(event) => {
+                const value = event.target.value;
+                onPin(column.index, value === "left" || value === "right" ? value : null);
+              }}
+            >
+              <option value="">{messages.pinNone}</option>
+              <option value="left">{messages.pinLeft}</option>
+              <option value="right">{messages.pinRight}</option>
+            </select>
           </label>
         ))}
       </div>
