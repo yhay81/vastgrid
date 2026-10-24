@@ -12,6 +12,14 @@ export {
   sameCellValue,
 } from "./cell-input.js";
 export { parseHtmlTable, parseTsv, toHtmlTable, toMarkdownTable, toTsv } from "./clipboard.js";
+export {
+  type ColumnGroupSpan,
+  columnGroupDepth,
+  columnGroupPaths,
+  columnGroupSpans,
+  MAX_GROUP_DEPTH,
+  spanAt,
+} from "./column-groups.js";
 export { isNumericType, isTemporalType } from "./column-type.js";
 export {
   EditHistory,
@@ -40,6 +48,33 @@ export {
 } from "./filter-tree.js";
 export { ColumnFormatter, type FormatOptions, numericValue, plainText, ValueFormatter } from "./format.js";
 export {
+  type CompiledFormula,
+  compileFormulas,
+  FORMULA_DATE_PATTERN,
+  FORMULA_FUNCTIONS,
+  FormulaError,
+  type FormulaErrorCode,
+  type FormulaExpression,
+  type FormulaFunction,
+  type FormulaOperator,
+  type FormulaSyntax,
+  type FormulaType,
+  formulaColumnType,
+  formulaEvaluator,
+  formulaNames,
+  formulaNumberText,
+  formulaReference,
+  formulaSchema,
+  formulaTypeOf,
+  isExactNumberColumn,
+  MAX_FORMULA_DEPTH,
+  MAX_FORMULA_LENGTH,
+  MAX_FORMULA_NAME_LENGTH,
+  MAX_FORMULA_NODES,
+  MAX_FORMULAS,
+  parseFormula,
+} from "./formula.js";
+export {
   GRID_STATE_VERSION,
   type GridColumnSetting,
   type GridState,
@@ -47,7 +82,7 @@ export {
   type ResolvedGridState,
   resolveGridState,
 } from "./grid-state.js";
-export { ColumnLayout } from "./layout.js";
+export { ColumnLayout, type ColumnPin, fitFrozen, MAX_FROZEN_SHARE } from "./layout.js";
 export {
   ErrorCodes,
   type InfoResult,
@@ -95,6 +130,7 @@ export {
   isEmptyQuery,
   MAX_TEXT_LIMIT,
   MAX_UPDATE_CELLS,
+  queryFormulas,
   SourceError,
   type TableChange,
   type TableChangeListener,

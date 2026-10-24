@@ -1,24 +1,37 @@
 import { useState } from "react";
-import type { ColumnSchema } from "vastgrid-core";
+import type { ColumnPin, ColumnSchema } from "vastgrid-core";
 import type { ColumnState } from "../controller.js";
 import type { Messages } from "../messages.js";
 
-/** Shows and hides columns. */
+/** Shows and hides columns, and freezes them at the left or the right. */
 export function ColumnsPanel({
   columns,
   schema,
   labelOf,
   messages,
+  pinOf,
   onToggle,
+  onPin,
   onShowAll,
+  broken = [],
+  onAddFormula,
+  onEditFormula,
 }: {
   columns: ColumnState[];
   schema: ColumnSchema[];
   /** The name shown for a schema column. */
   labelOf: (index: number) => string;
   messages: Messages;
+  /** Where a schema column is frozen. */
+  pinOf: (index: number) => ColumnPin;
   onToggle: (index: number, hidden: boolean) => void;
+  onPin: (index: number, pin: ColumnPin) => void;
   onShowAll: () => void;
+  /** Formula columns not shown because of an error, with its text. */
+  broken?: { name: string; error: string }[];
+  /** Opens the editor of a new formula column; left out when the source does not evaluate formulas. */
+  onAddFormula?: () => void;
+  onEditFormula?: (name: string) => void;
 }) {
   const [search, setSearch] = useState("");
   const needle = search.trim().toLowerCase();
@@ -52,10 +65,46 @@ export function ColumnsPanel({
             />
             <span className="vg-check__label">{labelOf(column.index)}</span>
             <span className="vg-check__count">{messages.types[schema[column.index]?.type ?? "unknown"]}</span>
+            <select
+              className="vg-input vg-columns__pin"
+              aria-label={messages.columnPin(labelOf(column.index))}
+              value={pinOf(column.index) ?? ""}
+              disabled={column.hidden}
+              onChange={(event) => {
+                const value = event.target.value;
+                onPin(column.index, value === "left" || value === "right" ? value : null);
+              }}
+            >
+              <option value="">{messages.pinNone}</option>
+              <option value="left">{messages.pinLeft}</option>
+              <option value="right">{messages.pinRight}</option>
+            </select>
           </label>
         ))}
       </div>
+      {broken.length > 0 && (
+        <div className="vg-columns__broken">
+          <p className="vg-panel__muted">{messages.formulaBroken}</p>
+          {broken.map((item) => (
+            <button
+              type="button"
+              key={item.name}
+              className="vg-columns__formula"
+              title={item.error}
+              onClick={() => onEditFormula?.(item.name)}
+            >
+              <span className="vg-check__label">{item.name}</span>
+              <span className="vg-panel__error">{item.error}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="vg-panel__actions">
+        {onAddFormula && (
+          <button type="button" className="vg-button" onClick={onAddFormula}>
+            {messages.addFormula}
+          </button>
+        )}
         <button type="button" className="vg-button" onClick={onShowAll} disabled={visibleCount === columns.length}>
           {messages.showAllColumns}
         </button>

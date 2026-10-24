@@ -152,6 +152,7 @@ Worker のメモリーは CSV で約 40 MB（索引は 1,024 行ごとに 8 バ�
   ファイルは行グループ単位でデコードするため、数百万行の並べ替えの最初の画面には数秒かかります。その用途では
   `vastgrid-duckdb` で配信してください。
 - 並べ替えは Worker で並べ替える列の値を持って行います。数千万行では Worker に数百 MB のメモリーが要ります。
+- [計算列](/ja/guides/formulas/)はまだ評価しません（`capabilities.formulas` は false）。グリッドは計算列を出さないので、使うときは `vastgrid-duckdb` で配信してください。
 - 変更を検出できるのは URL のファイルだけです。ローカルの `File` はその時点の写しで、ディスク上で変わるとブラウザーが読めなくなるため、開き直してください（ファイルの選択からなど）。URL の場合、別のオリジンのサーバーは `Access-Control-Expose-Headers` に `ETag`（か `Last-Modified`）を含めてください。
 
 ## DuckDB-WASM ではなく hyparquet を選んだ理由

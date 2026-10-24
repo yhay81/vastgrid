@@ -19,9 +19,12 @@ import "vastgrid/styles.css";
 | `messages` | `Partial<Messages>` | | 組み込みの文言の一部を置き換えます（`en` と `ja` を参照）。 |
 | `rowHeight` | `number` | `--vg-row-height` か 24 | 行の高さ（px）。 |
 | `maxLines` | `number` | `3` | 折り返す列（`columnFormats` の `wrap`）のセルに表示する最大の行数（1〜20）。 |
-| `headerHeight` | `number` | `--vg-header-height` か 32 | 見出しの高さ（px）。 |
+| `headerHeight` | `number` | `--vg-header-height` か 32 | 列名の段の高さ（px）。`columnGroups` の段は、この上に加わります。 |
+| `columnGroups` | `ColumnGroup[]` | | 列名の上の段に名前を出す列のグループ（[列のグループ](#列のグループ)を参照）。 |
+| `groupHeaderHeight` | `number` | `--vg-group-header-height` か 24 | グループの段 1 段の高さ（px）。 |
 | `nullText` | `string` | `""` | null のセルに表示する文字。 |
 | `frozenColumns` | `number` | `0` | 表を開いたときに左に固定する列の数。 |
+| `frozenRightColumns` | `number` | `0` | 表を開いたときに右に固定する列の数。最後の列から数え、グリッドの右端に表示します。 |
 | `toolbar` | `boolean` | `true` | 検索欄、適用中の絞り込み、行数を表示します。 |
 | `statusBar` | `boolean` | `true` | アクティブなセルと選択範囲の集計を表示します。 |
 | `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。変更を通知する source（`subscribe`）は自動で読み直されます。どちらの場合も、クエリー・列の設定・スクロール位置・アクティブなセルはそのままです。 |
@@ -47,6 +50,8 @@ import "vastgrid/styles.css";
 | `rowKey` | `string` | 行の位置 | 行を識別する値（主キー）の列名。データが新しくなっても行の選択が残ります。 |
 | `rowSelection` | `RowSelection` | | 選択する行。最初と、違う値を渡したときに適用します。 |
 | `onRowSelectionChange` | `(event: GridRowSelectionEvent) => void` | | ユーザー・アプリ・グリッドが行の選択を変えたときに呼ばれます。 |
+| `formulas` | `FormulaColumn[]` | | 計算列（`{ name, expression }`）。最初と、違う値を渡したときに適用します。[計算列](/ja/guides/formulas/)を参照してください。 |
+| `onFormulasChange` | `(formulas: FormulaColumn[]) => void` | | 利用者かアプリが計算列を追加・編集・削除したときに呼ばれます。 |
 | `detailOpen` | `boolean` | | [詳細パネル](#詳細パネル)を開きます（制御する値）。指定しなければグリッドが状態を持ちます。 |
 | `defaultDetailOpen` | `boolean` | `false` | `detailOpen` を指定しないときに、マウントした時点で詳細パネルを開くかどうか。 |
 | `onDetailOpenChange` | `(open: boolean) => void` | | 利用者か handle が詳細パネルを開閉したときに呼ばれます。 |
@@ -67,6 +72,8 @@ ref からは `DataGridHandle` を使えます。
 | `getState()` | クエリーと列の設定。保存用の `GridState` です。 |
 | `applyState(state)` | 保存した `GridState` を適用します。このバージョンで読めない値なら `false` を返します。 |
 | `goToRow(row)` | 現在のビューのその行までスクロールし、アクティブにします。 |
+| `getFormulas()` | 計算列。今は計算できない式も含みます。 |
+| `setFormulas(formulas)` | 計算列を置き換えます。 |
 | `getRowSelection()` | 選んだ行。`RowSelection` で返します。 |
 | `setRowSelection(selection)` | 選ぶ行を置き換えます。`RowSelection` でない値なら `false` を返します。 |
 | `openExport()` | ツールバーがなくても、書き出しパネルを開きます。source が今書き出せないときは `false` を返します。 |
@@ -107,7 +114,7 @@ grid.current?.setQuery({ sort: [{ column: 2, direction: "desc" }], search: "Toky
 | `column` | 表の列（`TableInfo.columns`）の番号で、`ViewQuery` と同じものです。列を動かしたり隠したりしても変わりません。 |
 
 - `GridSelectionEvent`：`active` はアクティブなセル（`row`、`rowId`、`col`、`column`）、`ranges` は選択範囲の一覧です。範囲ごとに `top`、`bottom`、`left`、`right`（両端を含む、ビューの行と表示中の列の位置）、`columns`（その列の表の番号）、列全体・行全体の選択を表す `allRows`・`allCols` があります。表の列が初めて届いたとき（アクティブなセルに列ができたとき）、新しいビューでアクティブなセルが先頭の行に移ったとき、列を動かしたり隠したりしてアクティブなセルの列が変わったときにも呼ばれます。
-- `GridColumnsEvent`：`reason`（`"resize"`、`"move"`、`"visibility"`、`"freeze"`、状態を適用したときの `"state"`、表を読み直して列が変わったときの `"schema"`）、`columns`（全列を表示順に。`column`、`name`、`col`（隠した列は -1）、`width`、`hidden`、`sized`、`frozen`）、`frozenColumns` です。列の端をドラッグしたときは、ドラッグを終えたときに 1 回だけ知らせます。グリッドが自動で合わせた幅は知らせません。
+- `GridColumnsEvent`：`reason`（`"resize"`、`"move"`、`"visibility"`、`"freeze"`、状態を適用したときの `"state"`、表を読み直して列が変わったときの `"schema"`）、`columns`（全列を表示順に。`column`、`name`、`col`（隠した列は -1）、`width`、`hidden`、`sized`、`frozen`、固定している側を表す `pin`（`"left"`、`"right"`、`null`））、`frozenColumns`、`frozenRightColumns` です。列の端をドラッグしたときは、ドラッグを終えたときに 1 回だけ知らせます。グリッドが自動で合わせた幅は知らせません。
 - `GridCellEvent`：セルの位置、読み込み済みの値 `value`（読み込む前は `undefined`）、`trigger`（`"pointer"` か `"keyboard"`）、修飾キー、`preventDefault()` です。クリックは、同じセルで押して離したときです。DOM と同じく、ダブルクリックの前にはクリックが 2 回届きます。アクティブなセルでの Space は、`onCellClick` があるときだけクリックとして扱います（ないときはこれまでどおりブラウザーに任せます）。F2 はダブルクリックとして扱います。`checkboxSelection` のときは、ハンドラーが `preventDefault()` を呼ばない限り、Space でアクティブな行も選びます。
 - `GridRowSelectionEvent`：[行の選択](#行の選択チェックボックス)を参照してください。
 
@@ -160,12 +167,13 @@ function read(text: string | null) {
   "schema": ["id", "name", "price"],
   "query": { "sort": [{ "column": 2, "direction": "desc" }] },
   "columns": [{ "name": "name", "width": 220 }, { "name": "id", "hidden": true }, { "name": "price" }],
-  "frozenColumns": 1
+  "frozenColumns": 1,
+  "frozenRightColumns": 0
 }
 ```
 
 - 列は名前で覚えます。`schema` は保存したときの列名の一覧で、クエリーの列の番号はこれを指します。適用するときは、名前で表の列に対応させます。同じ名前の列が複数あるときは、n 番目どうしを対応させます。
-- 状態に載っていない表の列（あとからファイルに足された列など）は、今の設定のまま、載っている列のあとに並びます。表にもうない列・並べ替えのキー・絞り込みは捨てます。固定していた列がなくなっても、ほかの列を代わりに固定しません。少なくとも 1 列は表示したままにします。
+- 状態に載っていない表の列（あとからファイルに足された列など）は、今の設定のまま、載っている列のあと、右に固定した列の前に並びます。表にもうない列・並べ替えのキー・絞り込みは捨てます。固定していた列がなくなっても、ほかの列を代わりに固定しません。少なくとも 1 列は表示したままにします。
 - 幅は、利用者が決めた列だけ保存します。それ以外の列は、値に合わせてもう一度幅を決めます。
 - `version` 以外の項目はどれも省略できます。状態を適用すると、含まれている項目だけを変えます。`onQueryChange` や `getQuery()` で保存した `ViewQuery` も、そのクエリーを持つ状態として読みます。
 - `applyState`（と `initialState`）は表を読み込む前でも使えます。状態は列がわかるまで、クエリーは表の準備ができるまで待ってから適用します。その間に `setQuery` で設定したクエリーは、状態のクエリーより優先します。
@@ -174,6 +182,24 @@ function read(text: string | null) {
 `onStateChange` は、`initialState` を含め、状態を適用したときにも呼ばれます。
 
 `renderer.timings()` は、直近に描いた 120 フレームについて `{ frames, average, slowest }`（時間はミリ秒）を返します。[デモ](/ja/demo/)では、これをツールバーに表示しています。
+
+## 列の固定
+
+列は左（`frozenColumns`）、右（`frozenRightColumns`）に固定するか、固定しないでおけます。たとえば ID を左に、合計や操作の列を右に残し、その間の列をスクロールできます。どちらも表示中の列をそれぞれの端から数えた数なので、表示順の位置で固定する側が決まります。`onColumnsChange` の `GridColumn.pin` は `"left"`、`"right"`、`null` のいずれかです。
+
+- 列のメニューの「この列までを固定」「この列から右端までを固定」（と、それぞれの解除）、ツールバーの「列」パネルの各列の選択（なし・左・右）で固定できます。controller の `freezeUpTo(col)`、`freezeFrom(col)`、`setColumnPin(column, "left" | "right" | null)` も同じ操作です。`setColumnPin` は列をその側の内側の端へ動かします。
+- 列の移動・非表示・幅の変更・選択・コピー・メニューは、どちら側の列でも表示順で扱います。右に固定した列は、左の端をドラッグして幅を変えます。キーボードで動いたときは、固定列の間の列だけをスクロールします。
+- 横のスクロールバーは、固定列がないときと同じく、列全体の幅を表します。右端までスクロールすると、最後のスクロールする列が右の固定列に接します。
+- 固定列は合わせて、行見出しを除いたグリッドの幅の 4 分の 3 までを使います。それを超えるときは、右、次に左の固定列を内側から順にスクロールする列として表示し、グリッドが広がると元に戻します。設定・イベント・保存する状態は、設定したままの数を保ちます。
+- `GridState` は両方の数（`frozenColumns`、`frozenRightColumns`）を持ちます。右の固定ができる前に保存した状態は `frozenColumns` だけを持ち、左の固定だけを変えます。
+
+```tsx
+<DataGrid source={source} frozenColumns={1} frozenRightColumns={2} />;
+
+// 表の 5 番の列を右に固定する。固定をやめるときは null。
+grid.current?.controller.setColumnPin(5, "right");
+grid.current?.controller.setColumnPin(5, null);
+```
 
 ## 列の表示設定
 
@@ -220,6 +246,44 @@ const formats: Record<string, ColumnFormat> = {
 **コピー。** 既定では、コピー（TSV・HTML・Markdown）には `plainText` が書く形の値と、見出しにはスキーマの列名が入り、表計算ソフトが数値や日付として読めます。`copyValues="formatted"` にすると、表示している文字の全体（切らず、改行も残す）と表示名をコピーします。列の `copy` を指定すると、その列のセルはそちらに従います。書き出し（`exportView`）はソースが書くので、値が入ります。書き出しパネルでは、表示名を見出しに、Excel ファイルでは数値・日時の書式を Excel の表示形式にできます（[書き出し](/ja/guides/export/)を参照）。
 
 正しくない設定（`currency` のない通貨の書式や、存在しないタイムゾーンなど）は、グリッドに渡した時点で `RangeError` を投げます。`ColumnFormatter`（`ValueFormatter.column(schema, format)` で作り、グリッドでは `controller.formatterOf(index)`）を使うと、グリッドの外でも同じ設定で値を整形でき、設定は `settings` で読めます。
+
+## 列のグループ
+
+`columnGroups` で、列名の上の段に列のグループの名前を出します。`ColumnGroup` は `name` と `children` を持ち、`children` にはスキーマの列名（`ColumnSchema.name`）と入れ子のグループを並べます。入れ子 1 段ごとに `groupHeaderHeight` の高さの段が 1 つ増え、見出し全体の高さは `headerHeight` にその段の分を足した高さ（`controller.headerHeight`）です。行・スクロール・`goToRow`・行のチェックボックスは、その下から始まります。
+
+```tsx
+import { type ColumnGroup, DataGrid } from "vastgrid";
+
+const groups: ColumnGroup[] = [
+  { name: "売上", children: [
+    { name: "第1四半期", children: ["jan", "feb", "mar"] },
+    { name: "第2四半期", children: ["apr", "may", "jun"] },
+  ] },
+  { name: "メモ", children: ["comment"] },
+];
+
+<DataGrid source={source} columnGroups={groups} />;
+```
+
+配列は変わらないように（メモ化するか、コンポーネントの外で定義して）渡してください。表にない列名は無視するので、似たファイルに同じ定義を使えます。同じ列を 2 回挙げたとき、`children` のないグループ、8 段を超える入れ子は、グリッドに渡した時点で `RangeError` を投げます。
+
+**グループは列に付いて動きます。** グループはスキーマとも列の設定とも別の、表示用の定義です。見出しは、表示中の列の今の並びから作ります。
+
+- グループの見出しは、隣り合う表示中の列にまたがります。その間に別の列を動かしたり、1 列を離れた場所へ動かしたりすると見出しを分け、それぞれにグループ名を出します。隠した列は除き、グループの列をすべて隠すとグループも出しません。
+- 固定する列とスクロールする列にまたがるグループは、その境で分け、それぞれの領域に出します。スクロールする側では、列が流れても名前は左端に残ります。
+- 幅を変えてもグループは分けません。狭いグループの名前は「…」で切ります。
+- 見出しの高さはグループの入れ子の深さだけで決まり、表示する列によって変わらないので、列を隠しても高さは変わりません。
+- 見出しの段の数よりグループの少ない列は、空いている段まで列の見出しを伸ばします。列名・並べ替えと絞り込みの印・メニューは列名の段に出します。
+
+**ポインター。** グループの見出しをクリックすると、列の見出しと同じように、そのグループの列を選びます。Shift で選択をグループまで広げ、⌘（Windows・Linux では Ctrl）で別の範囲として加えます。列を選んだグループの見出しをドラッグすると、列を並びのまままとめて動かします（`controller.moveColumns(first, last, to)`）。自分の列の上で離すと何もしません。移動は 1 列のときと同じく理由 `move` で通知します。グループの見出しにはメニューと幅を変えるつまみはなく、その下の列の見出しにあります。
+
+**並べ替え・絞り込み・イベント。** グループの見出しは描くだけです。並べ替え、絞り込み、列のメニュー、統計、表の中の検索、選択は、その下の列に対して動きます。`controller.hitTest(x, y)` はグループの上で `zone: "group"` を返し、`hit.group` にグループの区間（`group`、`level`、最初と最後の表示中の列 `start` と `end`）、`col` にポインターの下の列が入ります。イベントの `col` と `column` は、グループがないときと同じく列を指します。区間は `controller.groupSpans()` と `controller.groupsOf(col)` で読めます。
+
+**キー操作とスクリーンリーダー。** キーボードでは、これまでどおりセルの間を動き、グループの見出しにはフォーカスしません。アクティブなセルについて、隠した ARIA の行で、列の上の各グループをそれぞれの見出しの行に `columnheader`（`aria-colspan` は表示中の列の数）として示し、その後に列名の行を置くので、スクリーンリーダーは列とともにグループを読み上げられます。`aria-rowcount` にはグループの段も数えます。
+
+**コピーと書き出し。** 見出し付きのコピー（TSV・HTML・Markdown）と書き出し（CSV・TSV・JSON・Parquet・Excel）の見出しは、列名か表示名の 1 段だけです。ほかのプログラムやこのグリッドが、正しい列名の表として読み直せるようにするためで、グループを結合セルとしては書きません。
+
+**設定の保存。** グループは `GridState` に入りません。グループは `columnFormats` と同じく prop で渡すアプリの定義で、状態はユーザーが変えたものを保存するからです。状態は列の並び・表示・固定を列名で保存するので、適用すると同じ位置で分かれた同じグループの見出しになります。
 
 ## 詳細パネル
 

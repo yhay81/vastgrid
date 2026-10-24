@@ -236,3 +236,32 @@ test("only delimited files of engines that save can be saved", async () => {
   assert.equal(saved.records, 1);
   assert.equal(await readFile(path.join(workspace, "proto.csv"), "utf8"), "a,b\n1,3\n");
 });
+
+test("formula columns follow written cells and are never saved into the file", async () => {
+  const content = "item,qty,price\napple,3,120\npear,1,300\nfig,5,80\n";
+  const table = await open("formulas.csv", content);
+  const formulas = [{ name: "total", expression: "qty * price" }];
+  const sorted = await table.createView({ formulas, sort: [{ column: 3, direction: "desc" }] });
+  assert.deepEqual((await table.readRows({ view: sorted.id, start: 0, end: 3, columns: [0] })).columns[0], [
+    "fig",
+    "apple",
+    "pear",
+  ]);
+  // Formula columns are not columns of the table: a write to one is refused.
+  await assert.rejects(table.updateCells({ updates: [{ row: 0, column: 3, value: 1 }] }), { code: "invalid_request" });
+  await table.updateCells({ updates: [{ row: 1, column: 1, value: 10 }] });
+  const again = await table.createView({ formulas, sort: [{ column: 3, direction: "desc" }] });
+  const rows = await table.readRows({ view: again.id, start: 0, end: 3, columns: [0, 3] });
+  assert.deepEqual(rows.columns, [
+    ["pear", "fig", "apple"],
+    [3000, 400, 360],
+  ]);
+  const filtered = await table.createView({
+    formulas,
+    filters: [{ type: "compare", column: 3, op: "gt", value: 1000 }],
+  });
+  assert.equal(filtered.rowCount, 1);
+  assert.equal((await table.columnStats(again.id, 3)).max, 3000);
+  await table.saveEdits();
+  assert.equal((await bytes("formulas.csv")).toString(), "item,qty,price\napple,3,120\npear,10,300\nfig,5,80\n");
+});

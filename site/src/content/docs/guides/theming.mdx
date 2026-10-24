@@ -39,8 +39,8 @@ The grid reads the properties when it mounts, when its `className` or `style` ch
 `class`, `style` or `data-theme` attribute of the document's root element changes, and when the
 system's color scheme changes. To restyle it in another way, change its `className`.
 
-Row and header heights are read when the grid mounts. To change them later, pass `rowHeight` and
-`headerHeight`.
+Row and header heights are read when the grid mounts. To change them later, pass `rowHeight`,
+`headerHeight` and `groupHeaderHeight`.
 
 ## Properties
 
@@ -50,7 +50,8 @@ Row and header heights are read when the grid mounts. To change them later, pass
 | `--vg-font-size` | `13px` | | Cells; headers and menus derive from it |
 | `--vg-row-height` | `24px` | | Row height, unless `rowHeight` is given |
 | `--vg-line-height` | 1.4 × font size | | Height of each further line in columns that wrap |
-| `--vg-header-height` | `32px` | | Header height, unless `headerHeight` is given |
+| `--vg-header-height` | `32px` | | Height of the row of column names, unless `headerHeight` is given |
+| `--vg-group-header-height` | `24px` | | Height of each row of column groups, unless `groupHeaderHeight` is given |
 | `--vg-radius` | `6px` | | Corners of inputs, buttons, menus and panels |
 | `--vg-bg` | `#ffffff` | `#16161a` | Cells |
 | `--vg-fg` | `#1f2328` | `#e6e6eb` | Text |

@@ -270,7 +270,7 @@ export class GridEdits {
     try {
       await this.queue;
       const result = await save.call(c.source, signal);
-      if (c.info) c.info = { ...c.info, edits: result.edits };
+      c.setEdits(result.edits);
       return result;
     } finally {
       this.savingFile = false;

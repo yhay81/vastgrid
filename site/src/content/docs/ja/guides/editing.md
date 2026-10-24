@@ -12,7 +12,7 @@ description: セルを書き込める source、セルのエディター、値の
 | `BrowserSource`（`vastgrid-browser`） | 読み取り専用です。 |
 | 独自の `TableSource` | `capabilities.edit` を報告し、`updateCells` を持つとき。 |
 
-`readOnly` を指定すると、グリッドを読み取り専用のままにできます。スキーマで `readOnly` の列と、入力できない型の列（リスト・構造体・マップ・バイナリ・期間）も読み取り専用です。
+`readOnly` を指定すると、グリッドを読み取り専用のままにできます。スキーマで `readOnly` の列、入力できない型の列（リスト・構造体・マップ・バイナリ・期間）、[計算列](/ja/guides/formulas/)も読み取り専用で、入力・貼り付け・埋める・消去のどれでも書き込みません。書き込んだ列を使う計算列は新しい値を表示し、計算列で並べ替え・絞り込みしたビューは作り直します。
 
 ```tsx
 const source = useMemo(() => new ArraySource({ columns, rows, editable: true }), [rows]);

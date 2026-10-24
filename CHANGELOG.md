@@ -51,7 +51,8 @@
   when its sort, filters or search use the written column, creates its view again in place. `readOnly`
   keeps a grid read-only, and `onCellsChange` reports saved and failed writes. In a grid that edits, F2
   and a double click open the editor instead of the cell inspector (which stays in the context menu);
-  `onCellDoubleClick` can prevent both. Read-only sources work as before.
+  `onCellDoubleClick` can prevent both. Read-only sources work as before. Formula columns are never
+  written, and show, sort and filter by the written values.
 - `vastgrid-core`: `TableSource.updateCells` writes cells of sources that report `capabilities.edit`, all
   or none, by the row's position in the table (`rowIds`) and its `revision`, refusing values that do not
   fit (`invalid_value`), cells changed meanwhile (`edit_conflict`), other revisions (`revision_changed`)
@@ -67,6 +68,26 @@
   column are dropped. A table with written cells is not closed to keep `maxTables`, nor opened again when
   its file changes.
 
+- `vastgrid`: `columnGroups` names groups of columns in header rows above the column names; nested
+  groups add rows of `groupHeaderHeight` (`--vg-group-header-height`, 24px). Groups follow their columns:
+  moving, hiding or freezing columns so that a group's columns are apart splits its header, each part
+  showing the name. Clicking a group header selects its columns, and dragging a selected group moves
+  them together (`controller.moveColumns`). Sorting, filters, menus and events work on the columns;
+  hit tests report `zone: "group"`, screen readers hear the groups with `aria-colspan`, and copies and
+  exports keep one header row. Groups are not part of `GridState`.
+- `vastgrid-core`: `ColumnGroup`, and `columnGroupPaths`, `columnGroupDepth` and `columnGroupSpans`,
+  which lay out group headers over the visible columns.
+- `vastgrid`: columns can be frozen at the right as well as the left. `frozenRightColumns` keeps the last
+  visible columns at the grid's right edge while the columns between the two sides scroll; the column menu
+  ("Freeze from this column to the right edge"), the "Columns" panel (None, Left, Right) and
+  `controller.freezeFrom()` / `setColumnPin()` set them. Moving, hiding, resizing (at the left edge for
+  right columns), selecting, copying, menus, hit testing and keyboard scrolling follow the display order.
+  Frozen columns take at most three quarters of the grid's width; beyond that they scroll, the right ones
+  first, until the grid widens. `GridColumnsEvent` adds `frozenRightColumns` and `GridColumn.pin`, and
+  `GridColumn.frozen` is true for both sides.
+- `vastgrid-core`: `GridState.frozenRightColumns` saves the columns frozen at the right by name (states
+  without it still apply and change only the left side), and columns that a state does not list go before
+  them. `ColumnPin`, `fitFrozen` and `MAX_FROZEN_SHARE` describe the frozen sides.
 - `vastgrid`: `checkboxSelection` adds row checkboxes, separate from the cell selection. Checked rows
   are kept by key — the row's position in the file for one `revision`, or the values of a `rowKey`
   column — so the same records stay checked when the view is sorted or filtered. The corner checkbox
@@ -211,6 +232,28 @@
   column's filter panel) builds AND / OR groups, and the toolbar shows the conditions to change or remove
   them. Columns used in the conditions show the filter mark. The builder is offered only for sources that
   report `capabilities.conditions`. The controller has `condition`, `setCondition()` and `isFiltered()`.
+- `vastgrid-core`: formula columns. `ViewQuery.formulas` (`{ name, expression }[]`) adds columns computed
+  per row, after the table's columns, that every request of the view can read, sort, filter (also in
+  condition trees), summarize, find and export. The expressions are a small language of their own
+  (`parseFormula`, `compileFormulas`): columns by name, numbers, text, `TRUE`/`FALSE`/`NULL`, arithmetic,
+  `&`, comparisons, `AND`/`OR`/`NOT`, and `FORMULA_FUNCTIONS` for numbers, text, dates and blanks, with type
+  checks, errors that name the place (`FormulaError`), formulas that use other formulas and refused cycles.
+  `formulaEvaluator` evaluates a checked formula without running any code; `queryFormulas` checks a query
+  for sources. `capabilities.formulas` tells which sources evaluate them; `ArraySource` does. The protocol
+  and `parseProtocolRequest` carry them and limit their number (32), length (2,000 characters) and depth
+  (64 levels). `GridState.formulas` keeps them, and selections of every matching row keep the formulas
+  their filters use.
+- `vastgrid-duckdb`: evaluates formula columns in SQL, without moving the table to the browser: column
+  names are quoted identifiers, literals are parameters (in a one-row table of constants per view) and only
+  the listed functions are called. Results match `ArraySource`; infinities and NaN become blanks. A view
+  with only formulas reads the table in place; sorts and filters on formulas build views as before,
+  with previews of large sorts.
+- `vastgrid`: "Add formula column…", "Edit formula…" and "Delete formula column" in the column menu, with an
+  editor that checks the name and the formula as they are typed and shows errors at the field. `formulas`,
+  `onFormulasChange`, `getFormulas()` and `setFormulas()` let the app set and follow them; formulas that
+  cannot be evaluated (for example after a column they use was removed) are listed in the Columns panel to
+  fix. Exports of the whole table include formula columns.
+- `vastgrid-browser`: reports `capabilities.formulas: false` and refuses queries with formulas.
 
 ## 0.1.1 — 2026-10-23
 

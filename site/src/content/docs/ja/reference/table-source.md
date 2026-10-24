@@ -126,6 +126,7 @@ interface TableInfo {
     find: boolean;
     export: boolean;
     conditions?: boolean; // `ViewQuery.where` を評価できる。省略は false
+    formulas?: boolean;   // `ViewQuery.formulas` を評価できる。省略は false
   };
   exports?: { formats: ExportFormat[]; delivery: "file" | "data" }; // 書き出せるとき、exportView が書く形式
 }
@@ -137,10 +138,11 @@ interface TableInfo {
 
 ```ts
 interface ViewQuery {
+  formulas?: { name: string; expression: string }[];      // 計算列。表の列の後ろに並ぶ
   sort?: { column: number; direction: "asc" | "desc" }[]; // 空白は昇順でも降順でも最後
   filters?: Filter[];                                     // すべてに合う行を残す
   where?: FilterNode;                                     // 条件木。filters と AND で組み合わせる
-  search?: string;                                        // どれかの列が含む行を残す。大文字と小文字は区別しない
+  search?: string;                                        // どれかの表の列が含む行を残す。大文字と小文字は区別しない
 }
 
 type Filter =
@@ -190,6 +192,8 @@ const query: ViewQuery = {
 ```
 
 それぞれの条件の意味は `filters` と同じです。`where` を評価できる source は `capabilities.conditions` を報告します。グリッドはそうした source にだけ条件木を送るので、条件木より前に書かれた source もそのまま動きます。source は、1 つの条件を自分で判定する関数 `test` を渡して `matchesFilterNode(where, test)` で木を評価できます（`ArraySource` もこの方法です）。木の大きさの上限は[プロトコル](/ja/reference/protocol/#viewquery)にあります。
+
+`formulas` は、行ごとに式で計算する列を加えます。式 `i` は、そのビューを指定するすべての要求で列 `columns.length + i` です。ビューを指定しない要求には計算列がないので、式だけのクエリーでも（表の順の）ビューを作ります。式を評価できる source は `capabilities.formulas` を報告し、`queryFormulas(info.columns, query)` で式を確かめ（ない列・型の誤り・循環参照は `invalid_request` を投げます）、確かめた木を `formulaEvaluator` などで評価します。[計算列](/ja/guides/formulas/#独自の-source)を参照してください。
 ## 行
 
 ```ts

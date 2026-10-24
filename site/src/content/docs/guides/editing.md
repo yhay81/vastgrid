@@ -12,8 +12,10 @@ The grid edits cells of sources that can write them. Other sources stay read-onl
 | `BrowserSource` (`vastgrid-browser`) | Read-only. |
 | Your own `TableSource` | When it reports `capabilities.edit` and has `updateCells`. |
 
-A grid can stay read-only with `readOnly`. Columns marked `readOnly` in the schema, and columns whose type
-cannot be typed (lists, structs, maps, binary values, intervals), stay read-only too.
+A grid can stay read-only with `readOnly`. Columns marked `readOnly` in the schema, columns whose type
+cannot be typed (lists, structs, maps, binary values, intervals), and [formula columns](/guides/formulas/)
+stay read-only too: typing, pasting, filling and clearing never write them. A formula that uses a written
+column shows its new value, and a view sorted or filtered by a formula column is created again.
 
 ```tsx
 const source = useMemo(() => new ArraySource({ columns, rows, editable: true }), [rows]);

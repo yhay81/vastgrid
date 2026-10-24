@@ -59,9 +59,12 @@ export function editableType(type: ColumnType) {
   return writable.has(type);
 }
 
-/** Whether the grid may write a column: its type can be written and the source does not mark it read-only. */
+/**
+ * Whether the grid may write a column: its type can be written, the source does not mark it read-only, and
+ * it is not a formula column (`expression`), whose values are computed.
+ */
 export function editableColumn(column: ColumnSchema) {
-  return column.readOnly !== true && editableType(column.type);
+  return column.readOnly !== true && column.expression === undefined && editableType(column.type);
 }
 
 function isNumericColumn(type: ColumnType) {

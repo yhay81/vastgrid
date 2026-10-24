@@ -4,18 +4,29 @@ import {
   type CellValue,
   type ColumnFormat,
   type ColumnFormatter,
+  type ColumnGroup,
+  type ColumnGroupSpan,
   ColumnLayout,
+  type ColumnPin,
   type ColumnSchema,
   type ColumnStats,
+  type CompiledFormula,
   type CopyValues,
+  columnGroupDepth,
+  columnGroupPaths,
+  columnGroupSpans,
+  compileFormulas,
   copyLayout,
   type DistinctValues,
   ErrorCodes,
   type Filter,
   type FilterGroup,
   type FilterNode,
+  type FormulaColumn,
   filterLeaves,
   filtersRows,
+  fitFrozen,
+  formulaSchema,
   GRID_STATE_VERSION,
   type GridState,
   isAbortError,
@@ -38,6 +49,7 @@ import {
   type SelectionSummary,
   type SortDirection,
   sameRowQuery,
+  spanAt,
   type TableCapabilities,
   type TableChange,
   type TableEdits,
@@ -69,10 +81,17 @@ export interface GridOptions {
   maxLines?: number;
   /** Height of each further line of wrapped text. Defaults to 18; the renderer sets it from the font. */
   lineHeight?: number;
+  /** Height of the row of column names. Group rows (`columnGroups`) add to the header's height. */
   headerHeight: number;
+  /** Groups of columns shown in header rows above the column names (see `ColumnGroup`). */
+  columnGroups?: readonly ColumnGroup[];
+  /** Height of each header row of groups. Defaults to 24. */
+  groupHeaderHeight?: number;
   locale?: string;
   nullText: string;
   frozenColumns: number;
+  /** Columns frozen at the right when the table opens. */
+  frozenRightColumns?: number;
   minColumnWidth: number;
   maxAutoWidth: number;
   /** Cells copied at most at once. */
@@ -111,7 +130,7 @@ export interface ColumnState {
   sized: boolean;
 }
 
-export type HitZone = "corner" | "header" | "gutter" | "cell" | "outside";
+export type HitZone = "corner" | "group" | "header" | "gutter" | "cell" | "outside";
 
 export interface Hit {
   zone: HitZone;
@@ -125,6 +144,8 @@ export interface Hit {
   menu: boolean;
   /** The pointer is over a row's checkbox (`gutter`) or the checkbox of every row (`corner`). */
   checkbox: boolean;
+  /** The group header under the pointer (zone `group`); `col` is then the column under the pointer. */
+  group?: ColumnGroupSpan;
 }
 
 export class CopyTooLargeError extends Error {
@@ -198,15 +219,18 @@ function codeOf(error: unknown) {
   return error instanceof Error && "code" in error ? error.code : undefined;
 }
 
-/** Whether a query's rows or order depend on the values of any of these schema columns. */
-function queryUses(query: ViewQuery, columns: number[]) {
+/**
+ * Whether a query's rows or order depend on the values of any of these schema columns. Formula columns
+ * (from `tableColumns` on) may use any column, so a query on them depends on every column.
+ */
+function queryUses(query: ViewQuery, columns: number[], tableColumns: number) {
   if (query.search?.trim()) return true;
   const used = new Set([
     ...(query.sort ?? []).map((key) => key.column),
     ...(query.filters ?? []).map((filter) => filter.column),
     ...filterLeaves(query.where).map((filter) => filter.column),
   ]);
-  return columns.some((column) => used.has(column));
+  return [...used].some((column) => column >= tableColumns) || columns.some((column) => used.has(column));
 }
 
 function sameQuery(a: ViewQuery, b: ViewQuery) {
@@ -223,6 +247,11 @@ function supportedQuery(query: ViewQuery, capabilities: TableCapabilities): View
     ...(where && capabilities.filter && capabilities.conditions ? { where } : {}),
     ...(search && capabilities.search ? { search } : {}),
   };
+}
+
+/** Formula columns as plain values, without other properties. */
+function plainFormulas(formulas: readonly FormulaColumn[]): FormulaColumn[] {
+  return formulas.map((formula) => ({ name: formula.name, expression: formula.expression }));
 }
 
 /** Whether two display settings are the same. Functions are compared by identity. */
@@ -265,7 +294,14 @@ export class GridController {
   /** Formatters of the schema columns, with their display settings. */
   private formatters: ColumnFormatter[] = [];
 
+  /** The table with the formula columns that can be evaluated after its own columns. */
   info: TableInfo | null = null;
+  /** The table as the source reports it, without formula columns. */
+  tableInfo: TableInfo | null = null;
+  /** Formula columns as set, also ones with errors; see `formulaResults`. */
+  formulas: FormulaColumn[] = [];
+  /** Each formula checked over the table's columns, in the order of `formulas`. */
+  formulaResults: CompiledFormula[] = [];
   loadError: string | null = null;
   query: ViewQuery = {};
   view: ViewInfo = { id: null, rowCount: 0, query: {} };
@@ -274,8 +310,18 @@ export class GridController {
   columns: ColumnState[] = [];
   visible: ColumnState[] = [];
   layout = new ColumnLayout([]);
+  /**
+   * Visible columns frozen at each side, as the user or the app set them: the first `left` and the last
+   * `right` ones. `frozen` and `frozenRight` are the columns drawn frozen, fewer when the grid is too
+   * narrow for them (see `fitFrozen`).
+   */
+  readonly pinned = { left: 0, right: 0 };
+  /** Visible columns drawn frozen at the left. */
   frozen = 0;
   frozenWidth = 0;
+  /** Visible columns drawn frozen at the right: the last `frozenRight` ones. */
+  frozenRight = 0;
+  frozenRightWidth = 0;
   gutterWidth = 48;
   width = 0;
   height = 0;
@@ -288,6 +334,12 @@ export class GridController {
   summaryPending = false;
   /** Increments on every change shown by the React UI. */
   version = 0;
+  /** Groups of each schema column name, outermost first (see `columnGroupPaths`). */
+  private groupPaths = new Map<string, ColumnGroup[]>();
+  /** Header rows of groups. */
+  private groupDepth = 0;
+  /** The spans of the group rows and what they were computed for. */
+  private spans: { key: string; schema: ColumnSchema[]; rows: ColumnGroupSpan[][] } | null = null;
   /** Measures text in the cell or header font; set by the renderer. */
   measure: ((text: string, header: boolean) => number) | null = null;
 
@@ -299,6 +351,9 @@ export class GridController {
   private readonly columnsListeners = new Set<(event: GridColumnsEvent) => void>();
   private readonly gridStateListeners = new Set<(state: GridState) => void>();
   private readonly rowSelectionListeners = new Set<(event: GridRowSelectionEvent) => void>();
+  private readonly formulasListeners = new Set<(formulas: FormulaColumn[]) => void>();
+  /** The formula columns in the query and the schema: the ones without errors, when the source evaluates them. */
+  private shownFormulas: FormulaColumn[] = [];
   /** The last change of the checked rows not yet reported. */
   private rowSelectionChange: GridRowSelectionChangeReason | null = null;
   /** Rows matching the query of an `exclude` selection, when the grid counted them. */
@@ -349,6 +404,8 @@ export class GridController {
     this.formatter = new ValueFormatter({ locale: options.locale, nullText: options.nullText });
     this.options.columnFormats ??= {};
     this.checkFormats(this.options.columnFormats);
+    this.groupPaths = columnGroupPaths(options.columnGroups ?? []);
+    this.groupDepth = columnGroupDepth(options.columnGroups ?? []);
     this.cache = new RowCache(source);
     this.edits = new GridEdits(this);
     this.cache.onChange(() => {
@@ -470,6 +527,14 @@ export class GridController {
   }
 
   /** Calls `listener` with `getState()` when the query or the column settings change. */
+  /** Called when the formula columns change (by the user or `setFormulas`). */
+  onFormulasChange(listener: (formulas: FormulaColumn[]) => void) {
+    this.formulasListeners.add(listener);
+    return () => {
+      this.formulasListeners.delete(listener);
+    };
+  }
+
   onStateChange(listener: (state: GridState) => void) {
     this.gridStateListeners.add(listener);
     return () => {
@@ -597,12 +662,12 @@ export class GridController {
    */
   editsChanged(columns: number[] | null, edits?: TableEdits) {
     if (this.disposed || !this.info) return;
-    if (edits) this.info = { ...this.info, edits };
+    if (edits) this.setEdits(edits);
     this.cache.invalidate();
     if (
       this.info.status === "ready" &&
       !isEmptyQuery(this.query) &&
-      (columns === null || queryUses(this.query, columns))
+      (columns === null || queryUses(this.query, columns, this.tableColumns))
     ) {
       this.keepPlace();
       void this.runQuery(this.query, true);
@@ -610,6 +675,12 @@ export class GridController {
     this.scheduleSummary();
     this.emit();
     this.requestRender();
+  }
+
+  /** The table's edits after a write or a save of this grid; the table info that formulas are added to keeps them too. */
+  setEdits(edits: TableEdits) {
+    if (this.info) this.info = { ...this.info, edits };
+    if (this.tableInfo) this.tableInfo = { ...this.tableInfo, edits };
   }
 
   /** Merges the changes reported within `changeDelay` into one reload. */
@@ -662,6 +733,7 @@ export class GridController {
     this.columnsListeners.clear();
     this.gridStateListeners.clear();
     this.rowSelectionListeners.clear();
+    this.formulasListeners.clear();
   }
 
   private async poll(signal: AbortSignal) {
@@ -690,7 +762,33 @@ export class GridController {
     }
   }
 
-  private applyInfo(info: TableInfo) {
+  /** Checks the formulas over the table's columns and adds the ones the source can evaluate to its columns. */
+  private withFormulas(table: TableInfo): TableInfo {
+    this.formulaResults = compileFormulas(table.columns, this.formulas);
+    // While loading, the source's capabilities are not known yet.
+    const evaluated = table.status === "loading" || table.capabilities.formulas === true;
+    const valid = evaluated ? this.formulaResults.filter((formula) => formula.tree) : [];
+    this.shownFormulas = plainFormulas(valid);
+    return valid.length === 0 ? table : { ...table, columns: formulaSchema(table.columns, valid) };
+  }
+
+  /** The query with the formula columns that the schema has. */
+  private formulaQuery(query: ViewQuery): ViewQuery {
+    if (JSON.stringify(query.formulas ?? []) === JSON.stringify(this.shownFormulas)) return query;
+    const { formulas: _, ...rest } = query;
+    return this.shownFormulas.length > 0 ? { formulas: this.shownFormulas, ...rest } : rest;
+  }
+
+  private applyInfo(table: TableInfo) {
+    // A reopened file may not have its preview schema yet. Keep the old names until new names arrive.
+    if (this.tableInfo && table.status === "loading" && table.columns.length === 0) {
+      table = { ...table, columns: this.tableInfo.columns };
+    }
+    // A state applied before the columns were known brings its formula columns.
+    const waiting = this.pendingState;
+    if (waiting?.state.formulas && table.columns.length > 0) this.formulas = plainFormulas(waiting.state.formulas);
+    this.tableInfo = table;
+    let info = this.withFormulas(table);
     const shown = this.info;
     // A source that reported a change but has no revision cannot tell the new data from the old: read it
     // as a new revision, so that cached rows and checked rows keyed by position are not kept.
@@ -701,6 +799,8 @@ export class GridController {
     this.changeReported = false;
     const names = (table: TableInfo | null) => table?.columns.map((column) => column.name).join("\u0000");
     const types = (table: TableInfo | null) => table?.columns.map((column) => column.type).join("\u0000");
+    const expressions = (table: TableInfo | null) =>
+      table?.columns.map((column) => column.expression ?? "").join("\u0000");
     // A reopened file may not have its preview schema yet. Keep the old names until new names arrive.
     if (previous && info.status === "loading" && info.columns.length === 0) {
       info = { ...info, columns: previous.columns };
@@ -711,7 +811,11 @@ export class GridController {
       this.formatters = [];
       this.formatVersion++;
     }
-    const reset = !previous || previous.revision !== info.revision || names(previous) !== names(info);
+    const reset =
+      !previous ||
+      previous.revision !== info.revision ||
+      names(previous) !== names(info) ||
+      expressions(previous) !== expressions(info);
     // Cells were written by someone else: their rows are read again, and the view is created again.
     const edited = !reset && info.status === "ready" && previous.edits?.version !== info.edits?.version;
     if (edited) this.cache.invalidate();
@@ -745,7 +849,7 @@ export class GridController {
           ...(filters ? { filters } : {}),
           ...(where ? { where } : {}),
         };
-        this.columnsChanged("schema");
+        this.columnsChanged(this.columnChange === "formulas" ? "formulas" : "schema");
       }
       // Settings follow their columns by name, also when the file's columns moved.
       const old = new Map(this.columns.map((column) => [previous?.columns[column.index]?.name ?? "", column]));
@@ -761,7 +865,17 @@ export class GridController {
           sized: kept?.sized ?? false,
         };
       });
-      if (!previous) this.frozen = Math.min(this.options.frozenColumns, this.columns.length);
+      if (previous && this.columnChange === "formulas") {
+        // Columns keep their order when formula columns come and go; new ones follow.
+        const order = new Map([...old.keys()].map((name, position) => [name, position]));
+        const rank = (state: ColumnState) =>
+          order.get(info.columns[state.index]?.name ?? "") ?? order.size + state.index;
+        this.columns.sort((a, b) => rank(a) - rank(b));
+      }
+      if (!previous) {
+        this.pinned.left = Math.min(this.options.frozenColumns, this.columns.length);
+        this.pinned.right = Math.min(this.options.frozenRightColumns ?? 0, this.columns.length - this.pinned.left);
+      }
       const pending = this.pendingState;
       if (pending && info.columns.length > 0) {
         this.pendingState = null;
@@ -782,6 +896,7 @@ export class GridController {
       // The final types differ from the preview's (for example all columns read as text).
       this.cache.clear();
     }
+    this.query = this.formulaQuery(this.query);
     if (this.view.id === null) {
       this.view = { id: null, rowCount: info.rowCount ?? info.readableRows, query: {} };
     }
@@ -805,6 +920,11 @@ export class GridController {
     return this.info?.columns ?? [];
   }
 
+  /** Columns of the table itself, before the formula columns (which have an `expression`). */
+  get tableColumns() {
+    return this.schema.filter((column) => column.expression === undefined).length;
+  }
+
   /** Rows in the current view. */
   get rowCount() {
     return this.view.id !== null ? this.view.rowCount : (this.info?.rowCount ?? this.info?.readableRows ?? 0);
@@ -826,11 +946,74 @@ export class GridController {
 
   /** Whether the statistics of a column can be computed now. */
   get statsAvailable() {
+    // Formula columns are counted in their view, once it exists.
+    if (this.view.id === null && this.shownFormulas.length > 0) return false;
     return !this.viewBuilding || !filtersRows(this.view.query);
   }
 
   get totalRows() {
     return this.info?.rowCount ?? null;
+  }
+
+  /** Whether formula columns can be added now: the table is ready and its source evaluates them. */
+  get formulasAvailable() {
+    return this.info?.status === "ready" && this.info.capabilities.formulas === true;
+  }
+
+  /** The formula of a schema column, or null for a column of the table. */
+  formulaOf(index: number): FormulaColumn | null {
+    const name = this.schema[index]?.expression === undefined ? undefined : this.schema[index].name;
+    return name === undefined ? null : (this.formulas.find((formula) => formula.name === name) ?? null);
+  }
+
+  /**
+   * Replaces the formula columns. Each is a column computed per row by an expression over the table's
+   * columns (see `FormulaColumn`); the source evaluates it, so it sorts, filters and exports like the
+   * others. Formulas with an error stay in `formulas` (with `formulaResults` telling why) but are not
+   * shown until they are fixed, for example when a column they use is gone. Sorts, filters and settings of
+   * columns follow their names; the scroll position and the active cell stay.
+   */
+  setFormulas(formulas: readonly FormulaColumn[], options: { after?: number } = {}) {
+    const next = plainFormulas(formulas);
+    if (JSON.stringify(next) === JSON.stringify(this.formulas)) return;
+    const added = next.filter((formula) => !this.formulas.some((item) => item.name === formula.name));
+    const after = options.after === undefined ? undefined : this.schema[options.after]?.name;
+    this.formulas = next;
+    this.columnsChanged("formulas");
+    const table = this.tableInfo;
+    if (table && this.info) {
+      if (!this.restore) {
+        this.restore = {
+          top: this.scrollY.position,
+          left: this.scrollX.position,
+          active: this.selection.active,
+          tail: false,
+          lastRow: false,
+        };
+      }
+      this.applyInfo(table);
+      // A new column is placed after the column it was added from.
+      if (after !== undefined && added.length > 0)
+        this.placeAfter(
+          added.map((formula) => formula.name),
+          after,
+        );
+    } else {
+      this.emit();
+    }
+    for (const listener of this.formulasListeners) listener(this.formulas);
+  }
+
+  /** Moves the columns with these names after the column named `after`, in display order. */
+  private placeAfter(names: string[], after: string) {
+    const moved = this.columns.filter((column) => names.includes(this.schema[column.index]?.name ?? ""));
+    const rest = this.columns.filter((column) => !moved.includes(column));
+    const at = rest.findIndex((column) => this.schema[column.index]?.name === after);
+    if (moved.length === 0 || at < 0) return;
+    rest.splice(at + 1, 0, ...moved);
+    this.columns = rest;
+    this.updateLayout();
+    this.emit();
   }
 
   columnSchema(col: number): ColumnSchema | undefined {
@@ -869,7 +1052,89 @@ export class GridController {
   }
 
   get bodyHeight() {
-    return Math.max(0, this.height - this.options.headerHeight);
+    return Math.max(0, this.height - this.headerHeight);
+  }
+
+  // ----- column groups -----
+
+  /** Height of the whole header: the rows of groups and the row of column names. Rows start below it. */
+  get headerHeight() {
+    return this.groupRows * this.groupHeaderHeight + this.options.headerHeight;
+  }
+
+  /** Header rows of groups above the column names (0 without groups). */
+  get groupRows() {
+    return this.groupDepth;
+  }
+
+  get groupHeaderHeight() {
+    return this.options.groupHeaderHeight ?? 24;
+  }
+
+  /**
+   * Replaces the column groups. Throws a `RangeError` for invalid groups (see `columnGroupPaths`),
+   * keeping the current ones. The header grows or shrinks with the groups' depth; the first visible
+   * row stays in place.
+   */
+  setColumnGroups(groups: readonly ColumnGroup[] | undefined) {
+    if (groups === this.options.columnGroups) return;
+    const paths = columnGroupPaths(groups ?? []);
+    this.options.columnGroups = groups;
+    this.groupPaths = paths;
+    this.groupDepth = columnGroupDepth(groups ?? []);
+    this.spans = null;
+    this.syncSizer();
+    this.requestRender();
+    this.emit();
+  }
+
+  /** Changes the height of the group rows. */
+  setGroupHeaderHeight(height: number | undefined) {
+    if (height === this.options.groupHeaderHeight) return;
+    this.options.groupHeaderHeight = height;
+    this.syncSizer();
+    this.requestRender();
+    this.emit();
+  }
+
+  /** The first visible column of each region that scrolls apart, where group headers are split. */
+  private groupBreaks() {
+    const breaks: number[] = [];
+    if (this.frozen > 0) breaks.push(this.frozen);
+    // Columns frozen at the right start a part of their own too.
+    const right = this.visible.length - this.frozenRight;
+    if (this.frozenRight > 0 && right > 0 && right !== this.frozen) breaks.push(right);
+    return breaks;
+  }
+
+  /**
+   * The group headers of the visible columns: one list of spans for each group row, outermost first.
+   * A group is split where its columns are not side by side (moved apart, or some hidden between
+   * others) and between frozen and scrolling columns; each part shows the group's name.
+   */
+  groupSpans(): ColumnGroupSpan[][] {
+    if (this.groupDepth === 0) return [];
+    const breaks = this.groupBreaks();
+    const key = `${this.visibleKey}|${breaks.join(",")}`;
+    const schema = this.schema;
+    if (this.spans?.key !== key || this.spans.schema !== schema) {
+      const paths = this.visible.map((column) => this.groupPaths.get(schema[column.index]?.name ?? ""));
+      this.spans = { key, schema, rows: columnGroupSpans(paths, this.groupDepth, breaks) };
+    }
+    return this.spans.rows;
+  }
+
+  /** The groups of a visible column, outermost first, as their spans. */
+  groupsOf(col: number): ColumnGroupSpan[] {
+    return this.groupSpans().flatMap((row) => spanAt(row, col) ?? []);
+  }
+
+  /**
+   * Screen y where a visible column's own header starts: below its groups. Above a column with fewer
+   * groups than the header has rows, its header reaches up into the empty group rows.
+   */
+  headerTop(col: number) {
+    return this.groupsOf(col).length * this.groupHeaderHeight;
   }
 
   /**
@@ -967,10 +1232,12 @@ export class GridController {
           width: state.width,
           hidden: state.hidden,
           sized: state.sized,
-          frozen: position >= 0 && position < this.frozen,
+          frozen: position >= 0 && this.pinOf(position) !== null,
+          pin: position >= 0 ? this.pinOf(position) : null,
         };
       }),
-      frozenColumns: this.frozen,
+      frozenColumns: this.pinned.left,
+      frozenRightColumns: this.pinned.right,
     };
   }
 
@@ -988,17 +1255,41 @@ export class GridController {
       this.visibleKey = visibleKey;
       this.visibleRevision++;
     }
-    this.frozen = Math.min(this.frozen, this.visible.length);
+    this.pinned.left = Math.min(this.pinned.left, this.visible.length);
+    this.pinned.right = Math.min(this.pinned.right, this.visible.length - this.pinned.left);
     this.layout = new ColumnLayout(this.visible.map((column) => column.width));
-    this.frozenWidth = this.layout.left(this.frozen);
     const largest = Math.max(this.info?.rowCount ?? 0, this.rowCount, 1);
     const digits = String(largest).length;
     this.gutterWidth =
       Math.max(44, Math.ceil(this.measure ? this.measure("0".repeat(digits), false) : digits * 8) + 22) +
       this.checkboxWidth;
+    this.fitFrozen();
     this.selection.setBounds(this.rowCount, this.visible.length);
-    this.cache.setView(this.view.id, this.rowCount, this.readableRows, this.schema.length);
+    // Formula columns are read from views only.
+    const columns = this.view.id === null ? (this.tableInfo?.columns.length ?? 0) : this.schema.length;
+    this.cache.setView(this.view.id, this.rowCount, this.readableRows, columns);
     this.syncSizer();
+  }
+
+  /** Sets the columns drawn frozen from the settings and the grid's width. */
+  private fitFrozen() {
+    const fitted = fitFrozen(this.layout, this.pinned.left, this.pinned.right, this.width - this.gutterWidth);
+    this.frozen = fitted.left;
+    this.frozenRight = fitted.right;
+    this.frozenWidth = this.layout.left(this.frozen);
+    this.frozenRightWidth = this.layout.total - this.layout.left(this.visible.length - this.frozenRight);
+  }
+
+  /** The first visible column frozen at the right (the number of visible columns without any). */
+  get rightStart() {
+    return this.visible.length - this.frozenRight;
+  }
+
+  /** Where a visible column is set to be frozen (`pinned`), whether or not it is drawn frozen now. */
+  pinOf(col: number): ColumnPin {
+    if (col < this.pinned.left) return "left";
+    if (col >= this.visible.length - this.pinned.right) return "right";
+    return null;
   }
 
   /**
@@ -1012,7 +1303,7 @@ export class GridController {
       this.sizedRowHeight > 0 && rowHeight !== this.sizedRowHeight ? this.scrollY.position / this.sizedRowHeight : null;
     this.sizedRowHeight = rowHeight;
     const nativeWidth = this.scrollX.resize(this.gutterWidth + this.layout.total, this.width);
-    const nativeHeight = this.scrollY.resize(this.options.headerHeight + this.rowCount * rowHeight, this.height);
+    const nativeHeight = this.scrollY.resize(this.headerHeight + this.rowCount * rowHeight, this.height);
     if (topRow !== null) this.scrollY.scrollTo(topRow * rowHeight);
     if (this.sizer) {
       this.sizer.style.width = `${Math.ceil(nativeWidth)}px`;
@@ -1030,6 +1321,7 @@ export class GridController {
     if (width === this.width && height === this.height) return;
     this.width = width;
     this.height = height;
+    this.fitFrozen();
     this.syncSizer();
     this.requestRender();
   }
@@ -1051,48 +1343,94 @@ export class GridController {
 
   /** Visible scrollable columns `[first, last]` (inclusive), or `[0, -1]`. */
   visibleScrollColumns(): [number, number] {
-    const count = this.visible.length;
-    if (count <= this.frozen) return [0, -1];
+    const rightStart = this.rightStart;
+    if (rightStart <= this.frozen) return [0, -1];
     const start = this.frozenWidth + this.scrollX.position;
-    const end = this.scrollX.position + this.width - this.gutterWidth;
-    if (start >= this.layout.total) return [0, -1];
+    const end = Math.min(
+      this.scrollX.position + this.width - this.gutterWidth - this.frozenRightWidth,
+      this.layout.left(rightStart),
+    );
+    if (start >= this.layout.left(rightStart)) return [0, -1];
     const first = Math.max(this.frozen, this.layout.indexAt(start));
-    const last = Math.min(count - 1, this.layout.indexAt(Math.max(start, end - 0.001)));
+    const last = Math.min(rightStart - 1, this.layout.indexAt(Math.max(start, end - 0.001)));
     return [first, last];
   }
 
-  /** Screen x of a visible column's left edge. */
+  /** Screen x where the columns frozen at the right start (the grid's width without any). */
+  get frozenRightX() {
+    return this.width - this.frozenRightWidth;
+  }
+
+  /** Whether a visible column is drawn frozen at the right. */
+  isFrozenRight(col: number) {
+    return this.frozenRight > 0 && col >= this.rightStart && col < this.visible.length;
+  }
+
+  /**
+   * Screen x of a visible column's left edge. Columns frozen at the left follow the row header, those
+   * frozen at the right end at the grid's right edge, and the others scroll between them.
+   */
   columnX(col: number) {
-    return col < this.frozen
-      ? this.gutterWidth + this.layout.left(col)
-      : this.gutterWidth + this.layout.left(col) - this.scrollX.position;
+    if (col < this.frozen) return this.gutterWidth + this.layout.left(col);
+    if (this.isFrozenRight(col)) return this.frozenRightX + this.layout.left(col) - this.layout.left(this.rightStart);
+    return this.gutterWidth + this.layout.left(col) - this.scrollX.position;
   }
 
   rowY(row: number) {
-    return this.options.headerHeight + row * this.rowHeight - this.scrollY.position;
+    return this.headerHeight + row * this.rowHeight - this.scrollY.position;
+  }
+
+  /**
+   * Where a cell is on the screen, cut to the part of the grid its column is drawn in (frozen at the left,
+   * scrolling, or frozen at the right) and to below the header rows; `shown` is false when none of it is
+   * visible. The cell editor is placed with it.
+   */
+  cellBox(row: number, col: number) {
+    const x = this.columnX(col);
+    const y = this.rowY(row);
+    const width = this.layout.width(col);
+    const scrolling = this.gutterWidth + this.frozenWidth;
+    const [start, end] =
+      col < this.frozen
+        ? [this.gutterWidth, scrolling]
+        : this.isFrozenRight(col)
+          ? [this.frozenRightX, this.width]
+          : [scrolling, this.frozenRightX];
+    const left = Math.max(x, start);
+    const shown = x + width > start && x < end && y + this.rowHeight > this.headerHeight && y < this.height;
+    return { left, top: y, width: Math.max(0, Math.min(x + width, end) - left), height: this.rowHeight, shown };
   }
 
   /** The visible column at screen x, or -1. */
   columnAt(x: number) {
     if (x < this.gutterWidth || this.visible.length === 0) return -1;
-    const frozenRight = this.gutterWidth + this.frozenWidth;
-    if (x < frozenRight) return this.layout.indexAt(x - this.gutterWidth);
+    if (x < this.gutterWidth + this.frozenWidth) return this.layout.indexAt(x - this.gutterWidth);
+    const rightStart = this.rightStart;
+    if (this.frozenRight > 0 && x >= this.frozenRightX) {
+      if (x >= this.width) return -1;
+      const position = this.layout.left(rightStart) + x - this.frozenRightX;
+      return Math.max(rightStart, this.layout.indexAt(position));
+    }
     const position = x - this.gutterWidth + this.scrollX.position;
-    if (position >= this.layout.total) return -1;
+    if (position >= this.layout.left(rightStart)) return -1;
     return Math.max(this.frozen, this.layout.indexAt(position));
   }
 
   rowAt(y: number) {
-    if (y < this.options.headerHeight) return -1;
-    const row = Math.floor((y - this.options.headerHeight + this.scrollY.position) / this.rowHeight);
+    if (y < this.headerHeight) return -1;
+    const row = Math.floor((y - this.headerHeight + this.scrollY.position) / this.rowHeight);
     return row >= 0 && row < this.rowCount ? row : -1;
   }
 
   hitTest(x: number, y: number): Hit {
-    const header = y < this.options.headerHeight;
+    const header = y < this.headerHeight;
     const gutter = x < this.gutterWidth;
     const col = gutter ? -1 : this.columnAt(x);
     const row = header ? -1 : this.rowAt(y);
+    // A group row above a column that has a group there; otherwise the column's own header.
+    const level = header && !gutter && col >= 0 ? Math.floor(y / this.groupHeaderHeight) : -1;
+    const group = level >= 0 && level < this.groupRows ? spanAt(this.groupSpans()[level], col) : null;
+    if (group) return { zone: "group", row: -1, col, resize: -1, menu: false, checkbox: false, group };
     let zone: HitZone = "outside";
     if (header && gutter) zone = "corner";
     else if (header && col >= 0) zone = "header";
@@ -1101,14 +1439,26 @@ export class GridController {
     let resize = -1;
     let menu = false;
     const checkbox = (zone === "gutter" || zone === "corner") && x < this.checkboxWidth;
-    if (header && !gutter) {
-      const nearest = col >= 0 ? col : this.visible.length - 1;
+    if (header && !gutter && this.frozenRight > 0 && x >= this.frozenRightX - 5) {
+      // Columns frozen at the right are resized at their left edge, since their right edge stays in place.
+      const nearest = col >= this.rightStart ? col : this.rightStart;
+      const left = this.columnX(nearest);
+      const right = left + this.layout.width(nearest);
+      if (Math.abs(x - left) <= 5) resize = nearest;
+      else if (nearest + 1 < this.visible.length && Math.abs(x - right) <= 5) resize = nearest + 1;
+      menu = col >= 0 && resize < 0 && x >= right - 24 && x < right - 4;
+    } else if (header && !gutter) {
+      const nearest = col >= 0 ? col : this.rightStart - 1;
       const right = this.columnX(nearest) + this.layout.width(nearest);
       const left = this.columnX(nearest);
-      if (Math.abs(x - right) <= 5) resize = nearest;
+      if (nearest < 0) {
+        // Every column is frozen at the right.
+      } else if (Math.abs(x - right) <= 5) resize = nearest;
       else if (nearest > 0 && Math.abs(x - left) <= 5 && (nearest !== this.frozen || this.scrollX.position === 0))
         resize = nearest - 1;
-      menu = col >= 0 && resize < 0 && x >= right - 24 && x < right - 4;
+      // The menu button is in the row of column names.
+      const names = y >= this.headerHeight - this.options.headerHeight;
+      menu = col >= 0 && resize < 0 && names && x >= right - 24 && x < right - 4;
     }
     return { zone, row, col, resize, menu, checkbox };
   }
@@ -1132,10 +1482,10 @@ export class GridController {
       else if (y + rowHeight > this.scrollY.position + this.bodyHeight) top = y + rowHeight - this.bodyHeight;
     }
     let left: number | null = null;
-    if (col >= this.frozen && col < this.visible.length) {
+    if (col >= this.frozen && col < this.rightStart) {
       const start = this.layout.left(col) - this.frozenWidth;
       const end = this.layout.right(col) - this.frozenWidth;
-      const view = this.width - this.gutterWidth - this.frozenWidth;
+      const view = this.width - this.gutterWidth - this.frozenWidth - this.frozenRightWidth;
       if (start < this.scrollX.position) left = start;
       else if (end > this.scrollX.position + view) left = Math.min(start, end - view);
     }
@@ -1582,8 +1932,9 @@ export class GridController {
       this.emit();
       return;
     }
-    // A saved query may ask for what this source cannot do; those parts are left out.
-    query = supportedQuery(query, this.info.capabilities);
+    // A saved query may ask for what this source cannot do; those parts are left out. The formula
+    // columns are the grid's own (see `setFormulas`).
+    query = this.formulaQuery(supportedQuery(query, this.info.capabilities));
     this.query = query;
     const controller = new AbortController();
     this.viewAbort = controller;
@@ -1817,8 +2168,10 @@ export class GridController {
   hideColumn(col: number) {
     const state = this.visible[col];
     if (!state || this.visible.length <= 1) return;
+    const pin = this.pinOf(col);
     state.hidden = true;
-    if (col < this.frozen) this.frozen--;
+    if (pin === "left") this.pinned.left--;
+    else if (pin === "right") this.pinned.right--;
     this.changeColumns("visibility");
   }
 
@@ -1836,12 +2189,51 @@ export class GridController {
     this.changeColumns(changed ? "visibility" : null);
   }
 
+  /** Freezes the visible columns up to `col` at the left (none with -1). */
   freezeUpTo(col: number) {
-    const frozen = Math.max(0, Math.min(col + 1, this.visible.length));
-    const changed = frozen !== this.frozen;
-    this.frozen = frozen;
+    const left = Math.max(0, Math.min(col + 1, this.visible.length));
+    const right = Math.min(this.pinned.right, this.visible.length - left);
+    const changed = left !== this.pinned.left || right !== this.pinned.right;
+    this.pinned.left = left;
+    this.pinned.right = right;
     this.scrollToVirtual(0, null);
     this.changeColumns(changed ? "freeze" : null);
+  }
+
+  /** Freezes the visible columns from `col` to the last one at the right (none with the column count). */
+  freezeFrom(col: number) {
+    const count = this.visible.length;
+    const right = Math.max(0, Math.min(count - col, count));
+    const left = Math.min(this.pinned.left, count - right);
+    const changed = left !== this.pinned.left || right !== this.pinned.right;
+    this.pinned.left = left;
+    this.pinned.right = right;
+    this.changeColumns(changed ? "freeze" : null);
+  }
+
+  /**
+   * Freezes a column (by schema index) at the left or the right, or makes it scroll (`null`). The column
+   * moves to the inner end of the frozen columns of that side, or to the scrolling column next to the
+   * side it leaves. Hidden columns are left as they are.
+   */
+  setColumnPin(index: number, pin: ColumnPin) {
+    const moving = this.columns.find((column) => column.index === index);
+    const col = moving ? this.visible.indexOf(moving) : -1;
+    if (!moving || col < 0) return;
+    const current = this.pinOf(col);
+    if (current === pin) return;
+    if (current === "left") this.pinned.left--;
+    else if (current === "right") this.pinned.right--;
+    const rest = this.visible.filter((column) => column !== moving);
+    const at =
+      pin === "left" || (pin === null && current === "left") ? this.pinned.left : rest.length - this.pinned.right;
+    const target = rest[at];
+    const list = this.columns.filter((column) => column !== moving);
+    list.splice(target ? list.indexOf(target) : list.length, 0, moving);
+    this.columns = list;
+    if (pin === "left") this.pinned.left++;
+    else if (pin === "right") this.pinned.right++;
+    this.changeColumns("freeze");
   }
 
   /** Moves a visible column before another visible column. */
@@ -1856,6 +2248,22 @@ export class GridController {
     this.changeColumns("move");
   }
 
+  /**
+   * Moves the visible columns `first` to `last` (inclusive, for example a group's span), keeping their
+   * order, before the visible column `to` when moving left, or after it when moving right. Nothing
+   * moves when `to` is one of them.
+   */
+  moveColumns(first: number, last: number, to: number) {
+    const moving = this.visible.slice(first, last + 1);
+    const target = this.visible[to];
+    if (moving.length === 0 || !target || (to >= first && to <= last)) return;
+    const list = this.columns.filter((column) => !moving.includes(column));
+    const at = list.indexOf(target);
+    list.splice(to > last ? at + 1 : at, 0, ...moving);
+    this.columns = list;
+    this.changeColumns("move");
+  }
+
   // ----- state -----
 
   /**
@@ -1865,16 +2273,19 @@ export class GridController {
    */
   getState(): GridState {
     if (this.schema.length === 0) return this.pendingState?.state ?? { version: GRID_STATE_VERSION, query: this.query };
+    const { formulas: _, ...query } = this.query;
     return {
       version: GRID_STATE_VERSION,
       schema: this.schema.map((column) => column.name),
-      query: this.query,
+      ...(this.formulas.length > 0 ? { formulas: plainFormulas(this.formulas) } : {}),
+      query,
       columns: this.columns.map((state) => ({
         name: this.schema[state.index]?.name ?? "",
         ...(state.sized ? { width: state.width } : {}),
         ...(state.hidden ? { hidden: true } : {}),
       })),
-      frozenColumns: this.frozen,
+      frozenColumns: this.pinned.left,
+      frozenRightColumns: this.pinned.right,
     };
   }
 
@@ -1891,6 +2302,7 @@ export class GridController {
       return true;
     }
     this.pendingState = null;
+    if (parsed.formulas) this.setFormulas(parsed.formulas);
     const query = this.applyColumns(parsed);
     this.updateLayout();
     this.autoSize();
@@ -1918,12 +2330,22 @@ export class GridController {
         const automatic = column.sized ? ((type && defaultWidths[type]) ?? 150) : column.width;
         return [{ index, hidden, sized: false, width: automatic }];
       });
-      this.columns = [...listed, ...this.columns.filter((column) => current.has(column.index))];
+      // Columns the state does not list go before the columns frozen at the right.
+      let split = listed.length;
+      for (let right = resolved.frozenRightColumns ?? this.pinned.right; right > 0 && split > 0; ) {
+        split--;
+        if (!listed[split].hidden) right--;
+      }
+      const others = this.columns.filter((column) => current.has(column.index));
+      this.columns = [...listed.slice(0, split), ...others, ...listed.slice(split)];
       if (this.columns.length > 0 && this.columns.every((column) => column.hidden)) this.columns[0].hidden = false;
       this.autoSized = this.columns.every((column) => column.sized);
     }
-    if (resolved.frozenColumns !== undefined) this.frozen = resolved.frozenColumns;
-    if (resolved.columns || resolved.frozenColumns !== undefined) this.columnsChanged("state");
+    if (resolved.frozenColumns !== undefined) this.pinned.left = resolved.frozenColumns;
+    if (resolved.frozenRightColumns !== undefined) this.pinned.right = resolved.frozenRightColumns;
+    if (resolved.columns || resolved.frozenColumns !== undefined || resolved.frozenRightColumns !== undefined) {
+      this.columnsChanged("state");
+    }
     return resolved.query;
   }
 

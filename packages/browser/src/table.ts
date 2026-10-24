@@ -259,6 +259,8 @@ export class BrowserTable implements TableSource {
       find: scan,
       export: false,
       conditions: scan,
+      // Formula columns are not evaluated in the worker (see the browser guide).
+      formulas: false,
     };
   }
 
@@ -401,6 +403,9 @@ export class BrowserTable implements TableSource {
 
   async createView(query: ViewQuery, signal?: AbortSignal): Promise<ViewInfo> {
     return this.use(async (reader) => {
+      if (query.formulas?.length) {
+        throw new SourceError(ErrorCodes.invalidRequest, "This source does not evaluate formula columns.", 400);
+      }
       if (isEmptyQuery(query)) return { id: null, rowCount: reader.state().readableRows, query: {} };
       this.requireScan("Sorting and filtering");
       const state = this.requireReady(reader);

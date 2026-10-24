@@ -111,7 +111,12 @@ shown or all columns, as CSV, TSV, Parquet, JSON or Excel, depending on the sour
 - Drag the edge of a header to resize a column; double-click it, or use "Fit width to content", to fit
   the column to its values.
 - Drag the header of a selected column to move it.
-- "Freeze up to this column" keeps the columns up to it at the left while you scroll sideways.
+- When the app groups columns, a click on a group's header (above the column names) selects its
+  columns, and dragging a selected group moves them together.
+- "Freeze up to this column" keeps the columns up to it at the left while you scroll sideways, and
+  "Freeze from this column to the right edge" keeps it and the columns after it at the right. The
+  "Columns" panel freezes each column at the left or the right. Columns frozen at the right are resized
+  by dragging their left edge.
 - "Hide column" hides it; the "Columns" button in the toolbar lists every column to show or hide.
 - F2 or a double click shows the cell's whole value, with line breaks, in the cell inspector.
 - Alt + Enter, or "Show row details" in the cell menu, opens the detail panel beside the grid (below it

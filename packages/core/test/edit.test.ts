@@ -238,3 +238,20 @@ test("the row cache shows old values while it reads rows again, and patches cell
   assert.equal(cache.value(0, 0), 10);
   assert.equal(cache.value(3, 0), 4, "the patch is replaced by the source's value");
 });
+
+test("view requests with formulas and update requests are both validated", () => {
+  const view = parseProtocolRequest({
+    op: "view",
+    table: "t1",
+    query: { formulas: [{ name: "total", expression: "qty * price" }], sort: [{ column: 3, direction: "desc" }] },
+  });
+  assert.deepEqual(view, {
+    op: "view",
+    table: "t1",
+    query: { formulas: [{ name: "total", expression: "qty * price" }], sort: [{ column: 3, direction: "desc" }] },
+  });
+  const update = parseProtocolRequest({ op: "update", table: "t1", updates: [{ row: 0, column: 1, value: 2 }] });
+  assert.equal(update.op, "update");
+  assert.deepEqual(parseProtocolRequest({ op: "save", table: "t1" }), { op: "save", table: "t1" });
+  assert.equal(editableColumn({ name: "total", type: "float", expression: "qty * price" }), false);
+});

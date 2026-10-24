@@ -173,12 +173,22 @@ test("views that do not depend on the written columns stay, and positions keep n
   });
   try {
     const table = await open("positions.csv", small);
+    // Views made before the first write read the file's rows: the first write drops them.
+    const before = await table.createView({ sort: [{ column: 0, direction: "desc" }] });
+    await table.updateCells({ updates: [{ row: 0, column: 2, value: 2 }] });
+    assert.throws(() => table.viewInfo(before.id), { code: "view_not_found" });
     const byId = await table.createView({ sort: [{ column: 0, direction: "desc" }] });
+    const withFormula = await table.createView({ formulas: [{ name: "label", expression: "name & '!'" }] });
     await table.updateCells({ updates: [{ row: 4, column: 1, value: "Eggplant" }] });
     // A view of positions only joins the rows when it is read: it shows the new value.
     const rows = await table.readRows({ view: byId.id, start: 0, end: 2, columns: [1] });
     assert.deepEqual(rows.columns[0], ["Eggplant", "Durian"]);
     assert.deepEqual(rows.rowIds, [4, 3]);
+    // A view with formula columns may use the written column: it is dropped, and made again with new values.
+    assert.throws(() => table.viewInfo(withFormula.id), { code: "view_not_found" });
+    const again = await table.createView({ formulas: [{ name: "label", expression: "name & '!'" }] });
+    const labels = await table.readRows({ view: again.id, start: 4, end: 5, columns: [6] });
+    assert.deepEqual(labels.columns[0], ["Eggplant!"]);
   } finally {
     await small.dispose();
   }

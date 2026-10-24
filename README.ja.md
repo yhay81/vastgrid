@@ -15,7 +15,7 @@
 - **速い。** セルはキャンバスに描きます。1,000 セル以上を表示しても 1 フレーム約 2 ms です。ブラウザーの要素の高さの上限を越えて、
   数十億行までスクロールできます。
 - **表計算ソフトの操作。** マウスと Excel のキー操作での範囲の選択、コピー（TSV・HTML・Markdown）、複数の列での並べ替え、
-  値の一覧（検索・件数つき）と条件での絞り込み、列をまたぐ AND・OR と入れ子の条件、すべての列からの絞り込み、検索（⌘F）、列の統計、選択範囲のデータの個数・合計・平均・最小・最大、現在のビューの CSV・TSV・Parquet・JSON・Excel への書き出し。
+  値の一覧（検索・件数つき）と条件での絞り込み、列をまたぐ AND・OR と入れ子の条件、すべての列からの絞り込み、検索（⌘F）、列の統計、選択範囲のデータの個数・合計・平均・最小・最大、エンジンが計算する計算列（`qty * price`）、現在のビューの CSV・TSV・Parquet・JSON・Excel への書き出し。
 - **エンジンを選べる。** グリッドは `TableSource` とだけやり取りします。ディスク上のファイルは DuckDB のサーバー（`vastgrid-duckdb`）、
   ブラウザーで開くファイルと URL の Parquet は `vastgrid-browser`、メモリ上のデータは `ArraySource`、ほかのエンジンは自作の `TableSource` で扱えます。
 - **安全。** DuckDB のエンジンは、リンクをたどった実際の場所が許可したフォルダーの中にあるファイルだけを読み、実行中は変えられません。SQL はすべて組み立てたもので、値は必ずパラメーターで渡します。
@@ -139,10 +139,13 @@ const source = new ArraySource({
 | `locale` | `string` | ブラウザーの言語 | 数値と組み込みの文言のロケール。`ja` なら日本語、それ以外は英語です。 |
 | `messages` | `Partial<Messages>` | | 組み込みの文言の一部を置き換えます（`en` と `ja` を参照）。 |
 | `rowHeight` | `number` | `--vg-row-height` か 24 | 行の高さ（px）。 |
-| `headerHeight` | `number` | `--vg-header-height` か 32 | 見出しの高さ（px）。 |
+| `headerHeight` | `number` | `--vg-header-height` か 32 | 列名の段の高さ（px）。`columnGroups` の段は、この上に加わります。 |
+| `columnGroups` | `ColumnGroup[]` | | 列名の上の段に名前を出す列のグループ。入れ子にすると段が増えます。 |
+| `groupHeaderHeight` | `number` | `--vg-group-header-height` か 24 | グループの段 1 段の高さ（px）。 |
 | `maxLines` | `number` | `3` | 折り返す列（`columnFormats` の `wrap`）のセルに表示する最大の行数（1〜20）。 |
 | `nullText` | `string` | `""` | null のセルに表示する文字。 |
 | `frozenColumns` | `number` | `0` | 表を開いたときに左に固定する列の数。 |
+| `frozenRightColumns` | `number` | `0` | 表を開いたときに右に固定する列の数。最後の列から数え、グリッドの右端に表示します。 |
 | `toolbar` | `boolean` | `true` | 検索欄、適用中の絞り込み、行数を表示します。 |
 | `statusBar` | `boolean` | `true` | アクティブなセルと選択範囲の集計を表示します。 |
 | `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。変更を通知する source は自動で読み直されます。 |
@@ -161,6 +164,8 @@ const source = new ArraySource({
 | `validateCell` | `(cell: GridCellValidation) => string \| null \| undefined \| Promise<…>` | | 書き込む前に値を検証します。拒否するときはメッセージを返します。 |
 | `onCellsChange` | `(event: GridCellsChangeEvent) => void` | | 編集したセルの保存が済んだとき、または失敗したときに呼ばれます。 |
 | `onHistoryChange` | `(state: GridHistoryState) => void` | | 元に戻せる・やり直せる操作が変わったときに呼ばれます。 |
+| `formulas` | `FormulaColumn[]` | | 計算列（`{ name, expression }`）。最初と、違う値を渡したときに適用します。 |
+| `onFormulasChange` | `(formulas: FormulaColumn[]) => void` | | 計算列が追加・編集・削除されたときに呼ばれます。 |
 | `initialState` | `GridState` | | グリッドを作るときに、表の列がわかった時点で適用する設定。 |
 | `onStateChange` | `(state: GridState) => void` | | クエリーか列の設定が変わったときに、その設定を渡して呼ばれます。 |
 | `checkboxSelection` | `boolean` | `false` | 行ごとのチェックボックスと、左上にすべての行のチェックボックスを表示します。 |
@@ -174,7 +179,7 @@ const source = new ArraySource({
 | `aria-label` | `string` | `messages.gridLabel` | スクリーンリーダー向けのグリッドの名前。 |
 
 ref からは `DataGridHandle` を使えます。`focus()`、`reload()`、`getQuery()`、`setQuery(query)`、`getState()`、
-`applyState(state)`、`goToRow(row)`、`undo()`、`redo()`、`history`、`save()`、`openDetail({ focus })`、`closeDetail()`、`detailOpen`、`openExport()`、`getRowSelection()`、`setRowSelection(selection)`、グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()`
+`applyState(state)`、`goToRow(row)`、`undo()`、`redo()`、`history`、`save()`、`openDetail({ focus })`、`closeDetail()`、`detailOpen`、`openExport()`、`getFormulas()`、`setFormulas(formulas)`、`getRowSelection()`、`setRowSelection(selection)`、グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()`
 などの診断用）があります。
 
 イベントは、セルのビューでの行 `row`、元の表での行 `rowId`、表示中の列の位置 `col`、表の列の番号 `column` を渡し、
@@ -216,6 +221,18 @@ grid.current?.setQuery({
 画面では、ツールバーの「条件…」と、列の絞り込みパネルの「条件を追加（AND / OR）」で組み立て、ツールバーに表示された条件から確認・変更・解除できます。
 条件木は `capabilities.conditions` を報告する source（DuckDB のエンジン、`vastgrid-browser`、`ArraySource`）でだけ使い、それ以外では使いません。
 
+### 列の固定
+
+`frozenColumns` は表示中の最初の列を左に、`frozenRightColumns` は最後の列（合計や操作の列など）を右に固定し、その間の列をスクロールします。
+列のメニューとツールバーの「列」パネルで左右どちらにも固定でき、アプリからは `controller.setColumnPin(column, "left" | "right" | null)` で固定できます。
+固定列はグリッドの幅の 4 分の 3 までを使い、超えるときは右、次に左の固定列を、グリッドが広がるまでスクロールする列として表示します。
+`GridState` と `onColumnsChange` は両側を含み（`frozenRightColumns`、`GridColumn.pin`）、`frozenColumns` だけで保存した状態もそのまま適用できます。
+詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#列の固定)を参照してください。
+
+```tsx
+<DataGrid source={source} frozenColumns={1} frozenRightColumns={2} />
+```
+
 ### 列の表示設定
 
 `columnFormats` で、スキーマの列名ごとに列の見え方を設定します。変わるのは表示だけで、並べ替え・絞り込み・検索・統計・書き出しは値そのものに対して動きます。64 bit 整数や decimal の桁も失われません。
@@ -234,6 +251,23 @@ const formats: Record<string, ColumnFormat> = {
 コピーには値とスキーマの列名が入ります。表示している文字と表示名をコピーするには、`copyValues="formatted"`（列ごとには `copy`）を指定します。
 
 `wrap: true` を指定した列は、文字を `maxLines`（既定は 3）行まで折り返して表示します。空白と、日本語・中国語・韓国語の文字の間、値の中の改行で行を改め、収まらない分は「…」で示します。行の高さは全行で同じ（表示中の列が折り返す間は `rowHeight` に 2 行目以降の 1 行ごとに `--vg-line-height` を足した高さ）なので、行数にかかわらずスクロールは正確です。詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#列の表示設定)を参照してください。
+
+### 列のグループ
+
+`columnGroups` で、列名の上の段に列のグループの名前を出します（複数段の見出し）。メンバーはスキーマの列名か入れ子のグループで、入れ子 1 段ごとに見出しの段が 1 つ増えます。変わるのは見出しだけで、並べ替え・絞り込み・列のメニュー・選択・イベント（`col` と `column`）・`GridState` は、これまでどおり列に対して動きます。
+
+```tsx
+const groups: ColumnGroup[] = [
+  { name: "売上", children: [
+    { name: "第1四半期", children: ["jan", "feb", "mar"] },
+    { name: "第2四半期", children: ["apr", "may", "jun"] },
+  ] },
+];
+
+<DataGrid source={source} columnGroups={groups} groupHeaderHeight={24} />;
+```
+
+グループは列に付いて動きます。列の移動・非表示・固定で、グループの表示中の列が離れたり、固定する列とスクロールする列に分かれたりすると、見出しを分けて、それぞれに名前を出します。グループの見出しをクリックするとその列を選び（Shift で広げ、⌘/Ctrl で追加）、選んだグループの見出しをドラッグすると列をまとめて動かします。コピーと書き出しの見出しは 1 段（列名）のままです。詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#列のグループ)を参照してください。
 
 ### 詳細パネル
 
@@ -342,6 +376,23 @@ const [checked, setChecked] = useState<RowSelection>({ type: "include", keys: []
 
 [セルの編集](https://vastgrid.yhay81.com/ja/guides/editing/)を参照してください。
 
+### 計算列
+
+列メニューの「計算列を追加…」で、`qty * price` や `IF(due < '2024-07-01', '遅れ', '')` のような式で行ごとに計算する列を追加できます。計算は source が行い（DuckDB のエンジンは SQL で計算し、表をブラウザーに移しません）、ファイルの列と同じように並べ替え・絞り込み・統計・選択範囲の集計・書き出しができます。編集画面は入力中の式を確かめ、間違いを示します。式は独自の小さな言語（列名、四則演算、文字列をつなぐ `&`、比較、`AND`・`OR`・`NOT`、数値・文字列・日時・空白の関数）で、JavaScript や SQL として実行することはありません。エンジンは引用した列名・パラメーター・決まった関数の一覧だけで SQL を作ります。
+
+```tsx
+<DataGrid
+  source={source}
+  formulas={[
+    { name: "total", expression: "qty * price" },
+    { name: "税込", expression: "ROUND(total * 1.1, 2)" },
+  ]}
+  onFormulasChange={(formulas) => save(formulas)}
+/>
+```
+
+計算列は表の列の後ろに並び（式 `i` は列 `info.columns.length + i`）、`GridState` に保存され、列名で付け直されます。DuckDB のエンジンと `ArraySource` が計算します（`capabilities.formulas`）。`vastgrid-browser` はまだ対応していません。詳しくは[計算列](https://vastgrid.yhay81.com/ja/guides/formulas/)を参照してください。
+
 ## 性能
 
 Apple M2 Pro（12 スレッド・32 GB）、Node.js 24、DuckDB 1.5 で `npm run bench -- --csv-rows=10000000 --parquet-rows=100000000` を実行した結果です。
@@ -388,7 +439,7 @@ DuckDB の処理を含み、HTTP は含みません。
 | Space・⌘/Ctrl ＋ Shift ＋ Space（`checkboxSelection` のとき） | アクティブな行・すべての行のチェックを切り替える（Shift ＋ クリックで範囲） |
 | ⌘/Ctrl ＋ C・⌘/Ctrl ＋ Shift ＋ C | コピー・見出しを含めてコピー |
 | ⌘/Ctrl ＋ F | 検索 |
-| Alt ＋ ↓ | 列のメニュー（並べ替え・絞り込み・統計・固定・非表示） |
+| Alt ＋ ↓ | 列のメニュー（並べ替え・絞り込み・統計・左右の固定・非表示） |
 | F2・ダブルクリック | セルの値の全体を表示（編集できるグリッドでは編集） |
 | 文字の入力・Delete・⌘/Ctrl + V（編集できるグリッド） | アクティブセルの値を置き換える・選択したセルを消去・貼り付け |
 | ⌘/Ctrl + D・⌘/Ctrl + R（編集できるグリッド） | 選択範囲の先頭の行・列で下方向・右方向へコピー |
@@ -427,7 +478,7 @@ npm run bench
 
 ## 今後
 
-- 式の列
+これまでの予定（バイト単位で保つ CSV への書き戻しを含むセルの編集、式の列）は実装済みです。今後の予定は GitHub の issue で管理しています。
 
 既存のビューワーとグリッドの調査は [docs/research.ja.md](docs/research.ja.md) にあります。
 
