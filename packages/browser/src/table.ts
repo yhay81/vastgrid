@@ -290,6 +290,19 @@ export class BrowserTable implements TableSource {
     this.views.clear();
   }
 
+  /**
+   * Files at a URL: asks the server whether the file changed (see `HttpBytes.changed`) and, when it did,
+   * forgets it, so that the next `info()` opens the new file. Local files cannot be watched: a `File`
+   * is a snapshot, which the browser refuses to read once the file on disk changed.
+   */
+  async checkChanges(signal?: AbortSignal): Promise<boolean> {
+    const reader = this.reader;
+    if (!reader || !(reader.bytes instanceof HttpBytes)) return false;
+    const changed = (await reader.bytes.changed(signal)) === true;
+    if (changed && this.reader === reader) this.reset();
+    return changed;
+  }
+
   /** Runs an operation on the open file, resetting the table when the file turns out to have changed. */
   private async use<T>(run: (reader: TableReader) => Promise<T>): Promise<T> {
     const reader = await this.open();

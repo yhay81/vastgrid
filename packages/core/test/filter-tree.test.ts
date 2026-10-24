@@ -229,3 +229,33 @@ test("saved states keep condition trees and map their columns by name", () => {
   // A plain query with a tree, saved before states existed.
   assert.deepEqual(parseGridState({ where: tokyoOrLarge })?.query?.where?.type, "or");
 });
+
+test("remote sources recreate a view with its condition tree after the table reopens", async () => {
+  const backend = sales();
+  let table = "t1";
+  const views: ViewQuery[] = [];
+  const fakeFetch = (async (_url: string, init: RequestInit) => {
+    // The server validates every request, `revision` included, as a real one does.
+    const body = parseProtocolRequest(JSON.parse(String(init.body)));
+    const reply = (status: number, payload: unknown) => new Response(JSON.stringify(payload), { status });
+    if (body.op === "info") return reply(200, { result: { table, ...(await backend.info()), revision: table } });
+    if (body.table !== table) return reply(404, { error: { code: "table_not_found", message: "gone" } });
+    if (body.op === "revision") return reply(200, { result: { revision: table } });
+    if (body.op === "view") {
+      views.push(body.query);
+      return reply(200, { result: await backend.createView(body.query) });
+    }
+    if (body.op === "rows") return reply(200, { result: await backend.readRows(body) });
+    return reply(400, { error: { code: "invalid_request", message: "?" } });
+  }) as typeof fetch;
+  const source = new RemoteSource({ endpoint: "/api", ref: "sales.csv", fetch: fakeFetch, changes: false });
+  await source.info();
+  const view = await source.createView({ where: tokyoOrLarge });
+  assert.equal(view.rowCount, 4);
+  // The server reopened the table (for example after the file changed): the view is made again, with the tree.
+  table = "t2";
+  const rows = await source.readRows({ view: view.id, start: 0, end: 4, columns: [0] });
+  assert.deepEqual(rows.columns[0], ["Tokyo", "Osaka", "Tokyo", null]);
+  assert.equal(views.length, 2);
+  assert.deepEqual(views[1].where, views[0].where);
+});

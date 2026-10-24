@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ArraySource, type Filter, type FilterNode, type TableSource } from "vastgrid-core";
+import { ArraySource, type Filter, type FilterNode, type TableChangeListener, type TableSource } from "vastgrid-core";
 import { initialDraft } from "../src/components/filter-builder.tsx";
 import { GridController } from "../src/controller.ts";
 import { conditionLabel } from "../src/labels.ts";
@@ -132,4 +132,75 @@ test("condition trees are left out for sources that do not run them, and labels 
     en,
   );
   assert.equal(label, "(region : Tokyo or amount > 100000) and status ≠ cancelled");
+});
+
+test("a reported change reads the table again with the condition tree, its columns followed by name", async () => {
+  const first = sales();
+  // The file is rewritten: "status" is gone, "amount" comes first and a row is added.
+  const second = new ArraySource({
+    columns: ["amount", "region"],
+    rows: [
+      [50_000, "Tokyo"],
+      [150_000, "Osaka"],
+      [200_000, "Tokyo"],
+      [20_000, "Nagoya"],
+      [300_000, "Kyoto"],
+    ],
+  });
+  let current = first;
+  let revision = 1;
+  const listeners = new Set<TableChangeListener>();
+  const source: TableSource = {
+    info: async () => ({ ...(await current.info()), revision: String(revision) }),
+    createView: (query, signal) => current.createView(query, signal),
+    readRows: (request) => current.readRows(request),
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+  const change = (next: ArraySource) => {
+    current = next;
+    revision++;
+    for (const listener of listeners) listener({ revision: String(revision) });
+  };
+  const grid = new GridController(source, { ...options, changeDelay: 10 });
+  grid.start();
+  await until(() => grid.info?.status === "ready");
+  try {
+    const where: FilterNode = {
+      type: "or",
+      filters: [tokyo, large, { type: "and", filters: [notCancelled, { type: "blank", column: 2, blank: true }] }],
+    };
+    await grid.setQuery({ where });
+    assert.equal(grid.rowCount, 3);
+    // The same columns: the tree stays as it is and applies to the new rows.
+    change(
+      new ArraySource({
+        columns: ["region", "amount", "status"],
+        rows: [
+          ["Tokyo", 50_000, "open"],
+          ["Kobe", 500_000, "open"],
+        ],
+      }),
+    );
+    await until(() => grid.info?.revision === "2" && grid.view.id !== null && !grid.viewPending);
+    assert.deepEqual(grid.query.where, where);
+    assert.equal(grid.rowCount, 2);
+    // Moved columns follow their names; conditions on the removed column, and the group they leave
+    // empty, are dropped.
+    change(second);
+    await until(() => grid.info?.revision === "3" && grid.view.id !== null && !grid.viewPending);
+    assert.deepEqual(grid.query.where, {
+      type: "or",
+      filters: [
+        { ...tokyo, column: 1 },
+        { ...large, column: 0 },
+      ],
+    });
+    assert.equal(grid.rowCount, 4);
+    assert.equal(grid.viewError, null);
+  } finally {
+    grid.dispose();
+  }
 });

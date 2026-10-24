@@ -1,5 +1,5 @@
-import { ErrorCodes, type InfoResult, type ProtocolRequest } from "./protocol.js";
-import { abortError, isEmptyQuery, SourceError, type TableSource } from "./source.js";
+import { ErrorCodes, type InfoResult, type ProtocolRequest, type RevisionResult } from "./protocol.js";
+import { abortError, isEmptyQuery, SourceError, type TableChangeListener, type TableSource } from "./source.js";
 import type {
   AggregateRequest,
   ColumnStats,
@@ -30,6 +30,64 @@ export interface RemoteSourceOptions {
   headers?: Record<string, string>;
   credentials?: RequestCredentials;
   fetch?: typeof fetch;
+  /**
+   * How the source learns that the table changed, while a grid subscribes to it (see
+   * `TableSource.subscribe`): `pollChanges()` (the default, every 2 seconds), another transport, or
+   * `false` for none.
+   */
+  changes?: ChangeTransport | false;
+}
+
+/** What a `ChangeTransport` is given to watch one table. */
+export interface ChangeWatch {
+  /** What the source opens (`RemoteSourceOptions.ref`). */
+  readonly ref: string;
+  /**
+   * Asks the server for the table's current revision (the `revision` request) and reports a change
+   * when it differs from the revision the source read last. Resolves whether it reported a change.
+   * Rejects with the code `invalid_request` when the server does not know the request.
+   */
+  check(signal?: AbortSignal): Promise<boolean>;
+  /**
+   * Reports a change that the transport learnt by other means, for example a message the server
+   * pushed. A revision the source already read or reported is not reported again.
+   */
+  changed(revision?: string | null): void;
+}
+
+/** How a `RemoteSource` learns that its table changed. */
+export interface ChangeTransport {
+  /** Starts watching while the source has subscribers. Returns a function that stops watching. */
+  watch(watch: ChangeWatch): () => void;
+}
+
+/**
+ * Asks the server for the table's revision every `interval` milliseconds (default 2,000, at least 100).
+ * Failed requests are retried at the next interval, and the first answer after them catches up with
+ * changes made meanwhile. Polling stops for good when the server does not know the request.
+ */
+export function pollChanges(options: { interval?: number } = {}): ChangeTransport {
+  const interval = Math.max(100, options.interval ?? 2000);
+  return {
+    watch(watch) {
+      const controller = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const tick = async () => {
+        try {
+          await watch.check(controller.signal);
+        } catch (error) {
+          if (error instanceof SourceError && error.code === ErrorCodes.invalidRequest) return;
+          // Network errors and a server that restarts: ask again later.
+        }
+        if (!controller.signal.aborted) timer = setTimeout(tick, interval);
+      };
+      timer = setTimeout(tick, interval);
+      return () => {
+        controller.abort();
+        clearTimeout(timer);
+      };
+    },
+  };
 }
 
 /** Waits for `promise`, but rejects with an AbortError as soon as `signal` aborts. */
@@ -70,6 +128,11 @@ export class RemoteSource implements TableSource {
   /** View ids issued to callers → current ids on the server. */
   private readonly aliases = new Map<string, string>();
   private readonly recreating = new Map<string, Promise<string>>();
+  /** The revision of the table as `info` read it last, and the last revision reported to subscribers. */
+  private revision: string | null | undefined;
+  private reported: string | null | undefined;
+  private readonly listeners = new Set<TableChangeListener>();
+  private stopWatching: (() => void) | null = null;
 
   constructor(options: RemoteSourceOptions) {
     this.options = options;
@@ -127,6 +190,7 @@ export class RemoteSource implements TableSource {
       this.aliases.clear();
     }
     this.table = result.table;
+    this.revision = result.revision;
     return result;
   }
 
@@ -252,7 +316,54 @@ export class RemoteSource implements TableSource {
     return this.call<ExportResult>("export", { ...request } satisfies Operation<"export">, signal);
   }
 
+  /**
+   * Calls `listener` when the table changed, as the `changes` transport learns it (by default by asking
+   * the server every 2 seconds). Watching runs while there are listeners.
+   */
+  subscribe(listener: TableChangeListener): () => void {
+    this.listeners.add(listener);
+    const transport = this.options.changes ?? pollChanges();
+    if (!this.stopWatching && transport) {
+      this.stopWatching = transport.watch({
+        ref: this.options.ref,
+        check: (signal) => this.checkRevision(signal),
+        changed: (revision) => this.changed(revision),
+      });
+    }
+    return () => {
+      this.listeners.delete(listener);
+      if (this.listeners.size === 0) this.unwatch();
+    };
+  }
+
+  private unwatch() {
+    this.stopWatching?.();
+    this.stopWatching = null;
+  }
+
+  private async checkRevision(signal?: AbortSignal) {
+    const known = this.revision;
+    const result = await this.call<RevisionResult>("revision", {} satisfies Operation<"revision">, signal);
+    // Before the first `info` there is nothing to compare with. A table reopened by the request (the
+    // server restarted) set `revision` anew: the comparison is with the revision from before.
+    if (known === undefined || result.revision === known || result.revision === this.reported) return false;
+    this.report(result.revision);
+    return true;
+  }
+
+  private changed(revision?: string | null) {
+    if (revision !== undefined && (revision === this.revision || revision === this.reported)) return;
+    this.report(revision);
+  }
+
+  private report(revision: string | null | undefined) {
+    this.reported = revision;
+    for (const listener of [...this.listeners]) listener(revision === undefined ? {} : { revision });
+  }
+
   async close() {
+    this.unwatch();
+    this.listeners.clear();
     const table = this.table;
     this.table = null;
     this.queries.clear();

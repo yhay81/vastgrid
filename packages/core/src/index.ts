@@ -33,8 +33,15 @@ export {
   type ProtocolRequest,
   parseProtocolRequest,
   parseViewQuery,
+  type RevisionResult,
 } from "./protocol.js";
-export { RemoteSource, type RemoteSourceOptions } from "./remote-source.js";
+export {
+  type ChangeTransport,
+  type ChangeWatch,
+  pollChanges,
+  RemoteSource,
+  type RemoteSourceOptions,
+} from "./remote-source.js";
 export { MAX_NATIVE_SCROLL, ScrollAxis } from "./scroll.js";
 export {
   type CellPosition,
@@ -53,6 +60,8 @@ export {
   isEmptyQuery,
   MAX_TEXT_LIMIT,
   SourceError,
+  type TableChange,
+  type TableChangeListener,
   type TableSource,
 } from "./source.js";
 export type * from "./types.js";

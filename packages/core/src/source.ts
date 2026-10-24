@@ -39,9 +39,25 @@ export interface TableSource {
   aggregate?(request: AggregateRequest, signal?: AbortSignal): Promise<SelectionSummary>;
   find?(request: FindRequest, signal?: AbortSignal): Promise<FindResult | null>;
   exportView?(request: ExportRequest, signal?: AbortSignal): Promise<ExportResult>;
+  /**
+   * Calls `listener` when the table as a whole changed (for example rows were appended to its file),
+   * until the returned function is called. The listener learns only that the table changed, not which
+   * rows: it reads the table again with `info`, which reports the new state. Sources call it after
+   * the change is visible to `info`, may call it once for several changes, and may call it again for
+   * a change already reported. Sources whose data does not change leave this out.
+   */
+  subscribe?(listener: TableChangeListener): () => void;
   /** Releases the table. The source must not be used afterwards. */
   close?(): void | Promise<void>;
 }
+
+/** A change of a whole table, reported by `TableSource.subscribe`. */
+export interface TableChange {
+  /** The table's new `revision` (see `TableInfo.revision`) when the source knows it; null when the table is gone. */
+  revision?: string | null;
+}
+
+export type TableChangeListener = (change: TableChange) => void;
 
 /**
  * A `textLimit` that reads whole values, for copies and the cell inspector. Engines send at most this

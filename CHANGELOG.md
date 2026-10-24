@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- `vastgrid`: a detail panel shows every column of the active row, with the columns' labels and
+  formatted values, beside the grid (below it when the grid is narrow); rows keep their height. It follows
+  the active cell, reads cut values in full for that row and cancels the read when you move on, and shows
+  the new active row after sorting, filtering or reloading. `detailOpen`, `defaultDetailOpen`,
+  `onDetailOpenChange`, `openDetail()` and `closeDetail()`, Alt+Enter and the cell menu open and close it,
+  and `detailPanel` replaces its content with a component (`DetailPanelProps`). `DetailTracker` reads the
+  record outside React.
+- `vastgrid`: `wrap` in a column's format wraps its text onto up to `maxLines` lines (a new prop, 3 by
+  default), breaking at spaces, between CJK characters (with Japanese line-breaking rules for
+  punctuation and brackets) and at line breaks in the value; longer text ends with "…". Rows keep one
+  height for all rows, `rowHeight` plus `--vg-line-height` for each further line while a visible column
+  wraps, and the first visible row stays in place when it changes. The controller has `rowHeight`,
+  `maxLines`, `setMaxLines` and `setLineHeight`.
+- `vastgrid-core`: `ColumnFormat.wrap`, `ColumnFormatter.wrap` (its `format` then keeps line breaks)
+  and `ValueFormatter.lines`.
 - `vastgrid`: `onSelectionChange`, `onColumnsChange`, `onCellClick` and `onCellDoubleClick` report the
   selection, changes of the columns' width, order, visibility and freezing, and clicks on cells (Space
   and F2 from the keyboard; `preventDefault()` keeps the cell inspector closed). Events give a cell's row
@@ -22,6 +37,13 @@
 - `vastgrid-core`: `ColumnFormat`, `NumberFormat`, `DateFormat` and `ColumnFormatter`
   (`ValueFormatter.column(schema, format)`), which formats 64-bit integers and decimals from their
   digits without converting them to JavaScript numbers.
+- `vastgrid`: a column's `style` in `columnFormats` colors cells by value (text color, background, and a
+  description for screen readers) and keeps the standard drawing. `drawCell` draws the visible loaded
+  cells on the canvas with their rectangle, value, type, text, selection state and theme, and can call
+  the standard drawing (`drawDefault`). `cellAction` makes cells links or buttons: a pointer cursor, links
+  underlined in the new `--vg-link-fg`, the `link` or `button` role on the active cell for screen
+  readers, and `onCellClick` on a click or Space. Frames of 1,349 cells take as long as before.
+- `vastgrid-core`: `CellStyle`, `ColumnFormat.style` and `ColumnFormatter.style(value)`.
 - `vastgrid`: copies cover every selected range. Ranges with the same rows are copied side by side and
   ranges with the same columns one below the other, in the grid's order and with overlaps once; other
   combinations are refused with a message and `CopyRangesError`. `copyLimit` counts all ranges, cells
@@ -58,6 +80,21 @@
   `vastgrid-duckdb`; URLs read only what the grid shows, check the file's `ETag`, and handle servers
   without `Range` or `HEAD`, unknown sizes and authentication headers. Requests can be cancelled, and
   `close()` ends the worker.
+- `vastgrid-core`: `TableSource.subscribe(listener)`, optional, reports that a whole table changed
+  (`TableChange`, with the new revision when known); single rows are not reported. `RemoteSource` watches
+  its table while it has subscribers with a replaceable `changes` transport: `pollChanges()` (the
+  default, every 2 seconds) sends the new `revision` request, reports each new revision once, catches up
+  after failed requests and stops for servers without the request; `changes: false` turns it off.
+- `vastgrid-duckdb`: the `revision` request answers a file's current revision, and `OpenTable` has
+  `currentRevision()`. A file's revision (`fileRevision`) now includes a hash of its first 64 KiB, so a
+  rewrite with the same size and modification time is seen too.
+- `vastgrid`: a grid whose source reports a change reads the table again, merging changes within
+  `changeDelay` (300 ms), and stops listening when it stops or unmounts. Reloads, including `reloadKey`,
+  keep the query, the column settings, the scroll position and the active cell instead of going back
+  to the first row. `followTail` shows the new end after a change when the last row was shown.
+- `vastgrid-browser`: files at a URL are watched while a grid subscribes, by a `HEAD` request comparing
+  their `ETag`, `Last-Modified` or size every `changeInterval` milliseconds (5,000); a changed file is
+  opened again. Local files cannot be watched.
 - `vastgrid-core`: `ViewQuery.where`, a condition tree (`FilterNode`: filters and `and` / `or` groups)
   that is combined with `filters` by AND. It expresses OR across columns, nested groups and several
   conditions on one column. `parseProtocolRequest` validates it (at most 8 levels, 256 groups and

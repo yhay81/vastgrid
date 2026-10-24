@@ -27,6 +27,8 @@ interface TableSource {
   find?(request: FindRequest, signal?: AbortSignal): Promise<FindResult | null>;
   exportView?(request: ExportRequest, signal?: AbortSignal): Promise<ExportResult>;
   /** 表を解放する。以後、そのソースは使えない。 */
+  /** 表全体が変わったときに `listener` を呼びます。返す関数を呼ぶまで続きます。 */
+  subscribe?(listener: (change: { revision?: string | null }) => void): () => void;
   close?(): void | Promise<void>;
 }
 ```
@@ -55,10 +57,23 @@ new RemoteSource({
   headers?: Record<string, string>;    // すべての要求に付けるヘッダー
   credentials?: RequestCredentials;
   fetch?: typeof fetch;
+  changes?: ChangeTransport | false;   // 表の変更を知る方法。既定は pollChanges()
 });
 ```
 
 [表のプロトコル](/ja/reference/protocol/)を話します。サーバーが表やビューを忘れた場合（再起動した、ファイルが変わったなど）は、`RemoteSource` が表を開き直し、同じクエリーでビューを作り直します。
+
+グリッドが購読している間、`RemoteSource` は `changes` の転送方式で表を監視します。既定の `pollChanges({ interval: 2000 })` は `interval` ミリ秒ごとに `revision` 要求を送り、最後に `info` で読んだものと違う revision を 1 回だけ通知します。要求が失敗したあとは、次の応答で追いつきます。サーバーがこの要求を知らない場合は監視をやめます。自作の転送方式は `{ ref, check(signal?), changed(revision?) }` を受け取ります。サーバーから変更が届いたら（Server-Sent Events など）`changed` を、問い合わせるときは `check` を呼びます。`changes: false` で監視しません。
+
+```ts
+const pushed: ChangeTransport = {
+  watch({ ref, changed }) {
+    const events = new EventSource(`/api/changes?ref=${encodeURIComponent(ref)}`);
+    events.onmessage = (event) => changed(event.data);
+    return () => events.close();
+  },
+};
+```
 
 ## 値と列
 

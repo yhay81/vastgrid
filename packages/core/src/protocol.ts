@@ -51,12 +51,22 @@ export type ProtocolRequest =
       caseSensitive?: boolean;
     }
   | { op: "export"; table: string; view: string | null; format: ExportFormat; columns?: number[]; target: string }
+  /** The current revision of the table's data, for watching it for changes without reading it again. */
+  | { op: "revision"; table: string }
   | { op: "close"; table: string };
 
 export type ProtocolOperation = ProtocolRequest["op"];
 
 export interface InfoResult extends TableInfo {
   table: string;
+}
+
+/**
+ * The answer to `revision`: the data's current revision. It differs from the `revision` of `info` once the
+ * data changed; `info` then opens the new data. Null when the data is gone (for example the file was deleted).
+ */
+export interface RevisionResult {
+  revision: string | null;
 }
 
 export interface ProtocolError {
@@ -111,6 +121,7 @@ const operations = new Set<ProtocolOperation>([
   "aggregate",
   "find",
   "export",
+  "revision",
   "close",
 ]);
 
@@ -372,6 +383,8 @@ export function parseProtocolRequest(body: unknown): ProtocolRequest {
         target: string(body.target, "target"),
       };
     }
+    case "revision":
+      return { op: "revision", table };
     case "close":
       return { op: "close", table };
   }

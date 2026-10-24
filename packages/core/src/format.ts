@@ -1,5 +1,6 @@
 import { isNumericType } from "./column-type.js";
 import type {
+  CellStyle,
   CellValue,
   ColumnAlign,
   ColumnFormat,
@@ -90,6 +91,13 @@ export class ValueFormatter {
   oneLine(value: string) {
     let text = value.length > this.maxLength ? `${value.slice(0, this.maxLength)}…` : value;
     text = text.replace(lineBreaks, " ↵ ").replace(/\t/g, " ⇥ ").replace(controls, "�");
+    return text;
+  }
+
+  /** Shortens text like `oneLine`, but keeps line breaks (as "\n") for text that wraps. */
+  lines(value: string) {
+    let text = value.length > this.maxLength ? `${value.slice(0, this.maxLength)}…` : value;
+    text = text.replace(lineBreaks, "\n").replace(/\t/g, " ⇥ ").replace(controls, "�");
     return text;
   }
 
@@ -387,12 +395,15 @@ export class ColumnFormatter {
   readonly numeric: boolean;
   /** The column's display settings, for code that builds on them (exports, custom drawing). */
   readonly settings: ColumnFormat;
+  /** Whether the column wraps its text (`format` then keeps line breaks as "\n"). */
+  readonly wrap: boolean;
   /** The copy setting of the column, if it has one. */
   readonly copy: CopyValues | undefined;
   private readonly base: ValueFormatter;
   private readonly number: ((value: number | string) => string) | null;
   private readonly date: ((parts: DateParts) => string) | null;
   private readonly custom: ColumnFormat["format"];
+  private readonly styler: ColumnFormat["style"];
 
   constructor(base: ValueFormatter, schema: ColumnSchema, format: ColumnFormat) {
     this.base = base;
@@ -402,9 +413,21 @@ export class ColumnFormatter {
     this.numeric = isNumericType(schema.type) || format.number !== undefined;
     this.align = format.align ?? (this.numeric ? "right" : "left");
     this.copy = format.copy;
+    this.wrap = format.wrap === true;
     this.number = format.number ? numberFormatter(base.locale, format.number, base.grouping) : null;
     this.date = format.date ? dateFormatter(base.locale, format.date) : null;
     this.custom = format.format;
+    this.styler = format.style;
+  }
+
+  /** Whether the column has a `style` setting. */
+  get styled() {
+    return this.styler !== undefined;
+  }
+
+  /** The colors of a cell from the column's `style` setting, or null for the defaults. `text` is the shown text. */
+  style(value: CellValue, text: string = this.format(value)): CellStyle | null {
+    return this.styler?.(value, { column: this.schema, text }) ?? null;
   }
 
   /** The text of a value from the number and date settings, or null to use the grid's default. */
@@ -434,8 +457,14 @@ export class ColumnFormatter {
     return this.custom ? this.custom(value, { column: this.schema, text }) : text;
   }
 
-  /** The text drawn in a cell: one line, long text shortened. */
+  /** The text drawn in a cell: one line (with `wrap`, its line breaks kept), long text shortened. */
   format(value: CellValue): string {
+    if (this.wrap) {
+      const text = this.custom
+        ? this.text(value)
+        : (this.formatted(value) ?? (typeof value === "string" && !isNumericType(this.schema.type) ? value : null));
+      return text === null ? this.base.format(value, this.schema.type) : this.base.lines(text);
+    }
     if (!this.custom) {
       const formatted = this.formatted(value);
       return formatted === null ? this.base.format(value, this.schema.type) : this.base.oneLine(formatted);

@@ -28,6 +28,21 @@ forget both (restart, file changed, memory limits) and answer `table_not_found` 
 `RemoteSource` then reopens the table with `info` and recreates the view with the same query. A file
 that changed gets a new handle and a new `revision`.
 
+## Watching for changes
+
+`revision` answers the current revision of a table's data without reading it again. Once it differs from
+the `revision` that `info` answered, the data changed, and the next `info` with the same `ref` opens the
+new data (a new handle; views are created again). `RemoteSource` asks for it every 2 seconds while a grid
+subscribes (`TableSource.subscribe`), and the grid then reads the table again with its query and column
+settings. Only the whole table is reported, not which rows changed. A server that does not know the
+request answers `invalid_request`, and `RemoteSource` stops asking. After failed requests (the server was
+unreachable or restarted), the first answer is compared with the revision read last, so changes made
+meanwhile are reported once.
+
+`vastgrid-duckdb` builds the revision of a file from its size, its modification time and a hash of its
+first 64 KiB, so that appended rows and a rewrite within the resolution of the modification time are both
+seen. It answers `null` when the file is gone.
+
 ## Operations
 
 | `op` | Fields | Result |
@@ -41,6 +56,7 @@ that changed gets a new handle and a new `revision`.
 | `aggregate` | `table`, `view`, `ranges: { start, end, columns }[]` | `{ count, numericCount, sum, min, max, average }` |
 | `find` | `table`, `view`, `text`, `columns`, `row`, `column`, `direction` (`1` or `-1`), optional `caseSensitive` | `{ row, column }` or `null` |
 | `export` | `table`, `view`, `format` (`csv`, `tsv`, `parquet`, `json`), optional `columns`, `target` | `{ target, rows }` |
+| `revision` | `table` | `{ revision: string \| null }`, the data's current revision (see [Watching for changes](#watching-for-changes)) |
 | `close` | `table` | `null` |
 
 A `rows` request reads at most 1,000,000 rows and 1,000,000 cells (rows × columns); read more in parts.

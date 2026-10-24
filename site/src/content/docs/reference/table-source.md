@@ -28,6 +28,8 @@ interface TableSource {
   aggregate?(request: AggregateRequest, signal?: AbortSignal): Promise<SelectionSummary>;
   find?(request: FindRequest, signal?: AbortSignal): Promise<FindResult | null>;
   exportView?(request: ExportRequest, signal?: AbortSignal): Promise<ExportResult>;
+  /** Calls `listener` when the whole table changed, until the returned function is called. */
+  subscribe?(listener: (change: { revision?: string | null }) => void): () => void;
   /** Releases the table. The source must not be used afterwards. */
   close?(): void | Promise<void>;
 }
@@ -57,12 +59,30 @@ new RemoteSource({
   headers?: Record<string, string>;    // extra headers for every request
   credentials?: RequestCredentials;
   fetch?: typeof fetch;
+  changes?: ChangeTransport | false;   // how to learn that the table changed; default pollChanges()
 });
 ```
 
 Speaks the [table protocol](/reference/protocol/). When the server forgets a table or a view (it
 restarted, or the file changed), `RemoteSource` opens the table again and recreates the view with the same
 query.
+
+While a grid subscribes, `RemoteSource` watches the table with its `changes` transport. The default,
+`pollChanges({ interval: 2000 })`, sends a `revision` request every `interval` milliseconds and reports a
+revision that differs from the one `info` read last, once; after failed requests the next answer catches
+up. It stops for good when the server does not know the request. A transport of your own receives
+`{ ref, check(signal?), changed(revision?) }`: call `changed` when the server pushes a change (for example
+over server-sent events), or `check` to ask. `changes: false` turns watching off.
+
+```ts
+const pushed: ChangeTransport = {
+  watch({ ref, changed }) {
+    const events = new EventSource(`/api/changes?ref=${encodeURIComponent(ref)}`);
+    events.onmessage = (event) => changed(event.data);
+    return () => events.close();
+  },
+};
+```
 
 ## Values and columns
 

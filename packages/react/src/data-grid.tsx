@@ -1,4 +1,5 @@
 import {
+  type ComponentType,
   type CSSProperties,
   forwardRef,
   type KeyboardEvent,
@@ -22,15 +23,18 @@ import {
   type TableSource,
   type ViewQuery,
 } from "vastgrid-core";
+import type { CellActionHook, DrawCell } from "./cell-render.js";
 import { StatusBar, Toolbar } from "./components/bars.js";
 import { CellInspector } from "./components/cell-inspector.js";
 import { ColumnsPanel } from "./components/columns-panel.js";
+import { DetailFields, DetailPanel, type DetailPanelProps } from "./components/detail-panel.js";
 import { FilterBuilder, type FilterDraft, initialDraft } from "./components/filter-builder.js";
 import { FilterPanel } from "./components/filter-panel.js";
 import { FindBar } from "./components/find-bar.js";
 import { type Anchor, type MenuItem, MenuList, Popover } from "./components/popover.js";
 import { StatsPanel } from "./components/stats-panel.js";
 import { CopyRangesError, CopyTooLargeError, GridController, type Hit, ViewBuildingError } from "./controller.js";
+import { DetailTracker, detailKeyAction } from "./detail.js";
 import type { GridCellEvent, GridColumnsEvent, GridSelectionEvent } from "./events.js";
 import { countFormat, numberFormat } from "./labels.js";
 import { type Messages, messagesFor } from "./messages.js";
@@ -48,6 +52,12 @@ export interface DataGridProps {
   rowHeight?: number;
   /** Header height in pixels. Defaults to `--vg-header-height` or 32. */
   headerHeight?: number;
+  /**
+   * Lines shown at most in cells of columns that wrap (`wrap` in `columnFormats`), from 1 to 20.
+   * Defaults to 3. While a visible column wraps, every row is `rowHeight` plus `--vg-line-height` (1.4
+   * times the font size) for each further line; longer text ends with "…" and the cell inspector shows it all.
+   */
+  maxLines?: number;
   /** Text shown for null cells. Defaults to an empty cell. */
   nullText?: string;
   /** Columns frozen at the left when the table opens. */
@@ -56,8 +66,17 @@ export interface DataGridProps {
   toolbar?: boolean;
   /** Shows the active cell and the selection summary. Defaults to `true`. */
   statusBar?: boolean;
-  /** Changing this value reads the table again, for example when the file changed on disk. */
+  /**
+   * Changing this value reads the table again, for example when the file changed on disk. Sources that
+   * report their changes (`TableSource.subscribe`) are read again by themselves. Either way the grid
+   * keeps the query, the column settings, the scroll position and the active cell.
+   */
   reloadKey?: unknown;
+  /**
+   * After the table changed, show its end when the last row was shown before, as `tail -f` does for
+   * rows appended to a log. Defaults to `false`.
+   */
+  followTail?: boolean;
   /** Cells that can be copied at once. Defaults to 1,000,000. */
   copyLimit?: number;
   /**
@@ -71,6 +90,17 @@ export interface DataGridProps {
    * headers, or the shown text (`formatted`) with the labels. A column's `copy` setting overrides it.
    */
   copyValues?: CopyValues;
+  /**
+   * Draws loaded cells in the visible rows and columns instead of the grid, with the cell's rectangle,
+   * value, type, text, selection state and theme; `args.drawDefault()` draws the standard cell. For
+   * colors by value, a column's `style` setting in `columnFormats` is enough. Keep the function stable.
+   */
+  drawCell?: DrawCell;
+  /**
+   * Makes cells links or buttons: their pointer, their role for screen readers, and links drawn
+   * underlined in `--vg-link-fg`. Clicking them or pressing Space calls `onCellClick`. Keep the function stable.
+   */
+  cellAction?: CellActionHook;
   onQueryChange?: (query: ViewQuery) => void;
   /** Called when the selection or the active cell changes, by the user or by the app. */
   onSelectionChange?: (event: GridSelectionEvent) => void;
@@ -90,6 +120,18 @@ export interface DataGridProps {
   initialState?: GridState;
   /** Called with `getState()` when the query or the column settings change. */
   onStateChange?: (state: GridState) => void;
+  /**
+   * Shows the detail panel, with every column of the active row, beside the grid (below it when the
+   * grid is narrower than 640px). Set it to control the panel; otherwise Alt+Enter, the context menu
+   * and the handle open it.
+   */
+  detailOpen?: boolean;
+  /** Whether the detail panel is open when the grid mounts, when `detailOpen` is not set. */
+  defaultDetailOpen?: boolean;
+  /** Called when the detail panel is opened or closed by the user or the handle. */
+  onDetailOpenChange?: (open: boolean) => void;
+  /** Replaces the content of the detail panel. Defaults to the columns' labels and formatted values. */
+  detailPanel?: ComponentType<DetailPanelProps>;
   className?: string;
   style?: CSSProperties;
   "aria-label"?: string;
@@ -106,6 +148,12 @@ export interface DataGridHandle {
   applyState(state: GridState): boolean;
   /** Scrolls to a row of the current view and makes it active. */
   goToRow(row: number): void;
+  /** Opens the detail panel; with `focus`, moves the focus to it. */
+  openDetail(options?: { focus?: boolean }): void;
+  /** Closes the detail panel. */
+  closeDetail(): void;
+  /** Whether the detail panel is open. */
+  readonly detailOpen: boolean;
   readonly controller: GridController;
   /** The canvas renderer, for diagnostics such as `renderer.timings()`. Null before the grid mounts. */
   readonly renderer: CanvasRenderer | null;
@@ -153,11 +201,13 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     locale,
     rowHeight,
     headerHeight,
+    maxLines,
     nullText = "",
     frozenColumns = 0,
     toolbar = true,
     statusBar = true,
     reloadKey,
+    followTail = false,
     copyLimit = 1_000_000,
     columnFormats,
     copyValues = "raw",
@@ -190,6 +240,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     const grid = new GridController(source, {
       rowHeight: rowHeight ?? 24,
       headerHeight: headerHeight ?? 32,
+      maxLines,
       locale: resolvedLocale,
       nullText,
       frozenColumns,
@@ -198,6 +249,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       copyLimit,
       columnFormats,
       copyValues,
+      followTail,
     });
     if (props.initialState) grid.applyState(props.initialState);
     return grid;
@@ -218,8 +270,23 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   }, [controller, columnFormats]);
 
   useEffect(() => {
+    controller.setMaxLines(maxLines);
+  }, [controller, maxLines]);
+
+  useEffect(() => {
     controller.options.copyValues = copyValues;
   }, [controller, copyValues]);
+
+  useEffect(() => {
+    controller.options.followTail = followTail;
+  }, [controller, followTail]);
+
+  useEffect(() => {
+    controller.options.drawCell = props.drawCell;
+    controller.options.cellAction = props.cellAction;
+    controller.requestRender();
+    controller.emit();
+  }, [controller, props.drawCell, props.cellAction]);
 
   const announce = useCallback((text: string) => {
     setNotice(text);
@@ -313,6 +380,45 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     };
   }, [controller]);
 
+  // ----- detail panel -----
+
+  const [detailOpenState, setDetailOpenState] = useState(props.defaultDetailOpen ?? false);
+  const detailOpen = props.detailOpen ?? detailOpenState;
+  const detailOpenRef = useRef(detailOpen);
+  detailOpenRef.current = detailOpen;
+  const detailRef = useRef<HTMLElement>(null);
+  /** Move the focus to the panel once it is shown. */
+  const focusDetail = useRef(false);
+  /** The focus was in the panel: closing it returns the focus to the grid. */
+  const detailFocused = useRef(false);
+  const setDetailOpen = useCallback((open: boolean, focus = false) => {
+    if (open && focus) {
+      if (detailOpenRef.current && detailRef.current) detailRef.current.focus();
+      else focusDetail.current = true;
+    }
+    if (open === detailOpenRef.current) return;
+    detailOpenRef.current = open;
+    setDetailOpenState(open);
+    handlers.current.onDetailOpenChange?.(open);
+  }, []);
+  useEffect(() => {
+    if (detailOpen && focusDetail.current) detailRef.current?.focus();
+    focusDetail.current = false;
+    if (!detailOpen && detailFocused.current) {
+      detailFocused.current = false;
+      // The focus was lost with the panel (not moved elsewhere).
+      const focused = document.activeElement;
+      if (!focused || focused === document.body) scrollerRef.current?.focus({ preventScroll: true });
+    }
+  }, [detailOpen]);
+  const tracker = useMemo(() => new DetailTracker(controller), [controller]);
+  useEffect(() => {
+    if (!detailOpen) return;
+    tracker.start();
+    return () => tracker.stop();
+  }, [tracker, detailOpen]);
+  useSyncExternalStore(tracker.subscribe, tracker.getVersion, tracker.getVersion);
+
   const lastQuery = useRef(controller.query);
   useEffect(() => {
     if (lastQuery.current !== controller.query) {
@@ -334,12 +440,17 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         controller.selection.select({ row, col: controller.selection.active.col });
         controller.selectionChanged({ row, col: controller.selection.active.col });
       },
+      openDetail: (options) => setDetailOpen(true, options?.focus),
+      closeDetail: () => setDetailOpen(false),
+      get detailOpen() {
+        return detailOpenRef.current;
+      },
       controller,
       get renderer() {
         return rendererRef.current;
       },
     }),
-    [controller],
+    [controller, setDetailOpen],
   );
 
   // ----- helpers -----
@@ -364,7 +475,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   function cellAnchor(row: number, col: number): Anchor {
     const x = Math.max(controller.gutterWidth, controller.columnX(col));
     const y = Math.max(controller.options.headerHeight, Math.min(controller.height - 8, controller.rowY(row)));
-    return anchorAt(x, y, controller.options.rowHeight);
+    return anchorAt(x, y, controller.rowHeight);
   }
 
   function focusGrid() {
@@ -543,8 +654,20 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         : c.hitTest(x, y);
     const previous = c.hover;
     c.hover = hit;
-    scroller.style.cursor = hit.resize >= 0 ? "col-resize" : hit.menu ? "pointer" : "";
-    if (previous?.zone !== hit.zone || previous.col !== hit.col || previous.menu !== hit.menu) c.requestRender();
+    let cursor = hit.resize >= 0 ? "col-resize" : hit.menu ? "pointer" : "";
+    if (!cursor && hit.zone === "cell" && c.options.cellAction) {
+      const action = c.cellActionAt(hit.row, hit.col);
+      if (action) cursor = action.cursor ?? "pointer";
+    }
+    scroller.style.cursor = cursor;
+    if (
+      previous?.zone !== hit.zone ||
+      previous.col !== hit.col ||
+      previous.menu !== hit.menu ||
+      // A drawCell hook may draw the hovered cell differently.
+      (c.options.drawCell && previous.row !== hit.row)
+    )
+      c.requestRender();
   }
 
   function endDrag(event: PointerEvent<HTMLDivElement>) {
@@ -630,6 +753,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.target !== scrollerRef.current) return;
     const c = controller;
+    const detailAction = detailKeyAction(event, "grid", detailOpen);
+    if (detailAction === "open" || detailAction === "focusPanel") {
+      event.preventDefault();
+      setDetailOpen(true, detailAction === "focusPanel");
+      return;
+    }
     const primary = isMac ? event.metaKey : event.ctrlKey;
     const extend = event.shiftKey;
     const lastRow = Math.max(0, c.rowCount - 1);
@@ -707,7 +836,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         else if (!c.selection.single) {
           c.selection.select(c.selection.active);
           c.selectionChanged();
-        } else return;
+        } else if (detailAction === "close") setDetailOpen(false);
+        else return;
         break;
       case "ContextMenu":
         setOverlay({
@@ -886,6 +1016,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         shortcut: "F2",
         onSelect: () => setOverlay({ kind: "inspector", row, col, anchor: cellAnchor(row, col) }),
       },
+      {
+        label: messages.showDetail,
+        shortcut: isMac ? "⌥↩" : "Alt+Enter",
+        checked: detailOpen,
+        onSelect: () => setDetailOpen(!detailOpen),
+      },
     );
     return items;
   }
@@ -918,10 +1054,40 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       : activeValue === null
         ? messages.blank
         : c.formatterOf(activeIndex).text(activeValue);
+  const activeAction = c.cellActionAt(active.row, active.col);
+  const activeDescription = c.cellStyleAt(active.row, active.col)?.description;
   const labelOf = (col: number) => {
     const state = c.visible[col];
     return state ? c.columnLabel(state.index) : "";
   };
+
+  const record = detailOpen ? tracker.record : null;
+  const detailProps: DetailPanelProps | null = record && {
+    row: record.row,
+    rowId: record.rowId,
+    values: record.values,
+    schema: c.schema,
+    status: record.status,
+    error: record.error,
+    fields: c.columns.map((state) => {
+      const value = record.values[state.index];
+      return {
+        column: state.index,
+        name: c.schema[state.index]?.name ?? "",
+        label: c.columnLabel(state.index),
+        hidden: state.hidden,
+        value,
+        text: value === undefined ? "" : c.formatterOf(state.index).text(value),
+      };
+    }),
+    retry: () => tracker.retry(),
+    messages,
+  };
+  const detailTitle = record
+    ? record.rowId !== null && record.rowId !== record.row
+      ? `${messages.detailTitle(count(record.row + 1))} · ${messages.originalRow(count(record.rowId + 1))}`
+      : messages.detailTitle(count(record.row + 1))
+    : messages.detailLabel;
 
   let overlayMessage: string | null = null;
   if (c.loadError) overlayMessage = `${messages.error} ${c.loadError}`;
@@ -981,7 +1147,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           />
         </div>
       )}
-      <div ref={bodyRef} className="vg-body">
+      <div ref={bodyRef} className="vg-body" data-detail={detailOpen || undefined}>
         <canvas ref={canvasRef} className="vg-canvas" />
         {/* biome-ignore lint/a11y/useSemanticElements: a canvas grid cannot use table elements; ARIA grid roles describe it. */}
         <div
@@ -1027,7 +1193,31 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                 {/* biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas. */}
                 {/* biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant). */}
                 <div role="gridcell" id={cellId} aria-colindex={active.col + 2} aria-selected="true">
-                  {activeText}
+                  {/* Focus stays on the grid, and Space activates the cell (see cell-render.ts). */}
+                  {activeAction?.kind === "link" ? (
+                    // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
+                    // biome-ignore lint/a11y/useSemanticElements: the link is drawn on the canvas; the app opens it.
+                    <span
+                      role="link"
+                      aria-label={activeAction.label}
+                      aria-keyshortcuts={props.onCellClick ? "Space" : undefined}
+                    >
+                      {activeText}
+                    </span>
+                  ) : activeAction?.kind === "button" ? (
+                    // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
+                    // biome-ignore lint/a11y/useSemanticElements: the button is drawn on the canvas.
+                    <span
+                      role="button"
+                      aria-label={activeAction.label}
+                      aria-keyshortcuts={props.onCellClick ? "Space" : undefined}
+                    >
+                      {activeText}
+                    </span>
+                  ) : (
+                    activeText
+                  )}
+                  {activeDescription ? `, ${activeDescription}` : null}
                 </div>
               </div>
             </div>
@@ -1063,6 +1253,33 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           <div className="vg-toast" role="status">
             {notice}
           </div>
+        )}
+        {detailOpen && (
+          <DetailPanel
+            ref={detailRef}
+            title={detailTitle}
+            messages={messages}
+            content={props.detailPanel ?? DetailFields}
+            props={detailProps}
+            onFocus={() => {
+              detailFocused.current = true;
+            }}
+            onBlur={(event) => {
+              const next = event.relatedTarget;
+              if (next instanceof Node && !event.currentTarget.contains(next)) detailFocused.current = false;
+            }}
+            onClose={() => {
+              setDetailOpen(false);
+              focusGrid();
+            }}
+            onKeyDown={(event) => {
+              const action = detailKeyAction(event, "panel", true);
+              if (!action) return;
+              event.preventDefault();
+              if (action === "close") setDetailOpen(false);
+              focusGrid();
+            }}
+          />
         )}
       </div>
       {statusBar && <StatusBar controller={c} messages={messages} />}
