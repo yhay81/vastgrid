@@ -11,8 +11,11 @@ The [vastgrid v2 specification](../../docs/v2-spec.md) as code. It is a draft an
   gives the display order, `repairDocument` fits a document to a table, and `migrateGridState` migrates v1's
   `GridState`.
 - **Commands** (§6, §7): `applyCommand(state, command, context)` applies a command and gives the new state,
-  the requests the core sends and the output, or throws a `CommandError`. `readCellText` reads typed text, and
-  `toTsv`, `parseTsv`, `parseHtmlTable` and the others of `clipboard.ts` copy and paste.
+  the requests the core sends and the output, or throws a `CommandError`. The new state keeps the objects of
+  what the command does not change, and a command costs nothing for the parts it does not touch (an undo
+  history of a million updates is not copied when the active cell moves). `GridCommand` types every command
+  and its arguments. `readCellText` reads typed text, and `toTsv`, `parseTsv`, `parseHtmlTable` and the
+  others of `clipboard.ts` copy and paste.
 - **Messages** (§8): `checkRequest`, `checkResponse` and `checkEvent` check messages; `encodeBlock` and
   `decodeBlock` write and read Arrow blocks; `toTextEncoding`, `frameAttached` and `readAttached` carry blocks
   on transports.

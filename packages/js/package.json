@@ -1,0 +1,37 @@
+{
+  "name": "vastgrid-js",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The JavaScript engine of vastgrid v2: answers the messages of the v2 specification over tables in memory.",
+  "license": "MIT",
+  "author": "yhay81",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yhay81/vastgrid.git",
+    "directory": "packages/js"
+  },
+  "homepage": "https://vastgrid.yhay81.com",
+  "bugs": "https://github.com/yhay81/vastgrid/issues",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "vastgrid-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "vastgrid-spec": "0.0.0"
+  }
+}

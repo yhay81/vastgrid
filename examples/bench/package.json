@@ -1,0 +1,23 @@
+{
+  "name": "vastgrid-bench",
+  "private": true,
+  "type": "module",
+  "description": "v1 and v2 of the grid on the same generated table, measured in the browser (v2-react.md §10).",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "vastgrid": "0.1.1",
+    "vastgrid-core": "0.1.1",
+    "vastgrid-grid": "0.0.0",
+    "vastgrid-js": "0.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.1.2",
+    "vite": "8.3.4"
+  }
+}

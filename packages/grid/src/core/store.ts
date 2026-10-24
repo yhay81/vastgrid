@@ -1,0 +1,853 @@
+import {
+  applyCommand,
+  type CheckedPlan,
+  type Column,
+  type CommandContext,
+  CommandError,
+  type CommandRequest,
+  type CommandResult,
+  canonicalJson,
+  checkPlan,
+  decodeBlock,
+  displayedColumns,
+  emptyDocument,
+  emptySession,
+  type GridCommand,
+  type GridDocument,
+  type GridSession,
+  type JsonValue,
+  normalizePlan,
+  type Operation,
+  type Plan,
+  PlanError,
+  planOptions,
+  type RowKey,
+  repairDocument,
+} from "vastgrid-spec";
+import { BLOCK_ROWS, type Read, ViewCache } from "./cache.js";
+import { GridClient, type Transport } from "./client.js";
+import { now, track } from "./trace.js";
+import {
+  type CommandOutcome,
+  GridError,
+  type GridSnapshot,
+  type InitialView,
+  type OpenOptions,
+  type RowsResult,
+  type TableInfo,
+  type ViewInfo,
+} from "./types.js";
+
+/** Bytes of rows that a store keeps for the view on screen, by default. */
+export const CACHE_BYTES = 64 * 1024 * 1024;
+
+export interface GridStoreOptions {
+  /** Where the engine is. */
+  transport: Transport;
+  /** The `ref` of the table to open (§8.2). */
+  table: string;
+  /** The `read` options of `open`. */
+  open?: OpenOptions;
+  /** The document to start with (§5.1); the empty document by default. */
+  document?: GridDocument;
+  /** The session to start with (§5.2). */
+  session?: GridSession;
+  /** Rows read on a server, shown before the first read (§7 of v2-react.md). */
+  initial?: InitialView;
+  /** Bytes of rows to keep (`CACHE_BYTES` by default). */
+  cacheBytes?: number;
+}
+
+export interface DispatchOptions {
+  /** What `edit.paste` pastes. */
+  clipboard?: { text?: string; html?: string };
+}
+
+/** Where the canvas is: its first row, how many rows it shows and the columns it draws. */
+export interface Viewport {
+  top: number;
+  rows: number;
+  columns: readonly string[];
+}
+
+/** A view of the document's plan, being read or on screen. */
+interface View {
+  readonly key: string;
+  readonly plan: Plan;
+  readonly checked: CheckedPlan;
+  /** The table's revision and edits version that the view's rows belong to. */
+  readonly revision: string | null;
+  readonly edits: number;
+  info: ViewInfo | null;
+  readonly cache: ViewCache;
+  readonly abort: AbortController;
+}
+
+type Part = "document" | "session";
+
+/** A command applied, or why it was not. */
+type Applied =
+  | { kind: "applied"; result: CommandResult; table: TableInfo }
+  | { kind: "failed"; error: CommandError | GridError; view: View | null };
+
+interface Events {
+  document: GridDocument;
+  session: GridSession;
+  error: GridError;
+}
+
+function isCancelled(error: unknown) {
+  return error instanceof GridError && error.code === "cancelled";
+}
+
+function asGridError(error: unknown): GridError {
+  if (error instanceof GridError) return error;
+  if (error instanceof PlanError) {
+    return new GridError("invalid_plan", error.message, { reason: error.reason, path: error.path });
+  }
+  return new GridError("internal", error instanceof Error ? error.message : String(error));
+}
+
+function planKey(plan: Plan): string {
+  return canonicalJson(normalizePlan(plan));
+}
+
+/** Whether two lists of columns have the same names and types. */
+function sameColumns(a: readonly Column[], b: readonly Column[]) {
+  return a.length === b.length && a.every((column, index) => canonicalJson(column) === canonicalJson(b[index]));
+}
+
+/**
+ * The grid without a screen (§4 of v2-react.md): the state of the specification as immutable snapshots, the
+ * commands that change it, and the rows of the view on screen, read through a transport. Making a store has
+ * no side effects; `connect` opens the table and starts reading.
+ */
+export class GridStore {
+  private snapshot: GridSnapshot;
+  private readonly listeners = new Set<() => void>();
+  private readonly rowListeners = new Set<() => void>();
+  private readonly events: { [K in keyof Events]: Set<(value: Events[K]) => void> } = {
+    document: new Set(),
+    session: new Set(),
+    error: new Set(),
+  };
+  private readonly controlled = { document: false, session: false };
+  /** What a command made of a controlled part, until the host passes it back (§5.2 of v2-react.md). */
+  private readonly proposed: { document?: GridDocument; session?: GridSession } = {};
+  private client: GridClient | null = null;
+  /** Counts connections, so that answers to an earlier one are dropped. */
+  private connection = 0;
+  /** Whether the table is open for the current connection. */
+  private opened = false;
+  private current: View | null = null;
+  private next: View | null = null;
+  private viewport: Viewport = { top: 0, rows: 0, columns: [] };
+  private readScheduled = false;
+  private rowsVersion = 0;
+  private readonly budget: number;
+
+  constructor(private readonly options: GridStoreOptions) {
+    this.budget = options.cacheBytes ?? CACHE_BYTES;
+    this.snapshot = {
+      document: options.document ?? emptyDocument(),
+      session: options.session ?? emptySession(),
+      table: null,
+      view: null,
+      displayed: [],
+      pending: null,
+      status: "idle",
+      error: null,
+    };
+    if (options.initial) this.seed(options.initial);
+  }
+
+  // ----- reading the state -----
+
+  getSnapshot = (): GridSnapshot => this.snapshot;
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  /** Follows changes of the document or the session (reported also when they are controlled), and errors. */
+  on<K extends keyof Events>(event: K, listener: (value: Events[K]) => void): () => void {
+    const set = this.events[event] as Set<(value: Events[K]) => void>;
+    set.add(listener);
+    return () => {
+      set.delete(listener);
+    };
+  }
+
+  private emit<K extends keyof Events>(event: K, value: Events[K]) {
+    for (const listener of this.events[event] as Set<(value: Events[K]) => void>) listener(value);
+  }
+
+  private publish(changes: Partial<{ -readonly [K in keyof GridSnapshot]: GridSnapshot[K] }>) {
+    const previous = this.snapshot;
+    const next = { ...previous, ...changes };
+    if (next.view && previous.view && sameColumns(next.view.columns, previous.view.columns)) {
+      // Views read again keep their columns' identity, which displayed columns and commands key on.
+      if (next.view.columns !== previous.view.columns) next.view = { ...next.view, columns: previous.view.columns };
+    }
+    const keep = next.document.columns === previous.document.columns && next.view?.columns === previous.view?.columns;
+    next.displayed = keep ? previous.displayed : this.displayedOf(next);
+    this.snapshot = next;
+    for (const listener of this.listeners) listener();
+  }
+
+  private displayedOf(snapshot: GridSnapshot) {
+    return snapshot.view ? displayedColumns(snapshot.document, snapshot.view.columns) : [];
+  }
+
+  /** The state that commands apply to: what was proposed for controlled parts, or what is shown. */
+  private base<P extends Part>(part: P): GridSnapshot[P] {
+    return (this.proposed[part] ?? this.snapshot[part]) as GridSnapshot[P];
+  }
+
+  // ----- rows -----
+
+  /** The value of a cell of the view on screen; undefined while it is not read. */
+  cell(row: number, column: string) {
+    return this.current?.cache.value(row, column);
+  }
+
+  /** Whether the engine cut a cell's value to the text limit (§8.4). */
+  isCut(row: number, column: string) {
+    return this.current?.cache.isCut(row, column) ?? false;
+  }
+
+  /** The row ID of a row of the view on screen. */
+  rowId(row: number) {
+    return this.current?.cache.rowId(row);
+  }
+
+  /** Changes whenever rows of the view on screen arrive or leave. */
+  getRowsVersion = (): number => this.rowsVersion;
+
+  /** Follows the arrival of rows (the snapshot does not change when rows arrive). */
+  subscribeRows = (listener: () => void): (() => void) => {
+    this.rowListeners.add(listener);
+    return () => {
+      this.rowListeners.delete(listener);
+    };
+  };
+
+  private emitRows() {
+    this.rowsVersion++;
+    for (const listener of this.rowListeners) listener();
+  }
+
+  /** Tells the store what the canvas shows, so that it reads those rows and a page around them. */
+  setViewport(viewport: Viewport) {
+    const before = this.viewport;
+    if (
+      before.top === viewport.top &&
+      before.rows === viewport.rows &&
+      before.columns.length === viewport.columns.length &&
+      before.columns.every((column, index) => column === viewport.columns[index])
+    ) {
+      return;
+    }
+    this.viewport = viewport;
+    this.scheduleReads();
+  }
+
+  /** Reads rows `[start, end)` of `columns` of the view on screen if they are not read, for cells React renders. */
+  ensure(start: number, end: number, columns: readonly string[]) {
+    const view = this.current;
+    if (!view?.info || !this.opened) return;
+    for (const read of view.cache.reads(start, end, this.withKey(columns), view.info.rowCount)) {
+      void this.read(view, read).catch(() => {});
+    }
+  }
+
+  private scheduleReads() {
+    if (this.readScheduled) return;
+    this.readScheduled = true;
+    queueMicrotask(() => {
+      this.readScheduled = false;
+      this.readVisible();
+    });
+  }
+
+  /** The columns to read: those asked for, and the row key column (§5.3), which commands need. */
+  private withKey(columns: readonly string[]): string[] {
+    const key = this.base("document").rowKey;
+    const view = this.current?.info?.columns ?? [];
+    if (key === undefined || columns.includes(key) || !view.some((column) => column.name === key)) {
+      return [...columns];
+    }
+    return [...columns, key];
+  }
+
+  private readVisible() {
+    const view = this.current;
+    if (!view?.info || !this.opened) return;
+    const { top, rows, columns } = this.viewport;
+    if (columns.length === 0) return;
+    const margin = Math.max(rows, 32);
+    const start = Math.max(0, top - margin);
+    const end = Math.min(view.info.rowCount, top + rows + margin);
+    view.cache.touch(top, top + rows);
+    for (const read of view.cache.reads(start, end, this.withKey(columns), view.info.rowCount)) {
+      void this.read(view, read).catch(() => {});
+    }
+    view.cache.evict(this.budget, start, end);
+  }
+
+  /** Reads rows of a view into its cache. */
+  private async read(view: View, read: Read): Promise<void> {
+    const client = this.client;
+    const table = this.snapshot.table;
+    if (!client || !table) return;
+    view.cache.reading(read, true);
+    try {
+      const result = await client.request<RowsResult>(
+        "rows",
+        {
+          table: table.table,
+          revision: view.revision,
+          plan: view.plan,
+          start: read.start,
+          end: read.end,
+          columns: read.columns,
+        },
+        view.abort.signal,
+      );
+      if (view !== this.current && view !== this.next) return;
+      const block = decodeBlock(result.block.bytes);
+      view.cache.receive(
+        result.start,
+        result.rowIds,
+        block.columns.map((column) => column.name),
+        block.rows,
+        result.truncated,
+      );
+      const info = result.view;
+      if (!view.info || view.info.rowCount !== info.rowCount || view.info.status !== info.status) {
+        view.info =
+          view.info && sameColumns(view.info.columns, info.columns) ? { ...info, columns: view.info.columns } : info;
+        if (view === this.current) this.publish({ view: view.info });
+      }
+      if (view === this.current) this.emitRows();
+    } catch (error) {
+      view.cache.reading(read, false);
+      if (!isCancelled(error) && (view === this.current || view === this.next)) this.fail(asGridError(error));
+      throw error;
+    }
+  }
+
+  // ----- connecting -----
+
+  /**
+   * Opens the table, follows its events and reads the view of the document's plan. Gives the function that
+   * undoes all of it; connecting again afterwards works (Strict Mode does it, §4.3 of v2-react.md).
+   */
+  connect(): () => void {
+    const connection = ++this.connection;
+    const client = new GridClient(this.options.transport);
+    this.client = client;
+    this.opened = false;
+    const stopEvents = client.subscribe((event) => this.onEvent(event, connection));
+    if (this.snapshot.status === "idle" || this.snapshot.status === "error") this.publish({ status: "opening" });
+    let tableId: string | null = null;
+    let connected = true;
+    const close = (id: string) => void client.request("close", { table: id }).catch(() => {});
+    void (async () => {
+      try {
+        // Not cancelled: an engine may open the table all the same, which is then closed.
+        const info = await client.request<TableInfo>("open", {
+          ref: this.options.table,
+          ...(this.options.open ? { read: this.options.open } : {}),
+        });
+        if (!connected) {
+          close(info.table);
+          return;
+        }
+        tableId = info.table;
+        this.opened = true;
+        this.opening(info);
+      } catch (error) {
+        if (connected && !isCancelled(error)) {
+          this.publish({ status: "error" });
+          this.fail(asGridError(error));
+        }
+      }
+    })();
+    return () => {
+      if (!connected) return;
+      connected = false;
+      stopEvents();
+      if (tableId !== null) close(tableId);
+      if (connection !== this.connection) return;
+      this.connection++;
+      this.opened = false;
+      this.current?.abort.abort();
+      this.next?.abort.abort();
+      this.next = null;
+      if (this.current) this.current = { ...this.current, abort: new AbortController() };
+      this.client = null;
+    };
+  }
+
+  /** The table is open: repairs the document for it and reads the view (§5.5). */
+  private opening(info: TableInfo) {
+    const document = this.base("document");
+    const repaired = repairDocument(document, info.columns, planOptions(info.capabilities));
+    const seeded = this.current;
+    // Rows read on a server stay when they belong to the same revision and plan.
+    if (seeded && (seeded.revision !== info.revision || seeded.edits !== info.edits.version)) this.current = null;
+    else if (seeded) this.current = { ...seeded, abort: new AbortController() };
+    this.publish({ table: info, status: info.status === "error" ? "error" : "ready" });
+    if (repaired.removed.length > 0) this.change(repaired.document, this.base("session"));
+    this.showPlan(this.base("document").plan ?? {});
+    this.scheduleReads();
+  }
+
+  private onEvent(event: Record<string, unknown>, connection: number) {
+    if (connection !== this.connection) return;
+    const table = this.snapshot.table;
+    if (!table || event.table !== table.table) return;
+    if (event.event === "changed") {
+      const revision = event.revision as string | null;
+      const edits = event.edits as TableInfo["edits"];
+      if (revision === table.revision && edits.version === table.edits.version) return;
+      if (revision === table.revision) {
+        this.publish({ table: { ...table, edits } });
+        this.showPlan(this.base("document").plan ?? {});
+        return;
+      }
+      // Another revision may have other columns: the table is read again, then the view (§5.4).
+      const client = this.client;
+      void client
+        ?.request<TableInfo>("info", { table: table.table })
+        .then((info) => {
+          if (connection !== this.connection) return;
+          this.publish({ table: info });
+          this.showPlan(this.base("document").plan ?? {});
+        })
+        .catch((error: unknown) => {
+          if (connection === this.connection && !isCancelled(error)) this.fail(asGridError(error));
+        });
+    } else if (event.event === "progress") {
+      this.publish({
+        table: {
+          ...table,
+          status: event.status as TableInfo["status"],
+          progress: event.progress as number | null,
+          readableRows: event.readableRows as number,
+          rowCount: event.rowCount as number | null,
+        },
+      });
+    } else if (event.event === "view") {
+      const view = this.current;
+      if (view?.info && event.hash === view.info.hash) {
+        view.info = {
+          ...view.info,
+          status: event.status as ViewInfo["status"],
+          readableRows: event.readableRows as number,
+          rowCount: event.rowCount as number,
+          rowCountExact: event.rowCountExact as boolean,
+        };
+        this.publish({ view: view.info });
+        this.scheduleReads();
+      }
+    }
+  }
+
+  private fail(error: GridError) {
+    this.publish({ error });
+    this.emit("error", error);
+  }
+
+  /** Shows rows read on a server before the table is open. */
+  private seed(initial: InitialView) {
+    const { table, plan, rows } = initial;
+    if (planKey(plan) !== planKey(this.snapshot.document.plan ?? {})) return;
+    try {
+      const view: View = {
+        key: planKey(plan),
+        plan,
+        checked: checkPlan(plan, table.columns, planOptions(table.capabilities)),
+        revision: table.revision,
+        edits: rows.view.edits.version,
+        info: rows.view,
+        cache: new ViewCache(),
+        abort: new AbortController(),
+      };
+      const block = decodeBlock(rows.block.bytes);
+      view.cache.receive(
+        rows.start,
+        rows.rowIds,
+        block.columns.map((column) => column.name),
+        block.rows,
+        rows.truncated,
+      );
+      this.current = view;
+      this.snapshot = { ...this.snapshot, table, view: rows.view };
+      this.snapshot = { ...this.snapshot, displayed: this.displayedOf(this.snapshot) };
+    } catch (error) {
+      if (!(error instanceof PlanError)) throw error;
+    }
+  }
+
+  // ----- views -----
+
+  /**
+   * Reads the view of a plan while the view on screen stays, and shows it when its first rows arrive, with the
+   * session moved by `view.update` (§5.4; §4.2 of v2-react.md).
+   */
+  private showPlan(plan: Plan) {
+    const table = this.snapshot.table;
+    if (!table || !this.client || !this.opened) return;
+    const key = planKey(plan);
+    const fresh = (view: View | null) =>
+      view !== null && view.key === key && view.revision === table.revision && view.edits === table.edits.version;
+    if (this.next && !fresh(this.next)) {
+      this.next.abort.abort();
+      this.next = null;
+    }
+    if (fresh(this.current)) {
+      if (this.snapshot.pending) this.publish({ pending: null });
+      return;
+    }
+    if (this.next) return;
+    let checked: CheckedPlan;
+    try {
+      checked = checkPlan(plan, table.columns, planOptions(table.capabilities));
+    } catch (error) {
+      if (!(error instanceof PlanError)) throw error;
+      if (this.snapshot.pending) this.publish({ pending: null });
+      this.fail(asGridError(error));
+      return;
+    }
+    const view: View = {
+      key,
+      plan,
+      checked,
+      revision: table.revision,
+      edits: table.edits.version,
+      info: null,
+      cache: new ViewCache(),
+      abort: new AbortController(),
+    };
+    this.next = view;
+    if (this.current) this.publish({ pending: { plan } });
+    void this.prepare(view, this.connection);
+  }
+
+  private live(view: View, connection: number) {
+    return connection === this.connection && view === this.next;
+  }
+
+  /** The rows from `row` for a viewport, in whole blocks. */
+  private around(row: number, rowCount: number | null, columns: readonly string[]): Read {
+    const start = Math.floor(row / BLOCK_ROWS) * BLOCK_ROWS;
+    const rows = Math.max(this.viewport.rows, 1);
+    let end = Math.ceil((row + rows) / BLOCK_ROWS) * BLOCK_ROWS;
+    if (rowCount !== null) end = Math.min(end, Math.max(rowCount, start + 1));
+    return { start, end: Math.max(end, start + 1), columns: [...columns] };
+  }
+
+  private async prepare(view: View, connection: number) {
+    const table = this.snapshot.table as TableInfo;
+    const client = this.client as GridClient;
+    const columns = this.withKeyFor(view, this.viewport.columns);
+    try {
+      const top = this.current ? this.viewport.top : (this.base("session").scroll?.row ?? 0);
+      await this.read(view, this.around(top, null, columns));
+      if (!this.live(view, connection) || !view.info) return;
+      let info: ViewInfo = view.info;
+      if (top >= info.rowCount && info.rowCount > 0) {
+        await this.read(view, this.around(info.rowCount - 1, info.rowCount, columns));
+        if (!this.live(view, connection) || !view.info) return;
+        info = view.info;
+      }
+      // The session as it is now: the person may have moved while the rows were read.
+      const session = this.base("session");
+      const document = this.base("document");
+      const key = session.active?.key;
+      const located: { key: RowKey; row: number | null }[] = [];
+      if (key && session.view !== info.hash && table.capabilities.locate) {
+        const result = await client.request<{ rows: (number | null)[] }>(
+          "locate",
+          {
+            table: table.table,
+            revision: view.revision,
+            plan: view.plan,
+            keys: [key],
+            ...(document.rowKey === undefined ? {} : { rowKey: document.rowKey }),
+          },
+          view.abort.signal,
+        );
+        if (!this.live(view, connection)) return;
+        located.push({ key, row: result.rows[0] ?? null });
+      }
+      const state = { document: this.base("document"), session: this.base("session") };
+      const updated = applyCommand(
+        state,
+        { command: "view.update", hash: info.hash, located },
+        this.contextFor(view, table, info),
+      );
+      const scroll = updated.session.scroll;
+      const target = scroll && scroll !== state.session.scroll ? scroll.row : Math.min(top, info.rowCount - 1);
+      if (target >= 0 && view.cache.value(target, columns[0] ?? "") === undefined && columns.length > 0) {
+        await this.read(view, this.around(target, info.rowCount, columns));
+        if (!this.live(view, connection)) return;
+      }
+      const previous = this.current;
+      previous?.abort.abort();
+      this.current = view;
+      this.next = null;
+      // The rows, the view and the session's new positions are shown in one step.
+      this.change(updated.document, updated.session, { view: view.info ?? info, pending: null });
+      // The snapshot keeps the columns of the view before when they are the same, for commands to key on.
+      view.info = this.snapshot.view;
+      this.emitRows();
+      this.scheduleReads();
+    } catch (error) {
+      if (view === this.next) {
+        this.next = null;
+        if (this.snapshot.pending) this.publish({ pending: null });
+      }
+      if (connection === this.connection && !isCancelled(error)) this.fail(asGridError(error));
+    }
+  }
+
+  private withKeyFor(view: View, columns: readonly string[]): string[] {
+    const names = new Set(view.checked.columns.map((column) => column.name));
+    const wanted = columns.filter((column) => names.has(column));
+    const key = this.base("document").rowKey;
+    if (key !== undefined && names.has(key) && !wanted.includes(key)) wanted.push(key);
+    if (wanted.length === 0 && view.checked.columns.length > 0) wanted.push(view.checked.columns[0].name);
+    return wanted;
+  }
+
+  private contextFor(view: View, table: TableInfo, info: ViewInfo | null = view.info): CommandContext {
+    const rowKey = this.base("document").rowKey;
+    return {
+      table: table.columns,
+      revision: view.revision,
+      view: {
+        columns: info?.columns ?? view.checked.columns,
+        rowCount: info?.rowCount ?? 0,
+        rowIds: view.checked.rowIds,
+      },
+      lookup: (row) => view.cache.loaded(row, rowKey),
+      page: Math.max(1, this.viewport.rows - 1),
+      capabilities: table.capabilities,
+    };
+  }
+
+  // ----- changing the state -----
+
+  /** Makes a part controlled: commands report what they make of it, and only `setDocument`/`setSession` show it. */
+  control(part: Part, controlled: boolean) {
+    this.controlled[part] = controlled;
+    if (!controlled) delete this.proposed[part];
+  }
+
+  /** Shows a document given by the host (a controlled prop, a saved view, an agent). */
+  setDocument(document: GridDocument) {
+    delete this.proposed.document;
+    const previous = this.snapshot.document;
+    if (document === previous) return;
+    this.publish({ document });
+    if (document.plan !== previous.plan) this.showPlan(document.plan ?? {});
+    this.scheduleReads();
+  }
+
+  /** Shows a session given by the host. */
+  setSession(session: GridSession) {
+    delete this.proposed.session;
+    if (session === this.snapshot.session) return;
+    this.publish({ session });
+  }
+
+  /**
+   * Applies a new state from a command: shows what is not controlled, with `extra` members of the snapshot in the
+   * same step, and reports both parts that changed.
+   */
+  private change(
+    document: GridDocument,
+    session: GridSession,
+    extra: Partial<{ -readonly [K in keyof GridSnapshot]: GridSnapshot[K] }> = {},
+  ) {
+    const shown: Partial<{ -readonly [K in keyof GridSnapshot]: GridSnapshot[K] }> = { ...extra };
+    const previous = this.snapshot.document;
+    const reports: (["document", GridDocument] | ["session", GridSession])[] = [];
+    if (document !== this.base("document")) {
+      if (this.controlled.document) this.proposed.document = document;
+      else shown.document = document;
+      reports.push(["document", document]);
+    }
+    if (session !== this.base("session")) {
+      if (this.controlled.session) this.proposed.session = session;
+      else shown.session = session;
+      reports.push(["session", session]);
+    }
+    if (Object.keys(shown).length > 0) this.publish(shown);
+    for (const [part, value] of reports) {
+      if (part === "document") this.emit("document", value);
+      else this.emit("session", value);
+    }
+    if (shown.document && shown.document.plan !== previous.plan) this.showPlan(shown.document.plan ?? {});
+  }
+
+  /** Applies a command now, or tells why it cannot be applied (rows to read first included). */
+  private applyNow(command: GridCommand, options: DispatchOptions): Applied {
+    const view = this.current;
+    const table = this.snapshot.table;
+    if (!view?.info || !table) {
+      return { kind: "failed", error: new GridError("not_ready", "The table is not open yet."), view: null };
+    }
+    const context = this.contextFor(view, table);
+    if (options.clipboard) context.clipboard = options.clipboard;
+    const started = now();
+    try {
+      const result = applyCommand({ document: this.base("document"), session: this.base("session") }, command, context);
+      track(command.command, started, "commands");
+      this.change(result.document, result.session);
+      return { kind: "applied", result, table };
+    } catch (error) {
+      if (!(error instanceof CommandError)) throw error;
+      track(command.command, started, "commands", "error");
+      return { kind: "failed", error, view };
+    }
+  }
+
+  /**
+   * Applies a command (§4.2 of v2-react.md). The state changes at once when the command has what it needs;
+   * a command that needs rows that are not read reads them first. Resolves once the command's requests are
+   * answered, and never rejects. The same function for the life of the store.
+   */
+  readonly dispatch = async (command: GridCommand, options: DispatchOptions = {}): Promise<CommandOutcome> => {
+    // The state never shares objects with a command that its caller may change later.
+    const given = structuredClone(command);
+    let applied = this.applyNow(given, options);
+    if (
+      applied.kind === "failed" &&
+      applied.view &&
+      applied.error instanceof CommandError &&
+      applied.error.reason === "not_loaded" &&
+      applied.error.details
+    ) {
+      try {
+        await this.load(applied.view, applied.error.details as { rows: [number, number][]; columns: string[] });
+      } catch (failure) {
+        return { ok: false, error: asGridError(failure) };
+      }
+      applied = this.applyNow(given, options);
+    }
+    if (applied.kind === "failed") return { ok: false, error: applied.error };
+    try {
+      const output = await this.send(given.command, applied.result.requests, applied.table);
+      const value = output ?? applied.result.output;
+      return value === undefined ? { ok: true } : { ok: true, output: value };
+    } catch (error) {
+      return { ok: false, error: asGridError(error) };
+    }
+  };
+
+  /**
+   * Applies a command synchronously, as a `copy` event needs (its clipboard is written before the handler
+   * returns). A command that needs rows that are not read fails with `not_loaded`; its requests are sent.
+   */
+  dispatchSync(command: GridCommand, options: DispatchOptions = {}): CommandOutcome {
+    const given = structuredClone(command);
+    const applied = this.applyNow(given, options);
+    if (applied.kind === "failed") return { ok: false, error: applied.error };
+    if (applied.result.requests.length > 0) {
+      void this.send(given.command, applied.result.requests, applied.table).catch((error: unknown) => {
+        this.fail(asGridError(error));
+      });
+    }
+    return applied.result.output === undefined ? { ok: true } : { ok: true, output: applied.result.output };
+  }
+
+  /** Counts and sums the cells of ranges of the view on screen (`summarize`, §8.2). */
+  async summarize(
+    ranges: [number, number][],
+    columns: string[],
+    signal?: AbortSignal,
+  ): Promise<{ count: number; numericCount: number; sum: unknown; min: unknown; max: unknown; average: unknown }> {
+    const view = this.current;
+    const table = this.snapshot.table;
+    const client = this.client;
+    if (!view || !table || !client || !this.opened) throw new GridError("not_ready", "The table is not open yet.");
+    return client.request(
+      "summarize",
+      { table: table.table, revision: view.revision, plan: view.plan, ranges, columns },
+      signal,
+    );
+  }
+
+  /** Reads the rows that a command needs (`not_loaded`, §6.1), in whole blocks. */
+  private async load(view: View, details: { rows: [number, number][]; columns: string[] }) {
+    const rowCount = view.info?.rowCount ?? 0;
+    const columns = this.withKeyFor(view, details.columns);
+    const reads: Promise<void>[] = [];
+    for (const [start, end] of details.rows) {
+      const first = Math.floor(start / BLOCK_ROWS) * BLOCK_ROWS;
+      const last = Math.min(rowCount, Math.ceil(end / BLOCK_ROWS) * BLOCK_ROWS);
+      for (let at = first; at < last; at += BLOCK_ROWS * 16) {
+        reads.push(this.read(view, { start: at, end: Math.min(last, at + BLOCK_ROWS * 16), columns }));
+      }
+    }
+    await Promise.all(reads);
+  }
+
+  /** Sends the requests of a command and applies the commands of §6.7 that their answers call for. */
+  private async send(name: string, requests: CommandRequest[], table: TableInfo): Promise<unknown> {
+    const client = this.client;
+    let output: unknown;
+    for (const request of requests) {
+      if (!client) throw new GridError("not_ready", "The grid is not connected.");
+      const { op, ...members } = request;
+      const result = await client.request<Record<string, unknown>>(op as Operation, { table: table.table, ...members });
+      if (op === "write") {
+        const updates = (members.updates ?? []) as {
+          key: RowKey;
+          column: string;
+          value: JsonValue;
+          previous?: JsonValue;
+        }[];
+        const core =
+          name === "history.undo"
+            ? { command: "history.undone" as const }
+            : name === "history.redo"
+              ? { command: "history.redone" as const }
+              : {
+                  command: "history.push" as const,
+                  updates: updates.map((update) => ({
+                    key: update.key,
+                    column: update.column,
+                    before: update.previous ?? null,
+                    after: update.value,
+                  })),
+                };
+        const state = { document: this.base("document"), session: this.base("session") };
+        const view = this.current;
+        if (view) {
+          const applied = applyCommand(state, core as GridCommand, this.contextFor(view, table));
+          this.change(applied.document, applied.session);
+        }
+        const edits = result.edits as TableInfo["edits"];
+        const current = this.snapshot.table;
+        if (current) this.publish({ table: { ...current, edits } });
+        this.showPlan(this.base("document").plan ?? {});
+      } else {
+        output = result;
+      }
+    }
+    return output;
+  }
+}
+
+/** Makes a store (§4 of v2-react.md). */
+export function createGridStore(options: GridStoreOptions): GridStore {
+  return new GridStore(options);
+}

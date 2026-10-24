@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { decimalTextType, floatText, isValueOf, trimSpaces, valueOfText } from "../src/index.ts";
+import {
+  decimalTextType,
+  floatText,
+  isDateText,
+  isTimestampText,
+  isTimeText,
+  isValueOf,
+  trimSpaces,
+  valueOfText,
+} from "../src/index.ts";
 
 test("floats are written as DuckDB and Python write them (§2.4.1)", () => {
   const cases: [number, string][] = [
@@ -114,4 +123,94 @@ test("text forms read back as typed JSON", () => {
   assert.equal(valueOfText("true", { type: "boolean" }), true);
   assert.equal(valueOfText("1.50", { type: "decimal", precision: 10, scale: 2 }), "1.50");
   assert.equal(valueOfText(null, { type: "string" }), null);
+});
+
+test("dates, times and timestamps read as the regular expressions of §2.2 read them", () => {
+  // The forms as they were written before they were read character by character.
+  const leap = (year: number) => (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const day = (year: number, month: number, date: number) =>
+    month >= 1 &&
+    month <= 12 &&
+    date >= 1 &&
+    date <= [31, leap(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  const dateForm = (text: string) => {
+    const match = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(text);
+    return match !== null && day(Number(match[1]), Number(match[2]), Number(match[3]));
+  };
+  const timeForm = (text: string, digits: number) => {
+    const match = /^([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]*[1-9]))?$/.exec(text);
+    return (
+      match !== null &&
+      Number(match[1]) < 24 &&
+      Number(match[2]) < 60 &&
+      Number(match[3]) < 60 &&
+      (match[4]?.length ?? 0) <= digits
+    );
+  };
+  const units = { s: 0, ms: 3, us: 6, ns: 9 } as const;
+  const timestampForm = (text: string, unit: keyof typeof units) => {
+    const space = text.indexOf(" ");
+    return space === 10 && dateForm(text.slice(0, space)) && timeForm(text.slice(space + 1), units[unit]);
+  };
+  const samples = [
+    "2024-02-29",
+    "2023-02-29",
+    "1900-02-29",
+    "2000-02-29",
+    "0000-01-01",
+    "9999-12-31",
+    "2024-13-01",
+    "2024-00-10",
+    "2024-01-00",
+    "2024-1-01",
+    "2024-01-1",
+    "２０２４-01-01",
+    "2024/01/01",
+    "2024-01-01 ",
+    "",
+    "23:59:59",
+    "24:00:00",
+    "00:60:00",
+    "00:00:60",
+    "01:02:03.5",
+    "01:02:03.50",
+    "01:02:03.",
+    "01:02:03.123456",
+    "01:02:03.1234567",
+    "1:02:03",
+    "01:02:03.12a",
+    "2024-01-31 12:00:00",
+    "2024-01-31 12:00:00.5",
+    "2024-01-31T12:00:00",
+    "2024-01-31  12:00:00",
+    "2024-01-31 12:00:00.123456789",
+    "2024-01-31 12:00:00.1234567890",
+    "2024-01-31 12:00:00+00",
+  ];
+  let seed = 1;
+  const random = () => {
+    seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+    return seed / 2_147_483_648;
+  };
+  const alphabet = "0123456789:-. 0123456789";
+  for (let index = 0; index < 20_000; index++) {
+    const base = samples[Math.floor(random() * samples.length)];
+    const chars = [...base];
+    const edits = 1 + Math.floor(random() * 3);
+    for (let edit = 0; edit < edits; edit++) {
+      const at = Math.floor(random() * (chars.length + 1));
+      const char = alphabet[Math.floor(random() * alphabet.length)];
+      if (random() < 0.5) chars.splice(at, 1, char);
+      else chars.splice(at, 0, char);
+    }
+    samples.push(chars.join(""));
+  }
+  for (const text of samples) {
+    assert.equal(isDateText(text), dateForm(text), `date ${JSON.stringify(text)}`);
+    for (const digits of [0, 3, 6, 9])
+      assert.equal(isTimeText(text, digits), timeForm(text, digits), `time ${JSON.stringify(text)}`);
+    for (const unit of ["s", "ms", "us", "ns"] as const) {
+      assert.equal(isTimestampText(text, unit), timestampForm(text, unit), `timestamp ${unit} ${JSON.stringify(text)}`);
+    }
+  }
 });

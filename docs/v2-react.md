@@ -1,0 +1,432 @@
+# vastgrid v2 for React
+
+Status: **draft** (2026-10-24). This document is normative for [`vastgrid-grid`](../packages/grid), the React
+package of v2, which is published as `vastgrid` when v1 is removed. It builds on
+[the v2 specification](v2-spec.md): the state, the commands and the messages are those of the specification,
+and this document says how React holds, shows and changes them. Why React comes first is in
+[the reconsideration of the rebuild](rebuild-decision.ja.md#react-を中心に据える) (Japanese).
+
+The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
+
+The code of this draft has the store (§4), `DataGrid` and the hooks (§5), the canvas with scrolling, keys,
+pointers, sorting, resizing columns and copying (§6), the toolbar's search, the status bar, the accessibility rows,
+server rendering (§7) and the checks of §10 and §11. The panels, editing in the grid, and the features marked for
+them in §3 come next, on the same store.
+
+## 1. Principles
+
+1. **React renders the DOM, and nothing on the hot path renders React.** Scrolling, drawing cells and
+   dragging a selection run in the store and the canvas at the frame rate, without rendering components.
+   React renders what is DOM (the toolbar, the status bar, panels, menus, the cell editor, the accessibility
+   tree), and only the parts whose data changed.
+2. **One state, read through selectors.** The state of §5 of the specification lives in a store as immutable
+   snapshots. Components read slices of it with `useGridSelector`, so that moving the active cell re-renders
+   the status bar and not the toolbar. What a command does not change keeps its identity.
+3. **Commands are the API.** Everything the grid does is a command of §6 of the specification, typed in
+   TypeScript. The built-in UI dispatches the same commands that a host, an agent or a custom toolbar does.
+4. **The latest React, and nothing it discourages.** The package requires React 19.3 and uses its features
+   where they fit (§3). Every component and hook follows the Rules of React: it compiles with React
+   Compiler 1.0 without bailing out and passes `eslint-plugin-react-hooks` `recommended-latest`, and the
+   package ships compiled (§11).
+5. **Wherever React runs.** Client rendering, streaming server rendering, Server Components, Strict Mode and
+   concurrent rendering, in Vite, Next.js, React Router and Astro.
+
+## 2. Entry points
+
+| Entry | Holds | Imports React |
+| --- | --- | --- |
+| `vastgrid-grid` | the components and hooks, marked `"use client"` | yes |
+| `vastgrid-grid/core` | the store, the client of the messages (§8 of the specification) and the transports | no |
+| `vastgrid-grid/server` | what a Server Component or a server render calls: reading the first rows for `initial` (§7) | no |
+| `vastgrid-grid/styles.css` | the styles, themed by CSS custom properties | — |
+
+`react` and `react-dom` `^19.3.0` are peer dependencies. Engines are other packages:
+[`vastgrid-js`](../packages/js) in memory and in the browser, `vastgrid-duckdb` on Node.js.
+
+## 3. React features used
+
+| Feature | Since | Where | In the code |
+| --- | --- | --- | --- |
+| `useSyncExternalStore` | 18 | `useGridSelector` reads the store without tearing; the browser's language, with the server's value during hydration | yes |
+| `ref` as a prop | 19.0 | the handle of `DataGrid` (§5.5); no `forwardRef` | yes |
+| `<Context value>` | 19.0 | `GridProvider` and the grid's own contexts | yes |
+| `use` | 19.0 | contexts, and `initial` given as a promise, streamed from a Server Component (§7) | yes |
+| `useDeferredValue` | 18 | the accessibility rows and the search box (§6.2) | yes |
+| Actions (`useTransition` with an async function) | 19.0 | saving and exporting, with their pending state | with editing |
+| `useEffectEvent` | 19.2 | every callback prop (`onDocumentChange`, `onSessionChange`, `onError`) and the clipboard's announcements: read when called, never a dependency | yes |
+| `<Activity>` | 19.2 | panels keep their state while they are closed | with the panels |
+| Performance Tracks | 19.2 | React's own tracks, next to the grid's (§9) | yes |
+| `<ViewTransition>`, `addTransitionType` | 19.3 | panels opening and closing and switching between rows and groups, only inside Transitions and never with `prefers-reduced-motion: reduce` | with the panels |
+| Fragment refs | 19.3 | focus moves into and out of panels and menus (`focus`, `focusLast`) without wrapper elements | with the panels |
+| `browser()` | 19.3 | the canvas renders only in the browser; the server sends the first rows as HTML instead (§7) | yes |
+
+The package does not use `forwardRef`, `defaultProps`, class components, string refs, legacy context or
+`findDOMNode`; it does not read or write refs during render, and it uses `useLayoutEffect` only to measure
+and to bring the canvas up to date before paint.
+
+## 4. The store
+
+`createGridStore(options)` from `vastgrid-grid/core` makes a store; `DataGrid` makes one when it is not given
+one.
+
+```ts
+interface GridStore {
+  getSnapshot(): GridSnapshot;
+  subscribe(listener: () => void): () => void;
+  dispatch(command: GridCommand, options?: DispatchOptions): Promise<CommandOutcome>;
+  dispatchSync(command: GridCommand, options?: DispatchOptions): CommandOutcome;
+  connect(): () => void;
+  setDocument(document: GridDocument): void;
+  setSession(session: GridSession): void;
+}
+```
+
+### 4.1 Snapshots
+
+```ts
+interface GridSnapshot {
+  document: GridDocument; // §5.1 of the specification
+  session: GridSession; // §5.2
+  table: TableInfo | null; // §8.2, null until the table is open
+  view: ViewInfo | null; // the view on screen: its hash, columns, row count and status
+  displayed: DisplayedColumn[]; // §5.1.1, for the view on screen
+  pending: { plan: Plan } | null; // a plan whose view is being read to replace the one on screen
+  status: "idle" | "opening" | "ready" | "error";
+  error: GridError | null;
+}
+```
+
+- A snapshot is never changed. `getSnapshot` returns the same object until the state changes.
+- **Structural sharing.** A command keeps the identity of every member of the document and of the session
+  that it does not change, and of the document or the session as a whole when it changes none of their
+  members. `move` gives a session with new `active`, `anchor`, `focus` and `selection`, and the same
+  `document`, `checked` and `history`. Selectors stay cheap, and React Compiler's memoization holds.
+- The cost of a command MUST NOT grow with the parts of the state it does not change: moving the active cell
+  takes the same time with an empty undo history and with one of a million updates.
+- Rows are not in snapshots. They live in the store's cache of blocks, which the canvas reads directly;
+  components read them with `useGridRows` (§5.3), which follows the rows it shows.
+
+### 4.2 Dispatching
+
+`dispatch` applies a command with `applyCommand` (§6.1 of the specification) and a context made by the store:
+the table, the view on screen and the rows of it in the cache, the rows of a page of the viewport, the
+engine's capabilities, and the clipboard given in `options` for `edit.paste`. Then:
+
+1. The snapshot changes at once and subscribers are told, so that a key press shows in the same frame.
+2. The requests that the command gives are sent; the commands of §6.7 are applied as their answers arrive.
+3. When the plan changed, the store reads the new view while the old one stays on screen with `pending` set.
+   When the first rows of the new view arrive, it applies `view.update` (§5.4) with the positions that
+   `locate` gives for the session's keys, and shows the new rows in one step. This is what a React Transition
+   does (the old content stays until the new is ready), done in the store, so that the canvas, the host and
+   an agent see the same thing. A newer plan cancels the reads of an older one (§8.6).
+4. A command that fails with `not_loaded` reads the rows it names and is applied once more.
+
+`dispatchSync` applies a command without reading rows first, for handlers that must answer at once: a `copy`
+event writes the clipboard before it returns, so the grid copies with `dispatchSync` and, when the rows are not
+read (`not_loaded`), reads them and writes the clipboard through the asynchronous Clipboard API.
+
+The store tells views apart by the normal form of their plans (§4.8 of the specification) and takes their hashes
+from the engine's answers, so that it needs no SHA-256 of its own (WebCrypto's is asynchronous, and missing on
+pages that are not secure contexts).
+
+The promise resolves to `{ ok: true, output }` once the command and its requests are done, or to
+`{ ok: false, error }`, and never rejects: a command that fails changes nothing (§6.1), and the built-in UI
+tells the person why. Failures that belong to no command (a read that fails, a revision that changes) go to
+`onError` and to `snapshot.error`.
+
+### 4.3 Lifecycle
+
+- Making a store has no side effects: it opens nothing, starts no timer and subscribes to nothing.
+- `connect()` opens the table (`open`, §8.2), follows its events and starts reading; the function it returns
+  undoes all of it and closes the table. A store MUST be able to connect again after it disconnects, since
+  Strict Mode runs effects twice in development, on mount and, since React 19.3, during hydration.
+- A disconnected store keeps its last snapshot and reads nothing.
+
+### 4.4 Engines and transports
+
+A transport carries messages (§8 of the specification) to an engine:
+
+```ts
+interface Transport {
+  send(request: Request, options: { signal?: AbortSignal }): Promise<Response>;
+  subscribe?(listener: (event: Event) => void): () => void;
+}
+```
+
+| Transport | Engine | Blocks (§8.8) |
+| --- | --- | --- |
+| `localTransport(engine)` | in the same thread, such as `vastgrid-js`'s memory engine | structured |
+| `workerTransport(worker)` | in a Web Worker, where `serveEngine(engine, self)` answers; buffers are transferred | structured |
+| `httpTransport(url)` | on a server, with `accept: application/vnd.vastgrid.v2+arrow` | attached |
+| `serverFunctionTransport(action)` | a `"use server"` function (§7) | structured |
+
+The client gives ids, checks every response and event (`checkResponse`, `checkEvent`), and sends `cancel` when
+a signal aborts.
+
+## 5. Components and hooks
+
+### 5.1 `DataGrid`
+
+```tsx
+import { DataGrid, localTransport } from "vastgrid-grid";
+import "vastgrid-grid/styles.css";
+import { memoryEngine } from "vastgrid-js";
+
+const transport = localTransport(memoryEngine({ tables: { orders } }));
+
+export function Orders() {
+  return <DataGrid transport={transport} table="orders" style={{ height: 480 }} />;
+}
+```
+
+| Prop | Value | Meaning |
+| --- | --- | --- |
+| `transport`, `table`, `open` | a transport, the `ref` to open, the `read` options of `open` | where the rows come from; a new transport or table makes a new store |
+| `store` | a store | instead of `transport` and `table`, for a store made outside (§5.4) |
+| `document`, `defaultDocument`, `onDocumentChange` | §5.1 of the specification | the view and its columns (§5.2) |
+| `session`, `defaultSession`, `onSessionChange` | §5.2 of the specification | where the person is (§5.2) |
+| `initial` | an `InitialView` or a promise of one | rows read on the server, shown before the first read (§7) |
+| `toolbar`, `statusBar` | booleans | the built-in toolbar and status bar |
+| `rowHeight`, `headerHeight` | CSS pixels | instead of `--vg-row-height` and `--vg-header-height` |
+| `locale`, `messages` | a BCP 47 tag, texts | the language of the UI; English and Japanese are built in |
+| `onError` | `(error: GridError) => void` | failures that belong to no command (§4.2) |
+| `ref` | a ref | the handle (§5.5) |
+| `className`, `style`, `aria-label` | | on the root element |
+
+### 5.2 Controlled and uncontrolled state
+
+- `defaultDocument` and `defaultSession` give the state to start with; the grid then keeps it.
+- With `document` (or `session`), the grid shows the prop. A command reports the state that the grid would
+  have with `onDocumentChange` (`onSessionChange`), and the grid shows it once the parent passes it back. A
+  parent that passes back something else, or nothing, wins.
+- Commands dispatched before the parent renders again apply to the last state reported, so that two commands
+  in one event both take effect.
+- A new prop is given to the store in a layout effect, in the commit that brings it, so that the canvas never
+  shows the state of an earlier render. Props that the parent updates in a Transition reach the grid when
+  React commits that Transition.
+- `onSessionChange` is called on every move of the active cell. A parent that keeps the session in state
+  SHOULD render little with it, or read it through `useDeferredValue`.
+
+### 5.3 Hooks
+
+| Hook | Gives |
+| --- | --- |
+| `useGridStore()` | the store of the nearest `DataGrid` or `GridProvider` |
+| `useGridSelector(selector, isEqual?)` | `selector(snapshot)`; renders again only when it changes by `isEqual` (default `Object.is`; `shallowEqual` is exported) |
+| `useGridDispatch()` | `dispatch`, the same function on every render |
+| `useGridRows({ start, end, columns })` | the values of rows of the view on screen for cells that React renders (a detail panel, an overlay); reads them when they are missing and renders again when they arrive |
+| `useCreateGridStore(options)` | a store for the life of the component: made once, connected in an effect |
+
+Selectors run on every change of the store, so they MUST be cheap and MUST NOT make new objects unless they
+pass an `isEqual` that compares them.
+
+Rows change inside the store's cache, not in snapshots. A component that reads them during render gets them
+through `useGridRows`, or passes the version of the rows to the function that reads them (`readRows(store,
+version, …)`): memoization, React Compiler's included, keys on its arguments, and would otherwise keep the rows
+it read first. This is the interior mutability that React Compiler's `incompatible-library` rule warns about, kept
+out of components.
+
+### 5.4 Building your own UI
+
+```tsx
+function Workbench() {
+  const store = useCreateGridStore({ transport, table: "orders" });
+  return (
+    <GridProvider store={store}>
+      <SortButtons />
+      <DataGrid store={store} toolbar={false} />
+    </GridProvider>
+  );
+}
+
+function SortButtons() {
+  const sort = useGridSelector((snapshot) => snapshot.document.plan?.sort);
+  const dispatch = useGridDispatch();
+  return (
+    <button type="button" disabled={!sort} onClick={() => dispatch({ command: "sort.clear" })}>
+      Clear sort
+    </button>
+  );
+}
+```
+
+`GridCommand` is the union of the commands of §6 of the specification, so that `dispatch` completes and
+checks command names and arguments.
+
+### 5.5 Handle
+
+`ref` gives `{ store, dispatch, focus }`. Everything else goes through the store and commands.
+
+## 6. Rendering and updates
+
+### 6.1 What renders when
+
+| Event | Store | Canvas | React renders |
+| --- | --- | --- | --- |
+| Scrolling (wheel, scroll bar, keys) | the viewport; blocks are read for new rows | the next frame | nothing while scrolling; the accessibility rows and `session.scroll` follow when scrolling pauses (150 ms) |
+| A key, a click, a drag | one command | the same frame | the components whose selected state changed, such as the status bar |
+| Rows arrive | the cache | the next frame, when they are on screen | the `useGridRows` of those rows |
+| Sort, filter, search | the document; the new view is read | the old view until the first rows of the new | the header's sort state and the pending state at once; the rest when the new view is shown |
+| Typing in the editor | `edit.change` | | the editor |
+| A resize | the viewport | the next frame | nothing |
+
+The canvas draws at most once per frame (`requestAnimationFrame`) and only the cells on screen. Columns' x
+positions are computed when the document or the view changes, not per frame.
+
+### 6.2 Concurrent features
+
+- React-rendered views that follow the active cell while they are open (the detail panel, statistics) read it
+  through `useDeferredValue`, so that holding an arrow key never waits for them. A deferred value costs a second
+  commit at a lower priority, so the grid itself defers nothing that changes with each key: it commits once per
+  key (§10), and the sum of the selection waits until the selection stays for 150 ms instead.
+- The accessibility rows follow the rows on screen through `useDeferredValue` once scrolling pauses.
+- Panels are code-split with `lazy`, open inside `startTransition`, and keep their state in `<Activity>` while
+  closed.
+- `save` and `export` run as Actions: `useTransition` gives their pending state, and errors reach the UI as
+  outcomes (§4.2).
+- The search box keeps its text in React state, which updates at once, and dispatches `search.set` with the
+  text from `useDeferredValue`; the store cancels the reads of views it no longer needs.
+
+### 6.3 Scrolling
+
+The body is a native scroller with a sizer, so that wheels, trackpads, scroll bars, keys and assistive
+technology scroll as on any page. Browsers cap the size of an element (about 16.7 million pixels in Chromium),
+so `ScrollAxis` maps the native position onto the virtual one: small movements move by the same amount at any
+depth, and jumps of the scroll bar map proportionally. A hundred million rows of 24 pixels scroll to the end.
+
+### 6.4 Accessibility
+
+- The scroller has `role="grid"`, `aria-rowcount` and `aria-colcount` of the whole view (with the header row),
+  `aria-multiselectable`, and a label.
+- Under the canvas, React renders the rows on screen as `row`s of `gridcell`s with `aria-rowindex` and
+  `aria-colindex` and the cells' text, placed over the cells they stand for and transparent. They follow the
+  canvas in a Transition once scrolling pauses: one commit at a low priority, never during scrolling.
+- The row of the active cell is always among them, also when it is not on screen, so that the active cell is
+  always `aria-activedescendant`; `aria-selected` follows the selection. Each row is a component of its own, so
+  that moving the selection renders again only the rows whose selected cells changed.
+- The keyboard follows §6.4 of the specification (the grid pattern of the ARIA Authoring Practices).
+- Results and failures are announced in a polite live region.
+
+### 6.5 Theming
+
+Colors, fonts and sizes are CSS custom properties on `.vg-root`, which the canvas reads (and reads again when the
+page's class, style or color scheme changes). Colors are `light-dark()` pairs, and the stylesheet declares
+`color-scheme: light dark` on `.vg-root` without specificity, so the grid follows the system's light or dark mode;
+`.vg-root { color-scheme: light }` keeps it light. The declaration also makes the colors work where a bundler turns
+`light-dark()` into variables for older browsers (Lightning CSS in Vite), which need it.
+
+## 7. Server rendering and Server Components
+
+- `vastgrid-grid` is a client entry (`"use client"`); `vastgrid-grid/core` and `vastgrid-grid/server` run in
+  Server Components and on servers.
+- On the server, `DataGrid` renders its toolbar and status bar from the document and `initial`. The body
+  renders its canvas only in the browser (`use(browser())`): the server sends the fallback, the first rows of
+  `initial` as an accessible grid in HTML, or without `initial` an empty body with `aria-busy`. The body has
+  the size it will have, so hydration moves nothing.
+- `readInitialView(transport, { table, document, rows })` from `vastgrid-grid/server` reads the `TableInfo`,
+  the view and its first rows as a block (a `Uint8Array`, which Server Components pass to client components).
+  Given as a promise, `initial` streams: the shell is sent at once and the rows when they are read.
+- In the browser, the store starts from `initial`, so the first frame of the canvas draws the rows the server
+  sent, and the first read starts after them.
+- `serverFunctionTransport(action)` carries messages through a `"use server"` function, which passes each to
+  an engine. The function receives what any client can send: it MUST check the request (`checkRequest`), and
+  the engine MUST refuse `ref`s and `target`s that the host does not allow (`not_allowed`, §8.7). Frameworks
+  may run Server Functions one at a time, so `httpTransport` scrolls faster.
+
+## 8. Strict Mode and concurrency
+
+- Rendering has no side effects: stores are made in `useState` initializers, which run without side effects,
+  and connect in effects.
+- Effects can run twice (Strict Mode in development, on mount and during hydration) and are undone completely.
+- `useSyncExternalStore` keeps components that read the same store from tearing.
+- A grid in a hidden `<Activity>` loses its effects (its canvas stops drawing and observing) and keeps its
+  store; shown again, it draws the store's current state.
+
+## 9. Developer tools
+
+- React's Performance Tracks show the grid's components and their renders.
+- In development, the grid adds the track group "vastgrid" (requests, commands, canvas frames) with
+  `console.timeStamp`, which costs little when nothing records.
+- Failed commands and requests carry the `code`, `reason` and `path` of the specification.
+
+## 10. Performance budgets
+
+The bench ([`examples/bench`](../examples/bench)) mounts v1 or v2 on the same generated table, built for
+production with React's profiling build, and the end-to-end tests ([`e2e`](../e2e)) measure it in Chromium with
+Playwright. The tests fail when v2 exceeds a budget:
+
+| Measure | Budget |
+| --- | --- |
+| React commits per arrow key | at most 1 |
+| React commits while scrolling for 100 frames | 0 |
+| The gap between frames while scrolling, at the 95th percentile | under 25 ms: no frame dropped at 60 Hz |
+| From a key press to the next frame, at the 95th percentile | under 25 ms |
+| From mount to the first rows on screen (1,000,000 rows in memory) | under 300 ms |
+
+Counts of commits are exact; times allow for the machine. The size of `DataGrid` with its dependencies, minified
+and compressed with gzip, stays under 60 KB, measured with esbuild as in Appendix A. Appendix A gives what was
+measured.
+
+## 11. Compiler and lint
+
+- The package is built with Babel and `babel-plugin-react-compiler` 1.0 (`target: "19"`,
+  [`scripts/compile-react.mjs`](../scripts/compile-react.mjs)), so that every app gets its memoization without
+  configuring anything; tsc writes only the types. The build fails when the compiler gives up on a function.
+- The tests compile every file of the package with React Compiler and fail on any function that it does not
+  compile. ESLint runs `eslint-plugin-react-hooks` `recommended-latest` on the package, parsing TypeScript with
+  `@babel/eslint-parser` (`typescript-eslint` does not support TypeScript 7 yet); Biome lints everything else.
+- Unit tests run on the sources; the bench and the end-to-end tests run on the build.
+
+## Appendix A. Measurements
+
+Measured on 2026-10-24 on an Apple M2 Pro with Node.js 24, React 19.3.1, React Compiler 1.0.0,
+`eslint-plugin-react-hooks` 7.1.1 and, in the browser, Chromium 156 (Playwright 1.64.1, headless, 60 Hz). v1 is
+main at `a925cb3`.
+
+### A.1 The React layer
+
+| Measure | v1 (`packages/react`) | v2 (`packages/grid`) |
+| --- | --- | --- |
+| React Compiler | compiles 13 functions and gives up on 16 places, among them `DataGrid` itself (a `try` with `finally`, `throw` inside `try`, getters in an object literal) and 5 other components | compiles all 17 components and hooks, and the build fails if it gives up on one |
+| `eslint-plugin-react-hooks` `recommended-latest` | 51 problems: `refs` 20, `immutability` 17, `preserve-manual-memoization` 9, `exhaustive-deps` 3, `set-state-in-effect` 2 | none |
+| How the state reaches React | a mutable `GridController` with a version counter: every change renders all of `DataGrid` (63 hooks); 13 effects copy props into the controller after render | immutable snapshots and selectors (§4) |
+| API | `forwardRef`; the handle has getters | `ref` as a prop; typed commands |
+| `DataGrid` and an in-memory table, minified (esbuild) | 300.9 KB, 92.6 KB with gzip, all of it whatever is used | 170.7 KB, 57.0 KB with gzip, of which `vastgrid-spec` (the commands, checks and messages that every surface shares) and Flechette are 107 KB minified. v2 has no panels yet; they will load when opened |
+| Server rendering | an empty canvas and "Loading…", with `aria-rowcount="1"`, also for a table in memory | the first rows as an HTML table, streamed when `initial` is a promise |
+
+### A.2 In the browser
+
+The bench of §10 on a table of 1,000,000 rows and 8 columns (integers, strings, floats, dates, booleans), v1 with
+its `ArraySource` and v2 with `vastgrid-js`'s memory engine in the page or in a Web Worker; ranges are those of
+the last four runs.
+
+| Measure | v1 | v2 | v2, engine in a worker |
+| --- | ---: | ---: | ---: |
+| From mount to the first rows on screen | 46–65 ms | 43–49 ms | 36–49 ms |
+| React commits per arrow key | 1 | 1 | 1 |
+| Time React renders for an arrow key (Profiler, p50 / p95) | 0.2 / 0.4–0.5 ms | 0.3 / 0.4–0.8 ms | 0.3–0.4 / 0.4–0.7 ms |
+| From a key press to the next frame, p95 | 13.8–14.1 ms | 13.4–14.1 ms | 13.5–13.9 ms |
+| React commits while scrolling for 100 frames | 0 | 0 | 0 |
+| The gap between frames while scrolling, p95 | 16.7–16.8 ms | 16.7–16.8 ms | 16.7–16.8 ms |
+| Sorting by a float column until the sorted rows are on screen | 494–516 ms | 85–98 ms | 112–113 ms |
+| The longest task of the page meanwhile | 490–512 ms | 81–93 ms | none |
+| JavaScript heap of the page | 190 MB | 202 MB | 10 MB |
+
+Both draw on a canvas and keep scrolling out of React, so both scroll without dropping frames and commit once per
+key on this screen. v2 sorts six times faster, and with its engine in a worker the page never stops while a million
+rows are sorted. The accessibility rows render each row as a component of its own, so that a key renders again only
+the rows whose selection changed (§6.4).
+
+### A.3 The core of the specification and the engine
+
+- `applyCommand` of `vastgrid-spec` copied the whole state for each command (`structuredClone`): a `move` took
+  8.8 µs with an empty state and 74 ms with an undo history of 100,000 updates. It now copies only what a command
+  changes (§4.1): 6.0 µs and 2.8 µs. A context of 1,000 loaded blocks costs 194 µs per move through `rows`; the
+  store gives `lookup` instead (§6.1 of the specification).
+- `vastgrid-js` checked every value of a table when it opened it: 238 ms for the bench's table, most of it reading
+  dates with a regular expression and an array per date. It now checks the values it reads (a column whole before
+  it sorts or sums it), and dates and times are read character by character (215 ms to 22 ms for a million dates):
+  opening the table takes 4 ms.
+- Vite 8 turns `light-dark()` into variables that need a `color-scheme` declaration (Lightning CSS); v1's styles
+  have none, so in such a build every color of the canvas is invalid and it draws black. v2's styles declare
+  `color-scheme` (§6.5), and the end-to-end tests check the canvas's pixels.

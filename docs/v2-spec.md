@@ -39,7 +39,8 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
   [`vastgrid-sql`](../packages/sql) makes; the JS engine computes the same results in JavaScript.
 - **Core**: the grid without a screen: state (§5), commands (§6), the cache of blocks, the selection.
 - **Surface**: a place the grid runs: a React app, a VS Code editor, a notebook, an MCP App, a browser
-  app, a CLI.
+  app, a CLI. The React package, which is the screen of every surface, is specified in
+  [v2-react.md](v2-react.md).
 - **Transport**: what carries messages (§8) between the core and an engine: a function call, a Web
   Worker, HTTP, an MCP tool call, a VS Code webview, a notebook comm.
 
@@ -735,6 +736,11 @@ The **context** is what the core knows when it applies the command:
 In `capabilities`, absent `functions` and `measures` are all of them and an absent member of `plan` is
 true; the other members are false when they are absent.
 
+A core MAY give `rows` in a form of its own, as long as commands see the same rows: `vastgrid-spec`'s
+`applyCommand` also takes `lookup`, a function from a view position to the row the core has read, so that a
+core that keeps its rows in typed columns gives them without copying them into blocks. The reference
+implementation reads only the rows a command uses, and copies only the parts of the state that it changes.
+
 Commands are deterministic: the same state, command and context give the same result. Requests are given
 without `v`, `id` and `table`, which the core adds. A command that fails changes nothing and gives an error
 `{ "code": "invalid_command", "path", "reason", "message", "details"? }`, where `path` is a JSON Pointer into
@@ -1062,7 +1068,9 @@ take included. Clients check responses and events in the same way; one that does
   `readableRows` the rows that can be read now; `columns` §2.1; `capabilities` §4.10; `sheets`
   `[{ "name", "hidden"? }]` for workbooks.
 - `rows` reads positions `[start, end)` of the plan's view: `columns` are names of the view's columns (at
-  least one), at most 1,000,000 rows and 1,000,000 cells. `view` is `{ "hash", "status", "rowCount", "rowCountExact",
+  least one), at most 1,000,000 rows and 1,000,000 cells. Positions beyond the view are left out: the answer's
+  `end` is at most the view's row count, and a request whose `start` is at or beyond it is answered with no
+  rows (`end` equal to `start`), since a client that reads a new view does not know its row count yet. `view` is `{ "hash", "status", "rowCount", "rowCountExact",
   "readableRows", "columns", "edits", "partial"? }` (§9); `rowIds` lists the rows' row IDs, or is null for
   views without them; `block` holds the values (§8.4); `textLimit` is 1 to 1,000,000 (default 2,000).
 - `summarize` counts the cells of `ranges` × `columns` that are not blank (`count`), and the numbers among
@@ -1259,6 +1267,30 @@ against DuckDB, and the JS engine follows in the same change.
 - Dates and timestamps outside the years 0001 to 9999 (DuckDB has dates from 5877642 BC), and the forms
   that would write them (§2.2).
 - Blocks without a record batch for requests of no columns, which `rows` does not allow now (§8.2).
+
+Found while writing the memory engine of [`vastgrid-js`](../packages/js), which answers them as noted:
+
+- The order of intervals (§3.1). Sort keys on interval columns validate, but §3.1 does not order intervals.
+  DuckDB moves whole days of the nanoseconds into the days and whole 30-day months of the days into the months,
+  truncating toward zero, then compares months, days and nanoseconds; `vastgrid-js` does the same.
+- An operation that the capabilities do not offer (`find`, `export`) has no error code in §8.7; `vastgrid-js`
+  answers `invalid_request` with the reason `unknown_op`.
+- `summarize`: whether cells of overlapping ranges count once (`vastgrid-js`) or once per range, whether exact
+  sums are exact before they become floats (`0.10 + 0.20` is `0.3`), and the average when the sum is beyond the
+  largest float.
+- `locate` by a value that rows repeat: `vastgrid-js` gives its first position in the view. And whether a key
+  `"1.5"` finds the decimal(4, 2) value `"1.50"`.
+- Values that blocks cannot hold: `isValueOf` accepts nanosecond timestamps outside 1677–2262 and intervals whose
+  nanoseconds do not fit 64 bits, which wrap around in blocks, and strings with lone surrogates, which become
+  U+FFFD. §2.2 should give the ranges and say that strings are well-formed.
+- Bigints as JSON numbers beyond 2^53 − 1 (§2.2): `isValueOf` refuses them; the text should say so.
+- `checkRequest` repeats an unknown member's name in the error's `path` and message, so a name beyond the limit
+  of §8.1 makes an error that breaks §8.1; and the limit is not checked inside plans, keys and values.
+- 32-bit float values that are not 32-bit floats (`0.1`, `1e39`): invalid, or rounded as blocks round them.
+- Column names that a `rows` request repeats, and the error for a column that the view does not have.
+- The `id` of the answer to a message whose `id` is not valid: 0 may be a request's.
+- `planHash` needs `crypto.subtle`, which browsers give only to secure pages; a client can take hashes from the
+  engine's answers (as `vastgrid-grid` does), but an engine in such a page cannot make them.
 
 ## Appendix A. From v1
 

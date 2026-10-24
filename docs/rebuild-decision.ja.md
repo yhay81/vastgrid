@@ -166,9 +166,7 @@ flowchart TB
 | `vastgrid-spec` | 状態の形（保存する状態とその場の状態、版と移行）、プランと式の型・検証・正規化、意味の仕様（DuckDB を基準）、型を持つ列の決まり（列 ID、切った値の印、行 ID）、電文、適合テスト集（データのファイルで持ち、ほかの言語でも流せる） | `types.ts`・`protocol.ts`・`grid-state.ts`・`filter-tree.ts` |
 | `vastgrid-duckdb` | Node.js の DuckDB。プランから SQL を作る処理（値はパラメーター）、読み込みの工夫、編集の差分、保存、書き出し、変更の通知、HTTP と MCP の受け口 | `engine.ts`・`sql.ts`・`duckdb/formula.ts`・`csv-save.ts`・`xlsx.ts`・`handler.ts` |
 | `vastgrid-js` | JS のエンジン。ファイルを必要な所だけ読む（hyparquet、CSV・JSON Lines の読み）、メモリ上の表、型を持つ列での計算。結果は DuckDB に合わせる | `vastgrid-browser`・`ArraySource`・`group.ts` |
-| `vastgrid-core` | 画面を持たないグリッド。状態とコマンド、まとまりのキャッシュ（上限はバイト数）、段階的なビュー、選択・コピー・編集の履歴 | `cache.ts`・`selection.ts`・`edit-history.ts`・`clipboard.ts`・`GridController` の大半 |
-| `vastgrid-canvas` | 描画・当たり判定・スクロール・入力（IME のために重ねる入力欄）・ARIA。フレームワークに依存しない | `renderer.ts`・`text.ts`・`scroll.ts`・`layout.ts`・`DataGrid` の入力処理 |
-| `vastgrid` | React の部品と標準の画面。拡張（列の種類・セルの描画・パネル・コマンド・キーの割り当て・メニュー）を受ける | `DataGrid`・`components/` |
+| `vastgrid`（開発中は `vastgrid-grid`） | React の部品と標準の画面。拡張（列の種類・セルの描画・パネル・コマンド・キーの割り当て・メニュー）を受ける。画面を持たないストア（状態とコマンド、まとまりのキャッシュ、段階的なビュー）は `vastgrid/core` として React なしで使える。キャンバスの描画・当たり判定・スクロール・入力・ARIA も中に持つ（[React を中心に据える](#react-を中心に据える)） | `DataGrid`・`components/`・`GridController` の大半・`cache.ts`・`renderer.ts`・`text.ts`・`scroll.ts`・`layout.ts` |
 | アプリ | MCP のサーバーと画面、VS Code の拡張、Python のパッケージ、ブラウザーのアプリ、CLI | `examples/playground`・`site` のデモ |
 
 ## 製品の面
@@ -181,6 +179,27 @@ flowchart TB
 | 4 | ブラウザーのアプリ | だれでも | ファイルを落とすと JS のエンジンで開く。サイトのデモを本物のファイルにする | 今のデモは生成した表と計算する表だけで、巨大なファイルを開く体験を見せていない |
 | 5 | `npx vastgrid` | 開発者 | ローカルの DuckDB と画面を 1 つのコマンドで | 作るのが軽く、試してもらう入口になる |
 | — | React の部品 | アプリを作る人 | 今と同じく中心のライブラリ | ほかでは有料の機能を、巨大なデータで MIT のまま |
+
+## React を中心に据える
+
+2026-10-24 に、React での性能・機能・使い勝手を最優先にすると決めました。上の面のうち MCP App・VS Code・ノートブック（anywidget）・ブラウザーのアプリは、どれも画面を React で作れます。React の部品が、すべての面の画面になります。設計は [v2-react.md](v2-react.md) に書きました。
+
+- **最新の React を前提にする。** React 19.3 以上を求め、View Transitions・Fragment refs・`browser()`（19.3）、`<Activity>`・`useEffectEvent`（19.2）、`use`・ref を props で受けること（19.0）を、合う所で使います。すべての部品とフックが React Compiler 1.0 で最適化され、`eslint-plugin-react-hooks` の `recommended-latest` を通ることをテストで確かめ、コンパイルした形で配ります。
+- **速い経路は React の描画を通さない。** スクロール・セルの描画・選択のドラッグは、ストアとキャンバスがフレームごとに行います。React は DOM の部分（ツールバー・状態の行・パネル・セルの入力欄・読み上げ用の木）だけを、変わった所だけ描きます。
+- **状態はストアの不変のスナップショット。** 仕様の状態（保存する状態とその場の状態）をストアに持ち、部品は `useSyncExternalStore` とセレクターで必要な部分だけを読みます。コマンドが変えない部分は同じオブジェクトのまま残します（構造の共有）。プランを変えたときは、新しいビューの最初の行が届くまで古いビューを見せ続けます（React の Transition と同じふるまいを、キャンバスと外からの操作にも効くようにストアで行う）。
+- **パッケージを分けすぎない。** `vastgrid-canvas` は独立させず、React の部品の中に置きます。画面を持たないストアは `vastgrid/core` として React なしで使えます。Vue・Svelte・素の JS からは、求められたら React を中に持つカスタム要素で使えるようにします。
+
+v1 の React の層を、React 19.3.1・React Compiler 1.0.0・`eslint-plugin-react-hooks` 7.1.1 で測りました（main の `a925cb3`）。
+
+| 測ったこと | 結果 |
+| --- | --- |
+| React Compiler | `packages/react/src` で最適化できた関数は 13。16 か所で諦め、その中に `DataGrid` 本体と 5 つの部品がある |
+| `eslint-plugin-react-hooks` の `recommended-latest` | 51 件（描画中の ref の読み書き 20、値の書き換え 17、手書きのメモ化を保てない 9、依存の配列 3、エフェクトの中の setState 2） |
+| 状態の渡し方 | 書き換えられる `GridController` と版の番号。どの変更でも `DataGrid`（フック 63 個）全体を描き直し、13 のエフェクトが描画のあとで props をコントローラーに写す |
+| バンドル | `DataGrid` と `ArraySource` だけで、圧縮前 300.9 KB・gzip 92.6 KB。すべてを読み込んでも 96.1 KB で、パネル・計算列・書き出しを外せない |
+| サーバーでの描画 | メモリー上の表でも、空のキャンバスと「Loading…」だけ（`aria-rowcount="1"`） |
+
+仕様の参照実装にも、React の速い経路を妨げる所が見つかりました。`applyCommand` がコマンドのたびに状態全体を `structuredClone` で写していたため、アクティブなセルを 1 つ動かすのに、空の状態で 8.8 µs、取り消しの履歴が 10 万セルあると 74 ms かかりました。コマンドが変える部分だけを写すように直します。
 
 ## 進め方（品質のための順番）
 
@@ -195,6 +214,8 @@ flowchart TB
 9. **v1 を外す。**
 
 1 は 2026-10-24 に始めました。仕様の下書き [v2-spec.md](v2-spec.md)（2.0-draft.2）と、適合テスト集（[`packages/spec/conformance`](../packages/spec/conformance)）を置いています。テスト集はプラン 106 件・コマンド 277 件・電文 81 件の 3 部で、プランは `vastgrid-sql` が DuckDB で、コマンドと電文は `vastgrid-spec` の参照実装（`applyCommand`、`checkRequest` など、Arrow のブロック）が全件を通します。電文は DuckDB の上の参照のエンジンで端から端まで試します。v1 のテストのうちファイルの読み込みに関わるもの（文字コード、許可フォルダーなど）は、v2 の DuckDB のエンジンを作る 2 で移します。
+
+同じ日に、[React を中心に据える](#react-を中心に据える)方針で、v2 の React の部品の土台（[`packages/grid`](../packages/grid)、開発中の名前は `vastgrid-grid`）と、ブラウザーで動くメモリー上のエンジン（[`packages/js`](../packages/js)、`vastgrid-js`。いまは並べ替えと集計と位置の検索だけ）を作りました。ストア、キャンバス、キーとポインターの操作、並べ替え、列幅、コピー、検索、状態の行、読み上げ用の行、サーバーでの描画があり、Playwright の E2E と性能の予算（[v2-react.md](v2-react.md) §10）を CI で回します。100 万行の表で v1 と比べると、矢印キー 1 回に React の commit が 1 回、スクロール中は 0 回、フレームを落とさないことは同じで、並べ替えは 516 ms から 85 ms になり、エンジンを Web Worker で動かせば並べ替えの間もページは止まりません。React Compiler はすべての部品とフックを最適化し（v1 は `DataGrid` を含む 16 か所で断念）、`recommended-latest` の lint の問題は 0 件（v1 は 51 件）、`DataGrid` のバンドルは gzip で 92.6 KB から 57.0 KB です（v2 にはまだパネルがない）。途中で、仕様の参照実装 `applyCommand` が履歴の大きさに比例して遅くなる問題（矢印キー 1 回 74 ms）と、Vite 8 のビルドで `light-dark()` の色がすべて無効になってキャンバスが黒くなる問題（v1 のスタイルにもある）を見つけて直しました。
 
 ## 移すもの・作り直すもの
 

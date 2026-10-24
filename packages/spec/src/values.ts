@@ -10,9 +10,6 @@ const INT64_MAX = 9223372036854775807n;
 
 const integerText = /^-?(0|[1-9][0-9]*)$/;
 const decimalText = /^-?(0|[1-9][0-9]*)(?:\.([0-9]+))?$/;
-const dateText = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/;
-// Fractions have no trailing zeros (§2.2).
-const timeText = /^([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]*[1-9]))?$/;
 const uuidText = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const base64Text = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 // Unicode category Zs, which `trim` removes (§4.4).
@@ -30,30 +27,68 @@ function isLeapYear(year: number) {
   return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
 }
 
+const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
 function isDay(year: number, month: number, day: number) {
   if (month < 1 || month > 12 || day < 1) return false;
-  const days = [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  return day <= days[month - 1];
+  return day <= (month === 2 && isLeapYear(year) ? 29 : MONTH_DAYS[month - 1]);
+}
+
+// Dates and times are read character by character: tables check millions of them, and a match of a regular
+// expression would make arrays for each.
+
+/** The number that the two digits at `at` write, or −1 when they are not two digits. */
+function twoDigits(text: string, at: number): number {
+  const tens = text.charCodeAt(at) - 48;
+  const ones = text.charCodeAt(at + 1) - 48;
+  return tens >= 0 && tens <= 9 && ones >= 0 && ones <= 9 ? tens * 10 + ones : -1;
+}
+
+/** Whether `text` from `at` to `end` is `YYYY-MM-DD`, naming a real day. */
+function dateAt(text: string, at: number, end: number): boolean {
+  if (end - at !== 10 || text.charCodeAt(at + 4) !== 45 || text.charCodeAt(at + 7) !== 45) return false;
+  const century = twoDigits(text, at);
+  const years = twoDigits(text, at + 2);
+  if (century < 0 || years < 0) return false;
+  return isDay(century * 100 + years, twoDigits(text, at + 5), twoDigits(text, at + 8));
+}
+
+/** Whether `text` from `at` to `end` is `HH:MM:SS`, then a point and at most `digits` digits not ending in 0. */
+function timeAt(text: string, at: number, end: number, digits: number): boolean {
+  const length = end - at;
+  if (length < 8 || text.charCodeAt(at + 2) !== 58 || text.charCodeAt(at + 5) !== 58) return false;
+  const hour = twoDigits(text, at);
+  const minute = twoDigits(text, at + 3);
+  const second = twoDigits(text, at + 6);
+  if (hour < 0 || minute < 0 || second < 0 || hour >= 24 || minute >= 60 || second >= 60) return false;
+  if (length === 8) return true;
+  // Fractions have no trailing zeros (§2.2).
+  if (text.charCodeAt(at + 8) !== 46 || length - 9 < 1 || length - 9 > digits) return false;
+  for (let index = at + 9; index < end; index++) {
+    const code = text.charCodeAt(index);
+    if (code < 48 || code > 57) return false;
+  }
+  return text.charCodeAt(end - 1) !== 48;
+}
+
+/** Whether `text` up to `end` is a date, a space and a time with at most `digits` digits after the point. */
+function timestampAt(text: string, end: number, digits: number): boolean {
+  return text.charCodeAt(10) === 32 && dateAt(text, 0, 10) && timeAt(text, 11, end, digits);
 }
 
 /** Whether the text is a date as §2.2 writes it: `YYYY-MM-DD`, naming a real day. */
 export function isDateText(text: string): boolean {
-  const match = dateText.exec(text);
-  return match !== null && isDay(Number(match[1]), Number(match[2]), Number(match[3]));
+  return dateAt(text, 0, text.length);
 }
 
 /** Whether the text is a time as §2.2 writes it, with at most `digits` digits after the point. */
 export function isTimeText(text: string, digits = 6): boolean {
-  const match = timeText.exec(text);
-  if (!match) return false;
-  const [hour, minute, second] = [Number(match[1]), Number(match[2]), Number(match[3])];
-  return hour < 24 && minute < 60 && second < 60 && (match[4]?.length ?? 0) <= digits;
+  return timeAt(text, 0, text.length, digits);
 }
 
 /** Whether the text is a timestamp as §2.2 writes it, for a unit. */
 export function isTimestampText(text: string, unit: TimestampUnit = "us"): boolean {
-  const space = text.indexOf(" ");
-  return space === 10 && isDateText(text.slice(0, space)) && isTimeText(text.slice(space + 1), unitDigits[unit]);
+  return timestampAt(text, text.length, unitDigits[unit]);
 }
 
 /** The precision and scale of a decimal written as text (§2.5), or null when the text is not a decimal. */
@@ -99,7 +134,7 @@ export function isValueOf(value: JsonValue, type: ValueType): boolean {
     case "timestamp":
       return typeof value === "string" && isTimestampText(value, type.unit);
     case "timestamptz":
-      return typeof value === "string" && value.endsWith("+00") && isTimestampText(value.slice(0, -3));
+      return typeof value === "string" && value.endsWith("+00") && timestampAt(value, value.length - 3, unitDigits.us);
     case "uuid":
       return typeof value === "string" && uuidText.test(value);
     case "binary":

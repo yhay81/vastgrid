@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { caseState, isCommandFailure, readCommandCorpus, runCommandCase } from "../src/conformance.ts";
-import { applyCommand, COMMANDS, CommandError, checkDocument, checkSession } from "../src/index.ts";
+import {
+  applyCommand,
+  type Capabilities,
+  COMMANDS,
+  type CommandContext,
+  CommandError,
+  checkDocument,
+  checkSession,
+  type GridState,
+} from "../src/index.ts";
 import { schemaProblems } from "./schemas.ts";
 
 const files = readCommandCorpus();
@@ -134,5 +143,144 @@ test("a failed command throws a CommandError with code invalid_command", () => {
   assert.throws(
     () => applyCommand(state, "select", context),
     (error: unknown) => error instanceof CommandError && error.reason === "syntax" && error.path === "/command",
+  );
+});
+
+/** Freezes a value and everything in it, so that changing any of it throws (modules run in strict mode). */
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const item of Object.values(value)) deepFreeze(item);
+  }
+  return value;
+}
+
+for (const file of files) {
+  test(`commands change nothing they are given: ${file.file}`, async (t) => {
+    // Results share what a command does not change with the state it was given (§4.1 of v2-react.md), so a
+    // command must copy before it changes: every case runs again on frozen states, commands and contexts.
+    const frozen = (state: GridState, command: unknown, context: CommandContext) =>
+      applyCommand(
+        deepFreeze(structuredClone(state)),
+        deepFreeze(structuredClone(command)),
+        deepFreeze(structuredClone(context)),
+      );
+    for (const item of file.cases) {
+      await t.test(item.id, () => {
+        assert.deepEqual(runCommandCase(file, item, frozen), []);
+      });
+    }
+  });
+}
+
+const COLUMNS = [
+  { name: "id", type: "bigint" as const },
+  { name: "name", type: "string" as const },
+];
+
+function bigState(updates: number): GridState {
+  return {
+    document: { kind: "vastgrid/document", version: 2, columns: [{ name: "id", width: 80 }] },
+    session: {
+      kind: "vastgrid/session",
+      version: 2,
+      active: { row: 5, column: "name", key: { rowId: 5 } },
+      checked: { mode: "include", keys: [{ rowId: 1 }] },
+      detail: { open: true },
+      history: {
+        undo: [
+          {
+            updates: Array.from({ length: updates }, (_, row) => ({
+              key: { rowId: row },
+              column: "name",
+              before: `a${row}`,
+              after: `b${row}`,
+            })),
+          },
+        ],
+        redo: [],
+      },
+    },
+  };
+}
+
+function rowsContext(blocks: number): CommandContext {
+  return {
+    table: COLUMNS,
+    revision: "r1",
+    view: { columns: COLUMNS, rowCount: blocks * 256, rowIds: true },
+    page: 20,
+    rows: Array.from({ length: blocks }, (_, block) => ({
+      start: block * 256,
+      keys: Array.from({ length: 256 }, (_, offset) => ({ rowId: block * 256 + offset })),
+      values: Array.from({ length: 256 }, (_, offset) => [block * 256 + offset, `n${offset}`]),
+    })),
+  };
+}
+
+test("a command keeps the objects of what it does not change", () => {
+  const state = bigState(3);
+  const context = rowsContext(1);
+  const moved = applyCommand(state, { command: "move", direction: "down" }, context);
+  assert.equal(moved.document, state.document);
+  assert.notEqual(moved.session, state.session);
+  assert.deepEqual(moved.session.active, { row: 6, column: "name", key: { rowId: 6 } });
+  for (const member of ["checked", "detail", "history"] as const)
+    assert.equal(moved.session[member], state.session[member]);
+  // Moving up from the first row changes nothing: the session itself is kept.
+  const top = applyCommand(moved, { command: "move", direction: "up", jump: true }, context);
+  assert.equal(applyCommand(top, { command: "move", direction: "up" }, context).session, top.session);
+  // A column command keeps the session's members and changes the settings.
+  const resized = applyCommand(moved, { command: "column.resize", name: "name", width: 200 }, context);
+  assert.equal(resized.session, moved.session);
+  assert.notEqual(resized.document.columns, moved.document.columns);
+  assert.equal(resized.document.plan, moved.document.plan);
+});
+
+test("moving the active cell costs the same with a large history and many loaded rows", () => {
+  const context = rowsContext(1_000);
+  const time = (state: GridState) => {
+    let current = state;
+    const started = performance.now();
+    for (let index = 0; index < 200; index++) {
+      current = applyCommand(current, { command: "move", direction: index % 2 ? "up" : "down" }, context);
+    }
+    return (performance.now() - started) / 200;
+  };
+  time(bigState(1));
+  // Copying a history of 100,000 updates took about 74 ms per move; a move now copies nothing of it.
+  assert.ok(time(bigState(100_000)) < 1, "a move takes less than 1 ms");
+});
+
+test("commands read rows through lookup when the core gives it", () => {
+  const state = bigState(0);
+  const context: CommandContext = {
+    table: COLUMNS,
+    revision: "r1",
+    view: { columns: COLUMNS, rowCount: 10, rowIds: true },
+    page: 5,
+    lookup: (row) =>
+      row === 5
+        ? {
+            key: { rowId: 50 },
+            has: (column) => column === "name",
+            get: (column) => (column === "name" ? "five" : null),
+          }
+        : undefined,
+  };
+  const result = applyCommand(
+    state,
+    { command: "edit.begin" },
+    { ...context, capabilities: { write: true } as Capabilities },
+  );
+  assert.deepEqual(result.session.editor, { row: 5, column: "name", key: { rowId: 50 }, text: "five", value: "five" });
+  assert.throws(
+    () =>
+      applyCommand(
+        { ...state, session: { ...state.session, active: { row: 6, column: "name" } } },
+        { command: "edit.begin" },
+        context,
+      ),
+    (error: unknown) => error instanceof CommandError && error.reason === "not_loaded",
   );
 });

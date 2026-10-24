@@ -1,0 +1,183 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import type { GridDocument, GridSession } from "vastgrid-spec";
+import { createGridStore, type GridStore, localTransport } from "../src/core.ts";
+import { fakeEngine, numbers, settle } from "./fake-engine.ts";
+
+/** A store over the fake engine, connected, with a viewport of 20 rows of every column. */
+async function ready(count = 1_000, options: { document?: GridDocument; session?: GridSession } = {}) {
+  const engine = fakeEngine(numbers(count));
+  const store = createGridStore({ transport: localTransport(engine), table: "numbers", ...options });
+  const disconnect = store.connect();
+  store.setViewport({ top: 0, rows: 20, columns: ["id", "name", "score"] });
+  await until(store, (snapshot) => snapshot.view !== null);
+  await settle();
+  return { engine, store, disconnect };
+}
+
+async function until(store: GridStore, done: (snapshot: ReturnType<GridStore["getSnapshot"]>) => boolean) {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if (done(store.getSnapshot())) return;
+    await settle(1);
+  }
+  throw new Error(`The store did not get there: ${JSON.stringify(store.getSnapshot().status)}`);
+}
+
+test("making a store has no side effects; connecting opens the table and reads the rows on screen", async () => {
+  const engine = fakeEngine(numbers(1_000));
+  const store = createGridStore({ transport: localTransport(engine), table: "numbers" });
+  await settle();
+  assert.equal(engine.requests.length, 0);
+  assert.equal(store.getSnapshot().status, "idle");
+  const disconnect = store.connect();
+  store.setViewport({ top: 0, rows: 20, columns: ["id", "name"] });
+  await until(store, (snapshot) => snapshot.view !== null);
+  await settle();
+  const snapshot = store.getSnapshot();
+  assert.equal(snapshot.status, "ready");
+  assert.equal(snapshot.view?.rowCount, 1_000);
+  assert.deepEqual(
+    snapshot.displayed.map((item) => item.column.name),
+    ["id", "name", "score"],
+  );
+  assert.equal(store.cell(5, "name"), "name 5");
+  assert.equal(store.rowId(5), 5);
+  disconnect();
+  await settle();
+  assert.equal(engine.open.size, 0, "disconnecting closes the table");
+});
+
+test("connecting again after disconnecting works, as Strict Mode does it", async () => {
+  const engine = fakeEngine(numbers(100));
+  const store = createGridStore({ transport: localTransport(engine), table: "numbers" });
+  const first = store.connect();
+  first();
+  const second = store.connect();
+  await until(store, (snapshot) => snapshot.view !== null);
+  await settle();
+  assert.equal(engine.open.size, 1, "one table stays open");
+  assert.equal(store.getSnapshot().status, "ready");
+  second();
+  await settle();
+  assert.equal(engine.open.size, 0);
+});
+
+test("a command changes the snapshot at once and keeps what it does not change", async () => {
+  const { store, disconnect } = await ready();
+  const before = store.getSnapshot();
+  let notified = 0;
+  const stop = store.subscribe(() => notified++);
+  const done = store.dispatch({ command: "move", direction: "down" });
+  // Before the promise resolves: a key press shows in the same frame.
+  const after = store.getSnapshot();
+  assert.equal(notified, 1);
+  assert.equal(after.document, before.document);
+  assert.deepEqual(after.session.active, { row: 1, column: "id", key: { rowId: 1 } });
+  assert.equal(after.displayed, before.displayed);
+  assert.deepEqual(await done, { ok: true });
+  stop();
+  disconnect();
+});
+
+test("a sort keeps the view on screen until the first rows of the new one arrive, and moves the active row", async () => {
+  const { engine, store, disconnect } = await ready(100);
+  await store.dispatch({ command: "select", row: 10, column: "name" });
+  const shown = store.getSnapshot().view;
+  engine.hold();
+  void store.dispatch({ command: "sort.toggle", column: "id" });
+  void store.dispatch({ command: "sort.toggle", column: "id" });
+  await settle(5);
+  let snapshot = store.getSnapshot();
+  assert.deepEqual(snapshot.document.plan, { sort: [{ column: "id", direction: "desc" }] });
+  assert.deepEqual(snapshot.pending, { plan: { sort: [{ column: "id", direction: "desc" }] } });
+  assert.equal(snapshot.view, shown, "the old view stays on screen");
+  assert.equal(store.cell(10, "name"), "name 10");
+  engine.release();
+  await until(store, (current) => current.pending === null);
+  snapshot = store.getSnapshot();
+  assert.notEqual(snapshot.view?.hash, shown?.hash);
+  // Row ID 10 is at position 89 of the descending view (§5.4).
+  assert.deepEqual(snapshot.session.active, { row: 89, column: "name", key: { rowId: 10 } });
+  assert.equal(snapshot.session.view, snapshot.view?.hash);
+  assert.equal(store.cell(0, "id"), 99);
+  // The first sort's read was cancelled by the second (§8.6).
+  assert.ok(engine.requests.some((request) => request.op === "cancel"));
+  disconnect();
+});
+
+test("a controlled document is reported, and shown once the host passes it back", async () => {
+  const { store, disconnect } = await ready(50);
+  const reported: GridDocument[] = [];
+  store.control("document", true);
+  const stop = store.on("document", (document) => reported.push(document));
+  await store.dispatch({ command: "sort.toggle", column: "score" });
+  await store.dispatch({ command: "sort.toggle", column: "score" });
+  assert.equal(store.getSnapshot().document.plan, undefined, "the grid shows the prop");
+  assert.deepEqual(
+    reported.map((document) => document.plan),
+    [{ sort: [{ column: "score", direction: "asc" }] }, { sort: [{ column: "score", direction: "desc" }] }],
+    "the second command applies to what the first reported",
+  );
+  store.setDocument(reported[1]);
+  assert.equal(store.getSnapshot().document, reported[1]);
+  await until(store, (snapshot) => snapshot.pending === null && snapshot.view?.hash === snapshot.session.view);
+  stop();
+  disconnect();
+});
+
+test("a command that needs rows that are not read reads them first", async () => {
+  const { store, disconnect } = await ready(2_000);
+  await store.dispatch({ command: "select.rows", from: 1_500, to: 1_510 });
+  assert.equal(store.cell(1_505, "name"), undefined);
+  const sync = store.dispatchSync({ command: "copy" });
+  assert.equal(sync.ok, false);
+  const outcome = await store.dispatch({ command: "copy" });
+  assert.ok(outcome.ok);
+  const { tsv } = outcome.output as { tsv: string };
+  assert.equal(tsv.split("\n").length, 11);
+  assert.ok(tsv.startsWith("1500\tname 1500\t"));
+  disconnect();
+});
+
+test("commands before the table is open fail with not_ready and change nothing", async () => {
+  const store = createGridStore({ transport: localTransport(fakeEngine(numbers(3))), table: "numbers" });
+  const before = store.getSnapshot();
+  const outcome = await store.dispatch({ command: "move", direction: "down" });
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.ok ? "" : outcome.error.code, "not_ready");
+  assert.equal(store.getSnapshot(), before);
+});
+
+test("rows read on a server are shown before the table is open", async () => {
+  const { store: server, disconnect } = await ready(300);
+  const snapshot = server.getSnapshot();
+  disconnect();
+  const engine = fakeEngine(numbers(300));
+  const transport = localTransport(engine);
+  const { readInitialView } = await import("../src/server.ts");
+  const initial = await readInitialView(transport, { table: "numbers", rows: 50 });
+  assert.equal(engine.open.size, 0, "reading the initial view closes the table");
+  const store = createGridStore({ transport, table: "numbers", initial });
+  assert.equal(store.getSnapshot().view?.rowCount, snapshot.view?.rowCount);
+  assert.equal(store.cell(49, "name"), "name 49");
+  assert.equal(store.cell(50, "name"), undefined);
+  const connected = store.connect();
+  store.setViewport({ top: 0, rows: 20, columns: ["id", "name"] });
+  await until(store, (current) => current.status === "ready");
+  await settle(5);
+  // The rows of the same revision stay: nothing is read again for them.
+  assert.equal(store.cell(10, "name"), "name 10");
+  connected();
+});
+
+test("an event of another edits version reads the view again and keeps the session", async () => {
+  const { engine, store, disconnect } = await ready(40);
+  await store.dispatch({ command: "select", row: 3, column: "score" });
+  const table = store.getSnapshot().table;
+  const before = store.getSnapshot().session;
+  engine.send({ v: 2, event: "changed", table: table?.table, revision: "r1", edits: { version: 1, cells: 1 } });
+  await settle(10);
+  assert.equal(store.getSnapshot().table?.edits.version, 1);
+  assert.deepEqual(store.getSnapshot().session.active, before.active);
+  disconnect();
+});

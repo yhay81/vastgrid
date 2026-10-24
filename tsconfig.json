@@ -1,0 +1,11 @@
+{
+  "//": "For tools that read the tsconfig of the folder they run in, such as tsx in `npm test`, and for the tests in editors; packages build with their own.",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": ["packages/*/src", "packages/*/test", "packages/*/bench"]
+}

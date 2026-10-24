@@ -55,7 +55,22 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      # The oldest React that peerDependencies allow.
-      - run: npm install --no-save react@18 react-dom@18 @types/react@18 @types/react-dom@18
+      # The oldest React that v1's peerDependencies allow; v2 (packages/grid) needs React 19.3.
+      - run: npm install --no-save --legacy-peer-deps react@18 react-dom@18 @types/react@18 @types/react-dom@18
       - run: npx tsc -b packages/core packages/duckdb packages/react
-      - run: npm test
+      - run: >-
+          node --conditions=vastgrid-source --import tsx --test packages/core/test/*.test.ts
+          packages/duckdb/test/*.test.ts packages/browser/test/*.test.ts packages/react/test/*.test.ts
+  e2e:
+    name: End-to-end tests and performance budgets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run e2e

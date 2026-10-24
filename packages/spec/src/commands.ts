@@ -7,12 +7,21 @@ import { checkPlan, planOptions } from "./check.js";
 import { parseHtmlTable, parseTsv, toHtmlTable, toMarkdownTable, toTsv } from "./clipboard.js";
 import { canonicalJson } from "./hash.js";
 import { editText, readCellText } from "./input.js";
-import { type Capabilities, type Expr, type Plan, PlanError, type Search, type SortKey } from "./plan.js";
+import {
+  type Aggregate,
+  type Capabilities,
+  type Expr,
+  type Plan,
+  PlanError,
+  type Search,
+  type SortKey,
+} from "./plan.js";
 import {
   type ActiveCell,
   type CellRange,
   type CellRef,
   type Checked,
+  type ColumnFormat,
   type ColumnSetting,
   checkColumnFormat,
   checkRowKey,
@@ -24,6 +33,7 @@ import {
   type GridSession,
   type GridState,
   HISTORY_LIMITS,
+  type HistoryStep,
   type HistoryUpdate,
   joinParts,
   measureTakes,
@@ -32,6 +42,7 @@ import {
   SELECTION_RANGES,
   StateError,
   sameKey,
+  type Total,
 } from "./state.js";
 import type { Column, JsonValue, ValueType } from "./types.js";
 import { floatOf, sameType, textOf, trimSpaces } from "./values.js";
@@ -48,6 +59,14 @@ export interface LoadedRows {
   values: JsonValue[][];
 }
 
+/** A row of the view that the core has read: its key, and the values of the columns it has. */
+export interface LoadedRow {
+  key?: RowKey;
+  has(column: string): boolean;
+  /** The value of a column; null for a column the row does not have. */
+  get(column: string): JsonValue;
+}
+
 /** What the core knows when it applies a command (§6.1). */
 export interface CommandContext {
   /** The table's columns. */
@@ -56,6 +75,11 @@ export interface CommandContext {
   /** The current view of the document's plan. */
   view: { columns: Column[]; rowCount: number; rowIds: boolean };
   rows?: LoadedRows[];
+  /**
+   * The rows that the core has read, by view position, instead of `rows`: a core that keeps its rows in its
+   * own form gives them without copying them into blocks. Commands ask only for the rows they use.
+   */
+  lookup?: (row: number) => LoadedRow | undefined;
   /** Rows on a page, for Page Up and Page Down. */
   page: number;
   /** What the engine offers; everything when absent. */
@@ -68,6 +92,74 @@ export interface CommandContext {
 export interface Command {
   command: string;
   [argument: string]: unknown;
+}
+
+type Direction = "up" | "down" | "left" | "right";
+type SelectMode = "replace" | "extend" | "add";
+
+/**
+ * The commands of §6 with their arguments, as `commands.schema.json` describes them: what hosts, agents and UIs
+ * dispatch. `applyCommand` takes any `Command` and checks it.
+ */
+export type GridCommand =
+  | { command: "sort.set"; keys: SortKey[] }
+  | { command: "sort.toggle"; column: string; add?: boolean }
+  | { command: "sort.clear" | "filter.clear" | "group.clear" }
+  | { command: "filter.set"; where: Expr | null }
+  | { command: "filter.column"; column: string; where: Expr | null }
+  | { command: "search.set"; text: string }
+  | { command: "derive.add"; name: string; expr: Expr; before?: string }
+  | { command: "derive.update"; name: string; expr?: Expr; rename?: string }
+  | { command: "derive.remove"; name: string }
+  | { command: "group.set"; aggregate: Aggregate }
+  | { command: "having.set"; having: Expr | null }
+  | { command: "column.resize"; name: string; width: number | null }
+  | { command: "column.move"; names: string[]; before: string | null }
+  | { command: "column.hide"; names: string[] }
+  | { command: "column.show"; names: string[] }
+  | { command: "column.show"; all: true }
+  | { command: "column.pin"; name: string; side: "left" | "right" | null }
+  | { command: "column.format"; name: string; format: ColumnFormat | null }
+  | { command: "column.total"; name: string; total: Total | null }
+  | { command: "select"; row: number; column: string; mode?: SelectMode }
+  | { command: "select.rows"; from: number; to: number; mode?: SelectMode }
+  | { command: "select.columns"; from: string; to: string; mode?: SelectMode }
+  | { command: "move"; direction: Direction; extend?: boolean; jump?: boolean; page?: boolean }
+  | { command: "move.home" | "move.end"; extend?: boolean; jump?: boolean }
+  | { command: "advance"; axis: "row" | "column"; back?: boolean }
+  | { command: "scroll.to"; row: number; column?: string }
+  | { command: "check" | "uncheck"; keys: RowKey[] }
+  | {
+      command:
+        | "select.all"
+        | "check.all"
+        | "check.clear"
+        | "detail.open"
+        | "detail.close"
+        | "edit.cancel"
+        | "edit.clear"
+        | "edit.paste"
+        | "history.undo"
+        | "history.redo"
+        | "save";
+    }
+  | { command: "edit.begin"; text?: string }
+  | { command: "edit.change"; text: string }
+  | { command: "edit.commit"; move?: Direction | null }
+  | { command: "edit.fill"; direction: "down" | "right" }
+  | { command: "copy"; headers?: boolean; values?: "raw" | "formatted" }
+  | { command: "export"; format: string; columns?: "displayed" | "all"; target?: string }
+  | { command: "view.update"; hash: string; located?: { key: RowKey; row: number | null }[] }
+  | { command: "history.push"; updates: HistoryUpdate[] }
+  | { command: "history.undone" | "history.redone" | "history.clear" };
+
+/** The name of a command of §6. */
+export type CommandName = GridCommand["command"];
+
+/** The outputs of the commands that give one (§6.5, §6.6). */
+export interface CommandOutputs {
+  copy: { tsv: string; html: string; markdown: string };
+  "edit.paste": { cutRows: number; cutColumns: number };
 }
 
 /** A request that a command gives (§8.2), without `v`, `id` and `table`. */
@@ -336,36 +428,132 @@ function spansOf(rows: Iterable<number>): [number, number][] {
   return spans;
 }
 
-/** One command being applied: a copy of the state that it changes, and what it gives. */
+/** A row of `context.rows`: what the blocks that hold it give, later blocks winning (§6.1). */
+class BlockRow implements LoadedRow {
+  key?: RowKey;
+  readonly values = new Map<string, JsonValue>();
+
+  has(column: string) {
+    return this.values.has(column);
+  }
+
+  get(column: string) {
+    return this.values.get(column) ?? null;
+  }
+}
+
+/** The rows of blocks by view position, each read from the blocks the first time a command asks for it. */
+function blockLookup(blocks: readonly LoadedRows[], view: readonly Column[]): (row: number) => LoadedRow | undefined {
+  const viewNames = view.map((column) => column.name);
+  const rows = new Map<number, BlockRow | undefined>();
+  return (row) => {
+    if (rows.has(row)) return rows.get(row);
+    let entry: BlockRow | undefined;
+    for (const block of blocks) {
+      const offset = row - block.start;
+      const values = block.values[offset];
+      if (offset < 0 || values === undefined) continue;
+      entry ??= new BlockRow();
+      const key = block.keys?.[offset];
+      if (key !== undefined && key !== null) entry.key = key;
+      const names = block.columns ?? viewNames;
+      for (let index = 0; index < names.length && index < values.length; index++) {
+        entry.values.set(names[index], values[index]);
+      }
+    }
+    rows.set(row, entry);
+    return entry;
+  };
+}
+
+/** Displayed columns by the document's settings and the view's columns, which commands keep when they can. */
+const displayedCache = new WeakMap<object, WeakMap<object, { columns: string[]; index: Map<string, number> }>>();
+const NO_SETTINGS: ColumnSetting[] = [];
+
+/** Whether two JSON values are the same: the same members with the same values, arrays in the same order. */
+function sameJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    for (let index = 0; index < a.length; index++) if (!sameJson(a[index], b[index])) return false;
+    return true;
+  }
+  if (Array.isArray(b)) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const key of keys) {
+    if (!Object.hasOwn(b, key)) return false;
+    if (!sameJson((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) return false;
+  }
+  return true;
+}
+
+/**
+ * The members of `next` that are the same as those of `previous` take their objects from `previous`, and
+ * `next` as a whole is `previous` when every member is. Members of `byIdentity` are compared as objects only,
+ * since they may be large and commands replace them rather than change them.
+ */
+function share<T extends object>(previous: T, next: T, byIdentity: readonly string[]): T {
+  const before = previous as Record<string, unknown>;
+  const after = next as Record<string, unknown>;
+  let same = Object.keys(before).length === Object.keys(after).length;
+  for (const key of Object.keys(after)) {
+    const value = after[key];
+    if (!Object.hasOwn(before, key)) {
+      same = false;
+      continue;
+    }
+    const old = before[key];
+    if (value !== old && !byIdentity.includes(key) && sameJson(value, old)) after[key] = old;
+    if (after[key] !== old) same = false;
+  }
+  return same ? previous : next;
+}
+
+/**
+ * One command being applied. The document and the session start as shallow copies of the state's; a command
+ * replaces their members, or copies a member with `own` before it changes it, so that what it does not change
+ * stays the state's own and costs nothing to keep (an undo history of a million updates is not copied for a
+ * move of the active cell).
+ */
 class Run {
   readonly context: CommandContext;
+  readonly state: GridState;
   document: GridDocument;
   session: GridSession;
   readonly requests: CommandRequest[] = [];
   output: unknown;
-  private readonly loaded = new Map<number, { key?: RowKey; values: Map<string, JsonValue> }>();
+  private readonly lookup: (row: number) => LoadedRow | undefined;
 
   constructor(state: GridState, context: CommandContext) {
     this.context = context;
-    this.document = structuredClone(state.document);
-    this.session = structuredClone(state.session);
-    const viewNames = context.view.columns.map((column) => column.name);
-    for (const block of context.rows ?? []) {
-      const names = block.columns ?? viewNames;
-      block.values.forEach((values, offset) => {
-        const row = block.start + offset;
-        let entry = this.loaded.get(row);
-        if (!entry) {
-          entry = { values: new Map() };
-          this.loaded.set(row, entry);
-        }
-        const key = block.keys?.[offset];
-        if (key !== undefined && key !== null) entry.key = key;
-        names.forEach((name, index) => {
-          if (index < values.length) entry.values.set(name, values[index]);
-        });
-      });
+    this.state = state;
+    this.document = { ...state.document };
+    this.session = { ...state.session };
+    this.lookup = context.lookup ?? blockLookup(context.rows ?? [], context.view.columns);
+  }
+
+  /** A member of the session to change: a copy of the state's, made once per command. */
+  own<K extends "active" | "anchor" | "focus" | "scroll" | "checked" | "editor" | "selection" | "history">(
+    member: K,
+  ): NonNullable<GridSession[K]> {
+    const value = this.session[member];
+    if (value === undefined) throw new Error(`The session has no ${member}.`);
+    if (value !== this.state.session[member]) return value as NonNullable<GridSession[K]>;
+    let copy: unknown;
+    if (member === "history") {
+      // Steps are never changed, only added and removed.
+      const history = value as NonNullable<GridSession["history"]>;
+      copy = { undo: [...history.undo], redo: [...history.redo] };
+    } else if (member === "checked") {
+      const checked = value as Checked;
+      copy = { ...checked, keys: [...checked.keys] };
+    } else {
+      copy = structuredClone(value);
     }
+    this.session[member] = copy as GridSession[K];
+    return copy as NonNullable<GridSession[K]>;
   }
 
   get plan(): Plan {
@@ -381,8 +569,26 @@ class Run {
     return Math.max(0, this.rowCount - 1);
   }
 
+  /** The names of the displayed columns and their display positions, kept while the settings and the view stay. */
+  displayedIndex(): { columns: string[]; index: Map<string, number> } {
+    const settings = this.document.columns ?? NO_SETTINGS;
+    const view = this.context.view.columns;
+    let byView = displayedCache.get(settings);
+    if (!byView) {
+      byView = new WeakMap();
+      displayedCache.set(settings, byView);
+    }
+    let entry = byView.get(view);
+    if (!entry) {
+      const columns = displayedColumns(this.document, view).map((item) => item.column.name);
+      entry = { columns, index: new Map(columns.map((name, position) => [name, position])) };
+      byView.set(view, entry);
+    }
+    return entry;
+  }
+
   displayed(): string[] {
-    return displayedColumns(this.document, this.context.view.columns).map((item) => item.column.name);
+    return this.displayedIndex().columns;
   }
 
   viewColumn(name: string): Column | undefined {
@@ -496,8 +702,7 @@ class Run {
   // ----- the selection -----
 
   grid(): Grid {
-    const columns = this.displayed();
-    const index = new Map(columns.map((name, position) => [name, position]));
+    const { columns, index } = this.displayedIndex();
     const clampRow = (row: number) => Math.min(row, this.lastRow);
     const stored = this.session.active;
     const active = stored ? { row: clampRow(stored.row), col: index.get(stored.column) ?? 0 } : { row: 0, col: 0 };
@@ -617,17 +822,17 @@ class Run {
   /** Fits the session to the view and its displayed columns (§5.4, step 3). */
   fit() {
     const session = this.session;
-    const columns = this.displayed();
-    const index = new Map(columns.map((name, position) => [name, position]));
+    const { columns, index } = this.displayedIndex();
     const clampRow = (row: number) => Math.min(row, this.lastRow);
     if (session.active) {
-      session.active.row = clampRow(session.active.row);
-      if (!index.has(session.active.column) && columns.length > 0) session.active.column = columns[0];
+      const active = this.own("active");
+      active.row = clampRow(active.row);
+      if (!index.has(active.column) && columns.length > 0) active.column = columns[0];
     }
     for (const member of ["anchor", "focus"] as const) {
       const cell = session[member];
       if (!cell) continue;
-      if (index.has(cell.column)) cell.row = clampRow(cell.row);
+      if (index.has(cell.column)) this.own(member).row = clampRow(cell.row);
       else delete session[member];
     }
     if (session.selection) {
@@ -640,8 +845,9 @@ class Run {
       else delete session.selection;
     }
     if (session.scroll) {
-      session.scroll.row = clampRow(session.scroll.row);
-      if (session.scroll.column !== undefined && !index.has(session.scroll.column)) delete session.scroll.column;
+      const scroll = this.own("scroll");
+      scroll.row = clampRow(scroll.row);
+      if (scroll.column !== undefined && !index.has(scroll.column)) delete scroll.column;
     }
     if (session.editor && (!index.has(session.editor.column) || session.editor.row >= this.rowCount)) {
       delete session.editor;
@@ -659,8 +865,8 @@ class Run {
     const columns = new Set<string>();
     for (const { cells, keyed } of groups) {
       for (const cell of cells) {
-        const entry = this.loaded.get(cell.row);
-        if (!entry?.values.has(cell.column)) {
+        const entry = this.lookup(cell.row);
+        if (!entry?.has(cell.column)) {
           rows.add(cell.row);
           columns.add(cell.column);
         } else if (keyed && entry.key === undefined) {
@@ -674,15 +880,15 @@ class Run {
   }
 
   valueAt(cell: Target): JsonValue {
-    return this.loaded.get(cell.row)?.values.get(cell.column) ?? null;
+    return this.lookup(cell.row)?.get(cell.column) ?? null;
   }
 
   loadedKey(row: number): RowKey | undefined {
-    return this.loaded.get(row)?.key;
+    return this.lookup(row)?.key;
   }
 
   keyAt(row: number): RowKey {
-    const key = this.loaded.get(row)?.key;
+    const key = this.lookup(row)?.key;
     if (key === undefined) throw new Error(`The key of row ${row} is not loaded.`);
     return key;
   }
@@ -840,7 +1046,7 @@ function insertBefore(list: ColumnSetting[], moving: ColumnSetting[], before: Co
   list.splice(at, 0, ...moving);
 }
 
-const HANDLERS: Record<string, Handler> = {
+const HANDLERS: Record<CommandName, Handler> = {
   // ----- the plan (§6.2) -----
 
   "sort.set"(run, command) {
@@ -1000,14 +1206,17 @@ const HANDLERS: Record<string, Handler> = {
         });
     }
     const session = run.session;
-    if (session.checked?.where) session.checked.where = renameExpr(session.checked.where, name, rename);
+    if (session.checked?.where) run.own("checked").where = renameExpr(session.checked.where, name, rename);
     if (viewScope) {
-      for (const cell of [session.active, session.anchor, session.focus, session.editor]) {
-        if (cell?.column === name) cell.column = rename;
+      for (const member of ["active", "anchor", "focus", "editor"] as const) {
+        if (session[member]?.column === name) run.own(member).column = rename;
       }
-      if (session.scroll?.column === name) session.scroll.column = rename;
-      for (const range of session.selection ?? []) {
-        if (range.columns !== "all") range.columns = range.columns.map((column) => (column === name ? rename : column));
+      if (session.scroll?.column === name) run.own("scroll").column = rename;
+      if (session.selection) {
+        for (const range of run.own("selection")) {
+          if (range.columns !== "all")
+            range.columns = range.columns.map((column) => (column === name ? rename : column));
+        }
       }
     }
   },
@@ -1347,9 +1556,8 @@ const HANDLERS: Record<string, Handler> = {
   "edit.change"(run, command) {
     takes(command, ["text"]);
     const text = stringArgument(command, "text");
-    const editor = run.session.editor;
-    if (!editor) fail("", "no_editor", "No cell is being edited.");
-    editor.text = text;
+    if (!run.session.editor) fail("", "no_editor", "No cell is being edited.");
+    run.own("editor").text = text;
   },
 
   "edit.cancel"(run, command) {
@@ -1638,15 +1846,17 @@ const HANDLERS: Record<string, Handler> = {
     const session = run.session;
     const revision = run.context.revision;
     if (session.revision !== undefined && session.revision !== revision) {
-      if (session.checked) session.checked.keys = session.checked.keys.filter((key) => !("rowId" in key));
-      if (session.active?.key && "rowId" in session.active.key) delete session.active.key;
+      if (session.checked) {
+        session.checked = { ...session.checked, keys: session.checked.keys.filter((key) => !("rowId" in key)) };
+      }
+      if (session.active?.key && "rowId" in session.active.key) delete run.own("active").key;
       delete session.history;
       delete session.editor;
     }
     session.revision = revision;
     if (session.view !== undefined && session.view !== hash) {
-      const active = session.active;
-      if (active) {
+      if (session.active) {
+        const active = run.own("active");
         const key = active.key;
         const found = key ? positions.find((item) => sameKey(item.key, key)) : undefined;
         const row = found?.row ?? 0;
@@ -1690,7 +1900,7 @@ const HANDLERS: Record<string, Handler> = {
         };
       }),
     );
-    const history = run.session.history ?? { undo: [], redo: [] };
+    const history = run.session.history ? run.own("history") : { undo: [], redo: [] };
     history.redo = [];
     if (updates.length > HISTORY_LIMITS.updates) {
       delete run.session.history;
@@ -1706,18 +1916,16 @@ const HANDLERS: Record<string, Handler> = {
 
   "history.undone"(run, command) {
     takes(command, []);
-    const history = run.session.history;
-    const step = history?.undo.pop();
-    if (!history || !step) fail("", "nothing", "There is nothing to undo.");
-    history.redo.push(step);
+    if (!run.session.history?.undo.length) fail("", "nothing", "There is nothing to undo.");
+    const history = run.own("history");
+    history.redo.push(history.undo.pop() as HistoryStep);
   },
 
   "history.redone"(run, command) {
     takes(command, []);
-    const history = run.session.history;
-    const step = history?.redo.pop();
-    if (!history || !step) fail("", "nothing", "There is nothing to redo.");
-    history.undo.push(step);
+    if (!run.session.history?.redo.length) fail("", "nothing", "There is nothing to redo.");
+    const history = run.own("history");
+    history.undo.push(history.redo.pop() as HistoryStep);
   },
 
   "history.clear"(run, command) {
@@ -1779,12 +1987,18 @@ export function applyCommand(state: GridState, command: unknown, context: Comman
   if (!isObject(command) || typeof command.command !== "string") {
     fail("/command", "syntax", "A command is { command, …arguments }.");
   }
-  const handler = Object.hasOwn(HANDLERS, command.command) ? HANDLERS[command.command] : undefined;
+  const handler = Object.hasOwn(HANDLERS, command.command) ? HANDLERS[command.command as CommandName] : undefined;
   if (!handler) fail("/command", "unknown_command", `There is no command "${command.command}".`);
   const run = new Run(state, context);
   handler(run, command as Command);
   run.tidy();
-  const result: CommandResult = { document: run.document, session: run.session, requests: run.requests };
+  const result: CommandResult = {
+    // Members are compared by value, so that a command that gives one again unchanged keeps its object; the
+    // history only by identity, since it may hold a million updates and only history commands replace it.
+    document: share(state.document, run.document, []),
+    session: share(state.session, run.session, ["history"]),
+    requests: run.requests,
+  };
   if (run.output !== undefined) result.output = run.output;
   return result;
 }
