@@ -47,3 +47,24 @@ export function pivotColumnFormats(
   }
   return labeled;
 }
+
+type PivotGrouping = Parameters<typeof pivotColumnFormats>[0];
+
+/**
+ * The header groups and labels of a grid of groups, made again for each result of its source: the
+ * groups are read again when the table changes or the grid reloads, and a cross tabulation may then have
+ * other generated columns. While the groups are read again (no result), the last ones stay.
+ */
+export function pivotHeaders(
+  grouping: PivotGrouping,
+  previous: { result: GroupResult; columnGroups?: ColumnGroup[]; columnFormats?: Record<string, ColumnFormat> } | null,
+  formats: Record<string, ColumnFormat> | undefined,
+) {
+  const result = grouping.source.result ?? previous?.result ?? null;
+  if (!result) return null;
+  return {
+    result,
+    columnGroups: pivotColumnGroups(result),
+    columnFormats: pivotColumnFormats({ ...grouping, source: { result } }, formats),
+  };
+}

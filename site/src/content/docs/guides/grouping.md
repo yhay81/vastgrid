@@ -41,7 +41,8 @@ The grid offers the features only when the source reports `capabilities.group`.
   `avg` take numeric columns; `min` and `max` also take text, booleans, dates, times and UUIDs. Null
   values are left out, and so are NaN and infinities of floating-point columns. A function over no values
   is blank, except `count`, which is 0.
-- **Order**: groups are sorted by the keys ascending, blanks (null and empty text) last. Sorting a column
+- **Order**: groups are sorted by the keys ascending, blanks (null and empty text) last. Floating-point
+  keys that are not finite sort as in DuckDB: -Infinity first, then the numbers, Infinity and NaN. Sorting a column
   of the grouped table sorts the groups by it, blanks last in both directions, ties by the keys.
 - **Types and precision**: `count` is an integer. `sum` of integers is an exact integer, also beyond
   2^53 (it arrives as text then); `sum` of decimals is an exact decimal with the column's scale; `sum` of
@@ -144,5 +145,8 @@ for a second grid or for your own UI:
 ```tsx
 <DataGrid source={new GroupedSource(source, { keys: [0], aggregates: [{ fn: "count" }], query })} />
 ```
+
+A `GroupedSource` reads its groups again when the base table reports a change or a new `revision`;
+`reload()` makes it read them again otherwise (the grid's `reload()` and `reloadKey` call it).
 
 The [protocol](/reference/protocol/#groups-and-totals) defines the request and the result exactly.

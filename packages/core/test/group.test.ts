@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { ArraySource } from "../src/array-source.ts";
 import { parseGridState } from "../src/grid-state.ts";
 import { GroupedSource } from "../src/grouped-source.ts";
-import type { TableChangeListener } from "../src/source.ts";
+import type { TableChangeListener, TableSource } from "../src/source.ts";
 import type { GroupRequest } from "../src/types.ts";
 
 function orders() {
@@ -269,4 +269,28 @@ test("states keep formulas, grouping, totals and both frozen sides together", ()
   assert.deepEqual(state, value);
   // A state saved before grouping, formulas and right freezing still reads.
   assert.deepEqual(parseGridState({ version: 1, frozenColumns: 2 }), { version: 1, frozenColumns: 2 });
+});
+
+test("a grouped source reads its groups again on reload, and for a new revision of the base", async () => {
+  let current = new ArraySource({ columns: ["k"], rows: [["a"], ["b"]] });
+  let revision: string | undefined;
+  // A base without `subscribe`: it changes without telling.
+  const base: TableSource = {
+    info: async () => ({ ...(await current.info()), ...(revision ? { revision } : {}) }),
+    createView: (query) => current.createView(query),
+    readRows: (request) => current.readRows(request),
+    group: (request) => current.group(request),
+  };
+  const grouped = new GroupedSource(base, { keys: [0], aggregates: [{ fn: "count" }] });
+  const first = await grouped.info();
+  assert.equal(first.rowCount, 2);
+  current = new ArraySource({ columns: ["k"], rows: [["a"], ["b"], ["c"]] });
+  assert.equal((await grouped.info()).rowCount, 2, "nothing says the table changed");
+  grouped.reload();
+  const reloaded = await grouped.info();
+  assert.equal(reloaded.rowCount, 3);
+  assert.notEqual(reloaded.revision, first.revision);
+  current = new ArraySource({ columns: ["k"], rows: [["a"]] });
+  revision = "2";
+  assert.equal((await grouped.info()).rowCount, 1, "a new revision is grouped again");
 });

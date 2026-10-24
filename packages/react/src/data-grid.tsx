@@ -60,7 +60,7 @@ import { CopyRangesError, CopyTooLargeError, GridController, type Hit, ViewBuild
 import { DetailTracker, detailKeyAction } from "./detail.js";
 import type { GridCellEvent, GridColumnsEvent, GridRowSelectionEvent, GridSelectionEvent } from "./events.js";
 import { exportSupport, type GridExportOptions, offeredFormats } from "./export.js";
-import { pivotColumnFormats, pivotColumnGroups } from "./grouping.js";
+import { pivotHeaders } from "./grouping.js";
 import { countFormat, numberFormat } from "./labels.js";
 import { type Messages, messagesFor } from "./messages.js";
 import { CanvasRenderer } from "./renderer.js";
@@ -305,6 +305,12 @@ function rowColumns(info: TableInfo, state: GridState) {
   };
 }
 
+/** Reads the table again; a grid of groups reads its groups again, also when the table did not say it changed. */
+function reloadTable(controller: GridController) {
+  if (controller.source instanceof GroupedSource) controller.source.reload();
+  controller.reload();
+}
+
 /** A state with the parts of `next` that it has, over `current`. */
 function mergeState(current: GridState, next: GridState): GridState {
   const merged: GridState = { ...current, ...next };
@@ -405,14 +411,20 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   // The grid of groups has columns of its own: the table's `columnGroups` do not apply to it. A cross
   // tabulation groups its generated columns under their column-axis values instead, each labeled by its
   // aggregate, and the key columns are frozen at the left (until its own state says otherwise).
-  const gridColumnGroups = useMemo(
-    () => (grouped ? pivotColumnGroups(grouped.source.result) : columnGroups),
-    [grouped, columnGroups],
-  );
-  const gridColumnFormats = useMemo(
-    () => (grouped ? pivotColumnFormats(grouped, columnFormats) : columnFormats),
-    [grouped, columnFormats],
-  );
+  // They are made again for each result: reading the groups again (the table changed, or the grid was
+  // reloaded) may add or remove generated columns.
+  const lastHeaders = useRef<{ grouping: Grouping; headers: ReturnType<typeof pivotHeaders> } | null>(null);
+  const groupedResult = grouped?.source.result ?? null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: groupedResult is the trigger; the headers read it from grouped.
+  const headers = useMemo(() => {
+    if (!grouped) return null;
+    const previous = lastHeaders.current?.grouping === grouped ? lastHeaders.current.headers : null;
+    const made = pivotHeaders(grouped, previous, columnFormats);
+    lastHeaders.current = { grouping: grouped, headers: made };
+    return made;
+  }, [grouped, groupedResult, columnFormats]);
+  const gridColumnGroups = grouped ? headers?.columnGroups : columnGroups;
+  const gridColumnFormats = grouped ? headers?.columnFormats : columnFormats;
 
   // One controller per source (and per grouping). Options that can change later are applied in effects below.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the other options are applied without recreating the grid.
@@ -732,7 +744,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       firstReload.current = false;
       return;
     }
-    controller.reload();
+    reloadTable(controller);
   }, [reloadKey, controller]);
 
   // Event props are read when an event happens, so that new functions on each render need no new subscription.
@@ -832,7 +844,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     ref,
     () => ({
       focus: () => scrollerRef.current?.focus(),
-      reload: () => controller.reload(),
+      reload: () => reloadTable(controller),
       getQuery: () => (grouped ? grouped.query : controller.query),
       setQuery: (query) => void controller.setQuery(query),
       getState: () => fullState(controller.getState()),
@@ -1699,7 +1711,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   // Retrying reads the table again after a load error, and builds the view again after a view error.
   const retry =
     c.loadError || c.info?.status === "error"
-      ? () => controller.reload()
+      ? () => reloadTable(controller)
       : c.viewError
         ? () => void controller.setQuery(controller.query)
         : null;

@@ -290,9 +290,26 @@ function newState(scale: number): AggregateState {
   return { count: 0, exact: 0n, scale, float: 0, best: undefined, rank: undefined };
 }
 
+/** A float that is not finite (`NaN`, `Infinity`, `-Infinity`, as a number or as its wire text), or null. */
+function nonFinite(value: CellValue, type: ColumnType): number | null {
+  if (type !== "float" || value === null || typeof value === "boolean") return null;
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isNaN(number) || number === Number.POSITIVE_INFINITY || number === Number.NEGATIVE_INFINITY
+    ? number
+    : null;
+}
+
+/** A key value as engines send it: floats that are not finite as their text (`NaN`, `Infinity`). */
+function keyValue(value: CellValue, type: ColumnType): CellValue {
+  const special = nonFinite(value, type);
+  return special === null ? value : String(special);
+}
+
 /** Text that identifies a key value: numbers by value (1.5 and "1.50" are one group), others by type and text. */
 function keyText(value: CellValue, type: ColumnType): string {
   if (value === null) return "n";
+  const special = nonFinite(value, type);
+  if (special !== null) return `f${special}`;
   if (isNumericType(type)) {
     const exact = exactNumber(value, type);
     if (exact !== null) {
@@ -376,7 +393,7 @@ export class GroupAccumulator {
         const id = parts.length === 1 ? parts[0] : JSON.stringify(parts);
         group = this.groups.get(id);
         if (!group) {
-          group = this.newGroup(this.keyAt.map((at) => values[at][row] ?? null));
+          group = this.newGroup(this.keyAt.map((at, index) => keyValue(values[at][row] ?? null, keyTypes[index])));
           this.groups.set(id, group);
         }
       }
@@ -388,7 +405,7 @@ export class GroupAccumulator {
         if (!this.combinations.has(cell)) {
           this.combinations.set(
             cell,
-            this.pivotAt.map((at) => values[at][row] ?? null),
+            this.pivotAt.map((at, index) => keyValue(values[at][row] ?? null, pivotTypes[index])),
           );
           // Refused as soon as it is known, without reading the rest.
           if (this.combinations.size > limit)
@@ -552,9 +569,28 @@ export function groupSort(request: Pick<GroupRequest, "keys" | "sort">): SortKey
   return request.sort?.length ? request.sort : request.keys.map((_, column) => ({ column, direction: "asc" }));
 }
 
+/**
+ * A value's rank in the order of the engines: numbers by value, with floats that are not finite as
+ * DuckDB orders them (-Infinity first, Infinity after every number, NaN after Infinity). Null is blank,
+ * and so is the empty string of a text column (and a value of a numeric column that is not a number).
+ */
 function rankOf(value: CellValue, type: ColumnType): OrderedValue {
   if (value === null || !isNumericType(type)) return value;
+  const special = nonFinite(value, type);
+  if (special !== null) return special;
   return exactNumber(value, type);
+}
+
+function isBlankRank(rank: OrderedValue, type: ColumnType) {
+  return rank === null || (rank === "" && type === "string");
+}
+
+/** Compares ranks of one column; NaN comes after every other value, as in DuckDB. */
+function compareRanks(left: OrderedValue, right: OrderedValue) {
+  const leftNaN = typeof left === "number" && Number.isNaN(left);
+  const rightNaN = typeof right === "number" && Number.isNaN(right);
+  if (leftNaN || rightNaN) return leftNaN === rightNaN ? 0 : leftNaN ? 1 : -1;
+  return compareValues(left, right);
 }
 
 /**
@@ -570,15 +606,16 @@ export function sortGroupRows(
   const types = columns.map((column) => column.type);
   rows.sort((a, b) => {
     for (const key of sort) {
-      const left = rankOf(a[key.column], types[key.column]);
-      const right = rankOf(b[key.column], types[key.column]);
-      const leftBlank = left === null || left === "";
-      const rightBlank = right === null || right === "";
+      const type = types[key.column];
+      const left = rankOf(a[key.column], type);
+      const right = rankOf(b[key.column], type);
+      const leftBlank = isBlankRank(left, type);
+      const rightBlank = isBlankRank(right, type);
       if (leftBlank || rightBlank) {
         if (leftBlank && rightBlank) continue;
         return leftBlank ? 1 : -1;
       }
-      const order = compareValues(left, right);
+      const order = compareRanks(left, right);
       if (order !== 0) return key.direction === "desc" ? -order : order;
     }
     for (let column = 0; column < keyCount; column++) {
@@ -588,7 +625,7 @@ export function sortGroupRows(
         if (left === right) continue;
         return left === null ? 1 : -1;
       }
-      const order = compareValues(left, right);
+      const order = compareRanks(left, right);
       if (order !== 0) return order;
     }
     return 0;

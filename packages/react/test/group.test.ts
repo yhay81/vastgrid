@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { ArraySource, type GridState, GroupedSource, type GroupRequest, type TableSource } from "vastgrid-core";
 import { totalText } from "../src/components/totals-row.tsx";
 import { GridController } from "../src/controller.ts";
-import { pivotColumnFormats, pivotColumnGroups } from "../src/grouping.ts";
+import { pivotColumnFormats, pivotColumnGroups, pivotHeaders } from "../src/grouping.ts";
 
 const options = {
   rowHeight: 24,
@@ -213,6 +213,66 @@ test("a cross tabulation's grid groups its generated columns under their values 
     );
     assert.equal(grid.frozen, 1);
     assert.equal(grid.getState().frozenColumns, 1);
+  } finally {
+    grid.dispose();
+  }
+});
+
+test("a grid of groups reads them again on reload, with the headers of the new cross tabulation", async () => {
+  const schema = [
+    { name: "city", type: "string" as const },
+    { name: "year", type: "integer" as const },
+  ];
+  let current = new ArraySource({
+    columns: schema,
+    rows: [
+      ["Tokyo", 2024],
+      ["Osaka", 2024],
+    ],
+  });
+  // A table that changes without telling (no `subscribe`, no `revision`), as a file read again with `reloadKey`.
+  const base: TableSource = {
+    info: () => current.info(),
+    createView: (query) => current.createView(query),
+    readRows: (request) => current.readRows(request),
+    group: (request) => current.group(request),
+  };
+  const draft = { keys: [1], aggregates: [{ fn: "count" as const }], pivot: [0] };
+  const source = new GroupedSource(base, { ...draft, pivot: { columns: draft.pivot } });
+  await source.load();
+  const grouping = { source, draft, schema };
+  let headers = pivotHeaders(grouping, null, undefined);
+  const grid = new GridController(source, {
+    ...options,
+    columnGroups: headers?.columnGroups,
+    columnFormats: headers?.columnFormats,
+  });
+  grid.start();
+  await until(() => grid.info?.status === "ready");
+  try {
+    assert.equal(grid.schema.length, 3);
+    current = new ArraySource({
+      columns: schema,
+      rows: [
+        ["Tokyo", 2024],
+        ["Osaka", 2024],
+        ["Nagoya", 2024],
+      ],
+    });
+    // What the grid does on reload (`reloadTable`): the groups are read again.
+    source.reload();
+    // While they are read again, the last headers stay.
+    assert.equal(pivotHeaders(grouping, headers, undefined)?.columnGroups?.length, 2);
+    grid.reload();
+    await until(() => grid.info?.status === "ready" && grid.schema.length === 4);
+    headers = pivotHeaders(grouping, headers, undefined);
+    grid.setColumnGroups(headers?.columnGroups);
+    grid.setColumnFormats(headers?.columnFormats);
+    assert.deepEqual(
+      grid.groupSpans()[0].map((span) => span.group.name),
+      ["Nagoya", "Osaka", "Tokyo"],
+    );
+    assert.equal(grid.columnLabel(1), "count(*)");
   } finally {
     grid.dispose();
   }

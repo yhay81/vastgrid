@@ -52,6 +52,8 @@ export class GroupedSource implements TableSource {
   private readonly views = new Map<string, { table: ArraySource; view: string | null }>();
   private nextView = 1;
   private revision = 0;
+  /** The base table's revision when the shown groups were read. */
+  private readRevision: string | undefined;
 
   constructor(base: TableSource, options: GroupedSourceOptions) {
     this.base = base;
@@ -102,6 +104,8 @@ export class GroupedSource implements TableSource {
 
   async info(signal?: AbortSignal): Promise<TableInfo> {
     const base = await this.base.info(signal);
+    // Groups of other data: a new revision of the base table is grouped again.
+    if ((this.shown || this.loading) && base.revision !== this.readRevision) this.invalidate();
     if (base.status !== "ready") {
       return {
         columns: [],
@@ -114,6 +118,7 @@ export class GroupedSource implements TableSource {
     }
     let result: GroupResult;
     try {
+      if (!this.shown && !this.loading) this.readRevision = base.revision;
       result = await this.load(signal);
     } catch (error) {
       if (signal?.aborted) throw error;
@@ -218,15 +223,28 @@ export class GroupedSource implements TableSource {
     return table.group({ ...request, view }, signal);
   }
 
+  /**
+   * Forgets the groups, so that the next `info` reads them again (under a new `revision`): for base
+   * tables that changed without telling (`subscribe`) or changing their `revision`, for example when a
+   * grid is reloaded. A new revision of the base table does this by itself.
+   */
+  reload() {
+    this.invalidate();
+  }
+
+  private invalidate() {
+    this.shown = null;
+    this.loading = null;
+    this.sorted.clear();
+    this.views.clear();
+    this.revision++;
+  }
+
   /** Follows the base source's changes: the groups are read again on the next `info`. */
   subscribe(listener: TableChangeListener): () => void {
     if (!this.base.subscribe) return () => undefined;
     return this.base.subscribe(() => {
-      this.shown = null;
-      this.loading = null;
-      this.sorted.clear();
-      this.views.clear();
-      this.revision++;
+      this.invalidate();
       listener({ revision: String(this.revision) });
     });
   }
