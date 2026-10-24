@@ -277,3 +277,31 @@ test("the handler writes cells, and other clients learn of them", async () => {
   assert.deepEqual(rows.columns[0], ["Apricot"]);
   await assert.rejects(writer.updateCells({ updates: [{ row: 0, column: 2, value: "x" }] }), { code: "invalid_value" });
 });
+
+test("an undo of a decimal or float cell finds the value it wrote, as the column holds it", async () => {
+  const instance = await DuckDBInstance.create(":memory:");
+  const connection = await instance.connect();
+  const file = path.join(workspace, "precise.parquet");
+  await connection.run(
+    `COPY (SELECT 2.250::DECIMAL(10,3) AS d, 0.5::FLOAT AS f, 1.25::DOUBLE AS x) TO '${file}' (FORMAT parquet)`,
+  );
+  connection.closeSync();
+  instance.closeSync();
+  const table = await open("precise.parquet");
+  await table.updateCells({ updates: [{ row: 0, column: 0, value: "1.5", previous: "2.250" }] });
+  await table.updateCells({ updates: [{ row: 0, column: 1, value: 0.1, previous: 0.5 }] });
+  const [d, f] = (await table.readRows({ view: null, start: 0, end: 1, columns: [0, 1] })).columns;
+  assert.equal(d[0], "1.500");
+  assert.notEqual(f[0], 0.1, "a float holds fewer digits");
+  // Undo sends what the grid typed as the expected value; the source compares as the column's type.
+  await table.updateCells({ updates: [{ row: 0, column: 0, value: "2.250", previous: "1.5" }] });
+  await table.updateCells({ updates: [{ row: 0, column: 1, value: 0.5, previous: 0.1 }] });
+  // What was read works as well, and a value that differs is still a conflict.
+  await table.updateCells({ updates: [{ row: 0, column: 0, value: "3", previous: "2.250" }] });
+  await assert.rejects(table.updateCells({ updates: [{ row: 0, column: 2, value: 2, previous: 1.26 }] }), {
+    code: "edit_conflict",
+  });
+  await assert.rejects(table.updateCells({ updates: [{ row: 0, column: 0, value: 2, previous: "nonsense" }] }), {
+    code: "edit_conflict",
+  });
+});

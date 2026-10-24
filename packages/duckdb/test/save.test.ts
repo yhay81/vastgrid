@@ -265,3 +265,50 @@ test("formula columns follow written cells and are never saved into the file", a
   await table.saveEdits();
   assert.equal((await bytes("formulas.csv")).toString(), "item,qty,price\napple,3,120\npear,10,300\nfig,5,80\n");
 });
+
+test("dates and timestamps are saved in the format the file uses", async () => {
+  const dates = await open("dates.csv", "id,d\n1,25/12/2024\n2,13/01/2023\n");
+  assert.equal(dates.info().columns[1].type, "date");
+  await dates.updateCells({ updates: [{ row: 0, column: 1, value: "2024-12-26" }] });
+  await dates.saveEdits();
+  assert.equal((await bytes("dates.csv")).toString(), "id,d\n1,26/12/2024\n2,13/01/2023\n");
+  const stamps = await open("stamps.csv", "id,t\n1,25/12/2024 10:30:00\n2,13/01/2023 08:00:05\n");
+  assert.equal(stamps.info().columns[1].type, "timestamp");
+  await stamps.updateCells({ updates: [{ row: 1, column: 1, value: "2023-01-14 09:15:00" }] });
+  await stamps.saveEdits();
+  assert.equal(
+    (await bytes("stamps.csv")).toString(),
+    "id,t\n1,25/12/2024 10:30:00\n14/01/2023 09:15:00\n".replace("\n14", "\n2,14"),
+  );
+  // The saved files read back with the same types.
+  for (const [name, type] of [
+    ["dates.csv", "date"],
+    ["stamps.csv", "timestamp"],
+  ] as const) {
+    const copy = `reread-${name}`;
+    const table = await open(copy, await bytes(name));
+    assert.equal(table.info().columns[1].type, type);
+  }
+});
+
+test("a cell written back to the value the file has is no change: it is not saved again", async () => {
+  const content = "id,p,d\n1,1.50,25/12/2024\n2,2.25,13/01/2023\n";
+  const table = await open("revert.csv", content);
+  await table.updateCells({ updates: [{ row: 0, column: 1, value: 9 }] });
+  assert.equal(table.info().edits?.cells, 1);
+  // Undo: the value before, with the value written as the one expected.
+  await table.updateCells({ updates: [{ row: 0, column: 1, value: 1.5, previous: 9 }] });
+  assert.equal(table.info().edits?.cells, 0);
+  assert.equal((await table.saveEdits()).records, 0);
+  assert.equal((await bytes("revert.csv")).toString(), content);
+  // After a save, the file's value is the saved one: writing the old value back is a change again.
+  await table.updateCells({ updates: [{ row: 1, column: 1, value: 3 }] });
+  await table.saveEdits();
+  await table.updateCells({ updates: [{ row: 1, column: 1, value: 2.25 }] });
+  assert.equal(table.info().edits?.cells, 1);
+  await table.saveEdits();
+  assert.equal((await bytes("revert.csv")).toString(), "id,p,d\n1,1.50,25/12/2024\n2,2.25,13/01/2023\n");
+  await table.updateCells({ updates: [{ row: 1, column: 1, value: 2.25 }] });
+  assert.equal(table.info().edits?.cells, 0);
+  assert.deepEqual((await values(table, [1]))[0], [1.5, 2.25]);
+});

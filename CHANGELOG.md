@@ -11,6 +11,8 @@
   not saved (`file_changed`), a failed or cancelled save leaves it as it was, and only files at their real
   location in the allowed folders are saved. Compressed files, files read as irregular text, files with
   comments and other formats are refused (`save_unsupported`). The table keeps its revision and rows.
+  Edited dates and timestamps are written in the format DuckDB read the file with (`25/12/2024` stays
+  day first), and a cell written back to the file's value (for example by an undo) is not saved again.
 - `vastgrid-core`: `TableSource.saveEdits`, `capabilities.save`, `SaveResult`, the `save` request and the
   error codes `file_changed` and `save_unsupported`; `RemoteSource.saveEdits`.
 - `vastgrid`: while edited cells are not saved into a source that saves, a line above the status bar says
@@ -62,7 +64,8 @@
   `normalizeCellValue` check values without losing digits (64-bit integers and decimals stay text).
   `RowCache.invalidate()` reads rows again while showing the old ones, and `RowCache.patch()` sets a
   loaded cell.
-- `vastgrid-duckdb`: `TableEngine` writes cells with `editable: true`. Written values are kept in the
+- `vastgrid-duckdb`: `TableEngine` writes cells with `editable: true`. The `previous` value of an update
+  is compared as the column's type, so that undoing a DECIMAL or FLOAT cell finds the value it wrote. Written values are kept in the
   engine, apart from the file, and every request (rows, views, statistics, summaries, find, exports)
   reads them; reading rows of a 5M-row table stays at 3–4 ms per block. Views that depend on a written
   column are dropped. A table with written cells is not closed to keep `maxTables`, nor opened again when

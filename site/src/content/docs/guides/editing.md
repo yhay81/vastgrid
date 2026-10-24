@@ -160,7 +160,8 @@ is nothing to do. Inside the cell editor, these keys undo typing in the editor i
   loaded or were cut for display, the grid reads their whole values, so that the write can be undone.
 - **Saving and failures.** Undo and redo wait until no write is saving or failed. An undo is a write like
   others: when it fails it shows Retry and Discard, and it moves in the history only once it is saved.
-- **Changes by others.** An undo carries the values it expects to find. When another user changed one of
+- **Changes by others.** An undo carries the values it expects to find, which the source compares as
+  the column's type (`1.5` matches a `DECIMAL(10,3)` holding `1.500`, and a `FLOAT` its nearest value). When another user changed one of
   the cells meanwhile, nothing is written (`edit_conflict`); the user can **Overwrite** or **Discard**.
 - **A new write** drops what could be redone. **A new revision** of the table (for example the file was
   read again) forgets the whole history, since row positions may name other records then.
@@ -201,7 +202,7 @@ exactly those 100 lines differ.
 | Byte order mark, header, lines before the header | Kept |
 | Records without edited cells | Kept, also with line breaks inside quotes |
 | Edited records | The edited fields written anew; the other fields, delimiters and the record's own line break kept |
-| An edited field | DuckDB's text of the value (`2024-01-31`, `12.50`, `true`), quoted with the file's quote when it holds the delimiter, a quote, an escape or a line break; quotes inside are doubled (or escaped with the file's escape); a blank is an empty field |
+| An edited field | DuckDB's text of the value (`12.50`, `true`); dates and timestamps in the format DuckDB read the file with (`25/12/2024` stays `dd/mm/yyyy`), and a format that would not read back the same value refuses the save. Quoted with the file's quote when it holds the delimiter, a quote, an escape or a line break; quotes inside are doubled (or escaped with the file's escape); a blank is an empty field |
 | A short record (fewer fields than columns) | Filled with empty fields up to the edited one |
 | Last line break | Kept as it was: present or absent |
 | Encoding | The file's: UTF-8 (with or without a byte order mark), UTF-16 (LE or BE, with its byte order mark), Shift_JIS, EUC-JP and Latin-1. A value the encoding cannot hold (for example an emoji in Shift_JIS) refuses the save (`invalid_value`). |
@@ -221,6 +222,9 @@ exactly those 100 lines differ.
   `.zst`), files DuckDB could read only as irregular text (all columns as text), files with comment lines,
   and files whose records do not match the table's rows (for example a file changed in a way the revision
   missed).
+
+A cell written back to the value the file holds (for example by an undo before saving) is no change:
+it does not count as unsaved, and its record is not written.
 
 After a save the table keeps its revision and row positions: checked rows, the undo history and the view
 stay. The cells count as saved (`edits.cells` is 0), and saving again writes only cells written since. A
