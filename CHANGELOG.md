@@ -105,6 +105,23 @@
 - `vastgrid-browser`: files at a URL are watched while a grid subscribes, by a `HEAD` request comparing
   their `ETag`, `Last-Modified` or size every `changeInterval` milliseconds (5,000); a changed file is
   opened again. Local files cannot be watched.
+- `vastgrid-core`: `ViewQuery.where`, a condition tree (`FilterNode`: filters and `and` / `or` groups)
+  that is combined with `filters` by AND. It expresses OR across columns, nested groups and several
+  conditions on one column. `parseProtocolRequest` validates it (at most 8 levels, 256 groups and
+  conditions and 100,000 listed values) and drops empty groups; `TableCapabilities.conditions` tells
+  whether a source evaluates trees. `ArraySource`, `RemoteSource`, saved states (`parseGridState`,
+  `resolveGridState` map the tree's columns by name) and the helpers `matchesFilterNode`,
+  `pruneFilterNode`, `mapFilterNode`, `filterLeaves`, `queryFilters` and `queryCondition` support it.
+- `vastgrid-core`: in `ArraySource` value lists, `""` no longer matches a missing value (`null`), and
+  numbers match by value (`"1.5"` matches the decimal `1.50`), as the DuckDB engine does.
+- `vastgrid-duckdb`: evaluates condition trees in parameterized SQL, with the same meaning for blanks,
+  text, numbers, decimals, 64-bit integers, dates and times as `ArraySource`. Value lists that mix
+  numbers and text on 64-bit integer columns compare exactly.
+- `vastgrid-browser`: evaluates condition trees when the table can be scanned (`fullScan`).
+- `vastgrid`: a condition builder ("Conditions…" in the toolbar, and "Add condition (AND / OR)" in a
+  column's filter panel) builds AND / OR groups, and the toolbar shows the conditions to change or remove
+  them. Columns used in the conditions show the filter mark. The builder is offered only for sources that
+  report `capabilities.conditions`. The controller has `condition`, `setCondition()` and `isFiltered()`.
 
 ## 0.1.1 — 2026-10-23
 

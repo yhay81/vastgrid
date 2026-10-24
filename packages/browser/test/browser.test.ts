@@ -168,6 +168,23 @@ test("a CSV reads, sorts and filters as the DuckDB engine does", async () => {
     { search: "LINE TWO" },
     { search: "2024-02" },
     { filters: [filters[3]], sort: [{ column: 1, direction: "desc" }] },
+    // Condition trees: OR across columns, nesting, several conditions on one column, with filters.
+    { where: { type: "or", filters: [filters[0], filters[5]] } },
+    {
+      filters: [filters[10]],
+      where: { type: "or", filters: [filters[9], { type: "and", filters: [filters[3], filters[4]] }] },
+    },
+    {
+      where: {
+        type: "and",
+        filters: [
+          { type: "compare", column: 2, op: "ge", value: 0.25 },
+          { type: "compare", column: 2, op: "lt", value: 12 },
+          { type: "or", filters: [filters[6], filters[8]] },
+        ],
+      },
+      sort: [{ column: 2, direction: "asc" }],
+    },
   ]);
   await assert.rejects(
     browser.createView({ filters: [{ type: "compare", column: 2, op: "gt", value: "abc" }] }),
@@ -247,6 +264,22 @@ test("Parquet values, sorts and filters match the DuckDB engine, also for decima
     { filters: [{ type: "values", column: 1, values: ["a", "Apple"] }] },
     { filters: [{ type: "text", column: 1, op: "startsWith", value: "a" }] },
     { search: "apple" },
+    {
+      where: {
+        type: "or",
+        filters: [
+          { type: "between", column: 7, min: "9007199254740992" },
+          {
+            type: "and",
+            filters: [
+              { type: "values", column: 1, values: [""] },
+              { type: "values", column: 6, values: [false] },
+            ],
+          },
+          { type: "compare", column: 2, op: "eq", value: "100" },
+        ],
+      },
+    },
   ];
   const { browser } = await compareWithDuckDB("mixed.parquet", queries);
   const info = await browser.info();

@@ -34,6 +34,7 @@ import {
 import { convertToUtf8, detectEncoding } from "./encoding.js";
 import {
   columnTypeOf,
+  conditionExpression,
   filterExpression,
   orderTerms,
   Parameters,
@@ -616,6 +617,7 @@ export class OpenTable {
         aggregate: ready,
         find: ready,
         export: ready,
+        conditions: ready,
       },
     };
   }
@@ -993,6 +995,8 @@ export class OpenTable {
   /** Builds the WHERE clause of a query. */
   private where(query: ViewQuery, params: Parameters) {
     const parts = (query.filters ?? []).map((filter) => filterExpression(filter, this.columns, params));
+    const condition = conditionExpression(query.where, this.columns, params);
+    if (condition) parts.push(condition);
     if (query.search?.trim()) parts.push(searchExpression(query.search.trim(), this.columns, params));
     return parts.length > 0 ? `WHERE ${parts.join(" AND ")}` : "";
   }

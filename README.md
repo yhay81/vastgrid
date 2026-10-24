@@ -17,7 +17,7 @@ hundreds of millions of rows — and Excel workbooks, and works like a spreadshe
   past the browser's element-size limit, to billions of rows.
 - **A spreadsheet's way of working.** Range selection with the mouse and Excel's keyboard shortcuts,
   copy as TSV / HTML / Markdown, multi-column sort, filters with a searchable value list or conditions,
-  search across all columns, find (⌘F), column statistics, and a running count, sum, average, min and
+  AND / OR conditions across columns and nested groups, search across all columns, find (⌘F), column statistics, and a running count, sum, average, min and
   max of the selection.
 - **Bring your engine.** The grid talks to a `TableSource`. Use the DuckDB server engine for files on
   disk, `vastgrid-browser` for files opened in the browser and Parquet URLs, `ArraySource` for data already
@@ -202,7 +202,25 @@ const grid = useRef<DataGridHandle>(null);
 
 // Largest values of the third column first, only rows that contain "Tokyo".
 grid.current?.setQuery({ sort: [{ column: 2, direction: "desc" }], search: "Tokyo" });
+
+// (column 0 is Tokyo or column 1 is over 100,000) and column 2 is not "cancelled".
+grid.current?.setQuery({
+  filters: [{ type: "values", column: 2, values: ["cancelled"], exclude: true }],
+  where: {
+    type: "or",
+    filters: [
+      { type: "values", column: 0, values: ["Tokyo"] },
+      { type: "compare", column: 1, op: "gt", value: 100_000 },
+    ],
+  },
+});
 ```
+
+`filters` all apply; `where` is a condition tree of `and` and `or` groups (nested up to 8 levels) that
+also applies. In the grid, "Conditions…" in the toolbar and "Add condition (AND / OR)" in a column's filter
+panel build one, and the toolbar shows it with a button to remove it. Sources run condition trees when
+they report `capabilities.conditions` (the DuckDB engine, `vastgrid-browser` and `ArraySource` do); the
+grid leaves them out otherwise.
 
 ### Column formats
 

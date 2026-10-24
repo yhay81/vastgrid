@@ -130,6 +130,7 @@ interface TableInfo {
     aggregate: boolean;
     find: boolean;
     export: boolean;
+    conditions?: boolean; // evaluates `ViewQuery.where`; absent means false
   };
 }
 ```
@@ -140,6 +141,7 @@ interface TableInfo {
 interface ViewQuery {
   sort?: { column: number; direction: "asc" | "desc" }[]; // blanks last in both directions
   filters?: Filter[];                                     // all must match
+  where?: FilterNode;                                     // a condition tree, combined with filters by AND
   search?: string;                                        // any column contains it, ignoring case
 }
 
@@ -159,6 +161,9 @@ type Filter =
   /** Blank is `null` or an empty string. */
   | { type: "blank"; column: number; blank: boolean };
 
+/** `and`: every condition matches; `or`: at least one does. A group without conditions is left out. */
+type FilterNode = Filter | { type: "and" | "or"; filters: FilterNode[] };
+
 interface ViewInfo {
   id: string | null;      // null: the table in its original order
   rowCount: number;       // also while the view is building
@@ -176,6 +181,28 @@ the finished view (break ties by the position in the table). The grid shows them
 rest readable once the view is `ready`. Until then, rows past `readableRows` show as loading; selecting and
 scrolling work on every row, but copies and selection summaries that reach past them, find, and the
 statistics of a view that filters wait. A source that ignores the option answers once the view is ready.
+
+`where` adds what `filters` cannot express: OR across columns, nested groups and several conditions on
+one column. "(region is Tokyo or sales over 100,000) and status is not cancelled":
+
+```ts
+const query: ViewQuery = {
+  filters: [{ type: "values", column: 2, values: ["cancelled"], exclude: true }],
+  where: {
+    type: "or",
+    filters: [
+      { type: "values", column: 0, values: ["Tokyo"] },
+      { type: "compare", column: 1, op: "gt", value: 100_000 },
+    ],
+  },
+};
+```
+
+Each condition means what it means in `filters`. A source that evaluates `where` reports
+`capabilities.conditions`; the grid sends condition trees only to such sources, so sources written before
+condition trees existed keep working. A source can evaluate a tree with `matchesFilterNode(where, test)`,
+where `test` is its own check of one filter, as `ArraySource` does; the
+[protocol](/reference/protocol/#viewquery) has the limits on a tree's size.
 
 ## Rows
 
@@ -278,8 +305,12 @@ the error to reject with when a signal aborts, and `isAbortError(error)` recogni
 
 | Export | Description |
 | --- | --- |
-| `isEmptyQuery(query)` | Whether a query has no sort, filters or search. |
-| `filtersRows(query)` | Whether a query leaves out rows (filters or a search), rather than only sorting. |
+| `isEmptyQuery(query)` | Whether a query has no sort, filters, condition tree or search. |
+| `filtersRows(query)` | Whether a query leaves out rows (filters, a condition tree or a search), rather than only sorting. |
+| `matchesFilterNode(node, test)` | Whether a condition tree holds, given a check of one filter. |
+| `pruneFilterNode(node)`, `mapFilterNode(node, map)` | A tree without empty groups; a tree with its filters replaced or removed. |
+| `filterLeaves(node)`, `queryFilters(query)`, `queryCondition(query)` | The filters of a tree or a query; a query's `filters` and `where` as one tree. |
+| `isFilterGroup(node)` | Whether a node is an `and` or `or` group. |
 | `plainText(value)` | A value's text for the clipboard: no grouping, no truncation. |
 | `numericValue(value, type)` | A value as a JavaScript number, or `null`. |
 | `ValueFormatter` | Formats values for display in a locale, as the grid does. |

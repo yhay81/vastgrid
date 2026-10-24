@@ -1,3 +1,4 @@
+import { pruneFilterNode } from "./filter-tree.js";
 import type {
   AggregateRequest,
   ColumnStats,
@@ -85,12 +86,12 @@ export function abortError() {
   return new DOMException("The operation was aborted.", "AbortError");
 }
 
-/** Whether a query leaves the table as it is: no sort, filters or search. */
+/** Whether a query leaves the table as it is: no sort, filters, condition tree or search. */
 export function isEmptyQuery(query: ViewQuery) {
   return !query.sort?.length && !filtersRows(query);
 }
 
 /** Whether a query leaves out rows (with filters or a search) rather than only sorting them. */
 export function filtersRows(query: ViewQuery) {
-  return Boolean(query.filters?.length || query.search?.trim());
+  return Boolean(query.filters?.length || pruneFilterNode(query.where) || query.search?.trim());
 }

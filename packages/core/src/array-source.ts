@@ -1,4 +1,5 @@
 import { isNumericType } from "./column-type.js";
+import { matchesFilterNode, pruneFilterNode } from "./filter-tree.js";
 import { numericValue, plainText } from "./format.js";
 import { ErrorCodes } from "./protocol.js";
 import { abortError, isEmptyQuery, SourceError, type TableSource } from "./source.js";
@@ -177,6 +178,7 @@ export class ArraySource implements TableSource {
         aggregate: true,
         find: true,
         export: false,
+        conditions: true,
       },
     };
   }
@@ -201,9 +203,17 @@ export class ArraySource implements TableSource {
     const type = this.schema[filter.column]?.type ?? "string";
     switch (filter.type) {
       case "values": {
-        const found = filter.values.some((candidate) =>
-          candidate === null ? isBlank(value) : plainText(candidate) === plainText(value),
-        );
+        // Numbers match by value ("1.5" matches the decimal 1.50), as in SQL.
+        const number = isNumericType(type) && value !== null ? exactNumber(value, type) : null;
+        const found = filter.values.some((candidate) => {
+          if (candidate === null) return isBlank(value);
+          // An empty string matches empty text, not a missing value, as in SQL.
+          if (value === null) return false;
+          const other = number === null || typeof candidate === "boolean" ? null : exactNumber(candidate, type);
+          return other !== null && number !== null
+            ? compareValues(number, other) === 0
+            : plainText(candidate) === plainText(value);
+        });
         return filter.exclude ? !found : found;
       }
       case "blank":
@@ -266,11 +276,13 @@ export class ArraySource implements TableSource {
   async createView(query: ViewQuery, signal?: AbortSignal): Promise<ViewInfo> {
     if (isEmptyQuery(query)) return { id: null, rowCount: this.rowTotal, query: {} };
     const filters = query.filters ?? [];
+    const where = pruneFilterNode(query.where);
     const search = query.search?.trim().toLowerCase();
     const kept: number[] = [];
     for (let row = 0; row < this.rowTotal; row++) {
       if (signal?.aborted) throw abortError();
       if (!filters.every((filter) => this.matches(filter, row))) continue;
+      if (where && !matchesFilterNode(where, (filter) => this.matches(filter, row))) continue;
       if (
         search &&
         !this.data.some((column) =>

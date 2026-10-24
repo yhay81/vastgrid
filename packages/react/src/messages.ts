@@ -59,6 +59,29 @@ export interface Messages {
   valuesSearch: string;
   condition: string;
   conditionNone: string;
+  /** The toolbar button that opens the conditions builder, and the builder's title. */
+  conditions: string;
+  conditionsTitle: string;
+  /** A group whose conditions must all match, or of which one must match. */
+  matchAll: string;
+  matchAny: string;
+  /** Joins conditions in labels ("A and B"). */
+  and: string;
+  or: string;
+  addCondition: string;
+  addGroup: string;
+  removeCondition: string;
+  removeGroup: string;
+  noConditions: string;
+  conditionColumn: string;
+  /** Operators of value lists, which the column's filter panel sets. */
+  oneOf: string;
+  noneOf: string;
+  /** In a column's filter panel: open the builder with this column's filter and a new condition. */
+  addAnd: string;
+  addOr: string;
+  inConditions: string;
+  editConditions: string;
   operators: Record<
     | "eq"
     | "ne"
@@ -194,6 +217,24 @@ export const en: Messages = {
   valuesSearch: "Search values",
   condition: "Condition",
   conditionNone: "None",
+  conditions: "Conditions…",
+  conditionsTitle: "Filter conditions",
+  matchAll: "All of these (AND)",
+  matchAny: "Any of these (OR)",
+  and: "and",
+  or: "or",
+  addCondition: "Add condition",
+  addGroup: "Add group",
+  removeCondition: "Remove condition",
+  removeGroup: "Remove group",
+  noConditions: "No conditions. Add one to filter the rows.",
+  conditionColumn: "Column",
+  oneOf: "One of the values",
+  noneOf: "None of the values",
+  addAnd: "Add condition (AND)…",
+  addOr: "Add condition (OR)…",
+  inConditions: "This column is also used in the filter conditions.",
+  editConditions: "Edit conditions…",
   operators: {
     eq: "Equals",
     ne: "Does not equal",
@@ -352,6 +393,24 @@ export const ja: Messages = {
   valuesSearch: "値を検索",
   condition: "条件",
   conditionNone: "なし",
+  conditions: "条件…",
+  conditionsTitle: "絞り込み条件",
+  matchAll: "すべてを満たす（AND）",
+  matchAny: "いずれかを満たす（OR）",
+  and: "かつ",
+  or: "または",
+  addCondition: "条件を追加",
+  addGroup: "グループを追加",
+  removeCondition: "条件を削除",
+  removeGroup: "グループを削除",
+  noConditions: "条件はありません。条件を追加すると行を絞り込みます。",
+  conditionColumn: "列",
+  oneOf: "値のいずれか",
+  noneOf: "値のいずれでもない",
+  addAnd: "条件を追加（AND）…",
+  addOr: "条件を追加（OR）…",
+  inConditions: "この列は絞り込み条件でも使われています。",
+  editConditions: "条件を編集…",
   operators: {
     eq: "等しい",
     ne: "等しくない",

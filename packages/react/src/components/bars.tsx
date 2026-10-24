@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { filtersRows } from "vastgrid-core";
+import { filtersRows, pruneFilterNode } from "vastgrid-core";
 import type { GridController } from "../controller.js";
-import { countFormat, filterLabel, numberFormat } from "../labels.js";
+import { conditionLabel, countFormat, filterLabel, numberFormat } from "../labels.js";
 import type { Messages } from "../messages.js";
 
-/** Search box, active sort and filters, row count and the columns button. */
+/** Search box, active sort, filters and conditions, row count and the columns button. */
 export function Toolbar({
   controller,
   messages,
+  onConditions,
   onColumns,
 }: {
   controller: GridController;
   messages: Messages;
+  /** Opens the conditions builder. */
+  onConditions: (button: HTMLButtonElement) => void;
   onColumns: (button: HTMLButtonElement) => void;
 }) {
   const query = controller.query;
@@ -30,6 +33,7 @@ export function Toolbar({
   const capabilities = controller.info?.capabilities;
   const count = countFormat(controller.options.locale);
   const filters = query.filters ?? [];
+  const where = pruneFilterNode(query.where);
   const sort = query.sort ?? [];
   const total = controller.totalRows;
   const filtered = controller.view.id !== null && filtersRows(query);
@@ -113,6 +117,46 @@ export function Toolbar({
           </span>
         );
       })}
+      {where &&
+        (() => {
+          const label = conditionLabel(
+            where,
+            (column) => (controller.schema[column] ? controller.formatterOf(column) : undefined),
+            messages,
+          );
+          return (
+            <span className="vg-chip vg-chip--filter">
+              <button
+                type="button"
+                className="vg-chip__label"
+                title={`${messages.editConditions} ${label}`}
+                onClick={(event) => onConditions(event.currentTarget)}
+              >
+                {label}
+              </button>
+              <button
+                type="button"
+                className="vg-chip__remove"
+                aria-label={messages.removeFilter(label)}
+                title={messages.removeFilter(label)}
+                onClick={() => {
+                  const { where: _, ...rest } = query;
+                  void controller.setQuery(rest);
+                }}
+              >
+                ×
+              </button>
+            </span>
+          );
+        })()}
+      <button
+        type="button"
+        className="vg-button vg-button--small"
+        disabled={!ready || !capabilities?.filter || !capabilities.conditions}
+        onClick={(event) => onConditions(event.currentTarget)}
+      >
+        {messages.conditions}
+      </button>
       {filtersRows(query) && (
         <button type="button" className="vg-button vg-button--small" onClick={() => controller.clearFilters()}>
           {messages.clearFilters}

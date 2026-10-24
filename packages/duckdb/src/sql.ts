@@ -3,8 +3,11 @@ import {
   type ColumnType,
   type CompareOperator,
   type Filter,
+  type FilterNode,
+  isFilterGroup,
   isNumericType,
   isTemporalType,
+  pruneFilterNode,
   type SortKey,
 } from "vastgrid-core";
 
@@ -227,7 +230,13 @@ export function filterExpression(filter: Filter, columns: readonly SqlColumn[], 
       const values = filter.values.filter((value) => value !== null);
       if (values.length > 0) {
         if (isNumericType(column.type) || column.type === "boolean") {
-          const list = values.map((value) => typedValue(column, value as string | number | boolean, params));
+          const list = values.map((value) => {
+            // A DOUBLE in the list would make DuckDB compare 64-bit integers as doubles, inexactly.
+            if (column.type === "bigint" && typeof value === "number") {
+              return Number.isInteger(value) ? `TRY_CAST(${params.add(String(value))} AS ${column.sqlType})` : "NULL";
+            }
+            return typedValue(column, value as string | number | boolean, params);
+          });
           parts.push(`${quoteIdentifier(column.name)} IN (${list.join(", ")})`);
         } else {
           const list = values.map((value) => params.add(String(value)));
@@ -267,6 +276,23 @@ export function filterExpression(filter: Filter, columns: readonly SqlColumn[], 
     }
   }
   throw new RangeError("Unknown filter.");
+}
+
+/**
+ * Compiles a condition tree to a boolean SQL expression, or null when it has no conditions. A filter
+ * whose expression is NULL for a row counts as not matching: groups only combine with AND and OR, under
+ * which NULL leaves out the row exactly where FALSE would.
+ */
+export function conditionExpression(
+  node: FilterNode | undefined,
+  columns: readonly SqlColumn[],
+  params: Parameters,
+): string | null {
+  const pruned = pruneFilterNode(node);
+  if (!pruned) return null;
+  if (!isFilterGroup(pruned)) return filterExpression(pruned, columns, params);
+  const parts = pruned.filters.map((child) => conditionExpression(child, columns, params) as string);
+  return `(${parts.join(pruned.type === "and" ? " AND " : " OR ")})`;
 }
 
 /** Rows where any column contains `text` (case-insensitive). */

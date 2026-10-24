@@ -1,8 +1,10 @@
+import { MAX_FILTER_DEPTH, MAX_FILTER_NODES, MAX_FILTER_TREE_VALUES, pruneFilterNode } from "./filter-tree.js";
 import type {
   AggregateRange,
   CellValue,
   ExportFormat,
   Filter,
+  FilterNode,
   ReadOptions,
   SortKey,
   TableInfo,
@@ -192,8 +194,7 @@ function sortKeys(value: unknown): SortKey[] | undefined {
   });
 }
 
-function filter(item: unknown, position: number): Filter {
-  const name = `filters[${position}]`;
+function filter(item: unknown, name: string): Filter {
   if (!isRecord(item)) fail(`${name} must be an object`);
   const column = index(item.column, `${name}.column`);
   switch (item.type) {
@@ -237,6 +238,27 @@ function filter(item: unknown, position: number): Filter {
   }
 }
 
+/** Validates a condition tree, counting its groups, conditions and listed values against the limits. */
+function filterNode(item: unknown, name: string, depth: number, budget: { nodes: number; values: number }): FilterNode {
+  if (!isRecord(item)) fail(`${name} must be an object`);
+  if (--budget.nodes < 0) fail(`where must not have more than ${MAX_FILTER_NODES} groups and conditions`);
+  if (item.type === "and" || item.type === "or") {
+    if (depth >= MAX_FILTER_DEPTH) fail(`where must not nest groups deeper than ${MAX_FILTER_DEPTH} levels`);
+    if (!Array.isArray(item.filters)) fail(`${name}.filters must be an array`);
+    if (item.filters.length > MAX_FILTER_NODES) fail(`${name}.filters must be an array`);
+    return {
+      type: item.type,
+      filters: item.filters.map((child, at) => filterNode(child, `${name}.filters[${at}]`, depth + 1, budget)),
+    };
+  }
+  const result = filter(item, name);
+  if (result.type === "values") {
+    budget.values -= result.values.length;
+    if (budget.values < 0) fail(`where must not list more than ${MAX_FILTER_TREE_VALUES} values`);
+  }
+  return result;
+}
+
 function query(value: unknown): ViewQuery {
   if (!isRecord(value)) fail("query must be an object");
   const filters = value.filters;
@@ -244,7 +266,13 @@ function query(value: unknown): ViewQuery {
   const result: ViewQuery = {};
   const sort = sortKeys(value.sort);
   if (sort?.length) result.sort = sort;
-  if (filters?.length) result.filters = filters.map(filter);
+  if (filters?.length) result.filters = filters.map((item, position) => filter(item, `filters[${position}]`));
+  if (value.where !== undefined && value.where !== null) {
+    const where = pruneFilterNode(
+      filterNode(value.where, "where", 0, { nodes: MAX_FILTER_NODES, values: MAX_FILTER_TREE_VALUES }),
+    );
+    if (where) result.where = where;
+  }
   const search = optionalString(value.search, "search", 4096);
   if (search?.trim()) result.search = search;
   return result;

@@ -1,4 +1,11 @@
-import { type CellValue, type ColumnFormatter, type Filter, plainText } from "vastgrid-core";
+import {
+  type CellValue,
+  type ColumnFormatter,
+  type Filter,
+  type FilterNode,
+  isFilterGroup,
+  plainText,
+} from "vastgrid-core";
 import type { Messages } from "./messages.js";
 
 /** Formats counts with the locale's grouping. */
@@ -38,4 +45,18 @@ export function filterLabel(filter: Filter, formatter: ColumnFormatter | undefin
     case "blank":
       return `${name}: ${filter.blank ? messages.operators.blank : messages.operators.notBlank}`;
   }
+}
+
+/** A short description of a condition tree ("(city: Tokyo or price > 100) and status ≠ cancelled"). */
+export function conditionLabel(
+  node: FilterNode,
+  formatterOf: (column: number) => ColumnFormatter | undefined,
+  messages: Messages,
+  nested = false,
+): string {
+  if (!isFilterGroup(node)) return filterLabel(node, formatterOf(node.column), messages);
+  const text = node.filters
+    .map((child) => conditionLabel(child, formatterOf, messages, true))
+    .join(` ${node.type === "and" ? messages.and : messages.or} `);
+  return nested && node.filters.length > 1 ? `(${text})` : text;
 }

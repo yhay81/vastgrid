@@ -2,6 +2,18 @@ export { ArraySource, type ArraySourceOptions } from "./array-source.js";
 export { type BlockState, CacheBlock, RowCache, type RowCacheOptions } from "./cache.js";
 export { toHtmlTable, toMarkdownTable, toTsv } from "./clipboard.js";
 export { isNumericType, isTemporalType } from "./column-type.js";
+export {
+  filterLeaves,
+  isFilterGroup,
+  MAX_FILTER_DEPTH,
+  MAX_FILTER_NODES,
+  MAX_FILTER_TREE_VALUES,
+  mapFilterNode,
+  matchesFilterNode,
+  pruneFilterNode,
+  queryCondition,
+  queryFilters,
+} from "./filter-tree.js";
 export { ColumnFormatter, type FormatOptions, numericValue, plainText, ValueFormatter } from "./format.js";
 export {
   GRID_STATE_VERSION,

@@ -12,14 +12,20 @@ import {
   type DistinctValues,
   ErrorCodes,
   type Filter,
+  type FilterGroup,
+  type FilterNode,
+  filterLeaves,
   filtersRows,
   GRID_STATE_VERSION,
   type GridState,
   isAbortError,
   isEmptyQuery,
+  isFilterGroup,
   MAX_TEXT_LIMIT,
+  mapFilterNode,
   parseGridState,
   parseRowSelection,
+  pruneFilterNode,
   RowCache,
   type RowKey,
   type RowSelection,
@@ -191,11 +197,12 @@ function sameQuery(a: ViewQuery, b: ViewQuery) {
 
 /** The parts of a query that a source with these capabilities can run. */
 function supportedQuery(query: ViewQuery, capabilities: TableCapabilities): ViewQuery {
-  const { sort, filters, search, ...rest } = query;
+  const { sort, filters, where, search, ...rest } = query;
   return {
     ...rest,
     ...(sort && capabilities.sort ? { sort } : {}),
     ...(filters && capabilities.filter ? { filters } : {}),
+    ...(where && capabilities.filter && capabilities.conditions ? { where } : {}),
     ...(search && capabilities.search ? { search } : {}),
   };
 }
@@ -650,7 +657,19 @@ export class GridController {
           const column = indexOf(filter.column);
           return column < 0 ? [] : [{ ...filter, column }];
         });
-        this.query = { ...this.query, ...(sort ? { sort } : {}), ...(filters ? { filters } : {}) };
+        const { where: tree, ...rest } = this.query;
+        const where =
+          tree &&
+          mapFilterNode(tree, (filter) => {
+            const column = indexOf(filter.column);
+            return column < 0 ? null : { ...filter, column };
+          });
+        this.query = {
+          ...rest,
+          ...(sort ? { sort } : {}),
+          ...(filters ? { filters } : {}),
+          ...(where ? { where } : {}),
+        };
         this.columnsChanged("schema");
       }
       // Settings follow their columns by name, also when the file's columns moved.
@@ -1622,8 +1641,51 @@ export class GridController {
     return this.query.filters?.find((filter) => filter.column === column) ?? null;
   }
 
+  /** Whether a filter or a condition of the condition tree uses a schema column. */
+  isFiltered(column: number) {
+    return this.filterOf(column) !== null || filterLeaves(this.query.where).some((filter) => filter.column === column);
+  }
+
+  /** Every condition of the query as one AND group: `filters`, then the condition tree. */
+  get condition(): FilterGroup {
+    const where = pruneFilterNode(this.query.where);
+    const filters: FilterNode[] = [...(this.query.filters ?? [])];
+    if (where && isFilterGroup(where) && where.type === "and") filters.push(...where.filters);
+    else if (where) filters.push(where);
+    return { type: "and", filters };
+  }
+
+  /**
+   * Replaces every condition of the query (`null` removes them). Conditions directly under a top AND
+   * group that are the only one on their column become `filters`, which the column menus edit; the rest
+   * becomes the condition tree (`where`).
+   */
+  setCondition(condition: FilterNode | null) {
+    const { where: _, ...rest } = this.query;
+    const node = pruneFilterNode(condition ?? undefined);
+    const filters: Filter[] = [];
+    const others: FilterNode[] = [];
+    if (node && isFilterGroup(node) && node.type === "and") {
+      const counts = new Map<number, number>();
+      for (const child of node.filters) {
+        if (!isFilterGroup(child)) counts.set(child.column, (counts.get(child.column) ?? 0) + 1);
+      }
+      for (const child of node.filters) {
+        if (!isFilterGroup(child) && counts.get(child.column) === 1) filters.push(child);
+        else others.push(child);
+      }
+    } else if (node && !isFilterGroup(node)) {
+      filters.push(node);
+    } else if (node) {
+      others.push(node);
+    }
+    const where: FilterNode | undefined = others.length > 1 ? { type: "and", filters: others } : others[0];
+    return this.setQuery({ ...rest, filters, ...(where ? { where } : {}) });
+  }
+
   clearFilters() {
-    void this.setQuery({ ...this.query, filters: [], search: "" });
+    const { where: _, ...rest } = this.query;
+    void this.setQuery({ ...rest, filters: [], search: "" });
   }
 
   setSearch(search: string) {
