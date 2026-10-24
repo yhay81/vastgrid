@@ -168,7 +168,7 @@ test("requests that do not follow §8 are answered with invalid_request, its pat
     [{ v: 2, id: 1, op: "rows", ...rows, end: 1_000_001 }, "limit", "/end"],
     [{ v: 2, id: 1, op: "rows", ...rows, end: 500_001, columns: ["id", "qty"] }, "limit", "/columns"],
     [{ v: 2, id: 1, op: "rows", ...rows, textLimit: 0 }, "syntax", "/textLimit"],
-    [{ v: 2, id: 1, op: "rows", ...rows, columns: [] }, "syntax", "/columns"],
+    [{ v: 2, id: 1, op: "rows", ...rows, columns: "id" }, "syntax", "/columns"],
     [{ v: 2, id: 1, op: "rows", ...rows, columns: ["id", "zzz"] }, "syntax", "/columns/1"],
     [{ v: 2, id: 1, op: "summarize", ...base, ranges: [[0, 1]], columns: ["zzz"] }, "syntax", "/columns/0"],
     [{ v: 2, id: 1, op: "summarize", ...base, ranges: [[0, 1]], columns: ["id"], start: 0 }, "syntax", "/start"],
@@ -310,6 +310,23 @@ test("rows reads positions within the view: end is cut to the rows, and a start 
   assert.deepEqual([none.start, none.end, none.rowIds, none.rows], [1, 1, [], []]);
   // A column may be read twice.
   assert.deepEqual((await client.rows(info, {}, { end: 1, columns: ["qty", "qty"] })).rows, [[3, 3]]);
+});
+
+test("rows of no columns answers the view, its positions and row IDs, and a block without columns (§8.2)", async () => {
+  const { client, info } = await opened();
+  const read = await client.rows(info, {}, { start: 1, end: 100, columns: [] });
+  assert.deepEqual(read.view, {
+    hash: await planHash({}),
+    status: "ready",
+    rowCount: 6,
+    rowCountExact: true,
+    readableRows: 6,
+    columns: ORDERS.columns,
+    edits: { version: 0, cells: 0 },
+  });
+  assert.deepEqual([read.start, read.end, read.rowIds], [1, 6, [1, 2, 3, 4, 5]]);
+  // The block is a schema without fields and without a record batch (§8.4).
+  assert.deepEqual([read.columns, read.rows], [[], []]);
 });
 
 test("textLimit cuts strings longer than it, in code points, and truncated gives their offsets (§8.4)", async () => {

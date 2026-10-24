@@ -217,6 +217,8 @@ v1 の React の層を、React 19.3.1・React Compiler 1.0.0・`eslint-plugin-re
 
 同じ日に、[React を中心に据える](#react-を中心に据える)方針で、v2 の React の部品の土台（[`packages/grid`](../packages/grid)、開発中の名前は `vastgrid-grid`）と、ブラウザーで動くメモリー上のエンジン（[`packages/js`](../packages/js)、`vastgrid-js`。いまは並べ替えと集計と位置の検索だけ）を作りました。ストア、キャンバス、キーとポインターの操作、並べ替え、列幅、コピー、検索、状態の行、読み上げ用の行、サーバーでの描画があり、Playwright の E2E と性能の予算（[v2-react.md](v2-react.md) §10）を CI で回します。100 万行の表で v1 と比べると、矢印キー 1 回に React の commit が 1 回、スクロール中は 0 回、フレームを落とさないことは同じで、並べ替えは 516 ms から 85 ms になり、エンジンを Web Worker で動かせば並べ替えの間もページは止まりません。React Compiler はすべての部品とフックを最適化し（v1 は `DataGrid` を含む 16 か所で断念）、`recommended-latest` の lint の問題は 0 件（v1 は 51 件）、`DataGrid` のバンドルは gzip で 92.6 KB から 57.0 KB です（v2 にはまだパネルがない）。途中で、仕様の参照実装 `applyCommand` が履歴の大きさに比例して遅くなる問題（矢印キー 1 回 74 ms）と、Vite 8 のビルドで `light-dark()` の色がすべて無効になってキャンバスが黒くなる問題（v1 のスタイルにもある）を見つけて直しました。
 
+2 も同じ日に始めました。Node.js の DuckDB のエンジン（[`packages/duckdb-engine`](../packages/duckdb-engine)、開発中の名前は `vastgrid-duckdb-engine`）が §8 の電文に Arrow のブロックで答え、HTTP（ブロックを JSON の後ろに付ける形と、Server-Sent Events のイベント）でも動きます。Parquet はその場で行番号から読み、CSV・TSV・JSON Lines・Excel のブックは、最初の行をすぐ読めるようにしてからセッションのデータベースに読み込みます。v1 の読み込みのテスト（文字コード、許可フォルダー、型が途中で変わるファイル、ブックなど）を移し、プランの適合テスト 106 件はこのエンジンでも電文越しに全件通ります。手元（Apple M2 Pro）では、1 億行の Parquet（1.38 GB）を 37 ms で開いてどこの 256 行も約 21 ms で読み、735 MB の CSV は 70 ms で最初の行が読めて 4.3 秒で全部が読み込まれます（[`bench/open.ts`](../packages/duckdb-engine/bench/open.ts)）。v2 の React の部品で両方を開いて最後の行までスクロールできることを、Playwright の E2E（[`e2e/files.spec.ts`](../e2e/files.spec.ts)、ページは [`examples/files`](../examples/files)）で確かめます。並べ替えや絞り込みをしたビューは、まだ読むたびに DuckDB で順に数え直すので、巨大なファイルで速くするのは 3 で行います。
+
 ## 移すもの・作り直すもの
 
 | モジュール | 扱い |

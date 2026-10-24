@@ -1067,12 +1067,15 @@ take included. Clients check responses and events in the same way; one that does
   `loading`, `ready` or `error`; `progress` from 0 to 1 or null; `rowCount` null while the table loads;
   `readableRows` the rows that can be read now; `columns` §2.1; `capabilities` §4.10; `sheets`
   `[{ "name", "hidden"? }]` for workbooks.
-- `rows` reads positions `[start, end)` of the plan's view: `columns` are names of the view's columns (at
-  least one), at most 1,000,000 rows and 1,000,000 cells. Positions beyond the view are left out: the answer's
-  `end` is at most the view's row count, and a request whose `start` is at or beyond it is answered with no
-  rows (`end` equal to `start`), since a client that reads a new view does not know its row count yet. `view` is `{ "hash", "status", "rowCount", "rowCountExact",
-  "readableRows", "columns", "edits", "partial"? }` (§9); `rowIds` lists the rows' row IDs, or is null for
-  views without them; `block` holds the values (§8.4); `textLimit` is 1 to 1,000,000 (default 2,000).
+- `rows` reads positions `[start, end)` of the plan's view: `columns` are names of the view's columns, at most
+  1,000,000 rows and 1,000,000 cells. Positions beyond the view are left out: the answer's `end` is at most the
+  view's row count, and a request whose `start` is at or beyond it is answered with no rows (`end` equal to
+  `start`), since a client that reads a new view does not know its row count yet. `columns` may be empty, to
+  learn a view whose columns the client does not know yet (those of a pivot, §4.6): the answer then has the
+  view, the positions and the row IDs, and a block without columns. `view` is `{ "hash", "status",
+  "rowCount", "rowCountExact", "readableRows", "columns", "edits", "partial"? }` (§9); `rowIds` lists the rows'
+  row IDs, or is null for views without them; `block` holds the values (§8.4); `textLimit` is 1 to 1,000,000
+  (default 2,000).
 - `summarize` counts the cells of `ranges` × `columns` that are not blank (`count`), and the numbers among
   them that are finite (`numericCount`), with their `sum`, `min`, `max` and `average` as floats (§2.2; a sum
   beyond the largest float is `"Infinity"`), null without numbers. At most 1,000 ranges.
@@ -1099,7 +1102,8 @@ again from the same request. When the table's revision is not the request's, the
 
 ### 8.4 Blocks
 
-A block is an Apache Arrow IPC stream with one schema and one record batch, without compression:
+A block is an Apache Arrow IPC stream with one schema and one record batch (none for a block without
+columns, whose positions the answer gives), without compression:
 
 - one field per requested column, in order, named by the column, nullable, of the Arrow type of §2.1:
   `boolean` Bool; `integer` Int32; `bigint` Int64; `decimal` Decimal128(precision, scale); `float` Float32
@@ -1188,9 +1192,10 @@ A `rows` request with `preview: true` MAY be answered before the whole view is m
   large views) a sorted copy for faster reads. Clients see only `status`, `readableRows`, `rowCount` and the
   speed.
 
-A table that is loading (`status: "loading"`) answers `rows` with the plan `{}` for its readable rows.
-Engines that report `partialViews` MAY also answer other plans over the readable rows, with
-`view.partial: true`.
+A table that is loading (`status: "loading"`) answers `rows` with the plan `{}` for its readable rows: that
+view is `building`, with the readable rows as its `rowCount` (not exact), until the table has loaded, and
+`view` events (§8.5) tell when it grows and when it is `ready`. Engines that report `partialViews` MAY also
+answer other plans over the readable rows, with `view.partial: true`.
 
 ## 10. Conformance
 
@@ -1266,7 +1271,6 @@ against DuckDB, and the JS engine follows in the same change.
 - Typed text in time zones other than UTC for `timestamptz` (§7.3).
 - Dates and timestamps outside the years 0001 to 9999 (DuckDB has dates from 5877642 BC), and the forms
   that would write them (§2.2).
-- Blocks without a record batch for requests of no columns, which `rows` does not allow now (§8.2).
 
 Found while writing the memory engine of [`vastgrid-js`](../packages/js), which answers them as noted:
 

@@ -297,6 +297,57 @@
       }
     },
     {
+      "id": "response.rows-no-columns",
+      "section": "8.4",
+      "description": "A block without columns is a schema without record batches; the answer gives the positions.",
+      "kind": "response",
+      "op": "rows",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "view": {
+            "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "ready",
+            "rowCount": 6,
+            "rowCountExact": true,
+            "readableRows": 6,
+            "columns": [
+              {
+                "name": "id",
+                "type": "bigint",
+                "sourceType": "BIGINT"
+              },
+              {
+                "name": "price",
+                "type": "decimal",
+                "precision": 10,
+                "scale": 2
+              }
+            ],
+            "edits": {
+              "version": 3,
+              "cells": 1
+            }
+          },
+          "start": 0,
+          "end": 3,
+          "rowIds": [
+            4,
+            1,
+            0
+          ],
+          "block": {
+            "base64": "/////ygAAAAQAAAAAAAKAAwACgAJAAQACgAAAAwAAAAAAQQABAAEAAQAAAAAAAAA/////wAAAAA="
+          },
+          "truncated": {}
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
       "id": "response.rows-groups",
       "section": "8.2",
       "kind": "response",

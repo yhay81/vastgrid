@@ -385,7 +385,8 @@ export function checkRequest(message: unknown): Json & { v: 2; id: number; op: O
     case "rows": {
       const start = check.integer(request.start, "/start");
       const end = check.integer(request.end, "/end", start);
-      const columns = check.names(request.columns, "/columns");
+      // No columns read the view, its positions and row IDs only (§8.2).
+      const columns = check.names(request.columns, "/columns", false);
       if (end - start > MESSAGE_LIMITS.rows) check.fail("/end", "limit", "A request reads at most 1,000,000 rows.");
       if ((end - start) * columns.length > MESSAGE_LIMITS.cells) {
         check.fail("/columns", "limit", "A request reads at most 1,000,000 cells.");

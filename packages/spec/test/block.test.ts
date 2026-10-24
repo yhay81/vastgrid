@@ -132,6 +132,12 @@ test("a block without rows has its schema", () => {
   roundTrip([{ name: "a", type: "integer" }], []);
 });
 
+test("a block without columns is a schema without record batches (§8.4)", () => {
+  const bytes = encodeBlock([], [[], [], []]);
+  assert.equal(tableFromIPC(bytes).schema.fields.length, 0);
+  assert.deepEqual(decodeBlock(bytes), { columns: [], rows: [] });
+});
+
 test("blocks are read from bytes at any offset", () => {
   const bytes = encodeBlock([{ name: "g", type: "bigint" }], [["9223372036854775807"]]);
   const framed = new Uint8Array(bytes.length + 5);

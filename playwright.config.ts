@@ -12,10 +12,19 @@ export default defineConfig({
   use: { baseURL: "http://127.0.0.1:5181", viewport: { width: 1280, height: 800 } },
   // Chromium as it is, not a device's user agent: the grid takes ⌘ or Ctrl from the platform it runs on.
   projects: [{ name: "chromium", use: { browserName: "chromium", viewport: { width: 1280, height: 800 } } }],
-  webServer: {
-    command: "npm run preview -w vastgrid-bench",
-    url: "http://127.0.0.1:5181",
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      command: "npm run preview -w vastgrid-bench",
+      url: "http://127.0.0.1:5181",
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+    {
+      // e2e/files.spec.ts: files of a folder in v2's grid, read by the DuckDB engine on this server.
+      command: "npm run build -w vastgrid-files-example && npm run preview -w vastgrid-files-example",
+      url: "http://127.0.0.1:5183",
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+  ],
 });

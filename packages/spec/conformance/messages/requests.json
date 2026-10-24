@@ -627,6 +627,7 @@
     {
       "id": "request.rows-no-columns",
       "section": "8.2",
+      "description": "No columns read the view, its positions and row IDs: how a client learns the columns of a pivot.",
       "kind": "request",
       "message": {
         "v": 2,
@@ -640,11 +641,26 @@
         "columns": []
       },
       "expect": {
-        "error": {
-          "code": "invalid_request",
-          "reason": "syntax",
-          "path": "/columns"
-        }
+        "valid": true
+      }
+    },
+    {
+      "id": "request.rows-no-columns-many-rows",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "rows",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "start": 0,
+        "end": 1000000,
+        "columns": []
+      },
+      "expect": {
+        "valid": true
       }
     },
     {
