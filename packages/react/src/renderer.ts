@@ -630,7 +630,7 @@ export class CanvasRenderer {
     const scrollLeft = c.gutterWidth + c.frozenWidth;
     this.clipped(scrollLeft, 0, c.frozenRightX - scrollLeft, height, () => {
       for (let col = firstCol; col <= lastCol; col++) this.drawHeader(col);
-      this.drawGroups(firstCol, lastCol, scrollLeft, c.width);
+      this.drawGroups(firstCol, lastCol, scrollLeft, c.frozenRightX);
     });
     this.clipped(c.gutterWidth, 0, c.frozenWidth, height, () => {
       for (let col = 0; col < c.frozen; col++) this.drawHeader(col);
@@ -638,6 +638,7 @@ export class CanvasRenderer {
     });
     this.clipped(c.frozenRightX, 0, c.frozenRightWidth, height, () => {
       for (let col = c.rightStart; col < c.visible.length; col++) this.drawHeader(col);
+      this.drawGroups(c.rightStart, c.visible.length - 1, c.frozenRightX, c.width);
     });
     ctx.strokeStyle = t.lineStrong;
     ctx.lineWidth = 1 / this.ratio;

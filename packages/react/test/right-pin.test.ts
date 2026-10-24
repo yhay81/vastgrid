@@ -260,3 +260,25 @@ test("a state keeps the frozen columns of both sides, and older states keep the 
     second.dispose();
   }
 });
+
+test("hiding and showing columns from the columns panel keeps both frozen sides", async () => {
+  const grid = await readyGrid({ frozenColumns: 1, frozenRightColumns: 2 });
+  try {
+    const right = grid.visible[7].index;
+    grid.setColumnHidden(right, true);
+    // The column left the right side; the next scrolling column stays scrolling.
+    assert.equal(grid.pinned.right, 1);
+    assert.equal(grid.pinOf(grid.visible.length - 2), null);
+    // Shown again after the right-frozen column, it joins the right side.
+    grid.setColumnHidden(right, false);
+    assert.equal(grid.pinned.right, 2);
+    assert.equal(grid.schema[grid.visible[7].index].name, NAMES[7]);
+    // A scrolling column hidden and shown again stays scrolling.
+    const middle = grid.visible[3].index;
+    grid.setColumnHidden(middle, true);
+    grid.setColumnHidden(middle, false);
+    assert.deepEqual([grid.pinned.left, grid.pinned.right], [1, 2]);
+  } finally {
+    grid.dispose();
+  }
+});

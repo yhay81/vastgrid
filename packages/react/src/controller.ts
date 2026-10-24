@@ -1557,7 +1557,8 @@ export class GridController {
       const right = left + this.layout.width(nearest);
       if (Math.abs(x - left) <= 5) resize = nearest;
       else if (nearest + 1 < this.visible.length && Math.abs(x - right) <= 5) resize = nearest + 1;
-      menu = col >= 0 && resize < 0 && x >= right - 24 && x < right - 4;
+      const names = y >= this.headerHeight - this.options.headerHeight;
+      menu = col >= 0 && resize < 0 && names && x >= right - 24 && x < right - 4;
     } else if (header && !gutter) {
       const nearest = col >= 0 ? col : this.rightStart - 1;
       const right = this.columnX(nearest) + this.layout.width(nearest);
@@ -2289,8 +2290,20 @@ export class GridController {
   setColumnHidden(index: number, hidden: boolean) {
     const state = this.columns.find((column) => column.index === index);
     if (!state || state.hidden === hidden) return;
-    if (hidden && this.visible.length <= 1) return;
-    state.hidden = hidden;
+    if (hidden) {
+      // As from the column menu: a frozen column leaves its side.
+      const col = this.visible.indexOf(state);
+      if (col >= 0) this.hideColumn(col);
+      return;
+    }
+    // A column shown between frozen ones joins their side.
+    const position = this.columns.indexOf(state);
+    const lastLeft = this.pinned.left > 0 ? this.columns.indexOf(this.visible[this.pinned.left - 1]) : -1;
+    const firstRight =
+      this.pinned.right > 0 ? this.columns.indexOf(this.visible[this.visible.length - this.pinned.right]) : -1;
+    state.hidden = false;
+    if (position < lastLeft) this.pinned.left++;
+    else if (firstRight >= 0 && position > firstRight) this.pinned.right++;
     this.changeColumns("visibility");
   }
 
