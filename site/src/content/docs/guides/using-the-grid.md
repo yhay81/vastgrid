@@ -12,6 +12,9 @@ can be tried in the [demo](/demo/).
 - ⌘/Ctrl + click adds another range. The summary and copies cover every range.
 - Click a column header to select the column, a row header to select the row, and the corner to select
   everything. Drag across headers to select several.
+- With `checkboxSelection`, rows also have checkboxes, which stay with their records when the view is
+  sorted or filtered (see [Checked rows](/reference/data-grid/#checked-rows)). Shift + click checks a
+  range.
 
 The status bar shows the active cell and, for a selection of several cells, the count of non-blank
 cells and, for numbers, their sum, average, minimum and maximum. In a sorted or filtered view it also
@@ -27,6 +30,7 @@ shows the row's position in the file.
 | ⌘/Ctrl + click | Add a range |
 | Tab / Enter (with Shift: backwards) | Move within the selection |
 | Shift + Space · Ctrl + Space · ⌘/Ctrl + A | Select the row · the column · everything |
+| Space · ⌘/Ctrl + Shift + Space (with `checkboxSelection`) | Check the active row · every row |
 | ⌘/Ctrl + C · ⌘/Ctrl + Shift + C | Copy · copy with headers |
 | ⌘/Ctrl + F | Find |
 | Alt + ↓ | Column menu (sort, filter, statistics, freeze, hide) |

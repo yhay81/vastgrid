@@ -12,7 +12,7 @@
  * hovering or drawing.
  */
 
-import type { CellValue } from "vastgrid-core";
+import type { CellValue, RowSelection } from "vastgrid-core";
 
 export interface GridCell {
   /** Row in the current view. */
@@ -93,7 +93,35 @@ export interface GridCellEvent extends GridCell {
   ctrlKey: boolean;
   metaKey: boolean;
   altKey: boolean;
-  /** Stops what the grid does next: opening the cell inspector on a double click or F2. */
+  /**
+   * Stops what the grid does next: opening the cell inspector on a double click or F2, and checking the
+   * row with Space when the rows have checkboxes.
+   */
   preventDefault(): void;
   readonly defaultPrevented: boolean;
+}
+
+export type GridRowSelectionChangeReason =
+  /** The user clicked a checkbox or pressed Space. */
+  | "user"
+  /** The app set the checked rows (`setRowSelection` or the `rowSelection` prop). */
+  | "api"
+  /** The table has a new revision: rows keyed by their position were unchecked. */
+  | "revision"
+  /** The key column or, for every row matching a query, the filtered columns are gone: rows were unchecked. */
+  | "schema"
+  /**
+   * The view no longer shows only rows matching the query of an `exclude` selection, so the grid listed
+   * the keys of those rows: the selection is now an `include` of the same rows.
+   */
+  | "query"
+  /** The key column changed (`rowKey`): rows were unchecked. */
+  | "key";
+
+export interface GridRowSelectionEvent {
+  reason: GridRowSelectionChangeReason;
+  /** The checked rows, as keys (see `RowSelection`). */
+  selection: RowSelection;
+  /** Checked rows, or null when the rows matching the query of an `exclude` selection were not counted. */
+  count: number | null;
 }

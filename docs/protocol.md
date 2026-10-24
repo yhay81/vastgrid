@@ -43,6 +43,11 @@ that changed gets a new handle and a new `revision`.
 | `export` | `table`, `view`, `format` (`csv`, `tsv`, `parquet`, `json`), optional `columns`, `target` | `{ target, rows }` |
 | `close` | `table` | `null` |
 
+`rowIds` are the rows' positions in the table (0-based) for a view, and `null` without one (the
+positions are then `start` to `end`). They must name the same records for as long as the table's
+`revision` stays the same — a table whose data changed must report a new `revision` — because the grid
+uses them as the keys of checked rows. A `rows` request with no `columns` reads only the positions.
+
 A `rows` request reads at most 1,000,000 rows and 1,000,000 cells (rows × columns); read more in parts.
 View requests on one table are built one at a time and never cancel each other. `distinct` counts
 whole values and sends them whole (up to 1,000,000 characters), so that a value from its list works in

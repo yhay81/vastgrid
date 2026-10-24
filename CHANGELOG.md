@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `vastgrid`: `checkboxSelection` adds row checkboxes, separate from the cell selection. Checked rows
+  are kept by key — the row's position in the file for one `revision`, or the values of a `rowKey`
+  column — so the same records stay checked when the view is sorted or filtered. The corner checkbox
+  checks every row (or every row matching the filters) without listing keys. `rowSelection`,
+  `onRowSelectionChange`, `getRowSelection()` and `setRowSelection()` let the app read, set and follow
+  them; a new revision unchecks rows keyed by position. Space and ⌘/Ctrl + Shift + Space check rows
+  from the keyboard, and screen readers hear the active row's checkbox.
+- `vastgrid-core`: `RowSelection`, `RowKey`, `RowSelectionModel` and `parseRowSelection`. Row positions
+  (`rowIds`) are documented to stay stable for a table's `revision`.
 - `vastgrid`: `onSelectionChange`, `onColumnsChange`, `onCellClick` and `onCellDoubleClick` report the
   selection, changes of the columns' width, order, visibility and freezing, and clicks on cells (Space
   and F2 from the keyboard; `preventDefault()` keeps the cell inspector closed). Events give a cell's row

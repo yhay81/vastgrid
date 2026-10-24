@@ -114,6 +114,16 @@ export interface Messages {
   filtered: string;
   cell: (row: string, column: string) => string;
   originalRow: (row: string) => string;
+  /** The checkbox of every row (in the corner). */
+  checkAllRows: string;
+  /** The checkbox of a row, by its number in the view. */
+  checkRow: (row: string) => string;
+  rowChecked: (row: string) => string;
+  rowUnchecked: (row: string) => string;
+  /** Checked rows; `null` when every row matching a filter is checked and they were not counted. */
+  rowsChecked: (count: string | null) => string;
+  rowsUnchecked: string;
+  uncheckAllRows: string;
   textTruncated: string;
   notes: Record<string, string>;
   export: string;
@@ -248,6 +258,13 @@ export const en: Messages = {
   filtered: "Filtered",
   cell: (row, column) => `Row ${row}, ${column}`,
   originalRow: (row) => `Row ${row} in the file`,
+  checkAllRows: "Check every row",
+  checkRow: (row) => `Check row ${row}`,
+  rowChecked: (row) => `Row ${row} checked`,
+  rowUnchecked: (row) => `Row ${row} unchecked`,
+  rowsChecked: (count) => (count === null ? "Matching rows checked" : `${count} rows checked`),
+  rowsUnchecked: "No rows checked",
+  uncheckAllRows: "Uncheck every row",
   textTruncated: "Long text is cut in the table. Show the full value to read all of it.",
   notes: {
     all_varchar: "Some rows did not match the column types, so every column was read as text.",
@@ -393,6 +410,13 @@ export const ja: Messages = {
   filtered: "絞り込み中",
   cell: (row, column) => `${row} 行目、${column}`,
   originalRow: (row) => `ファイルの ${row} 行目`,
+  checkAllRows: "すべての行を選択",
+  checkRow: (row) => `${row} 行目を選択`,
+  rowChecked: (row) => `${row} 行目を選択しました`,
+  rowUnchecked: (row) => `${row} 行目の選択を外しました`,
+  rowsChecked: (count) => (count === null ? "条件に合う行を選択中" : `${number(count)} 行を選択中`),
+  rowsUnchecked: "行の選択をすべて外しました",
+  uncheckAllRows: "行の選択をすべて外す",
   textTruncated: "長い文字列は表の中では途中まで表示します。全体は「値の全体を表示」で読めます。",
   notes: {
     all_varchar: "列の型に合わない行があったため、すべての列を文字列として読み込みました。",

@@ -34,6 +34,10 @@ import "vastgrid/styles.css";
 | `onCellDoubleClick` | `(event: GridCellEvent) => void` | | セルをダブルクリックしたとき、または F2 を押したときに呼ばれます。`event.preventDefault()` でセルの詳細を開かないようにできます。 |
 | `initialState` | `GridState` | | グリッドを作るときに、表の列がわかった時点で適用する設定。[設定の保存](#設定の保存)を参照してください。 |
 | `onStateChange` | `(state: GridState) => void` | | クエリーか列の設定が変わったときに、その設定を渡して呼ばれます。 |
+| `checkboxSelection` | `boolean` | `false` | 行ごとのチェックボックスと、左上にすべての行のチェックボックスを表示します。[行の選択](#行の選択チェックボックス)を参照してください。 |
+| `rowKey` | `string` | 行の位置 | 行を識別する値（主キー）の列名。データが新しくなっても行の選択が残ります。 |
+| `rowSelection` | `RowSelection` | | 選択する行。最初と、違う値を渡したときに適用します。 |
+| `onRowSelectionChange` | `(event: GridRowSelectionEvent) => void` | | ユーザー・アプリ・グリッドが行の選択を変えたときに呼ばれます。 |
 | `className`、`style` | | | ルートの要素（`.vg-root`）に付けます。 |
 | `aria-label` | `string` | `messages.gridLabel` | スクリーンリーダー向けのグリッドの名前。 |
 
@@ -50,6 +54,8 @@ ref からは `DataGridHandle` を使えます。
 | `getState()` | クエリーと列の設定。保存用の `GridState` です。 |
 | `applyState(state)` | 保存した `GridState` を適用します。このバージョンで読めない値なら `false` を返します。 |
 | `goToRow(row)` | 現在のビューのその行までスクロールし、アクティブにします。 |
+| `getRowSelection()` | 選んだ行。`RowSelection` で返します。 |
+| `setRowSelection(selection)` | 選ぶ行を置き換えます。`RowSelection` でない値なら `false` を返します。 |
 | `controller` | グリッドの状態（選択範囲、列の配置、ビュー）を持つ `GridController`。 |
 | `renderer` | `CanvasRenderer`。`renderer.timings()` などの診断に使います。グリッドがマウントされるまでは `null`。 |
 
@@ -82,7 +88,8 @@ grid.current?.setQuery({ sort: [{ column: 2, direction: "desc" }], search: "Toky
 
 - `GridSelectionEvent`：`active` はアクティブなセル（`row`、`rowId`、`col`、`column`）、`ranges` は選択範囲の一覧です。範囲ごとに `top`、`bottom`、`left`、`right`（両端を含む、ビューの行と表示中の列の位置）、`columns`（その列の表の番号）、列全体・行全体の選択を表す `allRows`・`allCols` があります。表の列が初めて届いたとき（アクティブなセルに列ができたとき）、新しいビューでアクティブなセルが先頭の行に移ったとき、列を動かしたり隠したりしてアクティブなセルの列が変わったときにも呼ばれます。
 - `GridColumnsEvent`：`reason`（`"resize"`、`"move"`、`"visibility"`、`"freeze"`、状態を適用したときの `"state"`、表を読み直して列が変わったときの `"schema"`）、`columns`（全列を表示順に。`column`、`name`、`col`（隠した列は -1）、`width`、`hidden`、`sized`、`frozen`）、`frozenColumns` です。列の端をドラッグしたときは、ドラッグを終えたときに 1 回だけ知らせます。グリッドが自動で合わせた幅は知らせません。
-- `GridCellEvent`：セルの位置、読み込み済みの値 `value`（読み込む前は `undefined`）、`trigger`（`"pointer"` か `"keyboard"`）、修飾キー、`preventDefault()` です。クリックは、同じセルで押して離したときです。DOM と同じく、ダブルクリックの前にはクリックが 2 回届きます。アクティブなセルでの Space は、`onCellClick` があるときだけクリックとして扱います（ないときはこれまでどおりブラウザーに任せます）。F2 はダブルクリックとして扱います。
+- `GridCellEvent`：セルの位置、読み込み済みの値 `value`（読み込む前は `undefined`）、`trigger`（`"pointer"` か `"keyboard"`）、修飾キー、`preventDefault()` です。クリックは、同じセルで押して離したときです。DOM と同じく、ダブルクリックの前にはクリックが 2 回届きます。アクティブなセルでの Space は、`onCellClick` があるときだけクリックとして扱います（ないときはこれまでどおりブラウザーに任せます）。F2 はダブルクリックとして扱います。`checkboxSelection` のときは、ハンドラーが `preventDefault()` を呼ばない限り、Space でアクティブな行も選びます。
+- `GridRowSelectionEvent`：[行の選択](#行の選択チェックボックス)を参照してください。
 
 ```tsx
 <DataGrid
@@ -186,6 +193,48 @@ const formats: Record<string, ColumnFormat> = {
 
 正しくない設定（`currency` のない通貨の書式や、存在しないタイムゾーンなど）は、グリッドに渡した時点で `RangeError` を投げます。`ColumnFormatter`（`ValueFormatter.column(schema, format)` で作り、グリッドでは `controller.formatterOf(index)`）を使うと、グリッドの外でも同じ設定で値を整形でき、設定は `settings` で読めます。
 
+## 行の選択（チェックボックス）
+
+`checkboxSelection` を指定すると、行見出しの左に行ごとのチェックボックスを、左上の角にすべての行のチェックボックスを表示します。行の選択はセルの選択とは別のものです。セルの選択はビューでの位置の集まりですが、選んだ行は**キー**で記録するので、並べ替えや絞り込みをしても同じレコードが選ばれたままです。
+
+| キー | 有効な期間 | 表を読み直したとき |
+| --- | --- | --- |
+| ファイルでの行の位置（`rowId`、標準） | `TableInfo.revision` が同じあいだ | revision が同じなら選択は残ります。revision が変わると、位置が別のレコードを指すことがあるので、すべての選択を外します（理由は `"revision"`）。 |
+| `rowKey` で指定した列の値（主キー） | その列にその値があるあいだ | キーは残ります。なくなった行のキーも、アプリかユーザーが外すまで選択に残ります。列そのものがなくなると、すべての選択を外します（理由は `"schema"`）。 |
+
+データが変わることのある source は、変わったときに新しい `revision` を返す必要があります。revision のない source は、データが変わらないものとして扱います。`rowKey` を変えると、すべての選択を外します（理由は `"key"`）。
+
+選択は `RowSelection` で表します。「すべての行」をキーの一覧なしで表せます。
+
+```ts
+type RowSelection =
+  | { type: "include"; keys: RowKey[] } // この行
+  | { type: "exclude"; keys: RowKey[]; query?: { filters?: Filter[]; search?: string } }; // この行以外のすべて
+type RowKey = string | number;
+```
+
+- 左上のチェックボックスは、ビューのすべての行を選びます。絞り込みも検索もしていなければ `{ type: "exclude", keys: [] }`（表のすべての行。新しい revision で増えた行も含みます）、しているときは `query: { filters, search }` を付けて、その条件に合うすべての行です。すべての行を選んでいるときにもう一度押すと、すべて外します。そのあと行の選択を外すと、そのキーが `keys` に入ります。
+- 絞り込みで隠れた行の選択も残ります。`include` の選択はどのビューでも行ごとに表示します。`query` 付きの `exclude` の選択は、その絞り込みをすべて含み（ほかの条件が増えてもかまいません）、検索の文字がその検索の文字を含むビューで、行ごとに表示します。そうでないビューでは、条件に合う行のキーを読み、10 万行以下なら、その行の `include` の選択に変えます（理由は `"query"`）。それより多いときは選択をそのまま残し、その行のチェックボックスは薄く表示して、条件の合うビューに戻るまで切り替えられません。
+- イベント（とツールバー）の `count` は選んだ行の数です。`exclude` の選択の条件に合う行を数えていないあいだは `null` です。
+- 行の選択は `GridState` に含みません。残すときは `getRowSelection()` をアプリで保存し、保存先から読んだ値は `vastgrid-core` の `parseRowSelection(value)` で確かめてください（`setRowSelection` も同じ確認をして、正しくない値なら `false` を返します）。
+
+```tsx
+const [checked, setChecked] = useState<RowSelection>({ type: "include", keys: [] });
+
+<DataGrid
+  source={source}
+  checkboxSelection
+  rowKey="order_id"
+  rowSelection={checked}
+  onRowSelectionChange={({ selection, count, reason }) => {
+    setChecked(selection);
+    setCount(count);
+  }}
+/>;
+```
+
+`GridRowSelectionEvent` には、`reason`（`"user"`、`setRowSelection` と `rowSelection` の prop による `"api"`、`"revision"`、`"schema"`、`"query"`、`"key"`）、`selection`、`count` があります。コントローラーでは `controller.onRowSelectionChange` で受け取れます。Space でアクティブな行を選びます（`onCellClick` のあとで、その `preventDefault()` で止められます）。⌘/Ctrl ＋ Shift ＋ Space ですべての行の選択を切り替え、チェックボックスの Shift ＋ クリックで、最後に押した行からの行を選びます（キーを読み込んだ行だけ）。スクリーンリーダーには、アクティブな行のチェックボックスとその状態、キー操作のあとの変化を伝えます。
+
 ## エクスポート
 
 `vastgrid` は `vastgrid-core` のもの（`ArraySource`、`RemoteSource`、型、補助の関数）をすべて再エクスポートするので、ほとんどのアプリは `vastgrid` だけをインストールすれば済みます。ほかに次のものもエクスポートします。
@@ -194,6 +243,8 @@ const formats: Record<string, ColumnFormat> = {
 | --- | --- |
 | `DataGrid`、`DataGridProps`、`DataGridHandle` | コンポーネントと、その props と ref の型。 |
 | `GridCell`、`GridCellEvent`、`GridSelectionEvent`、`GridSelectionRange`、`GridColumnsEvent`、`GridColumn`、`GridColumnsChangeReason` | [イベント](#イベント)の型。 |
+| `GridRowSelectionEvent`、`GridRowSelectionChangeReason` | [行の選択](#行の選択チェックボックス)のイベント。 |
+| `RowSelection`、`RowKey`、`RowSelectionQuery`、`RowSelectionModel`、`parseRowSelection(value)` | `vastgrid-core` の、キーによる[行の選択](#行の選択チェックボックス)。 |
 | `GridState`、`GridColumnSetting`、`parseGridState(value)`、`resolveGridState(state, names)`、`GRID_STATE_VERSION` | `vastgrid-core` の、[保存する設定](#設定の保存)。 |
 | `en`、`ja`、`Messages`、`messagesFor(locale)` | 組み込みの文言と、ロケールに合わせてグリッドが選ぶ組。 |
 | `GridController`、`CanvasRenderer` | グリッドの状態とキャンバスの描画。ref から使います。 |

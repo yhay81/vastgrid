@@ -23,6 +23,17 @@ export {
   parseViewQuery,
 } from "./protocol.js";
 export { RemoteSource, type RemoteSourceOptions } from "./remote-source.js";
+export {
+  impliesRowQuery,
+  parseRowSelection,
+  type RowKey,
+  type RowSelection,
+  RowSelectionModel,
+  type RowSelectionQuery,
+  rowKeyOf,
+  rowSelectionQuery,
+  sameRowQuery,
+} from "./row-selection.js";
 export { MAX_NATIVE_SCROLL, ScrollAxis } from "./scroll.js";
 export {
   type CellPosition,

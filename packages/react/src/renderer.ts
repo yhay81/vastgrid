@@ -149,12 +149,16 @@ export class CanvasRenderer {
     const wanted: number[] = [];
     for (let col = 0; col < c.frozen; col++) wanted.push(c.visible[col].index);
     for (let col = firstCol; col <= lastCol; col++) wanted.push(c.visible[col].index);
+    // The checkboxes need the key column, also when it is hidden or scrolled away.
+    const keyColumn = c.options.checkboxSelection ? c.rowKeyColumn : -1;
+    if (keyColumn >= 0 && !wanted.includes(keyColumn)) wanted.push(keyColumn);
     c.cache.want(firstRow, lastRow, wanted);
 
     const headerHeight = c.options.headerHeight;
     const scrollLeft = c.gutterWidth + c.frozenWidth;
     // Scrollable columns.
     this.clipped(scrollLeft, headerHeight, c.width - scrollLeft, c.height - headerHeight, () => {
+      this.drawCheckedRows(scrollLeft, firstRow, lastRow);
       for (let col = firstCol; col <= lastCol; col++) this.drawCells(col, firstRow, lastRow);
       this.drawLines(firstCol, lastCol, firstRow, lastRow);
       this.drawSelection(false);
@@ -162,6 +166,7 @@ export class CanvasRenderer {
     // Frozen columns.
     if (c.frozen > 0) {
       this.clipped(c.gutterWidth, headerHeight, c.frozenWidth, c.height - headerHeight, () => {
+        this.drawCheckedRows(c.gutterWidth, firstRow, lastRow);
         for (let col = 0; col < c.frozen; col++) this.drawCells(col, firstRow, lastRow);
         this.drawLines(0, c.frozen - 1, firstRow, lastRow);
         this.drawSelection(true);
@@ -270,6 +275,54 @@ export class CanvasRenderer {
         if (needed > width && needed > (this.needed.get(col) ?? 0)) this.needed.set(col, needed);
       }
       ctx.fillText(this.cellText.fit(text, textWidth), textX, y + rowHeight / 2 + 0.5);
+    }
+    ctx.restore();
+  }
+
+  /** Shades the checked rows from `left` to the right edge. */
+  private drawCheckedRows(left: number, firstRow: number, lastRow: number) {
+    const c = this.controller;
+    if (!c.options.checkboxSelection || c.rowSelection.empty) return;
+    const ctx = this.context;
+    ctx.fillStyle = this.theme.checkedRow;
+    const rowHeight = c.options.rowHeight;
+    for (let row = firstRow; row < lastRow; row++) {
+      if (c.rowChecked(row) === true) ctx.fillRect(left, c.rowY(row), c.width - left, rowHeight);
+    }
+  }
+
+  /** A checkbox centered at x, y: checked, unchecked, mixed, or `null` for unknown (drawn faint). */
+  private checkbox(x: number, y: number, state: boolean | "mixed" | null, hovered: boolean) {
+    const ctx = this.context;
+    const t = this.theme;
+    const size = 13;
+    const left = Math.round(x - size / 2) + 0.5;
+    const top = Math.round(y - size / 2) + 0.5;
+    ctx.save();
+    if (state === null) ctx.globalAlpha = 0.4;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(left, top, size - 1, size - 1, 3);
+    if (state === true || state === "mixed") {
+      ctx.fillStyle = t.accent;
+      ctx.fill();
+      ctx.strokeStyle = t.accentText;
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      if (state === true) {
+        ctx.moveTo(left + 3, top + 6.5);
+        ctx.lineTo(left + 5.2, top + 8.8);
+        ctx.lineTo(left + 9.2, top + 3.6);
+      } else {
+        ctx.moveTo(left + 3, top + 6);
+        ctx.lineTo(left + 9, top + 6);
+      }
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = t.background;
+      ctx.fill();
+      ctx.strokeStyle = hovered ? t.accent : t.muted;
+      ctx.stroke();
     }
     ctx.restore();
   }
@@ -500,8 +553,13 @@ export class CanvasRenderer {
       ctx.textBaseline = "middle";
       ctx.textAlign = "right";
       const viewed = c.view.id !== null;
+      const boxes = c.checkboxWidth;
       for (let row = firstRow; row < lastRow; row++) {
         const y = c.rowY(row);
+        if (boxes > 0) {
+          const hovered = c.hover?.zone === "gutter" && c.hover.checkbox && c.hover.row === row;
+          this.checkbox(boxes / 2 + 2, y + rowHeight / 2, c.rowChecked(row), hovered);
+        }
         if (c.selection.rowSelected(row)) {
           ctx.fillStyle = t.selection;
           ctx.fillRect(0, y, width, rowHeight);
@@ -530,8 +588,13 @@ export class CanvasRenderer {
     const t = this.theme;
     const width = c.gutterWidth;
     const height = c.options.headerHeight;
-    ctx.fillStyle = c.hover?.zone === "corner" ? t.headerActive : t.headerBackground;
+    const boxes = c.checkboxWidth;
+    ctx.fillStyle = c.hover?.zone === "corner" && !c.hover.checkbox ? t.headerActive : t.headerBackground;
     ctx.fillRect(0, 0, width, height);
+    if (boxes > 0) {
+      const state = c.rowSelectionPending ? null : c.allRowsChecked;
+      this.checkbox(boxes / 2 + 2, height / 2, state, c.hover?.zone === "corner" && c.hover.checkbox);
+    }
     ctx.fillStyle = t.muted;
     ctx.beginPath();
     ctx.moveTo(width - 6, height - 14);

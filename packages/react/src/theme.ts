@@ -20,6 +20,10 @@ export interface GridTheme {
   selectionBorder: string;
   activeBorder: string;
   accent: string;
+  /** Text and marks drawn on `accent`, such as the check of a checkbox. */
+  accentText: string;
+  /** Background of checked rows. */
+  checkedRow: string;
   nullText: string;
   placeholder: string;
   match: string;
@@ -45,6 +49,8 @@ const colorTokens: Record<
   selectionBorder: "--vg-selection-border",
   activeBorder: "--vg-active-border",
   accent: "--vg-accent",
+  accentText: "--vg-accent-fg",
+  checkedRow: "--vg-checked-row-bg",
   nullText: "--vg-null-fg",
   placeholder: "--vg-placeholder",
   match: "--vg-match-bg",

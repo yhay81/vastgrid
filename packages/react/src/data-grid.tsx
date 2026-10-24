@@ -13,7 +13,15 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { CellValue, ColumnFormat, CopyValues, GridState, TableSource, ViewQuery } from "vastgrid-core";
+import type {
+  CellValue,
+  ColumnFormat,
+  CopyValues,
+  GridState,
+  RowSelection,
+  TableSource,
+  ViewQuery,
+} from "vastgrid-core";
 import { StatusBar, Toolbar } from "./components/bars.js";
 import { CellInspector } from "./components/cell-inspector.js";
 import { ColumnsPanel } from "./components/columns-panel.js";
@@ -22,7 +30,7 @@ import { FindBar } from "./components/find-bar.js";
 import { type Anchor, type MenuItem, MenuList, Popover } from "./components/popover.js";
 import { StatsPanel } from "./components/stats-panel.js";
 import { CopyRangesError, CopyTooLargeError, GridController, type Hit, ViewBuildingError } from "./controller.js";
-import type { GridCellEvent, GridColumnsEvent, GridSelectionEvent } from "./events.js";
+import type { GridCellEvent, GridColumnsEvent, GridRowSelectionEvent, GridSelectionEvent } from "./events.js";
 import { countFormat, numberFormat } from "./labels.js";
 import { type Messages, messagesFor } from "./messages.js";
 import { CanvasRenderer } from "./renderer.js";
@@ -81,6 +89,25 @@ export interface DataGridProps {
   initialState?: GridState;
   /** Called with `getState()` when the query or the column settings change. */
   onStateChange?: (state: GridState) => void;
+  /**
+   * Shows a checkbox for each row, and one for every row in the corner. Checked rows are kept by key
+   * (see `rowKey`), so they stay checked when the view is sorted or filtered. Space checks the active
+   * row, and Ctrl+Shift+Space (⌘⇧Space on a Mac) every row.
+   */
+  checkboxSelection?: boolean;
+  /**
+   * Schema column name whose values identify the rows (a primary key), for checked rows that stay
+   * checked when the table is read again with new data. Without it, a row's key is its position in the
+   * table, and a new `TableInfo.revision` unchecks every row. Changing it unchecks every row.
+   */
+  rowKey?: string;
+  /**
+   * Checked rows to apply: on start, and whenever a different value is passed. Pass back what
+   * `onRowSelectionChange` reports to control them. Checked rows are not part of `GridState`.
+   */
+  rowSelection?: RowSelection;
+  /** Called when rows are checked or unchecked, by the user, the app or the grid (see the event's `reason`). */
+  onRowSelectionChange?: (event: GridRowSelectionEvent) => void;
   className?: string;
   style?: CSSProperties;
   "aria-label"?: string;
@@ -97,6 +124,10 @@ export interface DataGridHandle {
   applyState(state: GridState): boolean;
   /** Scrolls to a row of the current view and makes it active. */
   goToRow(row: number): void;
+  /** The checked rows, as keys. */
+  getRowSelection(): RowSelection;
+  /** Replaces the checked rows; returns false when the value is not a row selection. */
+  setRowSelection(selection: RowSelection): boolean;
   readonly controller: GridController;
   /** The canvas renderer, for diagnostics such as `renderer.timings()`. Null before the grid mounts. */
   readonly renderer: CanvasRenderer | null;
@@ -151,6 +182,9 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     copyLimit = 1_000_000,
     columnFormats,
     copyValues = "raw",
+    checkboxSelection = false,
+    rowKey,
+    rowSelection,
     onQueryChange,
     className,
     style,
@@ -188,8 +222,11 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       copyLimit,
       columnFormats,
       copyValues,
+      checkboxSelection,
+      rowKey,
     });
     if (props.initialState) grid.applyState(props.initialState);
+    if (rowSelection) grid.setRowSelection(rowSelection);
     return grid;
   }, [source]);
   useSyncExternalStore(controller.subscribe, controller.getVersion, controller.getVersion);
@@ -210,6 +247,19 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   useEffect(() => {
     controller.options.copyValues = copyValues;
   }, [controller, copyValues]);
+
+  useEffect(() => {
+    controller.setCheckboxSelection(checkboxSelection);
+  }, [controller, checkboxSelection]);
+
+  useEffect(() => {
+    controller.setRowKey(rowKey);
+  }, [controller, rowKey]);
+
+  // A value that equals the checked rows changes nothing, so passing back what was reported is safe.
+  useEffect(() => {
+    if (rowSelection) controller.setRowSelection(rowSelection);
+  }, [controller, rowSelection]);
 
   const announce = useCallback((text: string) => {
     setNotice(text);
@@ -297,6 +347,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       controller.onSelectionChange((event) => handlers.current.onSelectionChange?.(event)),
       controller.onColumnsChange((event) => handlers.current.onColumnsChange?.(event)),
       controller.onStateChange((state) => handlers.current.onStateChange?.(state)),
+      controller.onRowSelectionChange((event) => handlers.current.onRowSelectionChange?.(event)),
     ];
     return () => {
       for (const stop of stops) stop();
@@ -324,6 +375,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         controller.selection.select({ row, col: controller.selection.active.col });
         controller.selectionChanged({ row, col: controller.selection.active.col });
       },
+      getRowSelection: () => controller.getRowSelection(),
+      setRowSelection: (selection) => controller.setRowSelection(selection),
       controller,
       get renderer() {
         return rendererRef.current;
@@ -475,6 +528,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       setOverlay({ kind: "columnMenu", col: hit.col, anchor: headerAnchor(hit.col) });
       return;
     }
+    if (hit.checkbox) {
+      event.preventDefault();
+      if (hit.zone === "corner") c.toggleAllRows();
+      else c.toggleRow(hit.row, event.shiftKey);
+      return;
+    }
     switch (hit.zone) {
       case "cell":
         c.selection.select({ row: hit.row, col: hit.col }, mode);
@@ -529,12 +588,19 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     }
     const hit: Hit =
       x > scroller.clientWidth || y > scroller.clientHeight
-        ? { zone: "outside", row: -1, col: -1, resize: -1, menu: false }
+        ? { zone: "outside", row: -1, col: -1, resize: -1, menu: false, checkbox: false }
         : c.hitTest(x, y);
     const previous = c.hover;
     c.hover = hit;
-    scroller.style.cursor = hit.resize >= 0 ? "col-resize" : hit.menu ? "pointer" : "";
-    if (previous?.zone !== hit.zone || previous.col !== hit.col || previous.menu !== hit.menu) c.requestRender();
+    scroller.style.cursor = hit.resize >= 0 ? "col-resize" : hit.menu || hit.checkbox ? "pointer" : "";
+    if (
+      previous?.zone !== hit.zone ||
+      previous.col !== hit.col ||
+      previous.menu !== hit.menu ||
+      previous.checkbox !== hit.checkbox ||
+      (hit.checkbox && previous.row !== hit.row)
+    )
+      c.requestRender();
   }
 
   function endDrag(event: PointerEvent<HTMLDivElement>) {
@@ -585,6 +651,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   function onDoubleClick(event: MouseEvent<HTMLDivElement>) {
     const { x, y } = local(event);
     const hit = controller.hitTest(x, y);
+    if (hit.checkbox) return;
     if (hit.resize >= 0) {
       controller.autoFit(hit.resize);
       controller.emit();
@@ -669,11 +736,26 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         target = c.selection.advance(event.shiftKey ? -1 : 1, 0);
         break;
       case " ":
+        if (checkboxSelection && primary && event.shiftKey) {
+          c.toggleAllRows();
+          announceChecked(null);
+          break;
+        }
         if (event.shiftKey) c.selection.selectRows(c.selection.active.row, c.selection.active.row);
         else if (event.ctrlKey) c.selection.selectCols(c.selection.active.col, c.selection.active.col);
-        else if (props.onCellClick && !event.altKey && !event.metaKey && c.rowCount > 0 && c.visible.length > 0) {
-          // Space clicks the active cell. Without onCellClick, it is left to the browser as before.
-          props.onCellClick(c.cellEvent(c.selection.active.row, c.selection.active.col, "keyboard", event));
+        else if (
+          (props.onCellClick || checkboxSelection) &&
+          !event.altKey &&
+          !event.metaKey &&
+          c.rowCount > 0 &&
+          c.visible.length > 0
+        ) {
+          // Space clicks the active cell, and then checks its row. Without either, it is left to the browser.
+          const cellEvent = c.cellEvent(c.selection.active.row, c.selection.active.col, "keyboard", event);
+          props.onCellClick?.(cellEvent);
+          if (checkboxSelection && !cellEvent.defaultPrevented && c.toggleRow(c.selection.active.row)) {
+            announceChecked(c.selection.active.row);
+          }
           break;
         } else return;
         c.selectionChanged();
@@ -735,6 +817,20 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     }
     event.preventDefault();
     if (target) c.selectionChanged(target);
+  }
+
+  /** Tells screen readers the new state of a row's checkbox, or of every row's with `null`. */
+  function announceChecked(row: number | null) {
+    const c = controller;
+    if (row === null) {
+      const checked = c.checkedCount;
+      announce(
+        c.rowSelection.empty ? messages.rowsUnchecked : messages.rowsChecked(checked === null ? null : count(checked)),
+      );
+      return;
+    }
+    const label = count(row + 1);
+    announce(c.rowChecked(row) ? messages.rowChecked(label) : messages.rowUnchecked(label));
   }
 
   /** The browser's own copy command (Edit menu): answer synchronously when the cells are loaded. */
@@ -908,6 +1004,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       : activeValue === null
         ? messages.blank
         : c.formatterOf(activeIndex).text(activeValue);
+  const allChecked = c.allRowsChecked;
+  const activeChecked = c.rowChecked(active.row);
   const labelOf = (col: number) => {
     const state = c.visible[col];
     return state ? c.columnLabel(state.index) : "";
@@ -996,6 +1094,15 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
               {/* biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas. */}
               {/* biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant). */}
               <div role="row" aria-rowindex={1}>
+                {checkboxSelection && (
+                  // biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas.
+                  // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
+                  <div role="columnheader" aria-colindex={1}>
+                    {/* biome-ignore lint/a11y/useSemanticElements: the checkbox is drawn on the canvas. */}
+                    {/* biome-ignore lint/a11y/useFocusableInteractive: Ctrl+Shift+Space toggles it from the grid. */}
+                    <span role="checkbox" aria-checked={allChecked} aria-label={messages.checkAllRows} />
+                  </div>
+                )}
                 {/* biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas. */}
                 {/* biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant). */}
                 <div role="columnheader" aria-colindex={active.col + 2}>
@@ -1004,7 +1111,25 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
               </div>
               {/* biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas. */}
               {/* biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant). */}
-              <div role="row" aria-rowindex={active.row + 2}>
+              <div
+                role="row"
+                aria-rowindex={active.row + 2}
+                aria-selected={checkboxSelection && activeChecked !== null ? activeChecked : undefined}
+              >
+                {checkboxSelection && (
+                  // biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas.
+                  // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
+                  <div role="rowheader" aria-colindex={1}>
+                    {/* biome-ignore lint/a11y/useSemanticElements: the checkbox is drawn on the canvas. */}
+                    {/* biome-ignore lint/a11y/useFocusableInteractive: Space toggles it from the grid. */}
+                    <span
+                      role="checkbox"
+                      aria-checked={activeChecked ?? false}
+                      aria-disabled={activeChecked === null || undefined}
+                      aria-label={messages.checkRow(count(active.row + 1))}
+                    />
+                  </div>
+                )}
                 {/* biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas. */}
                 {/* biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant). */}
                 <div role="gridcell" id={cellId} aria-colindex={active.col + 2} aria-selected="true">

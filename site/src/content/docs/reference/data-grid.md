@@ -34,6 +34,10 @@ import "vastgrid/styles.css";
 | `onCellDoubleClick` | `(event: GridCellEvent) => void` | | Called when a cell is double-clicked, or F2 is pressed. `event.preventDefault()` keeps the cell inspector closed. |
 | `initialState` | `GridState` | | Settings applied when a grid starts, once the table's columns are known. See [Saving the settings](#saving-the-settings). |
 | `onStateChange` | `(state: GridState) => void` | | Called with the settings when the query or the column settings change. |
+| `checkboxSelection` | `boolean` | `false` | Shows a checkbox for each row, and one for every row in the corner. See [Checked rows](#checked-rows). |
+| `rowKey` | `string` | the row's position | Schema column whose values identify the rows (a primary key). Checked rows then survive new data. |
+| `rowSelection` | `RowSelection` | | Checked rows to apply on start and whenever a different value is passed. |
+| `onRowSelectionChange` | `(event: GridRowSelectionEvent) => void` | | Called when rows are checked or unchecked, by the user, the app or the grid. |
 | `className`, `style` | | | Added to the root element (`.vg-root`). |
 | `aria-label` | `string` | `messages.gridLabel` | The grid's name for screen readers. |
 
@@ -50,6 +54,8 @@ A ref gives a `DataGridHandle`:
 | `getState()` | The query and the column settings, as a `GridState` to save. |
 | `applyState(state)` | Applies a saved `GridState`. Returns `false` when the value is not a state this version reads. |
 | `goToRow(row)` | Scrolls to a row of the current view and makes it active. |
+| `getRowSelection()` | The checked rows, as a `RowSelection`. |
+| `setRowSelection(selection)` | Replaces the checked rows. Returns `false` when the value is not a `RowSelection`. |
 | `controller` | The `GridController` with the grid's state: the selection, the layout of the columns, the view. |
 | `renderer` | The `CanvasRenderer`, for diagnostics such as `renderer.timings()`. `null` before the grid mounts. |
 
@@ -99,7 +105,9 @@ A cell has three kinds of coordinates:
   `trigger` (`"pointer"` or `"keyboard"`), the modifier keys and `preventDefault()`. A click is a press and
   release on the same cell; a double click is preceded by two clicks, as in the DOM. Space on the
   active cell counts as a click only when `onCellClick` is set (otherwise the key is left to the
-  browser), and F2 counts as a double click.
+  browser), and F2 counts as a double click. With `checkboxSelection`, Space also checks the active
+  row unless the handler calls `preventDefault()`.
+- `GridRowSelectionEvent`: see [Checked rows](#checked-rows).
 
 ```tsx
 <DataGrid
@@ -231,6 +239,67 @@ Invalid settings, such as a currency style without `currency` or an unknown time
 format)`, and `controller.formatterOf(index)` in the grid) formats values with the settings outside the
 grid, and keeps them in `settings`.
 
+## Checked rows
+
+`checkboxSelection` adds a checkbox to the left of each row header, and one in the corner for every row.
+Checking rows is separate from the cell selection: the cell selection is a set of view positions, while
+checked rows are kept by **key**, so the same records stay checked when the view is sorted or filtered.
+
+| Key | Valid for | When the table is read again |
+| --- | --- | --- |
+| The row's position in the file (`rowId`, the default) | One `TableInfo.revision` | The same revision keeps the checked rows. A new revision unchecks every row (reason `"revision"`), because positions may name other records. |
+| The value of the `rowKey` column (a primary key) | As long as the column has the value | Keys stay. Keys of rows that are gone stay in the selection until the app or the user removes them. If the column is gone, every row is unchecked (reason `"schema"`). |
+
+A source whose data can change must report a new `revision` when it does; sources without one are taken
+to be unchanged. Changing `rowKey` unchecks every row (reason `"key"`).
+
+A selection is a `RowSelection`, which needs no list of keys for "every row":
+
+```ts
+type RowSelection =
+  | { type: "include"; keys: RowKey[] } // these rows
+  | { type: "exclude"; keys: RowKey[]; query?: { filters?: Filter[]; search?: string } }; // every row except these
+type RowKey = string | number;
+```
+
+- The corner checkbox checks every row of the view: without filters or a search, `{ type: "exclude",
+  keys: [] }`, every row of the table, also rows added in a new revision; with them,
+  `query: { filters, search }`, every row matching them. Clicking it again when every row is checked
+  unchecks them all. Unchecking a row then adds its key to `keys`.
+- Rows hidden by a filter stay checked. An `include` selection shows in every view. An `exclude`
+  selection with a `query` shows row by row in views that have all of its filters and a search that
+  contains its search (more filters are fine). In other views the grid reads the keys of the matching
+  rows, and if there are at most 100,000 it turns the selection into an `include` of those rows (reason
+  `"query"`); larger selections stay as they are, and their rows show a faint checkbox that cannot be
+  toggled until the view returns to the filter.
+- `count` in the event (and the toolbar) is the number of checked rows, or `null` while the rows matching
+  an `exclude` selection's filters are not counted.
+- Checked rows are not part of `GridState`; save `getRowSelection()` yourself if you need to, and check
+  values from storage with `parseRowSelection(value)` from `vastgrid-core` (`setRowSelection` does the
+  same check and returns `false` for invalid values).
+
+```tsx
+const [checked, setChecked] = useState<RowSelection>({ type: "include", keys: [] });
+
+<DataGrid
+  source={source}
+  checkboxSelection
+  rowKey="order_id"
+  rowSelection={checked}
+  onRowSelectionChange={({ selection, count, reason }) => {
+    setChecked(selection);
+    setCount(count);
+  }}
+/>;
+```
+
+`GridRowSelectionEvent` has `reason` (`"user"`, `"api"` for `setRowSelection` and the `rowSelection`
+prop, `"revision"`, `"schema"`, `"query"`, `"key"`), `selection` and `count`. The controller offers it as
+`controller.onRowSelectionChange`. Space checks the active row (after `onCellClick`, whose
+`preventDefault()` stops it), ⌘/Ctrl + Shift + Space checks or unchecks every row, and Shift + click on
+a checkbox checks the rows from the last clicked one when their keys are loaded. Screen readers hear the
+active row's checkbox and its state, and the change after a key press.
+
 ## Exports
 
 `vastgrid` re-exports everything in `vastgrid-core` (`ArraySource`, `RemoteSource`, the types and the
@@ -240,6 +309,8 @@ helpers), so most apps install only `vastgrid`. It also exports:
 | --- | --- |
 | `DataGrid`, `DataGridProps`, `DataGridHandle` | The component, its props and its ref. |
 | `GridCell`, `GridCellEvent`, `GridSelectionEvent`, `GridSelectionRange`, `GridColumnsEvent`, `GridColumn`, `GridColumnsChangeReason` | Types of the [events](#events). |
+| `GridRowSelectionEvent`, `GridRowSelectionChangeReason` | The [checked rows](#checked-rows) event. |
+| `RowSelection`, `RowKey`, `RowSelectionQuery`, `RowSelectionModel`, `parseRowSelection(value)` | [Checked rows](#checked-rows) by key, from `vastgrid-core`. |
 | `GridState`, `GridColumnSetting`, `parseGridState(value)`, `resolveGridState(state, names)`, `GRID_STATE_VERSION` | The [saved settings](#saving-the-settings), from `vastgrid-core`. |
 | `en`, `ja`, `Messages`, `messagesFor(locale)` | The built-in texts and the set the grid picks for a locale. |
 | `GridController`, `CanvasRenderer` | The grid's state and its canvas renderer, reached through the ref. |

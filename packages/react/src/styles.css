@@ -28,6 +28,7 @@
   --vg-active-border: light-dark(#0b57d0, #8ab4f8);
   --vg-accent: light-dark(#0b57d0, #8ab4f8);
   --vg-accent-fg: light-dark(#ffffff, #0d1b33);
+  --vg-checked-row-bg: light-dark(rgb(11 87 208 / 6%), rgb(138 180 248 / 9%));
   --vg-null-fg: light-dark(#8c959f, #6e6e7a);
   --vg-placeholder: light-dark(#eef1f4, #26262d);
   --vg-match-bg: light-dark(rgb(255 212 61 / 45%), rgb(255 212 61 / 28%));

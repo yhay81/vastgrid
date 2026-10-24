@@ -237,6 +237,16 @@ test("sorts with blanks last and reports original rows", async () => {
   assert.deepEqual(column(window.columns, 0), [5, 1]);
 });
 
+test("reads only the original rows of a view without columns (the keys of checked rows)", async () => {
+  const table = await open("fruit.csv");
+  const view = await table.createView({ filters: [{ type: "values", column: 4, values: [true] }] });
+  const rows = await table.readRows({ view: view.id, start: 0, end: view.rowCount, columns: [] });
+  assert.deepEqual(rows.columns, []);
+  assert.deepEqual(rows.rowIds, [0, 2]);
+  const sorted = await table.createView({ sort: [{ column: 2, direction: "desc" }] });
+  assert.deepEqual((await table.readRows({ view: sorted.id, start: 0, end: 5, columns: [] })).rowIds, [2, 4, 0, 1, 3]);
+});
+
 test("filters by values, comparisons, text, ranges and blanks", async () => {
   const table = await open("fruit.csv");
   const count = async (query: Parameters<typeof table.createView>[0]) => (await table.createView(query)).rowCount;

@@ -67,7 +67,11 @@ export interface TableInfo {
   format?: string;
   /** Size of the underlying file in bytes, when known. */
   byteSize?: number;
-  /** Changes when the underlying data changes (for example the file was rewritten). */
+  /**
+   * Changes when the underlying data changes (for example the file was rewritten). Row positions
+   * (`RowBlock.rowIds`) keep naming the same records while it stays the same, so a source whose data
+   * can change must change it; without one, the data is taken to be unchanged.
+   */
   revision?: string;
   /**
    * Notes about how the file was read, as stable codes: `encoding:<name>` (converted from that
@@ -186,7 +190,10 @@ export interface RowBlock {
   end: number;
   /** One array per requested column, in request order. */
   columns: CellValue[][];
-  /** Row positions in the original table (0-based), for views. */
+  /**
+   * Row positions in the original table (0-based), for views. They are stable for the table's
+   * `revision`, so the grid uses them as row keys (see `RowSelection`).
+   */
   rowIds?: number[] | null;
 }
 

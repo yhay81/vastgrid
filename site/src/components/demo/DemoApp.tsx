@@ -199,7 +199,7 @@ export default function DemoApp({ language: pageLanguage }: { language: Language
         <p className="demo__note">{dataset === "orders" ? t.ordersNote : t.readingsNote}</p>
       </header>
       <main className="demo__grid">
-        <DataGrid key={dataset} ref={grid} source={source} locale={language} frozenColumns={1} />
+        <DataGrid key={dataset} ref={grid} source={source} locale={language} frozenColumns={1} checkboxSelection />
       </main>
     </div>
   );

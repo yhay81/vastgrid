@@ -16,6 +16,8 @@ export type {
   GridColumn,
   GridColumnsChangeReason,
   GridColumnsEvent,
+  GridRowSelectionChangeReason,
+  GridRowSelectionEvent,
   GridSelectionEvent,
   GridSelectionRange,
 } from "./events.js";

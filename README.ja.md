@@ -154,11 +154,15 @@ const source = new ArraySource({
 | `onCellClick`、`onCellDoubleClick` | `(event: GridCellEvent) => void` | | セルのクリック（または Space）とダブルクリック（または F2）で呼ばれます。ダブルクリックで `preventDefault()` を呼ぶと、セルの詳細を開きません。 |
 | `initialState` | `GridState` | | グリッドを作るときに、表の列がわかった時点で適用する設定。 |
 | `onStateChange` | `(state: GridState) => void` | | クエリーか列の設定が変わったときに、その設定を渡して呼ばれます。 |
+| `checkboxSelection` | `boolean` | `false` | 行ごとのチェックボックスと、左上にすべての行のチェックボックスを表示します。 |
+| `rowKey` | `string` | 行の位置 | 行を識別する値（主キー）の列名。データが新しくなっても行の選択が残ります。 |
+| `rowSelection` | `RowSelection` | | 選択する行。最初と、違う値を渡したときに適用します。 |
+| `onRowSelectionChange` | `(event: GridRowSelectionEvent) => void` | | ユーザー・アプリ・グリッドが行の選択を変えたときに呼ばれます。 |
 | `className`、`style` | | | ルートの要素（`.vg-root`）に付けます。 |
 | `aria-label` | `string` | `messages.gridLabel` | スクリーンリーダー向けのグリッドの名前。 |
 
 ref からは `DataGridHandle` を使えます。`focus()`、`reload()`、`getQuery()`、`setQuery(query)`、`getState()`、
-`applyState(state)`、`goToRow(row)`、グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()`
+`applyState(state)`、`goToRow(row)`、`getRowSelection()`、`setRowSelection(selection)`、グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()`
 などの診断用）があります。
 
 イベントは、セルのビューでの行 `row`、元の表での行 `rowId`、表示中の列の位置 `col`、表の列の番号 `column` を渡し、
@@ -200,6 +204,27 @@ const formats: Record<string, ColumnFormat> = {
 ```
 
 コピーには値とスキーマの列名が入ります。表示している文字と表示名をコピーするには、`copyValues="formatted"`（列ごとには `copy`）を指定します。詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#列の表示設定)を参照してください。
+
+### 行の選択（チェックボックス）
+
+`checkboxSelection` を指定すると、セルの選択とは別に、行ごとのチェックボックスで行を選べます。選んだ行はキーで記録するので、並べ替えや絞り込みをしても同じレコードが選ばれたままで、絞り込みで隠れた行の選択も残ります。キーは標準ではファイルでの行の位置（`rowId`）で、`TableInfo.revision` が同じあいだだけ有効です。revision が変わると選択をすべて外します。`rowKey` で列を指定すると、その列の値がキーになり、データが新しくなっても選択が残ります。なくなった行のキーは、アプリかユーザーが外すまで残ります。
+
+左上のチェックボックスは、キーを並べずにすべての行を選びます。`{ type: "exclude", keys: [] }` は表の `keys` 以外のすべての行で、絞り込みか検索をしているときは、その条件に合うすべての行（`query: { filters, search }`）です。その条件（にさらに条件を足したもの）で絞り込んだビューでは行ごとの状態を表示し、そうでないビューでは、条件に合う行が 10 万行までならキーを並べた選択に変えます（理由は `query`）。それより多いときは選択をそのまま残し、その行は状態が不明として表示します。行の選択は `GridState` に含みません。
+
+```tsx
+const [checked, setChecked] = useState<RowSelection>({ type: "include", keys: [] });
+
+<DataGrid
+  source={source}
+  checkboxSelection
+  rowKey="order_id"
+  rowSelection={checked}
+  onRowSelectionChange={({ selection, count }) => {
+    setChecked(selection);
+    showCount(count); // 絞り込み条件に合う行を数えていないあいだは null
+  }}
+/>;
+```
 
 ## 性能
 
@@ -244,6 +269,7 @@ DuckDB の処理を含み、HTTP は含みません。
 | ⌘/Ctrl ＋ クリック | 範囲を足す（行または列が同じ範囲はまとめてコピーできる） |
 | Tab・Enter（Shift で逆向き） | 選択の中を動く |
 | Shift ＋ Space・Ctrl ＋ Space・⌘/Ctrl ＋ A | 行・列・すべてを選ぶ |
+| Space・⌘/Ctrl ＋ Shift ＋ Space（`checkboxSelection` のとき） | アクティブな行・すべての行のチェックを切り替える（Shift ＋ クリックで範囲） |
 | ⌘/Ctrl ＋ C・⌘/Ctrl ＋ Shift ＋ C | コピー・見出しを含めてコピー |
 | ⌘/Ctrl ＋ F | 検索 |
 | Alt ＋ ↓ | 列のメニュー（並べ替え・絞り込み・統計・固定・非表示） |

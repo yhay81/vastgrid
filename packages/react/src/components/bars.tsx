@@ -33,6 +33,7 @@ export function Toolbar({
   const sort = query.sort ?? [];
   const total = controller.totalRows;
   const filtered = controller.view.id !== null && filtersRows(query);
+  const checked = controller.checkedCount;
   let rows: string;
   if (controller.info?.status === "loading") {
     const progress = controller.info.progress;
@@ -116,6 +117,20 @@ export function Toolbar({
         <button type="button" className="vg-button vg-button--small" onClick={() => controller.clearFilters()}>
           {messages.clearFilters}
         </button>
+      )}
+      {controller.options.checkboxSelection && !controller.rowSelection.empty && (
+        <span className="vg-chip">
+          <span>{messages.rowsChecked(checked === null ? null : count(checked))}</span>
+          <button
+            type="button"
+            className="vg-chip__remove"
+            aria-label={messages.uncheckAllRows}
+            title={messages.uncheckAllRows}
+            onClick={() => controller.clearRowSelection()}
+          >
+            ×
+          </button>
+        </span>
       )}
       <span className="vg-toolbar__spacer" />
       <span className="vg-toolbar__count" aria-live="polite">

@@ -17,12 +17,19 @@ import {
   isEmptyQuery,
   MAX_TEXT_LIMIT,
   parseGridState,
+  parseRowSelection,
   RowCache,
+  type RowKey,
+  type RowSelection,
+  RowSelectionModel,
   resolveGridState,
+  rowKeyOf,
+  rowSelectionQuery,
   ScrollAxis,
   SelectionModel,
   type SelectionSummary,
   type SortDirection,
+  sameRowQuery,
   type TableCapabilities,
   type TableInfo,
   type TableSource,
@@ -38,6 +45,8 @@ import type {
   GridCellEvent,
   GridColumnsChangeReason,
   GridColumnsEvent,
+  GridRowSelectionChangeReason,
+  GridRowSelectionEvent,
   GridSelectionEvent,
 } from "./events.js";
 
@@ -55,6 +64,13 @@ export interface GridOptions {
   columnFormats?: Record<string, ColumnFormat>;
   /** Text copied for cells: the values (`raw`, the default) or the shown text (`formatted`). */
   copyValues?: CopyValues;
+  /** Shows a checkbox for each row in the row header (see `rowSelection`). */
+  checkboxSelection?: boolean;
+  /**
+   * Schema column name whose values identify the rows (a primary key). Without it, a row's key is its
+   * position in the table, which is valid for one `TableInfo.revision`.
+   */
+  rowKey?: string;
 }
 
 export interface ColumnState {
@@ -78,6 +94,8 @@ export interface Hit {
   resize: number;
   /** The pointer is over the header's menu button. */
   menu: boolean;
+  /** The pointer is over a row's checkbox (`gutter`) or the checkbox of every row (`corner`). */
+  checkbox: boolean;
 }
 
 export class CopyTooLargeError extends Error {
@@ -115,6 +133,18 @@ const defaultWidths: Partial<Record<ColumnSchema["type"], number>> = {
 
 /** Header space around the name: padding, the type mark and the menu button. */
 const HEADER_CHROME = 62;
+
+/** Width of the checkboxes at the left of the row header. */
+const CHECKBOX_WIDTH = 28;
+
+/**
+ * Rows of an `exclude` selection that the grid lists as keys when the view no longer shows only rows it
+ * covers (see `GridController.rowSelection`). Larger selections stay as they are.
+ */
+const ROW_SELECTION_LIST_LIMIT = 100_000;
+
+/** Rows a shift-click on a checkbox checks at once. */
+const ROW_RANGE_LIMIT = 10_000;
 
 function sleep(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve) => {
@@ -177,6 +207,13 @@ export class GridController {
   readonly options: GridOptions;
   readonly cache: RowCache;
   readonly selection = new SelectionModel();
+  /**
+   * The checked rows, by key (see `rowKey`). They stay checked when the view is sorted or filtered; a
+   * new revision of the table unchecks them unless the keys come from a key column.
+   */
+  readonly rowSelection = new RowSelectionModel();
+  /** The grid is listing the keys of an `exclude` selection (see `ROW_SELECTION_LIST_LIMIT`). */
+  rowSelectionPending = false;
   readonly scrollX = new ScrollAxis();
   readonly scrollY = new ScrollAxis();
   formatter: ValueFormatter;
@@ -218,6 +255,14 @@ export class GridController {
   private readonly selectionListeners = new Set<(event: GridSelectionEvent) => void>();
   private readonly columnsListeners = new Set<(event: GridColumnsEvent) => void>();
   private readonly gridStateListeners = new Set<(state: GridState) => void>();
+  private readonly rowSelectionListeners = new Set<(event: GridRowSelectionEvent) => void>();
+  /** The last change of the checked rows not yet reported. */
+  private rowSelectionChange: GridRowSelectionChangeReason | null = null;
+  /** Rows matching the query of an `exclude` selection, when the grid counted them. */
+  private rowSelectionRows: { query: string; rows: number } | null = null;
+  private rowSelectionAbort: AbortController | null = null;
+  /** The row whose checkbox was clicked last, where a shift-click starts. */
+  private checkedAnchor: number | null = null;
   /** A state applied before the table's columns were known, and the query it was applied over. */
   private pendingState: { state: GridState; query: ViewQuery } | null = null;
   /** The last change of the column settings not yet reported. */
@@ -240,6 +285,7 @@ export class GridController {
   private disposed = false;
   private polling = false;
   private activeValue: CellValue | undefined;
+  private activeChecked: boolean | null = null;
 
   constructor(source: TableSource, options: GridOptions) {
     this.source = source;
@@ -254,9 +300,12 @@ export class GridController {
       const active = this.selection.active;
       const value = this.value(active.row, active.col);
       const rowId = this.rowId(active.row);
-      if (value !== this.activeValue || rowId !== this.activeRowId) {
+      // The active row's checkbox is described to screen readers once its key arrives.
+      const checked = this.options.checkboxSelection ? this.rowChecked(active.row) : null;
+      if (value !== this.activeValue || rowId !== this.activeRowId || checked !== this.activeChecked) {
         this.activeValue = value;
         this.activeRowId = rowId;
+        this.activeChecked = checked;
         this.emit();
       }
     });
@@ -354,6 +403,14 @@ export class GridController {
     };
   }
 
+  /** Calls `listener` when rows are checked or unchecked, by the user, the app or the grid. */
+  onRowSelectionChange(listener: (event: GridRowSelectionEvent) => void) {
+    this.rowSelectionListeners.add(listener);
+    return () => {
+      this.rowSelectionListeners.delete(listener);
+    };
+  }
+
   /** Calls `listener` with `getState()` when the query or the column settings change. */
   onStateChange(listener: (state: GridState) => void) {
     this.gridStateListeners.add(listener);
@@ -378,6 +435,18 @@ export class GridController {
       if (this.selectionListeners.size > 0) {
         const event = this.selectionEvent();
         for (const listener of this.selectionListeners) listener(event);
+      }
+    }
+    const rowReason = this.rowSelectionChange;
+    if (rowReason) {
+      this.rowSelectionChange = null;
+      if (this.rowSelectionListeners.size > 0) {
+        const event: GridRowSelectionEvent = {
+          reason: rowReason,
+          selection: this.rowSelection.value(),
+          count: this.checkedCount,
+        };
+        for (const listener of this.rowSelectionListeners) listener(event);
       }
     }
     if (this.query !== this.reported.query || this.columnsRevision !== this.reported.columns) {
@@ -447,7 +516,9 @@ export class GridController {
     this.polling = false;
     this.viewAbort?.abort();
     this.summaryAbort?.abort();
+    this.rowSelectionAbort?.abort();
     clearTimeout(this.summaryTimer);
+    if (this.rowSelectionPending) this.rowSelectionPending = false;
     if (this.viewPending) {
       this.viewPending = false;
       this.emit();
@@ -463,6 +534,7 @@ export class GridController {
     this.selectionListeners.clear();
     this.columnsListeners.clear();
     this.gridStateListeners.clear();
+    this.rowSelectionListeners.clear();
   }
 
   private async poll(signal: AbortSignal) {
@@ -506,6 +578,7 @@ export class GridController {
       this.formatVersion++;
     }
     const reset = !previous || previous.revision !== info.revision || names(previous) !== names(info);
+    if (previous) this.keepRowSelection(previous, info);
     if (reset) {
       if (previous?.columns.length && names(previous) !== names(info)) {
         const indexOf = (column: number) => {
@@ -709,10 +782,9 @@ export class GridController {
     this.frozenWidth = this.layout.left(this.frozen);
     const largest = Math.max(this.info?.rowCount ?? 0, this.rowCount, 1);
     const digits = String(largest).length;
-    this.gutterWidth = Math.max(
-      44,
-      Math.ceil(this.measure ? this.measure("0".repeat(digits), false) : digits * 8) + 22,
-    );
+    this.gutterWidth =
+      Math.max(44, Math.ceil(this.measure ? this.measure("0".repeat(digits), false) : digits * 8) + 22) +
+      this.checkboxWidth;
     this.selection.setBounds(this.rowCount, this.visible.length);
     this.cache.setView(this.view.id, this.rowCount, this.readableRows, this.schema.length);
     this.syncSizer();
@@ -811,6 +883,7 @@ export class GridController {
     else if (row >= 0 && col >= 0) zone = "cell";
     let resize = -1;
     let menu = false;
+    const checkbox = (zone === "gutter" || zone === "corner") && x < this.checkboxWidth;
     if (header && !gutter) {
       const nearest = col >= 0 ? col : this.visible.length - 1;
       const right = this.columnX(nearest) + this.layout.width(nearest);
@@ -820,7 +893,7 @@ export class GridController {
         resize = nearest - 1;
       menu = col >= 0 && resize < 0 && x >= right - 24 && x < right - 4;
     }
-    return { zone, row, col, resize, menu };
+    return { zone, row, col, resize, menu, checkbox };
   }
 
   // ----- scrolling -----
@@ -910,6 +983,244 @@ export class GridController {
       end: range.bottom + 1,
       columns: this.visible.slice(range.left, range.right + 1).map((column) => column.index),
     }));
+  }
+
+  // ----- checked rows -----
+
+  /** Width of the row checkboxes, or 0 without them. */
+  get checkboxWidth() {
+    return this.options.checkboxSelection ? CHECKBOX_WIDTH : 0;
+  }
+
+  /** Shows or hides the row checkboxes. Hiding them keeps the checked rows. */
+  setCheckboxSelection(enabled: boolean) {
+    if (Boolean(this.options.checkboxSelection) === enabled) return;
+    this.options.checkboxSelection = enabled;
+    this.updateLayout();
+    this.requestRender();
+    this.emit();
+  }
+
+  /**
+   * Changes the key column (see `GridOptions.rowKey`). Keys of another kind name other rows, so the
+   * checked rows are unchecked.
+   */
+  setRowKey(name: string | undefined) {
+    if (name === this.options.rowKey) return;
+    this.options.rowKey = name;
+    this.rowSelectionRows = null;
+    this.checkedAnchor = null;
+    if (this.rowSelection.empty) {
+      this.requestRender();
+      return;
+    }
+    this.cancelRowListing();
+    this.rowSelection.clear();
+    this.rowSelectionChanged("key");
+  }
+
+  /** The schema index of the key column, or -1 when rows are keyed by position or the column is missing. */
+  get rowKeyColumn() {
+    const name = this.options.rowKey;
+    return name === undefined ? -1 : this.schema.findIndex((column) => column.name === name);
+  }
+
+  /**
+   * A row's key: its value in the key column, or its position in the table. Null while it is not loaded,
+   * and for a blank key.
+   */
+  rowKey(row: number): RowKey | null {
+    if (this.options.rowKey === undefined) return this.rowId(row);
+    const column = this.rowKeyColumn;
+    return column < 0 ? null : rowKeyOf(this.cache.value(row, column));
+  }
+
+  /**
+   * Whether a row of the view is checked, or null when it is not known: its key is not loaded, or every
+   * row matching a query is checked and this view may show other rows (see `RowSelectionModel.covers`).
+   */
+  rowChecked(row: number): boolean | null {
+    const key = this.rowKey(row);
+    return key === null ? null : this.rowSelection.has(key, this.view.query);
+  }
+
+  /** The checkbox of every row: every row of the view is checked, none, or some (`"mixed"`). */
+  get allRowsChecked() {
+    return this.rowSelection.state(this.view.query);
+  }
+
+  /** Checked rows, or null when the grid has not counted the rows of an `exclude` selection. */
+  get checkedCount(): number | null {
+    const selection = this.rowSelection;
+    const query = selection.query;
+    let rows: number | null = null;
+    if (selection.type === "exclude" && !query) rows = this.info?.rowCount ?? null;
+    else if (query && this.view.id !== null && sameRowQuery(query, rowSelectionQuery(this.view.query)))
+      rows = this.view.rowCount;
+    else if (query && this.rowSelectionRows?.query === JSON.stringify(query)) rows = this.rowSelectionRows.rows;
+    return selection.count(rows);
+  }
+
+  getRowSelection(): RowSelection {
+    return this.rowSelection.value();
+  }
+
+  /**
+   * Replaces the checked rows. Returns false, changing nothing, when the value is not a row selection
+   * (see `parseRowSelection`).
+   */
+  setRowSelection(selection: RowSelection, reason: GridRowSelectionChangeReason = "api") {
+    const parsed = parseRowSelection(selection);
+    if (!parsed) return false;
+    if (this.rowSelection.equals(parsed)) return true;
+    this.cancelRowListing();
+    this.rowSelection.set(parsed);
+    this.checkedAnchor = null;
+    this.rowSelectionChanged(reason);
+    this.listRowSelection();
+    return true;
+  }
+
+  /**
+   * Checks or unchecks a row, as the user does. With `range`, every row from the row whose checkbox was
+   * clicked last gets the same state, when their keys are loaded. Returns whether the row changed.
+   */
+  toggleRow(row: number, range = false) {
+    const checked = this.rowChecked(row);
+    const key = this.rowKey(row);
+    if (checked === null || key === null) return false;
+    let keys = [key];
+    const anchor = this.checkedAnchor;
+    if (range && anchor !== null && anchor !== row && Math.abs(anchor - row) < ROW_RANGE_LIMIT) {
+      const list: RowKey[] = [];
+      for (let at = Math.min(anchor, row); at <= Math.max(anchor, row); at++) {
+        const item = this.rowKey(at);
+        if (item === null) break;
+        list.push(item);
+      }
+      if (list.length === Math.abs(anchor - row) + 1) keys = list;
+    }
+    this.checkedAnchor = row;
+    if (!this.rowSelection.setRows(keys, !checked, this.view.query)) return false;
+    this.rowSelectionChanged("user");
+    return true;
+  }
+
+  /**
+   * The checkbox of every row, as the user clicks it: unchecks every row when all of the view's rows are
+   * checked, and otherwise checks every row of the view — every row of the table, or with filters or a
+   * search, every row matching them — without listing their keys.
+   */
+  toggleAllRows() {
+    if (!this.info) return;
+    this.cancelRowListing();
+    if (this.allRowsChecked === true) this.rowSelection.clear();
+    else this.rowSelection.selectAll(this.view.query);
+    this.checkedAnchor = null;
+    this.rowSelectionChanged("user");
+  }
+
+  /** Unchecks every row. */
+  clearRowSelection(reason: GridRowSelectionChangeReason = "user") {
+    if (this.rowSelection.empty) return;
+    this.cancelRowListing();
+    this.rowSelection.clear();
+    this.checkedAnchor = null;
+    this.rowSelectionChanged(reason);
+  }
+
+  private rowSelectionChanged(reason: GridRowSelectionChangeReason) {
+    this.rowSelectionChange = reason;
+    this.requestRender();
+    this.emit();
+  }
+
+  private cancelRowListing() {
+    this.rowSelectionAbort?.abort();
+    this.rowSelectionAbort = null;
+    this.rowSelectionPending = false;
+  }
+
+  /**
+   * The table was read again. Positions name other records in a new revision, so checked rows keyed by
+   * position are unchecked then; keys from a key column stay, and are unchecked when that column is
+   * gone. A selection of every row matching a query is unchecked when the columns change, since its
+   * filters name columns by position.
+   */
+  private keepRowSelection(previous: TableInfo, info: TableInfo) {
+    if (previous.revision !== info.revision) this.rowSelectionRows = null;
+    if (this.rowSelection.empty) return;
+    const names = (table: TableInfo) => table.columns.map((column) => column.name).join("\u0000");
+    const columnsKnown = previous.columns.length > 0 && info.columns.length > 0;
+    let reason: GridRowSelectionChangeReason | null = null;
+    if (this.options.rowKey === undefined) {
+      if (previous.revision !== info.revision) reason = "revision";
+    } else if (info.columns.length > 0 && !info.columns.some((column) => column.name === this.options.rowKey)) {
+      reason = "schema";
+    }
+    if (!reason && this.rowSelection.query && columnsKnown && names(previous) !== names(info)) reason = "schema";
+    if (!reason) return;
+    this.cancelRowListing();
+    this.rowSelection.clear();
+    this.checkedAnchor = null;
+    // Reported by the `emit()` of `applyInfo`.
+    this.rowSelectionChange = reason;
+  }
+
+  /**
+   * Lists the keys of every row matching the query of an `exclude` selection when the view may show rows
+   * that do not match it, so that each row can be told checked or not: for up to
+   * `ROW_SELECTION_LIST_LIMIT` rows, the selection becomes the list of those keys (reason `query`).
+   * Larger selections, and sources that cannot list them, keep the selection as it is; its rows then
+   * show as unknown in this view and cannot be toggled.
+   */
+  private listRowSelection() {
+    const selection = this.rowSelection;
+    const query = selection.query;
+    if (!query || selection.covers(this.view.query) || this.rowSelectionPending) return;
+    if (this.info?.status !== "ready") return;
+    const column = this.rowKeyColumn;
+    if (this.options.rowKey !== undefined && column < 0) return;
+    const controller = new AbortController();
+    this.rowSelectionAbort = controller;
+    this.rowSelectionPending = true;
+    const signal = controller.signal;
+    const unchecked = new Set(selection.value().keys);
+    void (async () => {
+      try {
+        const view = await this.source.createView(query, signal);
+        if (signal.aborted) return;
+        this.rowSelectionRows = { query: JSON.stringify(query), rows: view.rowCount };
+        if (view.rowCount > ROW_SELECTION_LIST_LIMIT) return;
+        const keys: RowKey[] = [];
+        for (let start = 0; start < view.rowCount; start += 50_000) {
+          const end = Math.min(view.rowCount, start + 50_000);
+          const block = await this.source.readRows(
+            { view: view.id, start, end, columns: column < 0 ? [] : [column] },
+            signal,
+          );
+          if (signal.aborted || block.end - block.start !== end - start) return;
+          if (column < 0 && view.id !== null && !block.rowIds) return;
+          for (let offset = 0; offset < end - start; offset++) {
+            const key = column < 0 ? (block.rowIds?.[offset] ?? start + offset) : rowKeyOf(block.columns[0]?.[offset]);
+            if (key !== null && !unchecked.has(key)) keys.push(key);
+          }
+        }
+        this.rowSelection.set({ type: "include", keys });
+        this.rowSelectionChange = "query";
+      } catch {
+        // The selection stays as it is.
+      } finally {
+        if (this.rowSelectionAbort === controller) {
+          this.rowSelectionAbort = null;
+          this.rowSelectionPending = false;
+          if (!this.disposed) {
+            this.requestRender();
+            this.emit();
+          }
+        }
+      }
+    })();
   }
 
   // ----- reading -----
@@ -1048,7 +1359,9 @@ export class GridController {
       this.view = view;
       this.viewPending = false;
       this.cache.clear();
+      this.checkedAnchor = null;
       this.updateLayout();
+      this.listRowSelection();
       this.selection.select({ row: 0, col: Math.min(this.selection.active.col, Math.max(0, this.visible.length - 1)) });
       this.scrollToVirtual(null, 0);
       this.scheduleSummary();

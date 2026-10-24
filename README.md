@@ -163,11 +163,15 @@ rows.
 | `onCellClick`, `onCellDoubleClick` | `(event: GridCellEvent) => void` | | Called for a click (or Space) and a double click (or F2) on a cell. `preventDefault()` on a double click keeps the cell inspector closed. |
 | `initialState` | `GridState` | | Settings applied when a grid starts, once the table's columns are known. |
 | `onStateChange` | `(state: GridState) => void` | | Called with the settings when the query or the column settings change. |
+| `checkboxSelection` | `boolean` | `false` | Shows a checkbox for each row, and one for every row in the corner. |
+| `rowKey` | `string` | the row's position | Schema column whose values identify the rows (a primary key), for checked rows that survive new data. |
+| `rowSelection` | `RowSelection` | | Checked rows to apply on start and whenever a different value is passed. |
+| `onRowSelectionChange` | `(event: GridRowSelectionEvent) => void` | | Called when rows are checked or unchecked, by the user, the app or the grid. |
 | `className`, `style` | | | Added to the root element (`.vg-root`). |
 | `aria-label` | `string` | `messages.gridLabel` | The grid's name for screen readers. |
 
 A ref gives a `DataGridHandle`: `focus()`, `reload()`, `getQuery()`, `setQuery(query)`, `getState()`,
-`applyState(state)`, `goToRow(row)`, the `controller` with the grid's state, and the canvas `renderer` (for
+`applyState(state)`, `goToRow(row)`, `getRowSelection()`, `setRowSelection(selection)`, the `controller` with the grid's state, and the canvas `renderer` (for
 diagnostics such as `renderer.timings()`).
 
 Events give a cell's `row` in the view, its `rowId` in the original table, its visible column `col` and its
@@ -212,6 +216,35 @@ const formats: Record<string, ColumnFormat> = {
 
 Copies hold the values and the schema names unless `copyValues="formatted"` (or a column's `copy`
 setting) asks for the shown text and the labels. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#column-formats).
+
+### Checked rows
+
+`checkboxSelection` adds a checkbox to each row, separate from the cell selection. Checked rows are kept
+by key, so the same records stay checked when the view is sorted or filtered, and rows hidden by a filter
+stay checked. A key is the row's position in the file (`rowId`), valid for one `TableInfo.revision`: a new
+revision unchecks every row. With `rowKey`, keys are the values of that column and survive new data; keys
+of removed rows stay until the app or the user removes them.
+
+The corner checkbox checks every row without listing keys: `{ type: "exclude", keys: [] }` is every row of
+the table except `keys`, and with filters or a search it is every row matching them
+(`query: { filters, search }`). Views with those filters (and maybe more) show each row's state; in other
+views the grid lists the keys of up to 100,000 matching rows (reason `query`), and larger selections stay
+as they are, their rows shown as unknown. Checked rows are not part of `GridState`.
+
+```tsx
+const [checked, setChecked] = useState<RowSelection>({ type: "include", keys: [] });
+
+<DataGrid
+  source={source}
+  checkboxSelection
+  rowKey="order_id"
+  rowSelection={checked}
+  onRowSelectionChange={({ selection, count }) => {
+    setChecked(selection);
+    showCount(count); // null while the rows matching a filter are not counted
+  }}
+/>;
+```
 
 ## Performance
 
@@ -278,6 +311,7 @@ flowchart LR
 | ⌘/Ctrl + click | Add a range (ranges with the same rows or the same columns copy together) |
 | Tab / Enter (with Shift: backwards) | Move within the selection |
 | Shift + Space · Ctrl + Space · ⌘/Ctrl + A | Select the row · the column · everything |
+| Space · ⌘/Ctrl + Shift + Space (with `checkboxSelection`) | Check the active row · every row (shift-click checks a range) |
 | ⌘/Ctrl + C · ⌘/Ctrl + Shift + C | Copy · copy with headers |
 | ⌘/Ctrl + F | Find |
 | Alt + ↓ | Column menu (sort, filter, statistics, freeze, hide) |
