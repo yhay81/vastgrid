@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ArraySource, type CellValue, type Filter, type TableInfo, type TableSource } from "vastgrid-core";
-import { GridController } from "../src/controller.ts";
+import { GridController, type GridOptions } from "../src/controller.ts";
 import type { GridRowSelectionEvent } from "../src/events.ts";
 
 const options = {
@@ -254,6 +254,129 @@ test("the checkboxes widen the row header and are hit at its left", async () => 
     grid.setCheckboxSelection(false);
     assert.equal(grid.gutterWidth, wide - 28);
     assert.equal(grid.hitTest(10, 40).checkbox, false);
+  } finally {
+    grid.dispose();
+  }
+});
+
+// ----- with reloads (#32), wrapping (#26) and cell hooks (#7) -----
+
+/** A table that reports each replacement of its rows to its subscribers, with a new revision. */
+function liveSource(rows: CellValue[][]) {
+  const source = new ChangingSource(rows);
+  const listeners = new Set<(change: { revision?: string | null }) => void>();
+  let revision = 1;
+  const live: TableSource = {
+    info: (signal) => source.info(signal),
+    createView: (query) => source.createView(query),
+    readRows: (request) => source.readRows(request),
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+  const change = (next: CellValue[][]) => {
+    revision++;
+    source.replace(next, String(revision));
+    for (const listener of listeners) listener({ revision: String(revision) });
+  };
+  return { live, change };
+}
+
+/** A grid with a scroller and a viewport, as the component sets it up, so that reloads restore the position. */
+async function mountedGrid(source: TableSource, extra: Partial<GridOptions> = {}) {
+  const grid = new GridController(source, { ...options, changeDelay: 10, ...extra });
+  grid.attach({ scrollTop: 0, scrollLeft: 0 } as unknown as HTMLElement, { style: {} } as unknown as HTMLElement);
+  grid.setViewport(400, 32 + 24 * 3);
+  grid.start();
+  await until(() => grid.info?.status === "ready" && !grid.viewPending);
+  return grid;
+}
+
+const appended = [...people, ["Barbara", 1939, "San Francisco"]];
+
+test("a reported change keeps the active cell, and unchecks rows keyed by position", async () => {
+  const { live, change } = liveSource(people);
+  const grid = await mountedGrid(live);
+  try {
+    const events = record(grid);
+    await grid.setQuery({ sort: [{ column: 1, direction: "asc" }] });
+    await load(grid);
+    grid.toggleRow(1);
+    grid.selection.select({ row: 2, col: 1 });
+    grid.selectionChanged();
+    // Rows appended to the file give it a new revision: positions are not trusted across revisions.
+    change(appended);
+    await until(() => grid.info?.revision === "2" && grid.view.id !== null && !grid.viewPending);
+    assert.deepEqual(grid.selection.active, { row: 2, col: 1 });
+    assert.equal(grid.rowSelection.empty, true);
+    assert.equal(events.at(-1)?.reason, "revision");
+  } finally {
+    grid.dispose();
+  }
+});
+
+test("a reported change keeps rows keyed by a column checked in the restored view", async () => {
+  const { live, change } = liveSource(people);
+  const grid = await mountedGrid(live, { rowKey: "name" });
+  try {
+    const events = record(grid);
+    await grid.setQuery({ filters: [london] });
+    await load(grid);
+    grid.toggleAllRows();
+    grid.toggleRow(1);
+    const before = events.length;
+    change([...appended, ["Ann", 1990, "London"]]);
+    await until(() => grid.info?.revision === "2" && grid.view.id !== null && !grid.viewPending);
+    await load(grid);
+    // Every London row except Alan, including the new one.
+    assert.deepEqual(names(grid), ["Ada", "Ann"]);
+    assert.equal(grid.checkedCount, 2);
+    assert.equal(events.length, before, "a reload does not report unchanged checked rows");
+  } finally {
+    grid.dispose();
+  }
+});
+
+test("checkboxes follow rows made taller by wrapping columns", async () => {
+  const grid = await mountedGrid(new ArraySource({ columns: ["name", "born", "city"], rows: people }), { maxLines: 3 });
+  try {
+    grid.setColumnFormats({ city: { wrap: true } });
+    const height = grid.rowHeight;
+    assert.ok(height > options.rowHeight);
+    await load(grid);
+    // The lower part of the second row is still the second row's checkbox.
+    const hit = grid.hitTest(8, options.headerHeight + height + height - 4);
+    assert.deepEqual([hit.zone, hit.row, hit.checkbox], ["gutter", 1, true]);
+    assert.equal(grid.toggleRow(hit.row), true);
+    assert.deepEqual(grid.getRowSelection(), { type: "include", keys: [1] });
+  } finally {
+    grid.dispose();
+  }
+});
+
+test("row keys are the rowId of cell events and of the cell hooks, and checking moves no cell", async () => {
+  const seen: (number | null)[] = [];
+  const grid = await readyGrid(new ArraySource({ columns: ["name", "born", "city"], rows: people }));
+  try {
+    grid.options.cellAction = (cell) => {
+      seen.push(cell.rowId);
+      return null;
+    };
+    await grid.setQuery({ sort: [{ column: 0, direction: "desc" }] });
+    await load(grid);
+    const selections: unknown[] = [];
+    grid.onSelectionChange((event) => selections.push(event));
+    for (let row = 0; row < grid.rowCount; row++) {
+      const key = grid.rowKey(row);
+      assert.equal(grid.cellContent(row, 0)?.rowId, key);
+      assert.equal(grid.cell(row, 0).rowId, key);
+      grid.cellActionAt(row, 0);
+    }
+    assert.deepEqual(seen, [2, 1, 3, 0]);
+    grid.toggleRow(0);
+    grid.toggleAllRows();
+    assert.equal(selections.length, 0);
   } finally {
     grid.dispose();
   }

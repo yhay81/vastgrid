@@ -140,14 +140,18 @@ const source = new ArraySource({
 | `messages` | `Partial<Messages>` | | 組み込みの文言の一部を置き換えます（`en` と `ja` を参照）。 |
 | `rowHeight` | `number` | `--vg-row-height` か 24 | 行の高さ（px）。 |
 | `headerHeight` | `number` | `--vg-header-height` か 32 | 見出しの高さ（px）。 |
+| `maxLines` | `number` | `3` | 折り返す列（`columnFormats` の `wrap`）のセルに表示する最大の行数（1〜20）。 |
 | `nullText` | `string` | `""` | null のセルに表示する文字。 |
 | `frozenColumns` | `number` | `0` | 表を開いたときに左に固定する列の数。 |
 | `toolbar` | `boolean` | `true` | 検索欄、適用中の絞り込み、行数を表示します。 |
 | `statusBar` | `boolean` | `true` | アクティブなセルと選択範囲の集計を表示します。 |
-| `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。 |
+| `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。変更を通知する source は自動で読み直されます。 |
+| `followTail` | `boolean` | `false` | 表が変わったとき、最後の行を表示していれば新しい末尾を表示します（`tail -f` のように追記された行を追います）。 |
 | `copyLimit` | `number` | `1000000` | 一度にコピーできるセルの数（選択したすべての範囲の合計）。 |
-| `columnFormats` | `Record<string, ColumnFormat>` | | スキーマの列名ごとの表示設定。表示名、数値と日時の書式、配置、整形関数。 |
+| `columnFormats` | `Record<string, ColumnFormat>` | | スキーマの列名ごとの表示設定。表示名、数値と日時の書式、配置、整形関数、折り返し。 |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | コピーするのを、値とスキーマの列名にするか、表示している文字と表示名にするか。 |
+| `drawCell` | `(args: DrawCellArgs) => void` | | 表示中の読み込み済みのセルを、グリッドの代わりに描きます。`args.drawDefault()` で標準の描画を呼べます。 |
+| `cellAction` | `(cell: GridCellContent) => CellAction \| null` | | セルをリンクやボタンにします。ポインター、下線、スクリーンリーダー向けの役割を付け、クリックと Space で `onCellClick` を呼びます。 |
 | `onQueryChange` | `(query: ViewQuery) => void` | | 並べ替え・絞り込み・検索が変わったときに呼ばれます。 |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | 選択範囲かアクティブなセルが変わったときに呼ばれます。 |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | 列の幅・順序・表示・固定が変わったときに呼ばれます。 |
@@ -158,11 +162,14 @@ const source = new ArraySource({
 | `rowKey` | `string` | 行の位置 | 行を識別する値（主キー）の列名。データが新しくなっても行の選択が残ります。 |
 | `rowSelection` | `RowSelection` | | 選択する行。最初と、違う値を渡したときに適用します。 |
 | `onRowSelectionChange` | `(event: GridRowSelectionEvent) => void` | | ユーザー・アプリ・グリッドが行の選択を変えたときに呼ばれます。 |
+| `detailOpen`、`defaultDetailOpen` | `boolean` | `false` | アクティブな行のすべての列を表示する詳細パネルを開きます（制御する値、または最初の状態）。 |
+| `onDetailOpenChange` | `(open: boolean) => void` | | 利用者か handle が詳細パネルを開閉したときに呼ばれます。 |
+| `detailPanel` | `ComponentType<DetailPanelProps>` | `DetailFields` | 詳細パネルの中身を差し替えます。 |
 | `className`、`style` | | | ルートの要素（`.vg-root`）に付けます。 |
 | `aria-label` | `string` | `messages.gridLabel` | スクリーンリーダー向けのグリッドの名前。 |
 
 ref からは `DataGridHandle` を使えます。`focus()`、`reload()`、`getQuery()`、`setQuery(query)`、`getState()`、
-`applyState(state)`、`goToRow(row)`、`getRowSelection()`、`setRowSelection(selection)`、グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()`
+`applyState(state)`、`goToRow(row)`、`openDetail({ focus })`、`closeDetail()`、`detailOpen`、`getRowSelection()`、`setRowSelection(selection)`、グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()`
 などの診断用）があります。
 
 イベントは、セルのビューでの行 `row`、元の表での行 `rowId`、表示中の列の位置 `col`、表の列の番号 `column` を渡し、
@@ -203,7 +210,68 @@ const formats: Record<string, ColumnFormat> = {
 <DataGrid source={source} columnFormats={formats} />;
 ```
 
-コピーには値とスキーマの列名が入ります。表示している文字と表示名をコピーするには、`copyValues="formatted"`（列ごとには `copy`）を指定します。詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#列の表示設定)を参照してください。
+コピーには値とスキーマの列名が入ります。表示している文字と表示名をコピーするには、`copyValues="formatted"`（列ごとには `copy`）を指定します。
+
+`wrap: true` を指定した列は、文字を `maxLines`（既定は 3）行まで折り返して表示します。空白と、日本語・中国語・韓国語の文字の間、値の中の改行で行を改め、収まらない分は「…」で示します。行の高さは全行で同じ（表示中の列が折り返す間は `rowHeight` に 2 行目以降の 1 行ごとに `--vg-line-height` を足した高さ）なので、行数にかかわらずスクロールは正確です。詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#列の表示設定)を参照してください。
+
+### 詳細パネル
+
+詳細パネルは、アクティブな行のすべての列を、列の表示名と書式付きの値で表示します。グリッドの横に、グリッドの幅が 640px より狭いときは下に表示し、行の高さは変えません。アクティブなセル（`onSelectionChange` の `active`）に追従し、表の中で途中まで表示している文字列は、その行について少し待ってから全体を読み込みます。別の行へ移ると読み込みを取り消します。並べ替え・絞り込みのあとは、新しいアクティブな行（先頭の行）を表示します。変更された表を読み直したときは、アクティブな行をそのままにして、そのレコードを読み込み直します。Alt ＋ Enter かセルのメニューで開き、もう一度 Alt ＋ Enter でパネルへフォーカスを移し、Esc で閉じます。中身はコンポーネントで差し替えられます。
+
+```tsx
+function Customer({ values, schema, status, rowId }: DetailPanelProps) {
+  if (status === "loading") return <p>読み込んでいます…</p>;
+  const field = (name: string) => values[schema.findIndex((column) => column.name === name)];
+  return <CustomerCard id={rowId} name={String(field("name"))} notes={String(field("notes"))} />;
+}
+
+<DataGrid source={source} defaultDetailOpen detailPanel={Customer} />;
+```
+
+大きさは `--vg-detail-width` と `--vg-detail-height` で変えられます。詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#詳細パネル)を参照してください。
+
+### 変わるファイル
+
+source が「表が変わった」と通知すると、グリッドは表を読み直します。クエリー・列の設定・スクロール位置・アクティブなセルはそのままです。`RemoteSource` はグリッドが表を表示している間、2 秒ごとにサーバーに問い合わせます。`vastgrid-duckdb` は、ファイルのサイズ・更新日時・先頭のハッシュで、行の追記や書き換えを検出します。続けて届いた通知は 1 回の読み直しにまとめます。
+
+```tsx
+const source = useMemo(
+  () => new RemoteSource({ endpoint: "/api/table", ref: "logs/app.csv", changes: pollChanges({ interval: 1000 }) }),
+  [],
+);
+
+<DataGrid source={source} followTail />; // 行が追記される間、末尾を表示し続ける
+```
+
+通知されるのは表全体の変更だけで、行ごとの差分は通知しません。グリッドは表全体を読み直し、DuckDB ではファイルを読み込み直します。`changes: false` で監視をやめられ、別の `ChangeTransport`（たとえば Server-Sent Events を受け取るもの）でポーリングを置き換えられます。`BrowserSource` は URL のファイルを `ETag`・`Last-Modified`・サイズで監視します（`changeInterval`、既定 5 秒）。ローカルのファイルは監視できません。ディスク上で変わった `File` をブラウザーが読めなくなるためです。
+
+### セルの色と独自の描画
+
+列の `style` で、標準の描画のまま値に応じて文字色と背景色を変えられます。`drawCell` はセルの矩形・値・型・表示の文字・選択の状態・テーマを受け取ってキャンバスに直接描き、先に標準の描画を呼ぶこともできます。`cellAction` はセルをリンクやボタンにします。上ではポインターが変わり、リンクには下線を引き、アクティブなセルにはスクリーンリーダー向けに `link` か `button` の役割を付け、クリックと Space で `onCellClick` を呼びます（Enter と矢印キーは表計算と同じくセルを移動します）。どのフックも、画面に表示している読み込み済みのセルにだけ呼ばれます。
+
+```tsx
+const formats: Record<string, ColumnFormat> = {
+  balance: { style: (value) => (Number(value) < 0 ? { color: "#b42318", background: "#fdecea", description: "残高不足" } : null) },
+};
+const drawCell: DrawCell = (args) => {
+  args.drawDefault();
+  if (args.schema.name === "status" && args.value === "new") {
+    args.ctx.fillStyle = args.theme.accent;
+    args.ctx.fillRect(args.rect.x + 2, args.rect.y + 6, 3, args.rect.height - 12);
+  }
+};
+const cellAction: CellActionHook = (cell) => (cell.schema.name === "url" ? { kind: "link", label: `${cell.text} を開く` } : null);
+
+<DataGrid
+  source={source}
+  columnFormats={formats}
+  drawCell={drawCell}
+  cellAction={cellAction}
+  onCellClick={(event) => event.column === urlColumn && window.open(String(event.value))}
+/>;
+```
+
+詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#セルの色と独自の描画)を参照してください。
 
 ### 行の選択（チェックボックス）
 
@@ -245,7 +313,7 @@ DuckDB の処理を含み、HTTP は含みません。
 | Parquet: 数値の列での並べ替え | 1.9 秒 |
 | Parquet（並べ替え後）: 任意の位置の 256 行（中央値・95 パーセンタイル） | 147 ms・208 ms |
 
-2280 × 1371 px（56 行 × 20 列）の描画は、フレームごとにキャンバスを確定させて測り、中央値 2.0 ms・99 パーセンタイル 3.0 ms でした。
+2280 × 1371 px（56 行 × 20 列）の描画は、フレームごとにキャンバスを確定させて測り、中央値 2.0 ms・99 パーセンタイル 3.0 ms でした。列の `style`、`cellAction`、標準の描画に印を足す `drawCell` を使っても、1,349 セルの 1 フレームは測定のばらつきの範囲に収まりました（使わないときの 2.7〜2.8 ms に対して 2.5〜2.8 ms）。
 
 ## 仕組み
 
@@ -274,6 +342,7 @@ DuckDB の処理を含み、HTTP は含みません。
 | ⌘/Ctrl ＋ F | 検索 |
 | Alt ＋ ↓ | 列のメニュー（並べ替え・絞り込み・統計・固定・非表示） |
 | F2・ダブルクリック | セルの値の全体を表示 |
+| Alt ＋ Enter（もう一度でパネルへ）・Esc | アクティブな行の詳細パネルを開く・閉じる |
 | Shift ＋ F10・コンテキストメニューのキー・右クリック | セルのメニュー（コピー・この値で絞り込む・並べ替え） |
 
 ## 見た目の変更

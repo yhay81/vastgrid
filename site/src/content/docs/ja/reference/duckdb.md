@@ -41,7 +41,7 @@ const engine = await TableEngine.create(options: TableEngineOptions);
 | `allows(path)` | 書かれたままの絶対パスが、許可したフォルダーの中にあるかどうか。`open` では実際の場所も確かめます。 |
 | `dispose()` | すべての表とデータベースを閉じ、エンジンの一時ファイルを削除します。 |
 
-`OpenTable` には、`TableSource` のメソッド（`info`、`createView`、`readRows`、`columnStats`、`distinctValues`、`aggregate`、`find`、`exportView(request, target)`）と、`id`、読み込みの終わりを待つ Promise を返す `whenReady()` があります。下の受け口はこれらを呼びます。サーバーで表を扱うときは、直接使うこともできます。
+`OpenTable` には、`TableSource` のメソッド（`info`、`createView`、`readRows`、`columnStats`、`distinctValues`、`aggregate`、`find`、`exportView(request, target)`）と、`id`、読み込みの終わりを待つ Promise を返す `whenReady()` があります。`currentRevision()` はファイルの今の revision（ファイルがなければ null）を返します。ファイルが変わると `info().revision` と違う値になるので、ポーリング以外の方法でクライアントに変更を伝えるときは両者を比べてください。下の受け口はこれらを呼びます。サーバーで表を扱うときは、直接使うこともできます。
 
 ## `createTableHandler(options)`
 
@@ -67,3 +67,4 @@ JSON の本文を解析済みの要求 1 つに、同じオプションで答え
 | `convertToUtf8(source, target, encoding, signal?)` | ファイルを UTF-8 に変換します。正しくないバイトは置き換えます。 |
 | `columnTypeOf(sqlType)` | DuckDB の型名に当たる `ColumnType`。 |
 | `quoteIdentifier(name)` | DuckDB の SQL で使えるように、名前を引用符で囲みます。 |
+| `fileRevision(path)` | エンジンが使うファイルの revision。大きさ・更新日時・先頭 64 KiB のハッシュから作ります。 |

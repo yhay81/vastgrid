@@ -9,6 +9,7 @@ export type TableMethod =
   | "distinctValues"
   | "aggregate"
   | "find"
+  | "checkChanges"
   | "transfer";
 
 /** Messages from `BrowserSource` to the worker. */

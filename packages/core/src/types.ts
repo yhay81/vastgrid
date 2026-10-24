@@ -349,6 +349,22 @@ export interface DateFormat {
   timeZone?: string;
 }
 
+/**
+ * How one cell looks, chosen by its value (conditional formatting). Colors are CSS colors. The cell is
+ * drawn as usual otherwise: same text, alignment and font.
+ */
+export interface CellStyle {
+  /** Text color. */
+  color?: string;
+  /** Background of the whole cell, under the selection. */
+  background?: string;
+  /**
+   * What the colors mean, read by screen readers after the value of the active cell (colors alone are
+   * not announced), for example "Over budget".
+   */
+  description?: string;
+}
+
 /** Text used when copying cells: the value itself, or the text the grid shows. */
 export type CopyValues = "raw" | "formatted";
 
@@ -366,11 +382,23 @@ export interface ColumnFormat {
   /** Defaults to `right` for numeric columns and `left` otherwise. */
   align?: ColumnAlign;
   /**
+   * Wraps the text onto as many lines as the grid's `maxLines` allows, breaking at spaces and between
+   * CJK characters, with line breaks in the value starting new lines. Text that does not fit ends with
+   * "…". Rows of the grid are all as high as the lines need while a visible column wraps.
+   */
+  wrap?: boolean;
+  /**
    * Makes the text of a value. `text` is the text the other settings make. The result is shown in one
-   * line; keep the function stable (define it outside components or memoize it), since a new function
+   * line (or wrapped, with `wrap`); keep the function stable (define it outside components or memoize it), since a new function
    * redraws the column.
    */
   format?: (value: CellValue, context: { column: ColumnSchema; text: string }) => string;
+  /**
+   * Colors of a cell by its value, for example red text for negative numbers; `null` or `undefined`
+   * keeps the default. `text` is the shown text. It runs for loaded cells that are drawn, and its result
+   * is kept with the rows like the text, so keep it fast and stable (like `format`).
+   */
+  style?: (value: CellValue, context: { column: ColumnSchema; text: string }) => CellStyle | null | undefined;
   /** Overrides the grid's `copyValues` for this column's cells. */
   copy?: CopyValues;
 }

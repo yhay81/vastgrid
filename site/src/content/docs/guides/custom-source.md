@@ -92,6 +92,7 @@ Each optional method turns on a feature. Set the matching capability to `true` i
 | `aggregate(request, signal?)` | `aggregate` | Count, sum, average, minimum and maximum of the selection, in the status bar. |
 | `find(request, signal?)` | `find` | Find (⌘/Ctrl+F): the next cell containing a text. |
 | `exportView(request, signal?)` | `export` | Writing a view to a file, for your app to call. |
+| `subscribe(listener)` | | Reports that the whole table changed; the grid then reads it again with `info`, keeping its query, column settings and scroll position. Return a function that stops; the grid calls it when it stops or unmounts. Changes close together are read once, and only the whole table is reported, never single rows. Sources whose data does not change leave it out. |
 | `close()` | | Releases the table. Your app calls it when it no longer uses the source; the grid does not. |
 
 The [`TableSource` reference](/reference/table-source/) lists every request and result type.

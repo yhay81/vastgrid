@@ -95,7 +95,7 @@ export interface GridCellEvent extends GridCell {
   altKey: boolean;
   /**
    * Stops what the grid does next: opening the cell inspector on a double click or F2, and checking the
-   * row with Space when the rows have checkboxes.
+   * row with Space when the rows have checkboxes (Space on a link or button cell only clicks it).
    */
   preventDefault(): void;
   readonly defaultPrevented: boolean;
