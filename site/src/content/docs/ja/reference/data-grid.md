@@ -18,6 +18,7 @@ import "vastgrid/styles.css";
 | `locale` | `string` | ブラウザーの言語 | 数値と組み込みの文言のロケール。`ja` なら日本語、それ以外は英語です。 |
 | `messages` | `Partial<Messages>` | | 組み込みの文言の一部を置き換えます（`en` と `ja` を参照）。 |
 | `rowHeight` | `number` | `--vg-row-height` か 24 | 行の高さ（px）。 |
+| `maxLines` | `number` | `3` | 折り返す列（`columnFormats` の `wrap`）のセルに表示する最大の行数（1〜20）。 |
 | `headerHeight` | `number` | `--vg-header-height` か 32 | 見出しの高さ（px）。 |
 | `nullText` | `string` | `""` | null のセルに表示する文字。 |
 | `frozenColumns` | `number` | `0` | 表を開いたときに左に固定する列の数。 |
@@ -183,10 +184,17 @@ const formats: Record<string, ColumnFormat> = {
 | `number` | 数値と数値の文字列の書式。`style`（`decimal`、`percent`、`currency` と `currency`）、`currencyDisplay`、`fractionDigits`（または `minimumFractionDigits` と `maximumFractionDigits`）、`grouping`、`notation`、`signDisplay`、`prefix` と `suffix`。数値でない文字列はそのまま表示します。 |
 | `date` | 日付と時刻の書式。`pattern`、または `Intl.DateTimeFormat` のオプション（`dateStyle`、`timeStyle`、`year`、`month`、`day`、`hour` など）。`timeZone` は、オフセットのある値（`timestamptz`）を表示するタイムゾーンです。オフセットのない値はそのまま表示します。日時でない文字列はそのまま表示します。 |
 | `align` | `left`、`center`、`right`。既定では数値の列が `right`。 |
-| `format(value, { column, text })` | 値の表示の文字を返す関数。`text` はほかの設定で作った文字です。結果は 1 行で表示します。 |
+| `format(value, { column, text })` | 値の表示の文字を返す関数。`text` はほかの設定で作った文字です。結果は 1 行で（`wrap` では折り返して）表示します。 |
 | `copy` | `raw` か `formatted`。この列のセルについて `copyValues` を上書きします。 |
+| `wrap` | `true` で、文字を `maxLines` 行まで折り返して表示します（下記）。 |
 
 パターンでは `yyyy` `yy`（年）、`M` `MM` `MMM` `MMMM`（月）、`d` `dd`（日）、`EEE` `EEEE`（曜日）、`H` `HH`（0〜23 時）、`h` `hh` と `a`（1〜12 時と午前・午後）、`m` `mm`（分）、`s` `ss`（秒）、`S` `SS` `SSS`…（秒の小数の桁）を使います。一重引用符で囲んだ文字はそのまま残ります（`yyyy-MM-dd 'at' HH:mm`）。月と曜日の名前は `locale` に従います。
+
+**折り返し。** `wrap: true` を指定した列は、文字を `maxLines`（既定は 3）行まで折り返して表示します。行は空白と、日本語・中国語・韓国語の文字の間で折り返し（`。` や `」` などの閉じる記号の前と、開く括弧の後では折り返しません）、列より長い単語は途中で切ります。値の中の改行では行を改めます。収まらない分は「…」で示し、全体はセルの値の表示（インスペクター）で読めます。数億行でもスクロールや指定行への移動を正確に保つため、行の高さは全行で同じです。表示中の列が折り返す間は、どの行も `rowHeight` に、2 行目以降の 1 行ごとに `--vg-line-height`（文字の大きさの 1.4 倍）を足した高さになり、高さが変わっても先頭に見えている行は動きません。折り返しの計算は表示中のセルだけで行います。`wrap` と `maxLines` は、ほかの表示設定と同じくアプリが渡す設定で、`GridState` には含めません。
+
+```tsx
+<DataGrid source={source} columnFormats={{ comment: { wrap: true } }} maxLines={4} />
+```
 
 **値と表示。** 設定が変えるのは表示だけです。並べ替え、絞り込み（条件に入力する値も）、検索、表の中の検索、列の統計、選択範囲の集計、書き出しは値そのものに対して動きます。たとえばパーセントの列を「> 0.5」で絞り込むと、50% を超える値が残ります。文字列で届く 64 bit 整数や decimal は、JavaScript の数値を介さずにその桁から整形するので、`"9007199254740993"` も正確に表示されます。セルの値の表示（インスペクター）には、値と、その下に表示上の文字が出ます。
 

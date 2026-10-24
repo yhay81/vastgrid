@@ -9,6 +9,14 @@
   `onDetailOpenChange`, `openDetail()` and `closeDetail()`, Alt+Enter and the cell menu open and close it,
   and `detailPanel` replaces its content with a component (`DetailPanelProps`). `DetailTracker` reads the
   record outside React.
+- `vastgrid`: `wrap` in a column's format wraps its text onto up to `maxLines` lines (a new prop, 3 by
+  default), breaking at spaces, between CJK characters (with Japanese line-breaking rules for
+  punctuation and brackets) and at line breaks in the value; longer text ends with "…". Rows keep one
+  height for all rows, `rowHeight` plus `--vg-line-height` for each further line while a visible column
+  wraps, and the first visible row stays in place when it changes. The controller has `rowHeight`,
+  `maxLines`, `setMaxLines` and `setLineHeight`.
+- `vastgrid-core`: `ColumnFormat.wrap`, `ColumnFormatter.wrap` (its `format` then keeps line breaks)
+  and `ValueFormatter.lines`.
 - `vastgrid`: `onSelectionChange`, `onColumnsChange`, `onCellClick` and `onCellDoubleClick` report the
   selection, changes of the columns' width, order, visibility and freezing, and clicks on cells (Space
   and F2 from the keyboard; `preventDefault()` keeps the cell inspector closed). Events give a cell's row

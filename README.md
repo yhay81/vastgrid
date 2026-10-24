@@ -149,6 +149,7 @@ rows.
 | `messages` | `Partial<Messages>` | | Replaces some of the built-in texts (see `en` and `ja`). |
 | `rowHeight` | `number` | `--vg-row-height` or 24 | Row height in pixels. |
 | `headerHeight` | `number` | `--vg-header-height` or 32 | Header height in pixels. |
+| `maxLines` | `number` | `3` | Lines shown at most in cells of columns that wrap (`wrap` in `columnFormats`), 1 to 20. |
 | `nullText` | `string` | `""` | Text shown for null cells. |
 | `frozenColumns` | `number` | `0` | Columns frozen at the left when the table opens. |
 | `toolbar` | `boolean` | `true` | Shows the search box, active filters and row count. |
@@ -156,7 +157,7 @@ rows.
 | `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. Sources that report their changes are read again by themselves. |
 | `followTail` | `boolean` | `false` | After the table changed, show its end when the last row was shown (for appended rows, as `tail -f`). |
 | `copyLimit` | `number` | `1000000` | Cells that can be copied at once, over all selected ranges. |
-| `columnFormats` | `Record<string, ColumnFormat>` | | Display settings by schema column name: label, number and date formats, alignment, a format function. |
+| `columnFormats` | `Record<string, ColumnFormat>` | | Display settings by schema column name: label, number and date formats, alignment, a format function, wrapping. |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | Copy the values with the schema names, or the shown text with the labels. |
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | Called when the selection or the active cell changes. |
@@ -215,7 +216,12 @@ const formats: Record<string, ColumnFormat> = {
 ```
 
 Copies hold the values and the schema names unless `copyValues="formatted"` (or a column's `copy`
-setting) asks for the shown text and the labels. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#column-formats).
+setting) asks for the shown text and the labels.
+
+`wrap: true` shows a column's text on up to `maxLines` lines (3 by default), breaking at spaces and
+between Japanese, Chinese and Korean characters and at line breaks in the value; longer text ends with
+"…". All rows keep one height (`rowHeight` plus `--vg-line-height` per further line while a visible
+column wraps), so scrolling stays exact for any number of rows. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#column-formats).
 
 ### Detail panel
 
