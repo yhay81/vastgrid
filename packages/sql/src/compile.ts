@@ -1,0 +1,556 @@
+/**
+ * Plans as DuckDB SQL (docs/v2-spec.md §3, §4). The SQL implements the specification, not DuckDB's defaults
+ * where they differ. Values are always parameters and names are always quoted. The session's time zone must
+ * be UTC, so that the text form of `timestamptz` values is the one of §2.4.
+ */
+import {
+  type CallExpr,
+  type CheckedMeasure,
+  type CheckedPlan,
+  type Column,
+  type LiteralExpr,
+  SpecError,
+  type TypedExpr,
+  type ValueType,
+  valueOfText,
+  valueType,
+} from "vastgrid-spec";
+
+export type SqlValue = string | number | boolean | null;
+
+/** A statement and its parameters (`$1`, `$2`, …). */
+export interface SqlQuery {
+  sql: string;
+  params: SqlValue[];
+}
+
+/** Where a table's rows come from. */
+export interface SqlSource {
+  /** The relation as SQL: a quoted table name, or a table function. */
+  relation: string;
+  /** The relation's column of row IDs (§1), as SQL. */
+  rowId: string;
+  /** Parameters that `relation` uses, as `$1`, `$2`, … */
+  params?: SqlValue[];
+}
+
+/** The text forms of the values of a pivot's combinations, in order, as `pivotQuery` reads them. */
+export type PivotCombinations = (string | null)[][];
+
+/** A view as SQL: `with` defines the relation `vg_view`, which holds the view's columns. */
+export interface SqlView {
+  with: string;
+  params: SqlValue[];
+  columns: Column[];
+  /** ORDER BY terms that order the view totally (§3.3). */
+  order: string[];
+  rowIds: boolean;
+  /** The column of `vg_view` that holds row IDs, when the view has them. */
+  rowId: string | null;
+}
+
+const NUMBER_PATTERN = "[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?";
+const DATE_PATTERN = "[0-9]{4}-[0-9]{2}-[0-9]{2}";
+const TIMESTAMP_PATTERN = "[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]{1,9})?)?";
+const FLOAT_TOKENS = new Map([
+  ["NaN", "'NaN'"],
+  ["Infinity", "'Infinity'"],
+  ["-Infinity", "'-Infinity'"],
+]);
+
+class Params {
+  readonly values: SqlValue[];
+
+  constructor(initial: readonly SqlValue[] = []) {
+    this.values = [...initial];
+  }
+
+  add(value: SqlValue): string {
+    this.values.push(value);
+    return `$${this.values.length}`;
+  }
+}
+
+/** A name as a DuckDB identifier. */
+export function quoteIdentifier(name: string): string {
+  return `"${name.replaceAll('"', '""')}"`;
+}
+
+/** The DuckDB type of a logical type (§2.1). */
+export function duckdbType(type: ValueType): string {
+  switch (type.type) {
+    case "boolean":
+      return "BOOLEAN";
+    case "integer":
+      return "INTEGER";
+    case "bigint":
+      return "BIGINT";
+    case "decimal":
+      return `DECIMAL(${type.precision ?? 38},${type.scale ?? 0})`;
+    case "float":
+      return type.bits === 32 ? "FLOAT" : "DOUBLE";
+    case "string":
+      return "VARCHAR";
+    case "date":
+      return "DATE";
+    case "time":
+      return "TIME";
+    case "timestamp":
+      switch (type.unit) {
+        case "s":
+          return "TIMESTAMP_S";
+        case "ms":
+          return "TIMESTAMP_MS";
+        case "ns":
+          return "TIMESTAMP_NS";
+        default:
+          return "TIMESTAMP";
+      }
+    case "timestamptz":
+      return "TIMESTAMPTZ";
+    case "interval":
+      return "INTERVAL";
+    case "uuid":
+      return "UUID";
+    case "binary":
+      return "BLOB";
+  }
+}
+
+function cast(sql: string, type: ValueType) {
+  return `CAST(${sql} AS ${duckdbType(type)})`;
+}
+
+/**
+ * A float as text that DuckDB reads back as the same float, with the sign of −0.0. Floats are bound as text:
+ * `@duckdb/node-api` binds numbers without a fraction, such as 1e20, as BIGINT.
+ */
+export function floatParam(value: number): string {
+  return Object.is(value, -0) ? "-0.0" : String(value);
+}
+
+/** Null unless the number is finite (§3.6). */
+function finite(sql: string) {
+  return `(CASE WHEN isfinite(${sql}) THEN ${sql} END)`;
+}
+
+class Compiler {
+  readonly params: Params;
+
+  constructor(params: Params) {
+    this.params = params;
+  }
+
+  expression(node: TypedExpr): string {
+    switch (node.kind) {
+      case "column":
+        return quoteIdentifier(node.name);
+      case "literal":
+        return this.literal(node);
+      case "search": {
+        if (node.columns.length === 0) return "FALSE";
+        const text = `CAST(${this.params.add(node.text)} AS VARCHAR)`;
+        const matches = node.columns.map(
+          (column) =>
+            `coalesce(contains(lower(CAST(${quoteIdentifier(column.name)} AS VARCHAR)), lower(${text})), FALSE)`,
+        );
+        return `(${matches.join(" OR ")})`;
+      }
+      case "call":
+        return this.call(node);
+    }
+  }
+
+  private literal(node: LiteralExpr): string {
+    const type = node.type;
+    if (type.type === "null") return "NULL";
+    if (node.value === null) return `CAST(NULL AS ${duckdbType(type)})`;
+    switch (type.type) {
+      case "boolean":
+        return node.value === true ? "TRUE" : "FALSE";
+      case "float": {
+        if (typeof node.value === "number") {
+          return `CAST(CAST(${this.params.add(floatParam(node.value))} AS VARCHAR) AS DOUBLE)`;
+        }
+        const token = FLOAT_TOKENS.get(String(node.value));
+        if (!token) throw new RangeError(`${String(node.value)} is not a float.`);
+        return `CAST(${token} AS DOUBLE)`;
+      }
+      case "string":
+        return `CAST(${this.params.add(String(node.value))} AS VARCHAR)`;
+      case "binary":
+        return `from_base64(CAST(${this.params.add(String(node.value))} AS VARCHAR))`;
+      default:
+        return cast(`CAST(${this.params.add(String(node.value))} AS VARCHAR)`, type);
+    }
+  }
+
+  /** A number argument: floats that are not finite become null (§3.6). */
+  private number(node: TypedExpr) {
+    const sql = this.expression(node);
+    return node.type.type === "float" ? finite(sql) : sql;
+  }
+
+  private double(node: TypedExpr) {
+    return `CAST(${this.number(node)} AS DOUBLE)`;
+  }
+
+  /** An exact operand of a decimal operation: integers are decimal(10, 0) and bigints decimal(19, 0) (§3.7). */
+  private exact(node: TypedExpr) {
+    const sql = this.expression(node);
+    if (node.type.type === "integer") return `CAST(${sql} AS DECIMAL(10,0))`;
+    if (node.type.type === "bigint") return `CAST(${sql} AS DECIMAL(19,0))`;
+    return sql;
+  }
+
+  private text(node: TypedExpr) {
+    const sql = this.expression(node);
+    return node.type.type === "string" || node.type.type === "null" ? sql : `CAST(${sql} AS VARCHAR)`;
+  }
+
+  private call(node: CallExpr): string {
+    const { args, type } = node;
+    const arg = (index: number) => this.expression(args[index]);
+    const all = (separator: string) => args.map((item) => this.expression(item)).join(separator);
+    const typed = () => args.map((item) => cast(this.expression(item), type)).join(", ");
+    switch (node.fn) {
+      case "and":
+        return `(${all(" AND ")})`;
+      case "or":
+        return `(${all(" OR ")})`;
+      case "not":
+        return `(NOT ${arg(0)})`;
+      case "eq":
+        return `(${arg(0)} = ${arg(1)})`;
+      case "ne":
+        return `(${arg(0)} <> ${arg(1)})`;
+      case "lt":
+        return `(${arg(0)} < ${arg(1)})`;
+      case "le":
+        return `(${arg(0)} <= ${arg(1)})`;
+      case "gt":
+        return `(${arg(0)} > ${arg(1)})`;
+      case "ge":
+        return `(${arg(0)} >= ${arg(1)})`;
+      case "in":
+        return `(${arg(0)} IN (${args
+          .slice(1)
+          .map((item) => this.expression(item))
+          .join(", ")}))`;
+      case "is_null":
+        return `(${arg(0)} IS NULL)`;
+      case "is_blank": {
+        if (args[0].type.type === "null") return "TRUE";
+        const value = arg(0);
+        return args[0].type.type === "string" ? `(${value} IS NULL OR ${value} = '')` : `(${value} IS NULL)`;
+      }
+      case "if":
+        return `(CASE WHEN ${arg(0)} THEN ${cast(arg(1), type)} ELSE ${cast(arg(2), type)} END)`;
+      case "coalesce":
+        return `coalesce(${typed()})`;
+      case "least":
+      case "greatest":
+        return `${node.fn}(${typed()})`;
+      case "add":
+      case "sub":
+      case "mul":
+      case "mod": {
+        const operator = { add: "+", sub: "-", mul: "*", mod: "%" }[node.fn];
+        if (type.type === "float") return finite(`(${this.double(args[0])} ${operator} ${this.double(args[1])})`);
+        if (type.type === "bigint") return `TRY(CAST(${arg(0)} AS BIGINT) ${operator} CAST(${arg(1)} AS BIGINT))`;
+        return `TRY(${cast(`(${this.exact(args[0])} ${operator} ${this.exact(args[1])})`, type)})`;
+      }
+      case "div":
+        return finite(`(${this.double(args[0])} / ${this.double(args[1])})`);
+      case "neg":
+        return type.type === "float" ? finite(`(-${this.number(args[0])})`) : `TRY(${cast(`(-${arg(0)})`, type)})`;
+      case "abs":
+        return type.type === "float" ? finite(`abs(${this.number(args[0])})`) : `TRY(${cast(`abs(${arg(0)})`, type)})`;
+      case "round": {
+        const digits = args.length === 2 ? Number((args[1] as LiteralExpr).value) : 0;
+        if (type.type === "float") return finite(`round(${this.number(args[0])}, ${digits})`);
+        if (type.type === "decimal") return `TRY(${cast(`round(${arg(0)}, ${digits})`, type)})`;
+        if (digits >= 0) return arg(0);
+        // DuckDB 1.5 wraps around when it rounds a BIGINT past its range; rounding a decimal overflows instead.
+        return `TRY(${cast(`round(CAST(${arg(0)} AS DECIMAL(19,0)), ${digits})`, type)})`;
+      }
+      case "floor":
+      case "ceil":
+        if (type.type === "float") return finite(`${node.fn}(${this.number(args[0])})`);
+        if (type.type === "decimal") return cast(`${node.fn}(${arg(0)})`, type);
+        return arg(0);
+      case "sqrt":
+      case "exp":
+      case "ln":
+      case "log10":
+        return finite(`TRY(${node.fn}(${this.double(args[0])}))`);
+      case "power":
+        return finite(`TRY(power(${this.double(args[0])}, ${this.double(args[1])}))`);
+      case "sign":
+        return `CAST(sign(${this.number(args[0])}) AS INTEGER)`;
+      case "to_number": {
+        const value = `trim(${arg(0)})`;
+        return `(CASE WHEN regexp_full_match(${value}, '${NUMBER_PATTERN}') THEN ${finite(`TRY_CAST(${value} AS DOUBLE)`)} END)`;
+      }
+      case "concat":
+        return `concat(${args.map((item) => this.text(item)).join(", ")})`;
+      case "length":
+        return `CAST(length(${arg(0)}) AS BIGINT)`;
+      case "lower":
+      case "upper":
+      case "trim":
+        return `${node.fn}(${arg(0)})`;
+      case "left":
+      case "right":
+        return `${node.fn}(${arg(0)}, greatest(CAST(${arg(1)} AS BIGINT), 0))`;
+      case "substr": {
+        const start = `greatest(CAST(${arg(1)} AS BIGINT), 1)`;
+        return args.length === 3
+          ? `substring(${arg(0)}, ${start}, greatest(CAST(${arg(2)} AS BIGINT), 0))`
+          : `substring(${arg(0)}, ${start})`;
+      }
+      case "replace":
+        return `replace(${arg(0)}, ${arg(1)}, ${arg(2)})`;
+      case "contains":
+      case "starts_with":
+      case "ends_with":
+        return `${node.fn}(${arg(0)}, ${arg(1)})`;
+      case "text":
+        return this.text(args[0]);
+      case "to_date": {
+        const value = arg(0);
+        return `(CASE WHEN regexp_full_match(${value}, '${DATE_PATTERN}') THEN TRY_CAST(${value} AS DATE) END)`;
+      }
+      case "to_timestamp": {
+        const value = arg(0);
+        return `(CASE WHEN regexp_full_match(${value}, '${TIMESTAMP_PATTERN}') THEN TRY_CAST(replace(${value}, 'T', ' ') AS TIMESTAMP) END)`;
+      }
+      case "year":
+      case "month":
+      case "day":
+      case "hour":
+      case "minute":
+      case "second":
+      case "isodow":
+        return `CAST(${node.fn}(${arg(0)}) AS BIGINT)`;
+      case "date_diff_days": {
+        const mixed = args[0].type.type !== args[1].type.type;
+        const side = (index: number) => (mixed ? `CAST(${arg(index)} AS TIMESTAMP)` : arg(index));
+        return `date_diff('day', ${side(0)}, ${side(1)})`;
+      }
+      case "add_days":
+        return type.type === "date"
+          ? `TRY(${arg(0)} + CAST(${arg(1)} AS INTEGER))`
+          : `TRY(${arg(0)} + to_days(CAST(${arg(1)} AS INTEGER)))`;
+    }
+  }
+
+  /** A measure (§3.8, §4.5), optionally over the rows of a pivot's combination. */
+  measure(measure: CheckedMeasure, condition?: string): string {
+    const column = measure.column ? quoteIdentifier(measure.column.name) : null;
+    const conditions: string[] = [];
+    if (measure.column?.type === "float" && measure.fn !== "count" && measure.fn !== "count_distinct") {
+      conditions.push(`isfinite(${column})`);
+    }
+    if (condition) conditions.push(condition);
+    const filter = conditions.length > 0 ? ` FILTER (WHERE ${conditions.join(" AND ")})` : "";
+    switch (measure.fn) {
+      case "count":
+        return `count(${column ?? "*"})${filter}`;
+      case "count_distinct":
+        return measure.approx ? `approx_count_distinct(${column})${filter}` : `count(DISTINCT ${column})${filter}`;
+      case "sum":
+        // DuckDB refuses aggregates inside TRY(); TRY_CAST takes them.
+        return measure.type.type === "float"
+          ? `sum(${column})${filter}`
+          : `TRY_CAST(sum(${column})${filter} AS ${duckdbType(measure.type)})`;
+      case "avg":
+        return `CAST(avg(${column})${filter} AS DOUBLE)`;
+      case "stddev":
+        return `CAST(stddev_samp(${column})${filter} AS DOUBLE)`;
+      case "min":
+      case "max":
+        return `${measure.fn}(${column})${filter}`;
+      case "quantile": {
+        const fn = measure.approx ? "approx_quantile" : "quantile_cont";
+        return `CAST(${fn}(${column}, ${Number(measure.p)})${filter} AS DOUBLE)`;
+      }
+    }
+  }
+}
+
+/** ORDER BY terms of one sort key: blanks last in both directions (§3.3). */
+function sortTerms(sql: string, type: ValueType, direction: "asc" | "desc") {
+  const order = direction === "desc" ? "DESC" : "ASC";
+  return type.type === "string" ? [`NULLIF(${sql}, '') ${order} NULLS LAST`] : [`${sql} ${order} NULLS LAST`];
+}
+
+/** ORDER BY terms of group keys (§3.9): ascending, blanks last, the empty string before null. */
+function keyTerms(column: Column) {
+  const sql = quoteIdentifier(column.name);
+  return column.type === "string"
+    ? [`NULLIF(${sql}, '') ASC NULLS LAST`, `${sql} ASC NULLS LAST`]
+    : [`${sql} ASC NULLS LAST`];
+}
+
+/** A name for the column of row IDs that no column of the plan has. */
+function rowIdAlias(plan: CheckedPlan) {
+  const names = new Set(plan.rows.map((column) => column.name));
+  let alias = "vg_row";
+  while (names.has(alias)) alias = `${alias}_`;
+  return quoteIdentifier(alias);
+}
+
+/** The `WITH` entries up to `vg_rows`, the rows that `where` keeps, with the derived columns. */
+function rowsWith(plan: CheckedPlan, source: SqlSource, compiler: Compiler, alias: string): string[] {
+  const columns = plan.table.map((column) => quoteIdentifier(column.name));
+  const entries = [
+    `vg_base AS (SELECT ${[...columns, `${source.rowId} AS ${alias}`].join(", ")} FROM ${source.relation})`,
+  ];
+  let previous = "vg_base";
+  plan.derive.forEach((item, index) => {
+    const name = `vg_derive${index + 1}`;
+    entries.push(
+      `${name} AS (SELECT *, ${compiler.expression(item.expr)} AS ${quoteIdentifier(item.name)} FROM ${previous})`,
+    );
+    previous = name;
+  });
+  const where = plan.where ? ` WHERE ${compiler.expression(plan.where)}` : "";
+  entries.push(`vg_rows AS (SELECT * FROM ${previous}${where})`);
+  return entries;
+}
+
+/**
+ * The query that reads the combinations of a pivot's values (§4.6), as their text forms, in order. It reads
+ * one more combination than the pivot may make columns for, so that `compileView` can refuse too many.
+ */
+export function pivotQuery(plan: CheckedPlan, source: SqlSource): SqlQuery {
+  const pivot = plan.aggregate?.pivot;
+  if (!pivot || !plan.aggregate) throw new RangeError("The plan has no pivot.");
+  const compiler = new Compiler(new Params(source.params));
+  const entries = rowsWith(plan, source, compiler, rowIdAlias(plan));
+  const names = pivot.columns.map((column) => quoteIdentifier(column.name));
+  const texts = pivot.columns.map(
+    (column, index) => `CAST(${quoteIdentifier(column.name)} AS VARCHAR) AS "vg_value${index}"`,
+  );
+  const limit = Math.floor(pivot.maxColumns / plan.aggregate.measures.length) + 1;
+  const sql = `WITH ${entries.join(", ")} SELECT ${texts.join(", ")} FROM (SELECT DISTINCT ${names.join(", ")} FROM vg_rows) ORDER BY ${pivot.columns.flatMap(keyTerms).join(", ")} LIMIT ${limit}`;
+  return { sql, params: compiler.params.values };
+}
+
+/** A name that no earlier column has: `name`, then `name (2)`, `name (3)`, … (§4.6). */
+function uniqueName(name: string, taken: Set<string>) {
+  let unique = name;
+  for (let index = 2; taken.has(unique); index++) unique = `${name} (${index})`;
+  taken.add(unique);
+  return unique;
+}
+
+/**
+ * The view of a checked plan as SQL. A pivot needs the combinations that `pivotQuery` read, and fails with
+ * `too_many_columns` when they would make more columns than its `maxColumns`.
+ */
+export function compileView(plan: CheckedPlan, source: SqlSource, combinations?: PivotCombinations): SqlView {
+  const compiler = new Compiler(new Params(source.params));
+  const alias = rowIdAlias(plan);
+  const entries = rowsWith(plan, source, compiler, alias);
+  const order = plan.sort.flatMap((key) => sortTerms(quoteIdentifier(key.column.name), key.column, key.direction));
+  if (!plan.aggregate) {
+    entries.push("vg_view AS (SELECT * FROM vg_rows)");
+    return {
+      with: `WITH ${entries.join(", ")}`,
+      params: compiler.params.values,
+      columns: plan.columns,
+      order: [...order, `${alias} ASC`],
+      rowIds: true,
+      rowId: alias,
+    };
+  }
+  const { keys, measures, pivot } = plan.aggregate;
+  const columns = [...plan.columns];
+  const outputs = keys.map((key) => quoteIdentifier(key.name));
+  if (pivot) {
+    if (!combinations) throw new RangeError("A pivot needs the combinations that pivotQuery reads.");
+    if (combinations.length > Math.floor(pivot.maxColumns / measures.length)) {
+      throw new SpecError("too_many_columns", `The pivot makes more than ${pivot.maxColumns} columns.`);
+    }
+    const taken = new Set(columns.map((column) => column.name));
+    for (const combination of combinations) {
+      const condition = pivot.columns
+        .map((column, index) => {
+          const text = combination[index];
+          const value =
+            text === null
+              ? `CAST(NULL AS ${duckdbType(column)})`
+              : cast(`CAST(${compiler.params.add(text)} AS VARCHAR)`, column);
+          return `(${quoteIdentifier(column.name)} IS NOT DISTINCT FROM ${value})`;
+        })
+        .join(" AND ");
+      const labels = combination.map((text) => (text === null ? "(null)" : text === "" ? "(empty)" : text));
+      for (const measure of measures) {
+        const name = uniqueName([...labels, measure.name].join(" / "), taken);
+        outputs.push(`${compiler.measure(measure, condition)} AS ${quoteIdentifier(name)}`);
+        columns.push({
+          name,
+          ...valueType(measure.type),
+          pivot: {
+            values: combination.map((text, index) => valueOfText(text, pivot.columns[index])),
+            measure: measure.name,
+          },
+        });
+      }
+    }
+  } else {
+    for (const measure of measures) outputs.push(`${compiler.measure(measure)} AS ${quoteIdentifier(measure.name)}`);
+  }
+  const groupBy = keys.length > 0 ? ` GROUP BY ${keys.map((key) => quoteIdentifier(key.name)).join(", ")}` : "";
+  entries.push(`vg_groups AS (SELECT ${outputs.join(", ")} FROM vg_rows${groupBy})`);
+  const having = plan.having ? ` WHERE ${compiler.expression(plan.having)}` : "";
+  entries.push(`vg_view AS (SELECT * FROM vg_groups${having})`);
+  return {
+    with: `WITH ${entries.join(", ")}`,
+    params: compiler.params.values,
+    columns,
+    order: [...order, ...keys.flatMap(keyTerms)],
+    rowIds: false,
+    rowId: null,
+  };
+}
+
+/** What `rowsQuery` reads: positions `[start, end)` and the view's columns, by name. */
+export interface SqlRead {
+  start: number;
+  end: number;
+  columns: string[];
+}
+
+/**
+ * The query that reads positions of a view, in order: the columns, then the row ID when the view has them.
+ * `select` may wrap each column, for example to read exact numbers as text.
+ */
+export function rowsQuery(
+  view: SqlView,
+  read: SqlRead,
+  select: (column: Column, sql: string) => string = (_column, sql) => sql,
+): SqlQuery {
+  if (!Number.isSafeInteger(read.start) || !Number.isSafeInteger(read.end) || read.start < 0 || read.end < read.start) {
+    throw new RangeError("A read is a range of positions from 0, [start, end).");
+  }
+  const outputs = read.columns.map((name) => {
+    const column = view.columns.find((item) => item.name === name);
+    if (!column) throw new RangeError(`The view has no column "${name}".`);
+    return select(column, quoteIdentifier(name));
+  });
+  if (view.rowId) outputs.push(view.rowId);
+  if (outputs.length === 0) outputs.push("NULL");
+  const order = view.order.length > 0 ? ` ORDER BY ${view.order.join(", ")}` : "";
+  return {
+    sql: `${view.with} SELECT ${outputs.join(", ")} FROM vg_view${order} LIMIT ${read.end - read.start} OFFSET ${read.start}`,
+    params: view.params,
+  };
+}
+
+/** The query that counts the rows of a view. */
+export function countQuery(view: SqlView): SqlQuery {
+  return { sql: `${view.with} SELECT count(*) FROM vg_view`, params: view.params };
+}

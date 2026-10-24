@@ -1,0 +1,177 @@
+{
+  "$schema": "../schema/conformance.schema.json",
+  "description": "Plans (§4.1, §4.2), reading positions of a view (§8.4), and validation (§4.7).",
+  "tables": {
+    "items": {
+      "columns": [
+        { "name": "qty", "type": "integer" },
+        { "name": "price", "type": "decimal", "precision": 10, "scale": 2 },
+        { "name": "name", "type": "string" }
+      ],
+      "rows": [[2, "1.50", "a"], [1, "3.00", "b"], [3, "0.25", "c"]]
+    }
+  },
+  "cases": [
+    {
+      "id": "plan.empty",
+      "section": "4.1",
+      "table": "items",
+      "plan": {},
+      "expect": {
+        "columns": [
+          { "name": "qty", "type": "integer" },
+          { "name": "price", "type": "decimal", "precision": 10, "scale": 2 },
+          { "name": "name", "type": "string" }
+        ],
+        "rowCount": 3,
+        "rowIds": [0, 1, 2],
+        "rows": [[2, "1.50", "a"], [1, "3.00", "b"], [3, "0.25", "c"]]
+      }
+    },
+    {
+      "id": "plan.derived-columns-in-order",
+      "section": "4.2",
+      "description": "Derived columns come after the table's, and each may use the ones before it.",
+      "table": "items",
+      "plan": {
+        "derive": [
+          { "name": "double", "expr": { "fn": "mul", "args": [{ "col": "qty" }, { "lit": 2 }] } },
+          { "name": "next", "expr": { "fn": "add", "args": [{ "col": "double" }, { "lit": 1 }] } }
+        ]
+      },
+      "expect": {
+        "columns": [
+          { "name": "qty", "type": "integer" },
+          { "name": "price", "type": "decimal", "precision": 10, "scale": 2 },
+          { "name": "name", "type": "string" },
+          { "name": "double", "type": "bigint" },
+          { "name": "next", "type": "bigint" }
+        ],
+        "rowCount": 3,
+        "rowIds": [0, 1, 2],
+        "rows": [[2, "1.50", "a", 4, 5], [1, "3.00", "b", 2, 3], [3, "0.25", "c", 6, 7]]
+      }
+    },
+    {
+      "id": "plan.exact-total",
+      "section": "3.7",
+      "description": "An integer times a decimal(10, 2) is a decimal(20, 2).",
+      "table": "items",
+      "plan": {
+        "derive": [{ "name": "total", "expr": { "fn": "mul", "args": [{ "col": "qty" }, { "col": "price" }] } }]
+      },
+      "read": { "columns": ["total"] },
+      "expect": {
+        "columns": [{ "name": "total", "type": "decimal", "precision": 20, "scale": 2 }],
+        "rowCount": 3,
+        "rows": [["3.00"], ["3.00"], ["0.75"]]
+      }
+    },
+    {
+      "id": "plan.read-positions",
+      "section": "8.4",
+      "description": "A read gives positions of the view in order, with the view's row count.",
+      "table": "items",
+      "plan": { "sort": [{ "column": "price", "direction": "desc" }] },
+      "read": { "start": 1, "end": 3, "columns": ["name"] },
+      "expect": { "rowCount": 3, "rowIds": [0, 2], "rows": [["a"], ["c"]] }
+    },
+    {
+      "id": "plan.untyped-null-takes-a-type",
+      "section": "2.5",
+      "description": "An untyped null takes the type of the other values of coalesce.",
+      "table": "items",
+      "plan": {
+        "derive": [{ "name": "x", "expr": { "fn": "coalesce", "args": [{ "lit": null }, { "col": "qty" }] } }]
+      },
+      "read": { "columns": ["x"] },
+      "expect": { "columns": [{ "name": "x", "type": "integer" }], "rowCount": 3, "rows": [[2], [1], [3]] }
+    },
+    {
+      "id": "plan.untyped-nulls-only",
+      "section": "2.5",
+      "table": "items",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "coalesce", "args": [{ "lit": null }, { "lit": null }] } }] },
+      "expect": { "error": { "code": "invalid_plan", "reason": "type", "path": "/derive/0/expr" } }
+    },
+    {
+      "id": "plan.derived-name-taken",
+      "section": "4.2",
+      "table": "items",
+      "plan": { "derive": [{ "name": "qty", "expr": { "lit": 1 } }] },
+      "expect": { "error": { "code": "invalid_plan", "reason": "duplicate_name", "path": "/derive/0/name" } }
+    },
+    {
+      "id": "plan.unknown-column",
+      "section": "4.7",
+      "table": "items",
+      "plan": { "where": { "fn": "gt", "args": [{ "col": "cost" }, { "lit": 1 }] } },
+      "expect": { "error": { "code": "invalid_plan", "reason": "unknown_column", "path": "/where/args/0" } }
+    },
+    {
+      "id": "plan.derived-column-used-before-it-is-made",
+      "section": "4.1",
+      "table": "items",
+      "plan": {
+        "derive": [
+          { "name": "a", "expr": { "fn": "add", "args": [{ "col": "b" }, { "lit": 1 }] } },
+          { "name": "b", "expr": { "col": "qty" } }
+        ]
+      },
+      "expect": { "error": { "code": "invalid_plan", "reason": "unknown_column", "path": "/derive/0/expr/args/0" } }
+    },
+    {
+      "id": "plan.having-without-aggregate",
+      "section": "4.1",
+      "table": "items",
+      "plan": { "having": { "fn": "eq", "args": [{ "col": "qty" }, { "lit": 1 }] } },
+      "expect": { "error": { "code": "invalid_plan", "reason": "misplaced", "path": "/having" } }
+    },
+    {
+      "id": "plan.where-is-boolean",
+      "section": "4.3",
+      "table": "items",
+      "plan": { "where": { "col": "qty" } },
+      "expect": { "error": { "code": "invalid_plan", "reason": "type", "path": "/where" } }
+    },
+    {
+      "id": "plan.unknown-function",
+      "section": "4.7",
+      "table": "items",
+      "plan": { "where": { "fn": "between", "args": [{ "col": "qty" }, { "lit": 1 }, { "lit": 2 }] } },
+      "expect": { "error": { "code": "invalid_plan", "reason": "unknown_function", "path": "/where" } }
+    },
+    {
+      "id": "plan.arity",
+      "section": "4.7",
+      "table": "items",
+      "plan": { "where": { "fn": "not", "args": [] } },
+      "expect": { "error": { "code": "invalid_plan", "reason": "arity", "path": "/where" } }
+    },
+    {
+      "id": "plan.decimal-literal",
+      "section": "2.5",
+      "table": "items",
+      "plan": { "where": { "fn": "gt", "args": [{ "col": "price" }, { "lit": "1.2.3", "type": "decimal" }] } },
+      "expect": { "error": { "code": "invalid_plan", "reason": "literal", "path": "/where/args/1" } }
+    },
+    {
+      "id": "plan.unknown-member",
+      "section": "4.7",
+      "table": "items",
+      "plan": { "filter": { "fn": "eq", "args": [{ "col": "qty" }, { "lit": 1 }] } },
+      "expect": { "error": { "code": "invalid_plan", "reason": "syntax", "path": "/filter" } }
+    },
+    {
+      "id": "plan.sort-after-aggregate",
+      "section": "4.2",
+      "description": "After aggregate, the view's columns are the keys and the measures.",
+      "table": "items",
+      "plan": {
+        "aggregate": { "keys": ["name"], "measures": [{ "name": "n", "fn": "count" }] },
+        "sort": [{ "column": "qty", "direction": "asc" }]
+      },
+      "expect": { "error": { "code": "invalid_plan", "reason": "unknown_column", "path": "/sort/0/column" } }
+    }
+  ]
+}

@@ -1,0 +1,132 @@
+{
+  "$schema": "../schema/conformance.schema.json",
+  "description": "Order (§3.3): blanks last in both directions, ties broken by the next key and then by row ID, NaN as the greatest number, strings by code point.",
+  "tables": {
+    "letters": { "columns": [{ "name": "s", "type": "string" }], "rows": [["b"], [""], [null], ["a"], [""]] },
+    "floats": {
+      "columns": [{ "name": "x", "type": "float" }],
+      "rows": [[1], ["NaN"], ["Infinity"], ["-Infinity"], [null], [-1], [1]]
+    },
+    "codepoints": {
+      "columns": [{ "name": "s", "type": "string" }],
+      "rows": [["｡"], ["😀"], ["B"], ["a"], ["10"], ["9"]]
+    },
+    "pairs": {
+      "columns": [{ "name": "g", "type": "string" }, { "name": "n", "type": "integer" }],
+      "rows": [["x", 2], ["y", 1], ["x", 1], [null, 3], ["y", 2]]
+    },
+    "booleans": { "columns": [{ "name": "b", "type": "boolean" }], "rows": [[true], [false], [null], [false]] },
+    "decimals": {
+      "columns": [{ "name": "d", "type": "decimal", "precision": 10, "scale": 2 }],
+      "rows": [["1.50"], ["-0.10"], ["10.00"], [null], ["2.25"]]
+    },
+    "dates": {
+      "columns": [{ "name": "d", "type": "date" }],
+      "rows": [["2024-01-31"], ["2023-12-31"], [null], ["2024-01-01"]]
+    }
+  },
+  "cases": [
+    {
+      "id": "order.no-sort",
+      "section": "3.3",
+      "description": "A view without sort is in row ID order.",
+      "table": "letters",
+      "plan": {},
+      "expect": { "rowCount": 5, "rowIds": [0, 1, 2, 3, 4], "rows": [["b"], [""], [null], ["a"], [""]] }
+    },
+    {
+      "id": "order.strings-asc-blanks-last",
+      "section": "3.3",
+      "description": "The empty string and null come last ascending, tied with each other and ordered by row ID.",
+      "table": "letters",
+      "plan": { "sort": [{ "column": "s", "direction": "asc" }] },
+      "expect": { "rowCount": 5, "rowIds": [3, 0, 1, 2, 4], "rows": [["a"], ["b"], [""], [null], [""]] }
+    },
+    {
+      "id": "order.strings-desc-blanks-last",
+      "section": "3.3",
+      "description": "Blanks come last descending too.",
+      "table": "letters",
+      "plan": { "sort": [{ "column": "s", "direction": "desc" }] },
+      "expect": { "rowCount": 5, "rowIds": [0, 3, 1, 2, 4], "rows": [["b"], ["a"], [""], [null], [""]] }
+    },
+    {
+      "id": "order.floats-asc",
+      "section": "3.3",
+      "description": "NaN is the greatest number; null comes last; equal values are ordered by row ID.",
+      "table": "floats",
+      "plan": { "sort": [{ "column": "x", "direction": "asc" }] },
+      "expect": {
+        "rowCount": 7,
+        "rowIds": [3, 5, 0, 6, 2, 1, 4],
+        "rows": [["-Infinity"], [-1], [1], [1], ["Infinity"], ["NaN"], [null]]
+      }
+    },
+    {
+      "id": "order.floats-desc",
+      "section": "3.3",
+      "description": "Descending, NaN comes first and null still last; equal values stay in row ID order.",
+      "table": "floats",
+      "plan": { "sort": [{ "column": "x", "direction": "desc" }] },
+      "expect": {
+        "rowCount": 7,
+        "rowIds": [1, 2, 0, 6, 5, 3, 4],
+        "rows": [["NaN"], ["Infinity"], [1], [1], [-1], ["-Infinity"], [null]]
+      }
+    },
+    {
+      "id": "order.code-points",
+      "section": "3.1",
+      "description": "Strings compare by code point: digits, upper case, lower case, U+FF61, then U+1F600 (JavaScript's < puts the emoji before U+FF61).",
+      "table": "codepoints",
+      "plan": { "sort": [{ "column": "s", "direction": "asc" }] },
+      "expect": { "rowCount": 6, "rowIds": [4, 5, 2, 3, 0, 1], "rows": [["10"], ["9"], ["B"], ["a"], ["｡"], ["😀"]] }
+    },
+    {
+      "id": "order.two-keys",
+      "section": "3.3",
+      "description": "Rows equal on the first key are ordered by the second.",
+      "table": "pairs",
+      "plan": {
+        "sort": [{ "column": "g", "direction": "asc" }, { "column": "n", "direction": "desc" }]
+      },
+      "expect": {
+        "rowCount": 5,
+        "rowIds": [0, 2, 4, 1, 3],
+        "rows": [["x", 2], ["x", 1], ["y", 2], ["y", 1], [null, 3]]
+      }
+    },
+    {
+      "id": "order.booleans",
+      "section": "3.1",
+      "description": "false comes before true.",
+      "table": "booleans",
+      "plan": { "sort": [{ "column": "b", "direction": "asc" }] },
+      "expect": { "rowCount": 4, "rowIds": [1, 3, 0, 2], "rows": [[false], [false], [true], [null]] }
+    },
+    {
+      "id": "order.decimals",
+      "section": "3.1",
+      "description": "Decimals compare by value.",
+      "table": "decimals",
+      "plan": { "sort": [{ "column": "d", "direction": "asc" }] },
+      "expect": {
+        "rowCount": 5,
+        "rowIds": [1, 0, 4, 2, 3],
+        "rows": [["-0.10"], ["1.50"], ["2.25"], ["10.00"], [null]]
+      }
+    },
+    {
+      "id": "order.dates-desc",
+      "section": "3.1",
+      "description": "Dates compare in time.",
+      "table": "dates",
+      "plan": { "sort": [{ "column": "d", "direction": "desc" }] },
+      "expect": {
+        "rowCount": 4,
+        "rowIds": [0, 3, 1, 2],
+        "rows": [["2024-01-31"], ["2024-01-01"], ["2023-12-31"], [null]]
+      }
+    }
+  ]
+}

@@ -1,0 +1,148 @@
+{
+  "$schema": "../schema/conformance.schema.json",
+  "description": "Comparison (§3.1) and blanks (§3.2): exact numbers, floats, NaN, strings, dates, nulls, in.",
+  "tables": {
+    "exact": {
+      "columns": [{ "name": "d", "type": "decimal", "precision": 10, "scale": 2 }, { "name": "f", "type": "float" }],
+      "rows": [["1.00", 1], ["1.01", 1.005], ["0.10", 0.1], [null, "NaN"]]
+    },
+    "letters": { "columns": [{ "name": "s", "type": "string" }], "rows": [["b"], [""], [null], ["a"], [""]] },
+    "moments": {
+      "columns": [
+        { "name": "day", "type": "date" },
+        { "name": "at", "type": "timestamp" },
+        { "name": "tz", "type": "timestamptz" }
+      ],
+      "rows": [
+        ["2024-01-01", "2024-01-01 00:00:01", "2024-01-01 00:00:00+00"],
+        ["2024-01-02", "2024-01-01 23:59:59", "2024-01-02 00:00:00+00"]
+      ]
+    }
+  },
+  "cases": [
+    {
+      "id": "compare.decimal-finer-literal",
+      "section": "3.1",
+      "description": "A decimal literal with more fraction digits than the column compares exactly: 1.00 is not greater than 1.005.",
+      "table": "exact",
+      "plan": { "where": { "fn": "gt", "args": [{ "col": "d" }, { "lit": "1.005", "type": "decimal" }] } },
+      "read": { "columns": ["d"] },
+      "expect": { "rowCount": 1, "rowIds": [1], "rows": [["1.01"]] }
+    },
+    {
+      "id": "compare.decimal-equals-float",
+      "section": "3.1",
+      "description": "With a float on one side, both are compared as floats: the decimal 0.10 equals the float 0.1.",
+      "table": "exact",
+      "plan": { "where": { "fn": "eq", "args": [{ "col": "d" }, { "lit": 0.1 }] } },
+      "read": { "columns": ["d"] },
+      "expect": { "rowCount": 1, "rowIds": [2], "rows": [["0.10"]] }
+    },
+    {
+      "id": "compare.float-equals-decimal-literal",
+      "section": "3.1",
+      "description": "The decimal 1.005 rounds to the float nearest to it, which is the float column's 1.005.",
+      "table": "exact",
+      "plan": { "where": { "fn": "eq", "args": [{ "col": "f" }, { "lit": "1.005", "type": "decimal" }] } },
+      "read": { "columns": ["f"] },
+      "expect": { "rowCount": 1, "rowIds": [1], "rows": [[1.005]] }
+    },
+    {
+      "id": "compare.nan-equals-nan",
+      "section": "3.1",
+      "table": "exact",
+      "plan": { "where": { "fn": "eq", "args": [{ "col": "f" }, { "lit": "NaN", "type": "float" }] } },
+      "read": { "columns": ["f"] },
+      "expect": { "rowCount": 1, "rowIds": [3], "rows": [["NaN"]] }
+    },
+    {
+      "id": "compare.nan-greater-than-infinity",
+      "section": "3.1",
+      "table": "exact",
+      "plan": { "where": { "fn": "gt", "args": [{ "col": "f" }, { "lit": "Infinity", "type": "float" }] } },
+      "read": { "columns": ["f"] },
+      "expect": { "rowCount": 1, "rowIds": [3], "rows": [["NaN"]] }
+    },
+    {
+      "id": "compare.null-is-not-kept",
+      "section": "3.6",
+      "description": "A comparison with null is null, and where keeps only true.",
+      "table": "exact",
+      "plan": { "where": { "fn": "ne", "args": [{ "col": "d" }, { "lit": "1.00", "type": "decimal" }] } },
+      "read": { "columns": ["d"] },
+      "expect": { "rowCount": 2, "rowIds": [1, 2], "rows": [["1.01"], ["0.10"]] }
+    },
+    {
+      "id": "compare.empty-string-first",
+      "section": "3.1",
+      "description": "The empty string is less than every other string.",
+      "table": "letters",
+      "plan": { "where": { "fn": "lt", "args": [{ "col": "s" }, { "lit": "a" }] } },
+      "expect": { "rowCount": 2, "rowIds": [1, 4], "rows": [[""], [""]] }
+    },
+    {
+      "id": "compare.is-blank",
+      "section": "3.2",
+      "table": "letters",
+      "plan": { "where": { "fn": "is_blank", "args": [{ "col": "s" }] } },
+      "expect": { "rowCount": 3, "rowIds": [1, 2, 4], "rows": [[""], [null], [""]] }
+    },
+    {
+      "id": "compare.not-blank",
+      "section": "3.2",
+      "table": "letters",
+      "plan": { "where": { "fn": "not", "args": [{ "fn": "is_blank", "args": [{ "col": "s" }] }] } },
+      "expect": { "rowCount": 2, "rowIds": [0, 3], "rows": [["b"], ["a"]] }
+    },
+    {
+      "id": "compare.in",
+      "section": "4.4",
+      "table": "letters",
+      "plan": { "where": { "fn": "in", "args": [{ "col": "s" }, { "lit": "a" }, { "lit": "b" }] } },
+      "expect": { "rowCount": 2, "rowIds": [0, 3], "rows": [["b"], ["a"]] }
+    },
+    {
+      "id": "compare.not-in-keeps-blanks",
+      "section": "4.4",
+      "description": "in is null for a null value, so excluding values keeps blanks only with coalesce.",
+      "table": "letters",
+      "plan": {
+        "where": {
+          "fn": "not",
+          "args": [
+            {
+              "fn": "coalesce",
+              "args": [{ "fn": "in", "args": [{ "col": "s" }, { "lit": "a" }] }, { "lit": false }]
+            }
+          ]
+        }
+      },
+      "expect": { "rowCount": 4, "rowIds": [0, 1, 2, 4], "rows": [["b"], [""], [null], [""]] }
+    },
+    {
+      "id": "compare.date-with-timestamp",
+      "section": "3.1",
+      "description": "A date compared with a timestamp is the timestamp at midnight.",
+      "table": "moments",
+      "plan": { "where": { "fn": "lt", "args": [{ "col": "day" }, { "col": "at" }] } },
+      "read": { "columns": ["day"] },
+      "expect": { "rowCount": 1, "rowIds": [0], "rows": [["2024-01-01"]] }
+    },
+    {
+      "id": "compare.different-kinds",
+      "section": "3.1",
+      "description": "A string and a number are not comparable.",
+      "table": "letters",
+      "plan": { "where": { "fn": "eq", "args": [{ "col": "s" }, { "lit": 1 }] } },
+      "expect": { "error": { "code": "invalid_plan", "reason": "type", "path": "/where" } }
+    },
+    {
+      "id": "compare.timestamptz-with-timestamp",
+      "section": "3.1",
+      "description": "An instant is not comparable with a timestamp without a time zone.",
+      "table": "moments",
+      "plan": { "where": { "fn": "lt", "args": [{ "col": "tz" }, { "col": "at" }] } },
+      "expect": { "error": { "code": "invalid_plan", "reason": "type", "path": "/where" } }
+    }
+  ]
+}

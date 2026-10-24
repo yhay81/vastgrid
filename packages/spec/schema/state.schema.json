@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vastgrid.yhay81.com/schema/v2/state.schema.json",
+  "title": "vastgrid v2 state",
+  "description": "The document and the session of a grid (docs/v2-spec.md §5).",
+  "oneOf": [{ "$ref": "#/$defs/document" }, { "$ref": "#/$defs/session" }],
+  "$defs": {
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "version"],
+      "properties": {
+        "kind": { "const": "vastgrid/document" },
+        "version": { "const": 2 },
+        "schema": { "type": "array", "items": { "type": "string" } },
+        "plan": { "$ref": "plan.schema.json" },
+        "columns": { "type": "array", "items": { "$ref": "#/$defs/columnSetting" } }
+      }
+    },
+    "columnSetting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "hidden": { "type": "boolean" },
+        "pin": { "enum": ["left", "right"] },
+        "format": { "$ref": "#/$defs/format" },
+        "total": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["fn"],
+          "properties": {
+            "fn": { "enum": ["count", "count_distinct", "sum", "avg", "stddev", "min", "max", "quantile"] },
+            "p": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    },
+    "format": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": { "type": "string" },
+        "number": { "$ref": "#/$defs/numberFormat" },
+        "date": { "$ref": "#/$defs/dateFormat" },
+        "align": { "enum": ["left", "center", "right"] },
+        "wrap": { "type": "boolean" },
+        "copy": { "enum": ["raw", "formatted"] },
+        "styles": { "type": "array", "items": { "$ref": "#/$defs/style" } }
+      }
+    },
+    "style": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["when"],
+      "properties": {
+        "when": { "$ref": "plan.schema.json#/$defs/expression" },
+        "color": { "type": "string" },
+        "background": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    },
+    "numberFormat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "style": { "enum": ["decimal", "percent", "currency"] },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "currencyDisplay": { "enum": ["symbol", "narrowSymbol", "code", "name"] },
+        "fractionDigits": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "minimumFractionDigits": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "maximumFractionDigits": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "grouping": { "type": "boolean" },
+        "notation": { "enum": ["standard", "scientific", "engineering", "compact"] },
+        "signDisplay": { "enum": ["auto", "always", "exceptZero", "negative", "never"] },
+        "prefix": { "type": "string" },
+        "suffix": { "type": "string" }
+      }
+    },
+    "dateFormat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pattern": { "type": "string" },
+        "dateStyle": { "enum": ["full", "long", "medium", "short"] },
+        "timeStyle": { "enum": ["full", "long", "medium", "short"] },
+        "weekday": { "enum": ["long", "short", "narrow"] },
+        "year": { "enum": ["numeric", "2-digit"] },
+        "month": { "enum": ["numeric", "2-digit", "long", "short", "narrow"] },
+        "day": { "enum": ["numeric", "2-digit"] },
+        "hour": { "enum": ["numeric", "2-digit"] },
+        "minute": { "enum": ["numeric", "2-digit"] },
+        "second": { "enum": ["numeric", "2-digit"] },
+        "fractionalSecondDigits": { "enum": [1, 2, 3] },
+        "hour12": { "type": "boolean" },
+        "timeZoneName": { "enum": ["short", "long", "shortOffset", "longOffset"] },
+        "timeZone": { "type": "string" }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "version"],
+      "properties": {
+        "kind": { "const": "vastgrid/session" },
+        "version": { "const": 2 },
+        "view": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "active": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["row", "column"],
+          "properties": {
+            "row": { "$ref": "#/$defs/position" },
+            "key": { "$ref": "#/$defs/rowKey" },
+            "column": { "type": "string" }
+          }
+        },
+        "selection": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["rows", "columns"],
+            "properties": {
+              "rows": {
+                "type": "array",
+                "prefixItems": [{ "$ref": "#/$defs/position" }, { "$ref": "#/$defs/position" }],
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "columns": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+            }
+          }
+        },
+        "scroll": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "row": { "$ref": "#/$defs/position" }, "column": { "type": "string" } }
+        },
+        "checked": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "keys"],
+          "properties": {
+            "mode": { "enum": ["include", "exclude"] },
+            "keys": { "type": "array", "items": { "$ref": "#/$defs/rowKey" } },
+            "where": { "$ref": "plan.schema.json#/$defs/expression" }
+          }
+        },
+        "detail": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "open": { "type": "boolean" } }
+        },
+        "editor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["row", "column", "text"],
+          "properties": {
+            "row": { "$ref": "#/$defs/position" },
+            "column": { "type": "string" },
+            "text": { "type": "string" }
+          }
+        }
+      }
+    },
+    "position": { "type": "integer", "minimum": 0 },
+    "rowKey": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rowId"],
+          "properties": { "rowId": { "$ref": "#/$defs/position" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["value"],
+          "properties": { "value": { "type": ["string", "number", "boolean"] } }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "$schema": "../schema/conformance.schema.json",
+  "description": "Search (§3.5): any of the table's own columns whose text form contains the text, ignoring letter case.",
+  "tables": {
+    "people": {
+      "columns": [
+        { "name": "name", "type": "string" },
+        { "name": "age", "type": "integer" },
+        { "name": "born", "type": "date" },
+        { "name": "score", "type": "float" }
+      ],
+      "rows": [["Ada", 36, "1815-12-10", 1.5], ["Grace", 85, "1906-12-09", 2], ["Tokyo Taro", null, null, 10]]
+    }
+  },
+  "cases": [
+    {
+      "id": "search.ignores-case",
+      "section": "3.5",
+      "table": "people",
+      "plan": { "where": { "search": "ada" } },
+      "read": { "columns": ["name"] },
+      "expect": { "rowCount": 1, "rowIds": [0], "rows": [["Ada"]] }
+    },
+    {
+      "id": "search.number-text-form",
+      "section": "3.5",
+      "description": "The float 1.5 is the text 1.5; 10 is 10.0, which does not contain 1.5.",
+      "table": "people",
+      "plan": { "where": { "search": "1.5" } },
+      "read": { "columns": ["name"] },
+      "expect": { "rowCount": 1, "rowIds": [0], "rows": [["Ada"]] }
+    },
+    {
+      "id": "search.float-text-form",
+      "section": "3.5",
+      "description": "The float 2 is the text 2.0.",
+      "table": "people",
+      "plan": { "where": { "search": "2.0" } },
+      "read": { "columns": ["name"] },
+      "expect": { "rowCount": 1, "rowIds": [1], "rows": [["Grace"]] }
+    },
+    {
+      "id": "search.dates",
+      "section": "3.5",
+      "table": "people",
+      "plan": { "where": { "search": "1906" } },
+      "read": { "columns": ["name"] },
+      "expect": { "rowCount": 1, "rowIds": [1], "rows": [["Grace"]] }
+    },
+    {
+      "id": "search.with-a-condition",
+      "section": "3.5",
+      "table": "people",
+      "plan": {
+        "where": {
+          "fn": "and",
+          "args": [{ "search": "a" }, { "fn": "gt", "args": [{ "col": "age" }, { "lit": 50 }] }]
+        }
+      },
+      "read": { "columns": ["name"] },
+      "expect": { "rowCount": 1, "rowIds": [1], "rows": [["Grace"]] }
+    },
+    {
+      "id": "search.leaves-out-derived-columns",
+      "section": "3.5",
+      "table": "people",
+      "plan": {
+        "derive": [{ "name": "tag", "expr": { "fn": "concat", "args": [{ "lit": "zzz" }, { "col": "name" }] } }],
+        "where": { "search": "zzz" }
+      },
+      "expect": { "rowCount": 0, "rows": [] }
+    },
+    {
+      "id": "search.not-in-derive",
+      "section": "4.3",
+      "table": "people",
+      "plan": { "derive": [{ "name": "found", "expr": { "search": "a" } }] },
+      "expect": { "error": { "code": "invalid_plan", "reason": "misplaced", "path": "/derive/0/expr" } }
+    },
+    {
+      "id": "search.once",
+      "section": "4.3",
+      "table": "people",
+      "plan": { "where": { "fn": "and", "args": [{ "search": "a" }, { "search": "b" }] } },
+      "expect": { "error": { "code": "invalid_plan", "reason": "misplaced", "path": "/where/args/1" } }
+    },
+    {
+      "id": "search.only-spaces",
+      "section": "3.5",
+      "table": "people",
+      "plan": { "where": { "search": "\u3000 " } },
+      "expect": { "error": { "code": "invalid_plan", "reason": "literal", "path": "/where" } }
+    }
+  ]
+}

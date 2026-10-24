@@ -1,0 +1,418 @@
+{
+  "$schema": "../schema/conformance.schema.json",
+  "description": "Evaluation (§3.6) and numeric types (§3.7): errors and numbers that are not finite give null, exact arithmetic, and the functions of §4.4.",
+  "tables": {
+    "nums": {
+      "columns": [
+        { "name": "i", "type": "integer" },
+        { "name": "b", "type": "bigint" },
+        { "name": "d", "type": "decimal", "precision": 10, "scale": 2 },
+        { "name": "e", "type": "decimal", "precision": 5, "scale": 3 },
+        { "name": "f", "type": "float" }
+      ],
+      "rows": [
+        [7, "9223372036854775807", "1.25", "1.500", 2.5],
+        [-7, -1, "-0.10", "0.001", "NaN"],
+        [null, 0, "0.00", null, "Infinity"],
+        [3, 2, "10.00", "2.000", 0]
+      ]
+    },
+    "texts": {
+      "columns": [{ "name": "s", "type": "string" }],
+      "rows": [
+        [" 12 "],
+        ["1e3"],
+        ["0x10"],
+        ["1_000"],
+        [".5"],
+        ["5."],
+        ["+3"],
+        ["1,234"],
+        ["abc"],
+        ["1e999"],
+        [null],
+        ["\u300012\u3000"]
+      ]
+    },
+    "datetexts": {
+      "columns": [{ "name": "s", "type": "string" }],
+      "rows": [
+        ["2024-02-29"],
+        ["2024-02-30"],
+        ["2024-1-31"],
+        ["2024-01-31 10:00"],
+        ["2024-01-31T10:00"],
+        ["2024-01-31 10:00:05.25"],
+        ["2024-13-01 00:00"]
+      ]
+    },
+    "moments": {
+      "columns": [{ "name": "d", "type": "date" }, { "name": "t", "type": "timestamp" }],
+      "rows": [["2024-01-07", "2024-02-29 23:59:59.75"], ["2024-02-28", "2024-01-01 23:00:00"]]
+    }
+  },
+  "cases": [
+    {
+      "id": "eval.bigint-overflow",
+      "section": "3.6",
+      "description": "Overflow gives null.",
+      "table": "nums",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "add", "args": [{ "col": "b" }, { "lit": 1 }] } }] },
+      "read": { "columns": ["x"] },
+      "expect": { "columns": [{ "name": "x", "type": "bigint" }], "rowCount": 4, "rows": [[null], [0], [1], [3]] }
+    },
+    {
+      "id": "eval.integers-make-bigints",
+      "section": "3.7",
+      "table": "nums",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "add", "args": [{ "col": "i" }, { "col": "i" }] } }] },
+      "read": { "columns": ["x"] },
+      "expect": { "columns": [{ "name": "x", "type": "bigint" }], "rowCount": 4, "rows": [[14], [-14], [null], [6]] }
+    },
+    {
+      "id": "eval.decimal-add",
+      "section": "3.7",
+      "description": "decimal(10, 2) + decimal(5, 3) is decimal(12, 3).",
+      "table": "nums",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "add", "args": [{ "col": "d" }, { "col": "e" }] } }] },
+      "read": { "columns": ["x"] },
+      "expect": {
+        "columns": [{ "name": "x", "type": "decimal", "precision": 12, "scale": 3 }],
+        "rowCount": 4,
+        "rows": [["2.750"], ["-0.099"], [null], ["12.000"]]
+      }
+    },
+    {
+      "id": "eval.decimal-mul",
+      "section": "3.7",
+      "description": "decimal(10, 2) × decimal(5, 3) is decimal(15, 5).",
+      "table": "nums",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "mul", "args": [{ "col": "d" }, { "col": "e" }] } }] },
+      "read": { "columns": ["x"] },
+      "expect": {
+        "columns": [{ "name": "x", "type": "decimal", "precision": 15, "scale": 5 }],
+        "rowCount": 4,
+        "rows": [["1.87500"], ["-0.00010"], [null], ["20.00000"]]
+      }
+    },
+    {
+      "id": "eval.bigint-and-decimal",
+      "section": "3.7",
+      "description": "A bigint meeting a decimal counts as decimal(19, 0): bigint + decimal(10, 2) is decimal(22, 2), and exact.",
+      "table": "nums",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "add", "args": [{ "col": "b" }, { "col": "d" }] } }] },
+      "read": { "columns": ["x"] },
+      "expect": {
+        "columns": [{ "name": "x", "type": "decimal", "precision": 22, "scale": 2 }],
+        "rowCount": 4,
+        "rows": [["9223372036854775808.25"], ["-1.10"], ["0.00"], ["12.00"]]
+      }
+    },
+    {
+      "id": "eval.div-is-float",
+      "section": "3.7",
+      "table": "nums",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "div", "args": [{ "col": "i" }, { "lit": 2 }] } }] },
+      "read": { "columns": ["x"] },
+      "expect": { "columns": [{ "name": "x", "type": "float" }], "rowCount": 4, "rows": [[3.5], [-3.5], [null], [1.5]] }
+    },
+    {
+      "id": "eval.div-by-zero",
+      "section": "3.6",
+      "description": "Division by zero gives null.",
+      "table": "nums",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "div", "args": [{ "col": "i" }, { "lit": 0 }] } }] },
+      "read": { "columns": ["x"] },
+      "expect": { "rowCount": 4, "rows": [[null], [null], [null], [null]] }
+    },
+    {
+      "id": "eval.mod-sign",
+      "section": "3.7",
+      "description": "mod takes the sign of the dividend.",
+      "table": "nums",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "mod", "args": [{ "col": "i" }, { "lit": 3 }] } }] },
+      "read": { "columns": ["x"] },
+      "expect": { "columns": [{ "name": "x", "type": "bigint" }], "rowCount": 4, "rows": [[1], [-1], [null], [0]] }
+    },
+    {
+      "id": "eval.not-finite-arguments",
+      "section": "3.6",
+      "description": "Arithmetic on NaN or Infinity gives null, while the column itself reads NaN and Infinity.",
+      "table": "nums",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "add", "args": [{ "col": "f" }, { "lit": 1 }] } }] },
+      "read": { "columns": ["f", "x"] },
+      "expect": { "rowCount": 4, "rows": [[2.5, 3.5], ["NaN", null], ["Infinity", null], [0, 1]] }
+    },
+    {
+      "id": "eval.sqrt-domain",
+      "section": "3.6",
+      "description": "A value out of the domain gives null.",
+      "table": "nums",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "sqrt", "args": [{ "col": "i" }] } }] },
+      "read": { "columns": ["x"] },
+      "expect": { "rowCount": 4, "rows": [[2.6457513110645907], [null], [null], [1.7320508075688772]] }
+    },
+    {
+      "id": "eval.ln-domain",
+      "section": "3.6",
+      "description": "ln of 0 and of a negative number gives null.",
+      "table": "nums",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "ln", "args": [{ "col": "b" }] } }] },
+      "read": { "columns": ["x"] },
+      "expect": {
+        "rowCount": 4,
+        "rows": [[43.66827237527655], [null], [null], [0.6931471805599453]],
+        "tolerance": 1e-12
+      }
+    },
+    {
+      "id": "eval.round-half-away-from-zero",
+      "section": "4.4",
+      "table": "nums",
+      "plan": {
+        "derive": [
+          { "name": "x", "expr": { "fn": "round", "args": [{ "col": "f" }] } },
+          { "name": "y", "expr": { "fn": "round", "args": [{ "col": "d" }, { "lit": 1 }] } },
+          { "name": "z", "expr": { "fn": "round", "args": [{ "lit": -2.5 }] } }
+        ]
+      },
+      "read": { "columns": ["x", "y", "z"] },
+      "expect": {
+        "columns": [
+          { "name": "x", "type": "float" },
+          { "name": "y", "type": "decimal", "precision": 10, "scale": 1 },
+          { "name": "z", "type": "float" }
+        ],
+        "rowCount": 4,
+        "rows": [[3, "1.3", -3], [null, "-0.1", -3], [null, "0.0", -3], [0, "10.0", -3]]
+      }
+    },
+    {
+      "id": "eval.round-negative-digits",
+      "section": "4.4",
+      "description": "Rounding a bigint to tens keeps its type, and gives null when it overflows.",
+      "table": "nums",
+      "plan": {
+        "derive": [{ "name": "x", "expr": { "fn": "round", "args": [{ "col": "b" }, { "lit": -1 }] } }]
+      },
+      "read": { "columns": ["x"] },
+      "expect": { "columns": [{ "name": "x", "type": "bigint" }], "rowCount": 4, "rows": [[null], [0], [0], [0]] }
+    },
+    {
+      "id": "eval.if-null-condition",
+      "section": "3.6",
+      "description": "A null condition takes the second value.",
+      "table": "nums",
+      "plan": {
+        "derive": [
+          {
+            "name": "x",
+            "expr": {
+              "fn": "if",
+              "args": [{ "fn": "gt", "args": [{ "col": "i" }, { "lit": 0 }] }, { "lit": "pos" }, { "lit": "neg" }]
+            }
+          }
+        ]
+      },
+      "read": { "columns": ["x"] },
+      "expect": { "rowCount": 4, "rows": [["pos"], ["neg"], ["neg"], ["pos"]] }
+    },
+    {
+      "id": "eval.coalesce-common-type",
+      "section": "4.4",
+      "description": "An integer and a bigint literal have the common type bigint.",
+      "table": "nums",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "coalesce", "args": [{ "col": "i" }, { "lit": 0 }] } }] },
+      "read": { "columns": ["x"] },
+      "expect": { "columns": [{ "name": "x", "type": "bigint" }], "rowCount": 4, "rows": [[7], [-7], [0], [3]] }
+    },
+    {
+      "id": "eval.greatest-leaves-out-nulls",
+      "section": "3.6",
+      "table": "nums",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "greatest", "args": [{ "col": "i" }, { "lit": 0 }] } }] },
+      "read": { "columns": ["x"] },
+      "expect": { "rowCount": 4, "rows": [[7], [0], [0], [3]] }
+    },
+    {
+      "id": "eval.three-valued-logic",
+      "section": "3.6",
+      "table": "nums",
+      "plan": {
+        "where": {
+          "fn": "or",
+          "args": [
+            { "fn": "gt", "args": [{ "col": "i" }, { "lit": 0 }] },
+            { "fn": "is_null", "args": [{ "col": "i" }] }
+          ]
+        }
+      },
+      "read": { "columns": ["i"] },
+      "expect": { "rowCount": 3, "rowIds": [0, 2, 3], "rows": [[7], [null], [3]] }
+    },
+    {
+      "id": "eval.neg-abs",
+      "section": "3.7",
+      "description": "neg and abs keep the operand's type.",
+      "table": "nums",
+      "plan": {
+        "derive": [
+          { "name": "x", "expr": { "fn": "neg", "args": [{ "col": "i" }] } },
+          { "name": "y", "expr": { "fn": "abs", "args": [{ "col": "d" }] } }
+        ]
+      },
+      "read": { "columns": ["x", "y"] },
+      "expect": {
+        "columns": [
+          { "name": "x", "type": "integer" },
+          { "name": "y", "type": "decimal", "precision": 10, "scale": 2 }
+        ],
+        "rowCount": 4,
+        "rows": [[-7, "1.25"], [7, "0.10"], [null, "0.00"], [-3, "10.00"]]
+      }
+    },
+    {
+      "id": "eval.floor-ceil",
+      "section": "4.4",
+      "table": "nums",
+      "plan": {
+        "derive": [
+          { "name": "x", "expr": { "fn": "floor", "args": [{ "col": "d" }] } },
+          { "name": "y", "expr": { "fn": "ceil", "args": [{ "col": "f" }] } }
+        ]
+      },
+      "read": { "columns": ["x", "y"] },
+      "expect": {
+        "columns": [{ "name": "x", "type": "decimal", "precision": 10, "scale": 0 }, { "name": "y", "type": "float" }],
+        "rowCount": 4,
+        "rows": [["1", 3], ["-1", null], ["0", null], ["10", 0]]
+      }
+    },
+    {
+      "id": "eval.sign",
+      "section": "4.4",
+      "table": "nums",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "sign", "args": [{ "col": "f" }] } }] },
+      "read": { "columns": ["x"] },
+      "expect": { "columns": [{ "name": "x", "type": "integer" }], "rowCount": 4, "rows": [[1], [null], [null], [0]] }
+    },
+    {
+      "id": "eval.power-exp",
+      "section": "4.4",
+      "table": "nums",
+      "plan": {
+        "derive": [
+          { "name": "x", "expr": { "fn": "power", "args": [{ "col": "i" }, { "lit": 2 }] } },
+          { "name": "y", "expr": { "fn": "exp", "args": [{ "col": "f" }] } }
+        ]
+      },
+      "read": { "columns": ["x", "y"] },
+      "expect": {
+        "rowCount": 4,
+        "rows": [[49, 12.182493960703473], [49, null], [null, null], [9, 1]],
+        "tolerance": 1e-12
+      }
+    },
+    {
+      "id": "eval.to-number-strict",
+      "section": "4.4",
+      "description": "to_number reads signs, digits, a point and an exponent, between space separators; not 0x, _, commas or numbers that are not finite.",
+      "table": "texts",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "to_number", "args": [{ "col": "s" }] } }] },
+      "read": { "columns": ["x"] },
+      "expect": {
+        "rowCount": 12,
+        "rows": [[12], [1000], [null], [null], [0.5], [5], [3], [null], [null], [null], [null], [12]]
+      }
+    },
+    {
+      "id": "eval.to-date-strict",
+      "section": "4.4",
+      "table": "datetexts",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "to_date", "args": [{ "col": "s" }] } }] },
+      "read": { "columns": ["x"] },
+      "expect": { "rowCount": 7, "rows": [["2024-02-29"], [null], [null], [null], [null], [null], [null]] }
+    },
+    {
+      "id": "eval.to-timestamp-strict",
+      "section": "4.4",
+      "table": "datetexts",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "to_timestamp", "args": [{ "col": "s" }] } }] },
+      "read": { "columns": ["x"] },
+      "expect": {
+        "rowCount": 7,
+        "rows": [
+          [null],
+          [null],
+          [null],
+          ["2024-01-31 10:00:00"],
+          ["2024-01-31 10:00:00"],
+          ["2024-01-31 10:00:05.25"],
+          [null]
+        ]
+      }
+    },
+    {
+      "id": "eval.date-parts",
+      "section": "4.4",
+      "table": "moments",
+      "plan": {
+        "derive": [
+          { "name": "y", "expr": { "fn": "year", "args": [{ "col": "d" }] } },
+          { "name": "m", "expr": { "fn": "month", "args": [{ "col": "t" }] } },
+          { "name": "dd", "expr": { "fn": "day", "args": [{ "col": "t" }] } },
+          { "name": "h", "expr": { "fn": "hour", "args": [{ "col": "t" }] } },
+          { "name": "s", "expr": { "fn": "second", "args": [{ "col": "t" }] } },
+          { "name": "w", "expr": { "fn": "isodow", "args": [{ "col": "d" }] } }
+        ]
+      },
+      "read": { "columns": ["y", "m", "dd", "h", "s", "w"] },
+      "expect": {
+        "rowCount": 2,
+        "rows": [[2024, 2, 29, 23, 59, 7], [2024, 1, 1, 23, 0, 3]]
+      }
+    },
+    {
+      "id": "eval.date-diff-days",
+      "section": "4.4",
+      "description": "The number of day boundaries from start to end.",
+      "table": "moments",
+      "plan": {
+        "derive": [
+          {
+            "name": "x",
+            "expr": { "fn": "date_diff_days", "args": [{ "col": "d" }, { "lit": "2024-03-01", "type": "date" }] }
+          },
+          {
+            "name": "y",
+            "expr": {
+              "fn": "date_diff_days",
+              "args": [{ "col": "t" }, { "lit": "2024-01-02 01:00:00", "type": "timestamp" }]
+            }
+          }
+        ]
+      },
+      "read": { "columns": ["x", "y"] },
+      "expect": {
+        "rowCount": 2,
+        "rows": [[54, -58], [2, 1]]
+      }
+    },
+    {
+      "id": "eval.add-days",
+      "section": "4.4",
+      "table": "moments",
+      "plan": {
+        "derive": [
+          { "name": "x", "expr": { "fn": "add_days", "args": [{ "col": "d" }, { "lit": 1 }] } },
+          { "name": "y", "expr": { "fn": "add_days", "args": [{ "col": "t" }, { "lit": -1 }] } }
+        ]
+      },
+      "read": { "columns": ["x", "y"] },
+      "expect": {
+        "rowCount": 2,
+        "rows": [["2024-01-08", "2024-02-28 23:59:59.75"], ["2024-02-29", "2023-12-31 23:00:00"]]
+      }
+    }
+  ]
+}

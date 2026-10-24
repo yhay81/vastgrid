@@ -10,13 +10,15 @@
     "packages/react",
     "packages/duckdb",
     "packages/browser",
+    "packages/spec",
+    "packages/sql",
     "examples/playground",
     "site"
   ],
   "scripts": {
-    "build": "tsc -b packages/core packages/duckdb packages/browser packages/react && node scripts/copy-assets.mjs",
+    "build": "tsc -b packages/core packages/duckdb packages/browser packages/react packages/spec packages/sql && node scripts/copy-assets.mjs",
     "clean": "rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo",
-    "typecheck": "tsc -b packages/core packages/duckdb packages/browser packages/react && tsc -p examples/playground --noEmit && tsc -p site --noEmit",
+    "typecheck": "tsc -b packages/core packages/duckdb packages/browser packages/react packages/spec packages/sql && tsc -p examples/playground --noEmit && tsc -p site --noEmit",
     "test": "node --conditions=vastgrid-source --import tsx --test packages/*/test/*.test.ts",
     "lint": "biome check .",
     "format": "biome check --write .",

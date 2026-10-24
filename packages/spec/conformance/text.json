@@ -1,0 +1,290 @@
+{
+  "$schema": "../schema/conformance.schema.json",
+  "description": "Text (§3.4, §4.4) and text forms (§2.4): case mappings by code point, lengths in code points, trim of space separators, and the text of every type.",
+  "tables": {
+    "words": {
+      "columns": [{ "name": "s", "type": "string" }],
+      "rows": [["İstanbul"], ["ΣΑΣ"], ["straße"], ["Tokyo"], ["東京タワー"], [null]]
+    },
+    "chars": {
+      "columns": [{ "name": "s", "type": "string" }],
+      "rows": [["e\u0301"], ["😀"], ["👨\u200d👩\u200d👧"], [""]]
+    },
+    "spaces": {
+      "columns": [{ "name": "s", "type": "string" }],
+      "rows": [[" \t a \n "], ["\u3000a\u3000"], ["\u00a0a\u00a0"], ["\ufeffa\ufeff"]]
+    },
+    "emoji": { "columns": [{ "name": "s", "type": "string" }], "rows": [["😀abc"]] },
+    "repeats": { "columns": [{ "name": "s", "type": "string" }], "rows": [["aaa"]] },
+    "floats": {
+      "columns": [{ "name": "x", "type": "float" }],
+      "rows": [
+        [1],
+        [1e20],
+        [0.1],
+        [1e15],
+        [1e16],
+        [1e-7],
+        [0.0001],
+        [0.00001],
+        [-0.0],
+        ["NaN"],
+        ["Infinity"],
+        ["-Infinity"],
+        [123456789.125]
+      ]
+    },
+    "singles": { "columns": [{ "name": "x", "type": "float", "bits": 32 }], "rows": [[0.1], [16777217]] },
+    "kinds": {
+      "columns": [
+        { "name": "d", "type": "decimal", "precision": 10, "scale": 2 },
+        { "name": "day", "type": "date" },
+        { "name": "at", "type": "timestamp" },
+        { "name": "t", "type": "time" },
+        { "name": "b", "type": "boolean" },
+        { "name": "tz", "type": "timestamptz" },
+        { "name": "big", "type": "bigint" }
+      ],
+      "rows": [
+        [
+          "1.50",
+          "2024-01-31",
+          "2024-01-31 12:00:00.5",
+          "01:02:03.25",
+          true,
+          "2024-01-31 03:00:00+00",
+          "9223372036854775807"
+        ],
+        ["-0.10", "0099-01-01", "2024-01-31 12:00:00", "23:59:59", false, "2024-01-31 23:00:00.123456+00", -1]
+      ]
+    }
+  },
+  "cases": [
+    {
+      "id": "text.lower-by-code-point",
+      "section": "3.4",
+      "description": "İ becomes i (not i and a combining dot), and a final Σ becomes σ (not ς).",
+      "table": "words",
+      "plan": { "derive": [{ "name": "l", "expr": { "fn": "lower", "args": [{ "col": "s" }] } }] },
+      "read": { "columns": ["l"] },
+      "expect": {
+        "rowCount": 6,
+        "rows": [["istanbul"], ["σασ"], ["straße"], ["tokyo"], ["東京タワー"], [null]]
+      }
+    },
+    {
+      "id": "text.upper-by-code-point",
+      "section": "3.4",
+      "description": "ß becomes ẞ (U+1E9E), keeping one code point (JavaScript writes SS).",
+      "table": "words",
+      "plan": { "derive": [{ "name": "u", "expr": { "fn": "upper", "args": [{ "col": "s" }] } }] },
+      "read": { "columns": ["u"] },
+      "expect": {
+        "rowCount": 6,
+        "rows": [["İSTANBUL"], ["ΣΑΣ"], ["STRAẞE"], ["TOKYO"], ["東京タワー"], [null]]
+      }
+    },
+    {
+      "id": "text.contains-respects-case",
+      "section": "3.4",
+      "table": "words",
+      "plan": { "where": { "fn": "contains", "args": [{ "col": "s" }, { "lit": "tokyo" }] } },
+      "expect": { "rowCount": 0, "rows": [] }
+    },
+    {
+      "id": "text.contains-ignoring-case",
+      "section": "3.4",
+      "table": "words",
+      "plan": {
+        "where": {
+          "fn": "contains",
+          "args": [{ "fn": "lower", "args": [{ "col": "s" }] }, { "fn": "lower", "args": [{ "lit": "TOKYO" }] }]
+        }
+      },
+      "expect": { "rowCount": 1, "rowIds": [3], "rows": [["Tokyo"]] }
+    },
+    {
+      "id": "text.contains-empty-needle",
+      "section": "3.4",
+      "description": "An empty needle matches every string that is not null.",
+      "table": "words",
+      "plan": { "where": { "fn": "contains", "args": [{ "col": "s" }, { "lit": "" }] } },
+      "read": { "columns": [] },
+      "expect": { "rowCount": 5, "rowIds": [0, 1, 2, 3, 4], "rows": [[], [], [], [], []] }
+    },
+    {
+      "id": "text.length-in-code-points",
+      "section": "4.4",
+      "description": "e with a combining accent is 2, an emoji is 1, a family emoji joined by ZWJ is 5.",
+      "table": "chars",
+      "plan": { "derive": [{ "name": "n", "expr": { "fn": "length", "args": [{ "col": "s" }] } }] },
+      "read": { "columns": ["n"] },
+      "expect": { "columns": [{ "name": "n", "type": "bigint" }], "rowCount": 4, "rows": [[2], [1], [5], [0]] }
+    },
+    {
+      "id": "text.trim-space-separators",
+      "section": "4.4",
+      "description": "trim removes space separators (U+0020, U+3000, U+00A0) and keeps tabs, line breaks and U+FEFF.",
+      "table": "spaces",
+      "plan": { "derive": [{ "name": "t", "expr": { "fn": "trim", "args": [{ "col": "s" }] } }] },
+      "read": { "columns": ["t"] },
+      "expect": { "rowCount": 4, "rows": [["\t a \n"], ["a"], ["a"], ["\ufeffa\ufeff"]] }
+    },
+    {
+      "id": "text.parts-by-code-point",
+      "section": "4.4",
+      "description": "left, right and substr count code points; negative counts are 0 and starts below 1 are 1.",
+      "table": "emoji",
+      "plan": {
+        "derive": [
+          { "name": "l", "expr": { "fn": "left", "args": [{ "col": "s" }, { "lit": 2 }] } },
+          { "name": "r", "expr": { "fn": "right", "args": [{ "col": "s" }, { "lit": 2 }] } },
+          { "name": "m", "expr": { "fn": "substr", "args": [{ "col": "s" }, { "lit": 2 }, { "lit": 2 }] } },
+          { "name": "z", "expr": { "fn": "left", "args": [{ "col": "s" }, { "lit": -1 }] } },
+          { "name": "w", "expr": { "fn": "substr", "args": [{ "col": "s" }, { "lit": 0 }, { "lit": 2 }] } }
+        ]
+      },
+      "read": { "columns": ["l", "r", "m", "z", "w"] },
+      "expect": { "rowCount": 1, "rows": [["😀a", "bc", "ab", "", "😀a"]] }
+    },
+    {
+      "id": "text.replace",
+      "section": "4.4",
+      "description": "replace changes every occurrence, and an empty search string changes nothing.",
+      "table": "repeats",
+      "plan": {
+        "derive": [
+          { "name": "a", "expr": { "fn": "replace", "args": [{ "col": "s" }, { "lit": "a" }, { "lit": "bb" }] } },
+          { "name": "b", "expr": { "fn": "replace", "args": [{ "col": "s" }, { "lit": "" }, { "lit": "x" }] } }
+        ]
+      },
+      "read": { "columns": ["a", "b"] },
+      "expect": { "rowCount": 1, "rows": [["bbbbbb", "aaa"]] }
+    },
+    {
+      "id": "text.concat",
+      "section": "4.4",
+      "description": "concat joins text forms, with null as the empty string.",
+      "table": "emoji",
+      "plan": {
+        "derive": [
+          {
+            "name": "c",
+            "expr": {
+              "fn": "concat",
+              "args": [
+                { "lit": "n=" },
+                { "lit": 1.5 },
+                { "lit": "/" },
+                { "lit": null, "type": "string" },
+                { "lit": 2 },
+                { "col": "s" }
+              ]
+            }
+          }
+        ]
+      },
+      "read": { "columns": ["c"] },
+      "expect": { "rowCount": 1, "rows": [["n=1.5/2😀abc"]] }
+    },
+    {
+      "id": "text.float-text-form",
+      "section": "2.4.1",
+      "description": "Fixed notation when the exponent is from -4 to 15, exponent notation otherwise.",
+      "table": "floats",
+      "plan": { "derive": [{ "name": "t", "expr": { "fn": "text", "args": [{ "col": "x" }] } }] },
+      "read": { "columns": ["t"] },
+      "expect": {
+        "rowCount": 13,
+        "rows": [
+          ["1.0"],
+          ["1e+20"],
+          ["0.1"],
+          ["1000000000000000.0"],
+          ["1e+16"],
+          ["1e-07"],
+          ["0.0001"],
+          ["1e-05"],
+          ["-0.0"],
+          ["nan"],
+          ["inf"],
+          ["-inf"],
+          ["123456789.125"]
+        ]
+      }
+    },
+    {
+      "id": "text.float32-text-form",
+      "section": "2.4.1",
+      "description": "32-bit floats have the shortest digits of 32 bits: 0.1, and 16777217 is 16777216.",
+      "table": "singles",
+      "plan": { "derive": [{ "name": "t", "expr": { "fn": "text", "args": [{ "col": "x" }] } }] },
+      "read": { "columns": ["t"] },
+      "expect": { "rowCount": 2, "rows": [["0.1"], ["16777216.0"]] }
+    },
+    {
+      "id": "text.text-forms",
+      "section": "2.4",
+      "table": "kinds",
+      "plan": {
+        "derive": [
+          { "name": "td", "expr": { "fn": "text", "args": [{ "col": "d" }] } },
+          { "name": "tday", "expr": { "fn": "text", "args": [{ "col": "day" }] } },
+          { "name": "tat", "expr": { "fn": "text", "args": [{ "col": "at" }] } },
+          { "name": "tt", "expr": { "fn": "text", "args": [{ "col": "t" }] } },
+          { "name": "tb", "expr": { "fn": "text", "args": [{ "col": "b" }] } },
+          { "name": "ttz", "expr": { "fn": "text", "args": [{ "col": "tz" }] } },
+          { "name": "tbig", "expr": { "fn": "text", "args": [{ "col": "big" }] } }
+        ]
+      },
+      "read": { "columns": ["td", "tday", "tat", "tt", "tb", "ttz", "tbig"] },
+      "expect": {
+        "rowCount": 2,
+        "rows": [
+          [
+            "1.50",
+            "2024-01-31",
+            "2024-01-31 12:00:00.5",
+            "01:02:03.25",
+            "true",
+            "2024-01-31 03:00:00+00",
+            "9223372036854775807"
+          ],
+          ["-0.10", "0099-01-01", "2024-01-31 12:00:00", "23:59:59", "false", "2024-01-31 23:00:00.123456+00", "-1"]
+        ]
+      }
+    },
+    {
+      "id": "text.values-read-back",
+      "section": "2.2",
+      "description": "Values read back as JSON writes them.",
+      "table": "kinds",
+      "plan": {},
+      "expect": {
+        "columns": [
+          { "name": "d", "type": "decimal", "precision": 10, "scale": 2 },
+          { "name": "day", "type": "date" },
+          { "name": "at", "type": "timestamp" },
+          { "name": "t", "type": "time" },
+          { "name": "b", "type": "boolean" },
+          { "name": "tz", "type": "timestamptz" },
+          { "name": "big", "type": "bigint" }
+        ],
+        "rowCount": 2,
+        "rowIds": [0, 1],
+        "rows": [
+          [
+            "1.50",
+            "2024-01-31",
+            "2024-01-31 12:00:00.5",
+            "01:02:03.25",
+            true,
+            "2024-01-31 03:00:00+00",
+            "9223372036854775807"
+          ],
+          ["-0.10", "0099-01-01", "2024-01-31 12:00:00", "23:59:59", false, "2024-01-31 23:00:00.123456+00", -1]
+        ]
+      }
+    }
+  ]
+}

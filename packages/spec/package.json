@@ -1,0 +1,42 @@
+{
+  "name": "vastgrid-spec",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The vastgrid v2 specification as code: types, plan checking, the normal form and hash of plans, and the conformance corpus.",
+  "license": "MIT",
+  "author": "yhay81",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yhay81/vastgrid.git",
+    "directory": "packages/spec"
+  },
+  "homepage": "https://vastgrid.yhay81.com",
+  "bugs": "https://github.com/yhay81/vastgrid/issues",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "vastgrid-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./conformance": {
+      "vastgrid-source": "./src/conformance.ts",
+      "types": "./dist/conformance.d.ts",
+      "default": "./dist/conformance.js"
+    },
+    "./schema/*": "./schema/*"
+  },
+  "files": [
+    "dist",
+    "src",
+    "schema",
+    "conformance"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

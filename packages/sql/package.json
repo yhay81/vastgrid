@@ -1,0 +1,40 @@
+{
+  "name": "vastgrid-sql",
+  "version": "0.0.0",
+  "private": true,
+  "description": "vastgrid v2 plans as DuckDB SQL: the meaning of the specification in SQL, with every value as a parameter.",
+  "license": "MIT",
+  "author": "yhay81",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yhay81/vastgrid.git",
+    "directory": "packages/sql"
+  },
+  "homepage": "https://vastgrid.yhay81.com",
+  "bugs": "https://github.com/yhay81/vastgrid/issues",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "vastgrid-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "vastgrid-spec": "0.0.0"
+  },
+  "devDependencies": {
+    "@duckdb/node-api": "1.5.6-r.1"
+  }
+}

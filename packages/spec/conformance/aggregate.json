@@ -1,0 +1,269 @@
+{
+  "$schema": "../schema/conformance.schema.json",
+  "description": "Aggregates (§3.8), groups (§3.9), measures (§4.5) and pivots (§4.6).",
+  "tables": {
+    "sales": {
+      "columns": [
+        { "name": "region", "type": "string" },
+        { "name": "city", "type": "string" },
+        { "name": "amount", "type": "decimal", "precision": 10, "scale": 2 },
+        { "name": "qty", "type": "integer" },
+        { "name": "score", "type": "float" }
+      ],
+      "rows": [
+        ["East", "Tokyo", "10.50", 2, 1.5],
+        ["East", "Osaka", "4.25", 1, "NaN"],
+        ["West", "Tokyo", "7.00", 3, 2.5],
+        [null, "Nagoya", "1.00", null, "Infinity"],
+        ["", "Tokyo", null, 5, 0.5],
+        ["East", "", "2.25", 4, null]
+      ]
+    },
+    "floats": {
+      "columns": [{ "name": "x", "type": "float" }],
+      "rows": [["NaN"], ["NaN"], [0], [-0.0], [null], [null]]
+    },
+    "values": { "columns": [{ "name": "v", "type": "integer" }], "rows": [[1], [2], [3], [4], [null]] },
+    "big": {
+      "columns": [{ "name": "b", "type": "bigint" }],
+      "rows": [["9223372036854775807"], ["9223372036854775807"]]
+    }
+  },
+  "cases": [
+    {
+      "id": "aggregate.totals",
+      "section": "3.8",
+      "description": "Sums of exact numbers are exact; measures of floats leave out NaN and Infinity, while count counts them; the empty string is a distinct value.",
+      "table": "sales",
+      "plan": {
+        "aggregate": {
+          "keys": [],
+          "measures": [
+            { "name": "n", "fn": "count" },
+            { "name": "s", "fn": "sum", "column": "amount" },
+            { "name": "q", "fn": "sum", "column": "qty" },
+            { "name": "a", "fn": "avg", "column": "score" },
+            { "name": "lo", "fn": "min", "column": "score" },
+            { "name": "hi", "fn": "max", "column": "score" },
+            { "name": "c", "fn": "count", "column": "score" },
+            { "name": "cities", "fn": "count_distinct", "column": "city" }
+          ]
+        }
+      },
+      "expect": {
+        "columns": [
+          { "name": "n", "type": "bigint" },
+          { "name": "s", "type": "decimal", "precision": 38, "scale": 2 },
+          { "name": "q", "type": "decimal", "precision": 38, "scale": 0 },
+          { "name": "a", "type": "float" },
+          { "name": "lo", "type": "float" },
+          { "name": "hi", "type": "float" },
+          { "name": "c", "type": "bigint" },
+          { "name": "cities", "type": "bigint" }
+        ],
+        "rowCount": 1,
+        "rowIds": null,
+        "rows": [[6, "25.00", "15", 1.5, 0.5, 2.5, 5, 4]]
+      }
+    },
+    {
+      "id": "aggregate.blank-keys",
+      "section": "3.9",
+      "description": "Null and the empty string are groups of their own; groups are ordered by key, the empty string before null.",
+      "table": "sales",
+      "plan": {
+        "aggregate": {
+          "keys": ["region"],
+          "measures": [{ "name": "n", "fn": "count" }, { "name": "s", "fn": "sum", "column": "amount" }]
+        }
+      },
+      "expect": {
+        "rowCount": 4,
+        "rowIds": null,
+        "rows": [["East", 3, "17.00"], ["West", 1, "7.00"], ["", 1, null], [null, 1, "1.00"]]
+      }
+    },
+    {
+      "id": "aggregate.having",
+      "section": "4.1",
+      "table": "sales",
+      "plan": {
+        "aggregate": { "keys": ["region"], "measures": [{ "name": "n", "fn": "count" }] },
+        "having": { "fn": "gt", "args": [{ "col": "n" }, { "lit": 1 }] }
+      },
+      "expect": { "rowCount": 1, "rows": [["East", 3]] }
+    },
+    {
+      "id": "aggregate.sort-ties-by-keys",
+      "section": "3.3",
+      "description": "Groups equal on the sort keys are ordered by their keys.",
+      "table": "sales",
+      "plan": {
+        "aggregate": { "keys": ["city"], "measures": [{ "name": "n", "fn": "count" }] },
+        "sort": [{ "column": "n", "direction": "desc" }]
+      },
+      "expect": {
+        "rowCount": 4,
+        "rows": [["Tokyo", 3], ["Nagoya", 1], ["Osaka", 1], ["", 1]]
+      }
+    },
+    {
+      "id": "aggregate.over-no-rows",
+      "section": "3.8",
+      "description": "Over no values, count is 0 and other measures are null.",
+      "table": "sales",
+      "plan": {
+        "where": { "fn": "eq", "args": [{ "col": "region" }, { "lit": "North" }] },
+        "aggregate": {
+          "keys": [],
+          "measures": [
+            { "name": "n", "fn": "count" },
+            { "name": "s", "fn": "sum", "column": "amount" },
+            { "name": "lo", "fn": "min", "column": "qty" }
+          ]
+        }
+      },
+      "expect": { "rowCount": 1, "rows": [[0, null, null]] }
+    },
+    {
+      "id": "aggregate.min-max-strings",
+      "section": "3.8",
+      "description": "The empty string is a value, the smallest of all.",
+      "table": "sales",
+      "plan": {
+        "aggregate": {
+          "keys": [],
+          "measures": [{ "name": "lo", "fn": "min", "column": "city" }, { "name": "hi", "fn": "max", "column": "city" }]
+        }
+      },
+      "expect": { "rowCount": 1, "rows": [["", "Tokyo"]] }
+    },
+    {
+      "id": "aggregate.pivot",
+      "section": "4.6",
+      "description": "One column per value of the pivot column, in key order with the empty string last; cells without rows count 0.",
+      "table": "sales",
+      "plan": {
+        "where": { "fn": "in", "args": [{ "col": "region" }, { "lit": "East" }, { "lit": "West" }] },
+        "aggregate": {
+          "keys": ["region"],
+          "measures": [{ "name": "n", "fn": "count" }],
+          "pivot": { "columns": ["city"] }
+        }
+      },
+      "expect": {
+        "columns": [
+          { "name": "region", "type": "string" },
+          { "name": "Osaka / n", "type": "bigint" },
+          { "name": "Tokyo / n", "type": "bigint" },
+          { "name": "(empty) / n", "type": "bigint" }
+        ],
+        "rowCount": 2,
+        "rows": [["East", 1, 1, 1], ["West", 0, 1, 0]]
+      }
+    },
+    {
+      "id": "aggregate.pivot-too-many-columns",
+      "section": "4.6",
+      "description": "A pivot that would make more columns than maxColumns fails rather than being cut.",
+      "table": "sales",
+      "plan": {
+        "where": { "fn": "in", "args": [{ "col": "region" }, { "lit": "East" }, { "lit": "West" }] },
+        "aggregate": {
+          "keys": ["region"],
+          "measures": [{ "name": "n", "fn": "count" }],
+          "pivot": { "columns": ["city"], "maxColumns": 2 }
+        }
+      },
+      "expect": { "error": { "code": "too_many_columns" } }
+    },
+    {
+      "id": "aggregate.pivot-needs-measures",
+      "section": "4.6",
+      "table": "sales",
+      "plan": { "aggregate": { "keys": ["region"], "measures": [], "pivot": { "columns": ["city"] } } },
+      "expect": { "error": { "code": "invalid_plan", "reason": "misplaced", "path": "/aggregate/pivot" } }
+    },
+    {
+      "id": "aggregate.unknown-measure",
+      "section": "4.7",
+      "table": "sales",
+      "plan": { "aggregate": { "keys": [], "measures": [{ "name": "m", "fn": "median", "column": "qty" }] } },
+      "expect": {
+        "error": { "code": "invalid_plan", "reason": "unknown_function", "path": "/aggregate/measures/0/fn" }
+      }
+    },
+    {
+      "id": "aggregate.sum-of-strings",
+      "section": "4.7",
+      "table": "sales",
+      "plan": { "aggregate": { "keys": [], "measures": [{ "name": "s", "fn": "sum", "column": "city" }] } },
+      "expect": { "error": { "code": "invalid_plan", "reason": "type", "path": "/aggregate/measures/0/column" } }
+    },
+    {
+      "id": "aggregate.measure-named-like-a-key",
+      "section": "4.2",
+      "table": "sales",
+      "plan": { "aggregate": { "keys": ["region"], "measures": [{ "name": "region", "fn": "count" }] } },
+      "expect": {
+        "error": { "code": "invalid_plan", "reason": "duplicate_name", "path": "/aggregate/measures/0/name" }
+      }
+    },
+    {
+      "id": "aggregate.nan-and-zero-groups",
+      "section": "3.9",
+      "description": "All NaNs are one group, −0.0 and 0.0 are one group, and NaN is the greatest key.",
+      "table": "floats",
+      "plan": { "aggregate": { "keys": ["x"], "measures": [{ "name": "n", "fn": "count" }] } },
+      "expect": {
+        "rowCount": 3,
+        "rows": [[0, 2], ["NaN", 2], [null, 2]]
+      }
+    },
+    {
+      "id": "aggregate.count-distinct-nan",
+      "section": "3.8",
+      "table": "floats",
+      "plan": {
+        "aggregate": {
+          "keys": [],
+          "measures": [
+            { "name": "d", "fn": "count_distinct", "column": "x" },
+            { "name": "c", "fn": "count", "column": "x" }
+          ]
+        }
+      },
+      "expect": { "rowCount": 1, "rows": [[2, 4]] }
+    },
+    {
+      "id": "aggregate.stddev-quantile",
+      "section": "3.8",
+      "description": "The sample standard deviation, and quantiles interpolated between the closest ranks.",
+      "table": "values",
+      "plan": {
+        "aggregate": {
+          "keys": [],
+          "measures": [
+            { "name": "sd", "fn": "stddev", "column": "v" },
+            { "name": "median", "fn": "quantile", "column": "v", "p": 0.5 },
+            { "name": "q1", "fn": "quantile", "column": "v", "p": 0.25 },
+            { "name": "mean", "fn": "avg", "column": "v" }
+          ]
+        }
+      },
+      "expect": { "rowCount": 1, "rows": [[1.2909944487358056, 2.5, 1.75, 2.5]], "tolerance": 1e-12 }
+    },
+    {
+      "id": "aggregate.exact-bigint-sum",
+      "section": "3.8",
+      "description": "The sum of bigints is exact beyond 64 bits.",
+      "table": "big",
+      "plan": { "aggregate": { "keys": [], "measures": [{ "name": "s", "fn": "sum", "column": "b" }] } },
+      "expect": {
+        "columns": [{ "name": "s", "type": "decimal", "precision": 38, "scale": 0 }],
+        "rowCount": 1,
+        "rows": [["18446744073709551614"]]
+      }
+    }
+  ]
+}
