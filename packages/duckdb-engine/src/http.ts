@@ -12,7 +12,7 @@ export interface HttpHandlerOptions {
   path?: string;
   /** The path of the events. The path of requests and `events` by default (`/events`, `/api/events`). */
   events?: string;
-  /** The largest body of a request, in bytes. 64 MiB by default. */
+  /** The largest body of a request, in bytes; larger ones are answered with 413. 64 MiB by default. */
   maxBody?: number;
   /** Milliseconds between the comments that keep a stream of events open. 15 seconds by default. */
   keepAlive?: number;
@@ -33,15 +33,20 @@ function invalid(response: ServerResponse, status: number, message: string, reas
   sendJson(response, status, { v: 2, id: 0, error: { code: "invalid_request", message, path: "", reason } });
 }
 
+/**
+ * The body of a request, or null when it is larger than `limit`. The rest of a body that is too large is read and
+ * dropped, up to twice the limit, so that the client has sent it all when the error is answered: a connection
+ * closed while data still comes in is reset, and the client may lose the answer.
+ */
 async function readBody(request: IncomingMessage, limit: number): Promise<string | null> {
   const chunks: Buffer[] = [];
   let length = 0;
   for await (const chunk of request) {
     length += (chunk as Buffer).length;
-    if (length > limit) return null;
-    chunks.push(chunk as Buffer);
+    if (length > 2 * limit) return null;
+    if (length <= limit) chunks.push(chunk as Buffer);
   }
-  return Buffer.concat(chunks).toString("utf8");
+  return length > limit ? null : Buffer.concat(chunks).toString("utf8");
 }
 
 function hasBlock(answer: Json) {
@@ -75,9 +80,8 @@ export function createHttpHandler(engine: DuckDBEngine, options: HttpHandlerOpti
     }
     const body = await readBody(request, limit);
     if (body === null) {
-      // The rest of the body is not read: the connection closes once the answer is sent.
+      // The connection closes once the answer is sent, also when the rest of the body was not read.
       response.setHeader("connection", "close");
-      response.on("finish", () => request.destroy());
       invalid(response, 413, "The request is too large.", "limit");
       return;
     }
