@@ -154,11 +154,14 @@ const source = new ArraySource({
 | `onCellClick`、`onCellDoubleClick` | `(event: GridCellEvent) => void` | | セルのクリック（または Space）とダブルクリック（または F2）で呼ばれます。ダブルクリックで `preventDefault()` を呼ぶと、セルの詳細を開きません。 |
 | `initialState` | `GridState` | | グリッドを作るときに、表の列がわかった時点で適用する設定。 |
 | `onStateChange` | `(state: GridState) => void` | | クエリーか列の設定が変わったときに、その設定を渡して呼ばれます。 |
+| `detailOpen`、`defaultDetailOpen` | `boolean` | `false` | アクティブな行のすべての列を表示する詳細パネルを開きます（制御する値、または最初の状態）。 |
+| `onDetailOpenChange` | `(open: boolean) => void` | | 利用者か handle が詳細パネルを開閉したときに呼ばれます。 |
+| `detailPanel` | `ComponentType<DetailPanelProps>` | `DetailFields` | 詳細パネルの中身を差し替えます。 |
 | `className`、`style` | | | ルートの要素（`.vg-root`）に付けます。 |
 | `aria-label` | `string` | `messages.gridLabel` | スクリーンリーダー向けのグリッドの名前。 |
 
 ref からは `DataGridHandle` を使えます。`focus()`、`reload()`、`getQuery()`、`setQuery(query)`、`getState()`、
-`applyState(state)`、`goToRow(row)`、グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()`
+`applyState(state)`、`goToRow(row)`、`openDetail({ focus })`、`closeDetail()`、`detailOpen`、グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()`
 などの診断用）があります。
 
 イベントは、セルのビューでの行 `row`、元の表での行 `rowId`、表示中の列の位置 `col`、表の列の番号 `column` を渡し、
@@ -200,6 +203,22 @@ const formats: Record<string, ColumnFormat> = {
 ```
 
 コピーには値とスキーマの列名が入ります。表示している文字と表示名をコピーするには、`copyValues="formatted"`（列ごとには `copy`）を指定します。詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#列の表示設定)を参照してください。
+
+### 詳細パネル
+
+詳細パネルは、アクティブな行のすべての列を、列の表示名と書式付きの値で表示します。グリッドの横に、グリッドの幅が 640px より狭いときは下に表示し、行の高さは変えません。アクティブなセル（`onSelectionChange` の `active`）に追従し、表の中で途中まで表示している文字列は、その行について少し待ってから全体を読み込みます。別の行へ移ると読み込みを取り消します。並べ替え・絞り込みのあとや、変更された表を読み直したあとは、新しいアクティブな行（先頭の行）を表示します。Alt ＋ Enter かセルのメニューで開き、もう一度 Alt ＋ Enter でパネルへフォーカスを移し、Esc で閉じます。中身はコンポーネントで差し替えられます。
+
+```tsx
+function Customer({ values, schema, status, rowId }: DetailPanelProps) {
+  if (status === "loading") return <p>読み込んでいます…</p>;
+  const field = (name: string) => values[schema.findIndex((column) => column.name === name)];
+  return <CustomerCard id={rowId} name={String(field("name"))} notes={String(field("notes"))} />;
+}
+
+<DataGrid source={source} defaultDetailOpen detailPanel={Customer} />;
+```
+
+大きさは `--vg-detail-width` と `--vg-detail-height` で変えられます。詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#詳細パネル)を参照してください。
 
 ## 性能
 
@@ -248,6 +267,7 @@ DuckDB の処理を含み、HTTP は含みません。
 | ⌘/Ctrl ＋ F | 検索 |
 | Alt ＋ ↓ | 列のメニュー（並べ替え・絞り込み・統計・固定・非表示） |
 | F2・ダブルクリック | セルの値の全体を表示 |
+| Alt ＋ Enter（もう一度でパネルへ）・Esc | アクティブな行の詳細パネルを開く・閉じる |
 | Shift ＋ F10・コンテキストメニューのキー・右クリック | セルのメニュー（コピー・この値で絞り込む・並べ替え） |
 
 ## 見た目の変更

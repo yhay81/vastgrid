@@ -34,6 +34,10 @@ import "vastgrid/styles.css";
 | `onCellDoubleClick` | `(event: GridCellEvent) => void` | | セルをダブルクリックしたとき、または F2 を押したときに呼ばれます。`event.preventDefault()` でセルの詳細を開かないようにできます。 |
 | `initialState` | `GridState` | | グリッドを作るときに、表の列がわかった時点で適用する設定。[設定の保存](#設定の保存)を参照してください。 |
 | `onStateChange` | `(state: GridState) => void` | | クエリーか列の設定が変わったときに、その設定を渡して呼ばれます。 |
+| `detailOpen` | `boolean` | | [詳細パネル](#詳細パネル)を開きます（制御する値）。指定しなければグリッドが状態を持ちます。 |
+| `defaultDetailOpen` | `boolean` | `false` | `detailOpen` を指定しないときに、マウントした時点で詳細パネルを開くかどうか。 |
+| `onDetailOpenChange` | `(open: boolean) => void` | | 利用者か handle が詳細パネルを開閉したときに呼ばれます。 |
+| `detailPanel` | `ComponentType<DetailPanelProps>` | `DetailFields` | 詳細パネルの中身を差し替えます。 |
 | `className`、`style` | | | ルートの要素（`.vg-root`）に付けます。 |
 | `aria-label` | `string` | `messages.gridLabel` | スクリーンリーダー向けのグリッドの名前。 |
 
@@ -50,6 +54,9 @@ ref からは `DataGridHandle` を使えます。
 | `getState()` | クエリーと列の設定。保存用の `GridState` です。 |
 | `applyState(state)` | 保存した `GridState` を適用します。このバージョンで読めない値なら `false` を返します。 |
 | `goToRow(row)` | 現在のビューのその行までスクロールし、アクティブにします。 |
+| `openDetail({ focus })` | 詳細パネルを開きます。`focus: true` ならフォーカスをパネルに移します。 |
+| `closeDetail()` | 詳細パネルを閉じます。 |
+| `detailOpen` | 詳細パネルが開いているかどうか。 |
 | `controller` | グリッドの状態（選択範囲、列の配置、ビュー）を持つ `GridController`。 |
 | `renderer` | `CanvasRenderer`。`renderer.timings()` などの診断に使います。グリッドがマウントされるまでは `null`。 |
 
@@ -186,6 +193,61 @@ const formats: Record<string, ColumnFormat> = {
 
 正しくない設定（`currency` のない通貨の書式や、存在しないタイムゾーンなど）は、グリッドに渡した時点で `RangeError` を投げます。`ColumnFormatter`（`ValueFormatter.column(schema, format)` で作り、グリッドでは `controller.formatterOf(index)`）を使うと、グリッドの外でも同じ設定で値を整形でき、設定は `settings` で読めます。
 
+## 詳細パネル
+
+詳細パネルは、アクティブな行のレコード全体を固定の位置に表示します。グリッドの横に、グリッドの幅が 640px より狭いときは下に表示します。行の高さは変わらないので、スクロール、`goToRow`、固定列はパネルがないときと同じく動きます。`detailOpen`（制御する値。`onDetailOpenChange` と組み合わせます）、`defaultDetailOpen`、handle の `openDetail({ focus })` と `closeDetail()`、Alt ＋ Enter、セルのメニューの「行の詳細を表示」で開閉します。
+
+標準の中身（`DetailFields`）は、すべての列を表示の順に並べ、`columnFormats` の表示名と書式付きの値を表示します。隠した列には「非表示」と付けます。表の中で途中まで表示している値は、全体を読み込みます。
+
+**表示する行。** パネルはアクティブなセル（`onSelectionChange` の `active`）に追従します。
+
+- 別の行へ移ると、その行を表示します。同じ行の中で動いたときや、列の移動・非表示・固定・書式の変更では、表示しているレコードを保ちます。
+- 値は読み込み済みの行から取ります。読み込んでいない列と、source が途中で切った文字列（末尾が「…」）は、その行だけを 120 ms 待ってから全体を読み込みます。読み込む前や読み込み中に別の行へ移ると取り消すので、素早く行を移ったときに読み込むのは止まった行だけです。
+- 新しいビュー（並べ替え・絞り込み・検索）では先頭の行がアクティブになり、パネルはその行を表示します。タイトルには元の表での行も表示します。
+- 表を読み直したとき、表が変わっていなければレコードを保ちます。変わっていれば先頭の行からやり直し、パネルはその行を表示します。
+- 行がないときは、そのことを表示します。
+
+**キー操作とフォーカス。** グリッドで Alt ＋ Enter を押すとパネルが開き、フォーカスはグリッドに残るので、矢印で行を移り続けられます。もう一度 Alt ＋ Enter を押すと、フォーカスがパネルに移ります。パネルでは Esc で閉じ、Alt ＋ Enter でグリッドに戻ります。どちらもフォーカスをグリッドに戻します。グリッドの Esc も、ほかに閉じるものがなければパネルを閉じます。パネルはタイトルを名前にした補足のランドマーク（`<aside>`）で、値を読み込んでいる間は `aria-busy` になります。
+
+**読み込みの失敗。** 行を読み込めなかったときは、エラーと「再試行」ボタンを表示し（独自の中身では `retry()`）、それまでの値を残します。
+
+**中身の差し替え。** `detailPanel` に、`DetailPanelProps` を受け取るコンポーネントを渡します。
+
+| prop | 型 | 説明 |
+| --- | --- | --- |
+| `row` | `number` | 現在のビューでの行。 |
+| `rowId` | `number \| null` | 元の表での行。ビューの行が読み込まれるまでは `null`。 |
+| `values` | `(CellValue \| undefined)[]` | スキーマの列の番号ごとの値（全体）。読み込み中は `undefined`。 |
+| `schema` | `ColumnSchema[]` | 表の列。 |
+| `status` | `"loading" \| "ready" \| "error"` | 値を読み込み中・読み込み済み・失敗。 |
+| `error` | `string \| null` | 読み込みに失敗した理由。 |
+| `fields` | `DetailField[]` | 表示の順のすべての列。`column`、`name`、`label`、`hidden`、`value` と表示上の `text`。 |
+| `retry()` | | 行を読み込み直します。 |
+| `messages` | `Messages` | グリッドの文言。 |
+
+```tsx
+import { DataGrid, type DetailPanelProps } from "vastgrid";
+
+function Order({ fields, status, rowId }: DetailPanelProps) {
+  return (
+    <article aria-busy={status === "loading"}>
+      <h3>注文 {rowId === null ? "" : rowId + 1}</h3>
+      {fields
+        .filter((field) => !field.hidden)
+        .map((field) => (
+          <p key={field.column}>
+            <strong>{field.label}</strong> {field.text}
+          </p>
+        ))}
+    </article>
+  );
+}
+
+<DataGrid source={source} defaultDetailOpen detailPanel={Order} />;
+```
+
+パネルの大きさは `--vg-detail-width`（340px）と `--vg-detail-height`（45%）で変えられます。`DetailTracker` は `GridController` のアクティブな行に追従してレコードを React の外で読み込むので、詳細をほかの場所に表示するアプリで使えます。
+
 ## エクスポート
 
 `vastgrid` は `vastgrid-core` のもの（`ArraySource`、`RemoteSource`、型、補助の関数）をすべて再エクスポートするので、ほとんどのアプリは `vastgrid` だけをインストールすれば済みます。ほかに次のものもエクスポートします。
@@ -193,6 +255,7 @@ const formats: Record<string, ColumnFormat> = {
 | エクスポート | 説明 |
 | --- | --- |
 | `DataGrid`、`DataGridProps`、`DataGridHandle` | コンポーネントと、その props と ref の型。 |
+| `DetailPanelProps`、`DetailField`、`DetailFields`、`DetailTracker`、`DetailRecord`、`DetailStatus`、`detailKeyAction` | [詳細パネル](#詳細パネル)。独自の中身の props、標準の中身、React の外でのレコード。 |
 | `GridCell`、`GridCellEvent`、`GridSelectionEvent`、`GridSelectionRange`、`GridColumnsEvent`、`GridColumn`、`GridColumnsChangeReason` | [イベント](#イベント)の型。 |
 | `GridState`、`GridColumnSetting`、`parseGridState(value)`、`resolveGridState(state, names)`、`GRID_STATE_VERSION` | `vastgrid-core` の、[保存する設定](#設定の保存)。 |
 | `en`、`ja`、`Messages`、`messagesFor(locale)` | 組み込みの文言と、ロケールに合わせてグリッドが選ぶ組。 |

@@ -163,11 +163,14 @@ rows.
 | `onCellClick`, `onCellDoubleClick` | `(event: GridCellEvent) => void` | | Called for a click (or Space) and a double click (or F2) on a cell. `preventDefault()` on a double click keeps the cell inspector closed. |
 | `initialState` | `GridState` | | Settings applied when a grid starts, once the table's columns are known. |
 | `onStateChange` | `(state: GridState) => void` | | Called with the settings when the query or the column settings change. |
+| `detailOpen`, `defaultDetailOpen` | `boolean` | `false` | Shows the detail panel with every column of the active row (controlled, or initially). |
+| `onDetailOpenChange` | `(open: boolean) => void` | | Called when the detail panel is opened or closed by the user or the handle. |
+| `detailPanel` | `ComponentType<DetailPanelProps>` | `DetailFields` | Replaces the content of the detail panel. |
 | `className`, `style` | | | Added to the root element (`.vg-root`). |
 | `aria-label` | `string` | `messages.gridLabel` | The grid's name for screen readers. |
 
 A ref gives a `DataGridHandle`: `focus()`, `reload()`, `getQuery()`, `setQuery(query)`, `getState()`,
-`applyState(state)`, `goToRow(row)`, the `controller` with the grid's state, and the canvas `renderer` (for
+`applyState(state)`, `goToRow(row)`, `openDetail({ focus })`, `closeDetail()`, `detailOpen`, the `controller` with the grid's state, and the canvas `renderer` (for
 diagnostics such as `renderer.timings()`).
 
 Events give a cell's `row` in the view, its `rowId` in the original table, its visible column `col` and its
@@ -212,6 +215,27 @@ const formats: Record<string, ColumnFormat> = {
 
 Copies hold the values and the schema names unless `copyValues="formatted"` (or a column's `copy`
 setting) asks for the shown text and the labels. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#column-formats).
+
+### Detail panel
+
+The detail panel shows every column of the active row, with the columns' labels and formatted values,
+beside the grid, or below it when the grid is narrower than 640px. Rows keep their height. It follows the
+active cell (the `active` of `onSelectionChange`); text that the table cuts is read in full for that row,
+after a short pause, and moving on cancels the read. After sorting, filtering or reading a changed table
+again, it shows the new active row, the first one. Alt+Enter or the cell menu opens it, Alt+Enter again
+moves the focus into it, and Esc closes it. Pass a component to show the record your own way:
+
+```tsx
+function Customer({ values, schema, status, rowId }: DetailPanelProps) {
+  if (status === "loading") return <p>Loading…</p>;
+  const field = (name: string) => values[schema.findIndex((column) => column.name === name)];
+  return <CustomerCard id={rowId} name={String(field("name"))} notes={String(field("notes"))} />;
+}
+
+<DataGrid source={source} defaultDetailOpen detailPanel={Customer} />;
+```
+
+`--vg-detail-width` and `--vg-detail-height` set its size. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#detail-panel).
 
 ## Performance
 
@@ -282,6 +306,7 @@ flowchart LR
 | ⌘/Ctrl + F | Find |
 | Alt + ↓ | Column menu (sort, filter, statistics, freeze, hide) |
 | F2 · double click | Show the full value of the cell |
+| Alt + Enter (again: into the panel) · Esc | Open the detail panel of the active row · close it |
 | Shift + F10 · context menu key · right click | Cell menu (copy, filter to value, sort) |
 
 ## Theming

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `vastgrid`: a detail panel shows every column of the active row, with the columns' labels and
+  formatted values, beside the grid (below it when the grid is narrow); rows keep their height. It follows
+  the active cell, reads cut values in full for that row and cancels the read when you move on, and shows
+  the new active row after sorting, filtering or reloading. `detailOpen`, `defaultDetailOpen`,
+  `onDetailOpenChange`, `openDetail()` and `closeDetail()`, Alt+Enter and the cell menu open and close it,
+  and `detailPanel` replaces its content with a component (`DetailPanelProps`). `DetailTracker` reads the
+  record outside React.
 - `vastgrid`: `onSelectionChange`, `onColumnsChange`, `onCellClick` and `onCellDoubleClick` report the
   selection, changes of the columns' width, order, visibility and freezing, and clicks on cells (Space
   and F2 from the keyboard; `preventDefault()` keeps the cell inspector closed). Events give a cell's row
