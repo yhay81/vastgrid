@@ -72,7 +72,7 @@ description: 列で行をグループ化して件数・合計・平均・最小�
 
 ## コードから使う
 
-`group` は source のメソッドなので、グリッドなしでも使えます。たとえばグラフを描くときです。
+`group` は source のメソッドなので、グリッドなしでも使えます。たとえば[グラフを描く](/ja/guides/charts/)ときです。
 
 ```ts
 const view = await source.createView({ filters: [{ type: "compare", column: 2, op: "gt", value: 0 }] });

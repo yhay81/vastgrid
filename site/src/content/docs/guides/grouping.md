@@ -112,7 +112,8 @@ make them report `capabilities.pivot` (`ArraySource`, `vastgrid-duckdb`, and `va
 
 ## From code
 
-`group` is a method of the source, so an app can use it without the grid, for example to draw a chart:
+`group` is a method of the source, so an app can use it without the grid, for example to
+[draw a chart](/guides/charts/):
 
 ```ts
 const view = await source.createView({ filters: [{ type: "compare", column: 2, op: "gt", value: 0 }] });

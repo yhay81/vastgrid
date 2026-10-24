@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Docs and playground: [Charts](https://vastgrid.yhay81.com/guides/charts/) shows how to pass the bounded
+  results of `group` to a chart library, following the grid's filters, condition tree, search and sort
+  (`onStateChange`) and changes of the table; the playground's "Chart" panel draws them with Chart.js
+  (a dependency of the playground only).
+- `vastgrid`: while the grid shows groups, `onQueryChange` and `getQuery()` keep reporting the query of
+  the rows that are grouped, not the grouped table's.
+
 - `vastgrid-core`: `GroupRequest.pivot` makes cross tabulations on the source: the values of the
   column-axis columns become columns after the keys, one per value combination and aggregate, ordered
   like keys and named `Tokyo / sum(sales)` (`(null)` and `(empty)` for blanks), with `GroupResult.pivot`

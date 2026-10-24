@@ -394,7 +394,10 @@ const result = await source.group({ view: null, keys: [0], aggregates: [{ fn: "c
 // { columns: [region, count(*), sum(amount)], rows: [["Tokyo", 120, "53210.50"], …], groups: 47, truncated: false }
 ```
 
-See [Grouping and totals](https://vastgrid.yhay81.com/guides/grouping/).
+See [Grouping and totals](https://vastgrid.yhay81.com/guides/grouping/). The same bounded results feed
+charts drawn by the library of your choice, following the grid's filters and sort; vastgrid itself
+depends on no chart library. See [Charts](https://vastgrid.yhay81.com/guides/charts/) and the playground's
+"Chart" panel.
 
 ## Performance
 

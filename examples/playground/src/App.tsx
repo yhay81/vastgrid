@@ -6,12 +6,14 @@ import {
   type DataGridHandle,
   downloadBlob,
   type GridExportOptions,
+  type GridState,
   RemoteSource,
   type SheetInfo,
   type TableSource,
 } from "vastgrid";
 import { BrowserSource, type Transfer } from "vastgrid-browser";
 import BrowserWorker from "vastgrid-browser/worker?worker";
+import { ChartPanel } from "./ChartPanel.tsx";
 
 interface FileEntry {
   path: string;
@@ -118,6 +120,9 @@ export function App() {
     window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
   );
   const [locale, setLocale] = useState("ja");
+  /** A bar chart of the grid's rows below it, which follows the grid's filters and sort. */
+  const [chart, setChart] = useState(false);
+  const [gridState, setGridState] = useState<GridState | null>(null);
   const grid = useRef<DataGridHandle>(null);
   useEffect(() => {
     // For trying things from the console.
@@ -152,6 +157,7 @@ export function App() {
         ...(sheet === undefined ? {} : { read: { sheet } }),
       });
     setSource(next);
+    setGridState(null);
     // For trying things from the console.
     (window as unknown as { source: TableSource }).source = next;
     // A browser source ends its worker.
@@ -256,6 +262,9 @@ export function App() {
               <option value="en">English</option>
             </select>
           </label>
+          <label>
+            <input type="checkbox" checked={chart} onChange={(event) => setChart(event.target.checked)} /> Chart
+          </label>
           <button type="button" onClick={() => grid.current?.reload()}>
             Reload
           </button>
@@ -263,17 +272,21 @@ export function App() {
       </aside>
       <main className="app__grid">
         {source && (
-          <DataGrid
-            key={`${engine}:${selected}\n${sheet ?? ""}`}
-            ref={grid}
-            source={source}
-            locale={locale}
-            exportOptions={{
-              ...exportOptions,
-              fileName: selected.startsWith("\u0000") ? "export" : (selected.split("/").pop() ?? "export"),
-            }}
-          />
+          <div className="app__table">
+            <DataGrid
+              key={`${engine}:${selected}\n${sheet ?? ""}`}
+              ref={grid}
+              source={source}
+              locale={locale}
+              exportOptions={{
+                ...exportOptions,
+                fileName: selected.startsWith("\u0000") ? "export" : (selected.split("/").pop() ?? "export"),
+              }}
+              onStateChange={setGridState}
+            />
+          </div>
         )}
+        {source && chart && <ChartPanel source={source} state={gridState} />}
       </main>
     </div>
   );

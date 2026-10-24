@@ -701,6 +701,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
 
   const lastQuery = useRef(controller.query);
   useEffect(() => {
+    // While grouped, the query is that of the rows grouped, which does not change.
+    if (grouped) return;
     if (lastQuery.current !== controller.query) {
       lastQuery.current = controller.query;
       onQueryChange?.(controller.query);
@@ -737,7 +739,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     () => ({
       focus: () => scrollerRef.current?.focus(),
       reload: () => controller.reload(),
-      getQuery: () => controller.query,
+      getQuery: () => (grouped ? grouped.query : controller.query),
       setQuery: (query) => void controller.setQuery(query),
       getState: () => fullState(controller.getState()),
       applyState: (state) => applyFullState(state),
@@ -758,7 +760,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         return rendererRef.current;
       },
     }),
-    [controller, openExport, setDetailOpen, fullState, applyFullState],
+    [controller, openExport, setDetailOpen, fullState, applyFullState, grouped],
   );
 
   // ----- helpers -----

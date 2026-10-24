@@ -8,6 +8,7 @@
     "generate": "node --conditions=vastgrid-source --import tsx scripts/generate.ts"
   },
   "dependencies": {
+    "chart.js": "4.5.1",
     "vastgrid-core": "0.1.1",
     "vastgrid-duckdb": "0.1.1",
     "vastgrid-browser": "0.1.1",

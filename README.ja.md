@@ -337,7 +337,7 @@ const result = await source.group({ view: null, keys: [0], aggregates: [{ fn: "c
 // { columns: [region, count(*), sum(amount)], rows: [["東京", 120, "53210.50"], …], groups: 47, truncated: false }
 ```
 
-詳しくは[グループ化と集計](https://vastgrid.yhay81.com/ja/guides/grouping/)を参照してください。
+詳しくは[グループ化と集計](https://vastgrid.yhay81.com/ja/guides/grouping/)を参照してください。同じ上限付きの結果を、好きなライブラリで描くグラフに渡し、グリッドの絞り込みと並べ替えに追従させられます。vastgrid 自体はグラフライブラリに依存しません。[グラフ](https://vastgrid.yhay81.com/ja/guides/charts/)と、playground の「Chart」パネルを参照してください。
 
 ## 性能
 
