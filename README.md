@@ -230,8 +230,8 @@ column wraps), so scrolling stays exact for any number of rows. See the [DataGri
 The detail panel shows every column of the active row, with the columns' labels and formatted values,
 beside the grid, or below it when the grid is narrower than 640px. Rows keep their height. It follows the
 active cell (the `active` of `onSelectionChange`); text that the table cuts is read in full for that row,
-after a short pause, and moving on cancels the read. After sorting, filtering or reading a changed table
-again, it shows the new active row, the first one. Alt+Enter or the cell menu opens it, Alt+Enter again
+after a short pause, and moving on cancels the read. After sorting or filtering, it shows the new active
+row, the first one; reading a changed table again keeps the active row and reads its record anew. Alt+Enter or the cell menu opens it, Alt+Enter again
 moves the focus into it, and Esc closes it. Pass a component to show the record your own way:
 
 ```tsx

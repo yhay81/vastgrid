@@ -1,5 +1,4 @@
 export * from "vastgrid-core";
-export { type DetailField, DetailFields, type DetailPanelProps } from "./components/detail-panel.js";
 export type {
   CellAction,
   CellActionHook,
@@ -9,6 +8,7 @@ export type {
   DrawDefaultOptions,
   GridCellContent,
 } from "./cell-render.js";
+export { type DetailField, DetailFields, type DetailPanelProps } from "./components/detail-panel.js";
 export {
   type ColumnState,
   CopyRangesError,

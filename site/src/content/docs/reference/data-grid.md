@@ -278,8 +278,8 @@ its label from `columnFormats` and its formatted value. Values that the table cu
   so going quickly through rows reads only the row where you stop.
 - A new view (sort, filters, search) makes its first row active, and the panel shows it, with its row in
   the original table in the title.
-- Reading the table again keeps the record when the table did not change; a changed table starts again
-  at its first row, and the panel shows it.
+- Reading the table again keeps the record when the table did not change. A changed table keeps the
+  active row, like `reloadKey` and the source's change reports, and the panel reads its record anew.
 - Without rows, the panel says so.
 
 **Keyboard and focus.** In the grid, Alt+Enter opens the panel and leaves the focus in the grid, so the

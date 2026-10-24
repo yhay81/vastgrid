@@ -188,11 +188,12 @@ test("after sorting, filtering or reloading, the record follows the new active r
     await new Promise((resolve) => setTimeout(resolve, 30));
     assert.equal(tracker.record, kept);
     assert.equal(source.fullReads.length, reads);
-    // A changed table starts again at its first row.
+    // A changed table is read again where the grid was: the record of the kept active row is read anew.
     source.revision = 2;
     grid.reload();
-    await until(() => tracker.record?.row === 0 && tracker.record.status === "ready");
-    assert.equal(tracker.record?.values[0], "Ada");
+    await until(() => source.fullReads.length > reads && tracker.record?.status === "ready");
+    assert.equal(tracker.record?.row, 1);
+    assert.equal(tracker.record?.values[0], "Grace");
   } finally {
     tracker.stop();
     grid.dispose();
