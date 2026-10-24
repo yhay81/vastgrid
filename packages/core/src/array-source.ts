@@ -1,4 +1,5 @@
 import { isNumericType } from "./column-type.js";
+import { EXPORT_MEDIA_TYPES, TABLE_FILE_FORMATS, type TableFileFormat, writeTableFile } from "./export-file.js";
 import { numericValue, plainText } from "./format.js";
 import { ErrorCodes } from "./protocol.js";
 import { abortError, isEmptyQuery, SourceError, type TableSource } from "./source.js";
@@ -10,6 +11,8 @@ import type {
   ColumnType,
   DistinctRequest,
   DistinctValues,
+  ExportRequest,
+  ExportResult,
   Filter,
   FindRequest,
   FindResult,
@@ -20,6 +23,7 @@ import type {
   ViewInfo,
   ViewQuery,
 } from "./types.js";
+import { checkXlsxSize } from "./xlsx-writer.js";
 
 export interface ArraySourceOptions {
   /** Column names, or full schemas. Types are inferred from the values when only names are given. */
@@ -131,9 +135,15 @@ interface View {
   query: ViewQuery;
 }
 
+/** Rows written per batch when exporting. */
+const EXPORT_BATCH = 4096;
+
 /**
  * A table held in JavaScript arrays. Sorting, filtering and statistics run on the main thread, so it
  * suits up to a few hundred thousand rows; use an engine-backed source for more.
+ *
+ * `exportView` writes `csv`, `tsv`, `json` and `xlsx` (not `parquet`) and returns the file as a `Blob`
+ * (`ExportResult.data`); `target` is only its name.
  */
 export class ArraySource implements TableSource {
   private readonly schema: ColumnSchema[];
@@ -176,8 +186,9 @@ export class ArraySource implements TableSource {
         distinct: true,
         aggregate: true,
         find: true,
-        export: false,
+        export: true,
       },
+      exports: { formats: [...TABLE_FILE_FORMATS], delivery: "data" },
     };
   }
 
@@ -471,5 +482,47 @@ export class ArraySource implements TableSource {
       if ((request.caseSensitive ? text : text.toLowerCase()).includes(needle)) return { row, column };
     }
     return null;
+  }
+
+  async exportView(request: ExportRequest, signal?: AbortSignal): Promise<ExportResult> {
+    if (!(TABLE_FILE_FORMATS as readonly string[]).includes(request.format)) {
+      throw new SourceError(ErrorCodes.invalidRequest, `This table cannot be exported as ${request.format}.`, 400);
+    }
+    const view = this.view(request.view);
+    const size = this.viewSize(view);
+    const indexes = request.columns ?? this.schema.map((_, index) => index);
+    const columns = indexes.map((index, position) => {
+      const schema = this.schema[index];
+      if (!schema) throw new SourceError(ErrorCodes.invalidRequest, `Column ${index} does not exist.`, 400);
+      const keepNames = request.format === "json";
+      return {
+        name: (!keepNames && request.headers?.[position]) || schema.name,
+        type: schema.type,
+        numberFormat: request.numberFormats?.[position] ?? null,
+      };
+    });
+    if (request.format === "xlsx") checkXlsxSize(size, columns.length);
+    const source = this;
+    function* batches() {
+      for (let start = 0; start < size; start += EXPORT_BATCH) {
+        if (signal?.aborted) throw abortError();
+        const rows: CellValue[][] = [];
+        for (let position = start; position < Math.min(size, start + EXPORT_BATCH); position++) {
+          const row = source.rowAt(view, position);
+          rows.push(indexes.map((column) => source.value(row, column)));
+        }
+        yield rows;
+      }
+    }
+    const parts: Uint8Array[] = [];
+    try {
+      for await (const chunk of writeTableFile(request.format as TableFileFormat, columns, batches(), { signal }))
+        parts.push(chunk);
+    } catch (error) {
+      if (signal?.aborted) throw abortError();
+      throw error;
+    }
+    const data = new Blob(parts as BlobPart[], { type: EXPORT_MEDIA_TYPES[request.format] });
+    return { target: request.target, rows: size, data };
   }
 }

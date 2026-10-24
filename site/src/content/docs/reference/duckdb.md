@@ -47,6 +47,12 @@ An `OpenTable` has the methods of a `TableSource` (`info`, `createView`, `readRo
 promise for the end of the load. The handlers below call them; use them directly to work with tables on
 the server.
 
+`exportView` writes `csv`, `tsv`, `parquet`, `json` and `xlsx` (`info().exports`). Files are written
+under a temporary name in the target's folder and renamed when complete; a cancelled or failed export
+deletes it. Excel files are written by the engine itself as a stream of row chunks (no dependency, memory
+independent of the table size) and are refused with `export_too_large` beyond 1,048,575 rows or 16,384
+columns. See [Exporting](/guides/export/).
+
 ## `createTableHandler(options)`
 
 Returns `(request: Request) => Promise<Response>`, a Fetch API handler for the protocol: it accepts
@@ -57,7 +63,7 @@ matching status.
 | --- | --- |
 | `engine` | `TableEngine \| (() => TableEngine \| Promise<TableEngine>)`. |
 | `resolve(ref)` | Returns the absolute path of the file a request names, or a promise of it. Throw to refuse. |
-| `resolveTarget(target)` | Returns the absolute path of a new file for an export. Without it, exports are refused. |
+| `resolveTarget(target)` | Returns the absolute path of a new file for an export. Without it, exports are refused and `info` reports `capabilities.export: false` without `exports`. |
 | `onError(error)` | Receives errors that are not caused by the request, for logging. |
 
 ## `handleTableRequest(body, options, signal?)`

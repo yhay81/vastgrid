@@ -4,7 +4,9 @@ description: Show rows that are already in the browser with ArraySource.
 ---
 
 `ArraySource` is a `TableSource` over JavaScript arrays. It does everything the grid asks for: sorting,
-filters, search, find, column statistics, value lists and the summary of the selection.
+filters, search, find, column statistics, value lists and the summary of the selection. It also
+exports CSV, TSV, JSON and Excel files, which the grid's export panel downloads (see
+[Exporting](/guides/export/)).
 
 ```tsx
 import { ArraySource, DataGrid } from "vastgrid";

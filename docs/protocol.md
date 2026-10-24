@@ -40,13 +40,22 @@ that changed gets a new handle and a new `revision`.
 | `distinct` | `table`, `view`, `column`, optional `search`, `limit` | `{ values: { value, count }[], truncated }` |
 | `aggregate` | `table`, `view`, `ranges: { start, end, columns }[]` | `{ count, numericCount, sum, min, max, average }` |
 | `find` | `table`, `view`, `text`, `columns`, `row`, `column`, `direction` (`1` or `-1`), optional `caseSensitive` | `{ row, column }` or `null` |
-| `export` | `table`, `view`, `format` (`csv`, `tsv`, `parquet`, `json`), optional `columns`, `target` | `{ target, rows }` |
+| `export` | `table`, `view`, `format` (`csv`, `tsv`, `parquet`, `json`, `xlsx`), optional `columns`, `headers`, `numberFormats`, `target` | `{ target, rows }` |
 | `close` | `table` | `null` |
 
 A `rows` request reads at most 1,000,000 rows and 1,000,000 cells (rows × columns); read more in parts.
 View requests on one table are built one at a time and never cancel each other. `distinct` counts
 whole values and sends them whole (up to 1,000,000 characters), so that a value from its list works in
 a `values` filter.
+
+An `export` writes the rows of the view (`view: null` for the table) in the view's order: its filters,
+search and sort apply. `columns` picks the schema columns and their order (default: all, in schema
+order). `headers` (one string per written column) replaces the column names in the header row of `csv`,
+`tsv` and `xlsx`; `parquet` and `json` keep the schema names. `numberFormats` (one Excel number format
+code or `null` per column, at most 255 characters) applies to `xlsx` only. The server resolves `target`
+to a new file in its allowed folders and writes it under a temporary name first, so a cancelled or failed
+export leaves nothing behind. `xlsx` refuses more than 1,048,575 rows (one sheet with a header row) or
+16,384 columns with `export_too_large`; see [Excel export rules](#excel-export-rules).
 
 ### `TableInfo`
 
@@ -65,8 +74,14 @@ a `values` filter.
   sheets?: { name: string; hidden?: boolean }[]; // workbooks: the sheets, in workbook order
   sheet?: string;              // workbooks: the sheet that was read
   capabilities: { sort, filter, search, stats, distinct, aggregate, find, export: boolean };
+  exports?: { formats: ExportFormat[]; delivery: "file" | "data" }; // what export can write, when it can
 }
 ```
+
+`exports` lists the formats `export` writes. `delivery: "file"` means the server writes a file at the
+resolved `target`; `"data"` is for in-process sources (such as `ArraySource`) that return the file in
+`ExportResult.data`. A server without `exports` that has `capabilities.export` writes `csv`, `tsv`,
+`parquet` and `json` files.
 
 ### `ReadOptions`
 
@@ -168,5 +183,23 @@ type Filter =
 | `not_file` | 400 | The path is not a file (for example a folder). |
 | `not_allowed` | 403 | The file, or the folder of an export, is outside the folders the server may use (links are followed). |
 | `export_disabled` | 403 | The host did not enable exports. |
+| `export_too_large` | 413 | The rows or columns do not fit in the format (an Excel sheet), or the workbook would pass 4 GB. |
 | `disposed` | 503 | The server closed its table engine (for example while it shuts down). |
 | `internal_error` | 500 | Anything else. |
+
+## Excel export rules
+
+`xlsx` files have one sheet: a bold, frozen header row, then one row per table row. They are written
+as a stream (one chunk of rows at a time), so the server's memory does not grow with the table.
+
+| Value | Cell |
+| --- | --- |
+| Numbers | Number cells. Numeric text that a double cannot hold exactly (more than 15 significant digits, for example 64-bit IDs and long decimals) stays text, so no digit changes. `NaN` and `Infinity` are text. |
+| Booleans | Boolean cells. |
+| Dates, times, timestamps | Date serial numbers with the format `yyyy-mm-dd`, `hh:mm:ss` or `yyyy-mm-dd hh:mm:ss` (or the requested `numberFormats`). Timestamps with a time zone are written in UTC. Values Excel cannot show as dates (before 1900-03-01 or after 9999) stay text. |
+| Text | Always text, never a formula, also when it starts with `=`, `+`, `-` or `@`. Text longer than 32,767 characters (Excel's limit) is cut and ends with `…`. Characters XML cannot hold are written as `_xHHHH_`. |
+| Other types (intervals, UUIDs, lists, structs, binary) | Their text. |
+| `null` | An empty cell. |
+
+`csv` and `tsv` write values as they are: spreadsheet apps may read text that starts with `=` as a
+formula when they open such files, so prefer `xlsx` for files that go to spreadsheet users.

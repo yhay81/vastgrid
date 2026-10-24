@@ -43,7 +43,7 @@ new ArraySource({
 });
 ```
 
-`export` 以外のすべての capability に対応します。[メモリ上のデータ](/ja/guides/in-memory/)を参照してください。
+すべての capability に対応します。`exportView` は `csv`・`tsv`・`json`・`xlsx`（`parquet` は除く）を書き、ファイルを `Blob` として `ExportResult.data` に返します（`exports.delivery` は `"data"`）。[メモリ上のデータ](/ja/guides/in-memory/)と[書き出し](/ja/guides/export/)を参照してください。
 
 ## `RemoteSource`
 
@@ -106,8 +106,11 @@ interface TableInfo {
     find: boolean;
     export: boolean;
   };
+  exports?: { formats: ExportFormat[]; delivery: "file" | "data" }; // 書き出せるとき、exportView が書く形式
 }
 ```
+
+`exports.delivery` は、ファイルが利用者に届く方法をグリッドに伝えます。`"file"` の source（サーバー）は要求の `target` に新しいファイルを書き、`"data"` の source はその中身（`ExportResult.data`）を返します。`capabilities.export` があって `exports` がない source は、`csv`・`tsv`・`parquet`・`json` のファイルを書きます。
 
 ## `ViewQuery`
 
@@ -218,14 +221,20 @@ interface FindRequest {
 }
 interface FindResult { row: number; column: number } // `column` は `FindRequest.columns` の中の位置
 
+type ExportFormat = "csv" | "tsv" | "parquet" | "json" | "xlsx";
+
 interface ExportRequest {
-  view: string | null;
-  format: "csv" | "tsv" | "parquet" | "json";
-  columns?: number[];
-  target: string;      // ホストが解釈する。たとえばワークスペースからの相対パス
+  view: string | null;          // ビューの絞り込み・検索・並べ替えが効く。null は表そのもの
+  format: ExportFormat;
+  columns?: number[];           // スキーマでの列の番号を、書く順に
+  headers?: string[];           // csv・tsv・xlsx の列ごとの見出し（parquet と json は列名のまま）
+  numberFormats?: (string | null)[]; // xlsx: 列ごとの Excel の表示形式。null は型の既定
+  target: string;               // ホストが解釈する。"data" の source ではファイル名
 }
-interface ExportResult { target: string; rows: number }
+interface ExportResult { target: string; rows: number; data?: Blob }
 ```
+
+`xlsx` が数値・日付・文字（数式にはしない）・`null` をどう書くか、Excel のシートに収まらない行・列を `export_too_large` で断ることは、[プロトコル](/ja/reference/protocol/#excel-export-rules)と[書き出し](/ja/guides/export/#excel-ファイル)にあります。
 
 ## エラー
 
@@ -252,4 +261,9 @@ class SourceError extends Error {
 | `copyLayout(ranges)` | 複数の範囲をコピーするときの行と列。まとめてコピーできない範囲では null を返します。 |
 | `isNumericType(type)`、`isTemporalType(type)` | 列の型を分類します。 |
 | `parseProtocolRequest(body)` | サーバー向けに、プロトコルの要求を検証します。 |
+| `writeTableFile(format, columns, rows, options?)` | 行のまとまりから `csv`・`tsv`・`json`・`xlsx` をバイトのストリームとして書きます。自分で書き出す source 向けです。 |
+| `writeXlsx(columns, rows, options?)` | 依存なしで Excel のブックをストリームとして書きます。`options.deflate` で圧縮します（`browserDeflate()` は `CompressionStream` を使います）。 |
+| `excelNumberFormat(schema, format, options?)` | 列の `ColumnFormat` に当たる Excel の表示形式、または `null`。 |
+| `checkXlsxSize(rows, columns)`、`XLSX_MAX_ROWS`、`XLSX_MAX_COLUMNS`、`XLSX_MAX_TEXT` | Excel の上限。 |
+| `EXPORT_EXTENSIONS`、`EXPORT_MEDIA_TYPES` | 書き出し形式ごとの拡張子とメディアタイプ。 |
 | `RowCache`、`ScrollAxis`、`SelectionModel`、`ColumnLayout` | フレームワークに依存しない、グリッドの部品。別のグリッドを作るときに使えます。 |

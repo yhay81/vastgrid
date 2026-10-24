@@ -27,6 +27,7 @@ import "vastgrid/styles.css";
 | `copyLimit` | `number` | `1000000` | 一度にコピーできるセルの数（選択したすべての範囲の合計）。 |
 | `columnFormats` | `Record<string, ColumnFormat>` | | スキーマの列名ごとの表示設定。表示名、数値と日時の書式、配置、整形関数。 |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | コピーするのを、値とスキーマの列名にするか、表示している文字と表示名にするか。 |
+| `exportOptions` | `GridExportOptions \| false` | `{}` | 書き出しパネル。ファイルの行き先と、出す形式を決めます。`false` で隠します。[書き出し](/ja/guides/export/)を参照してください。 |
 | `onQueryChange` | `(query: ViewQuery) => void` | | 並べ替え・絞り込み・検索が変わったときに呼ばれます。 |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | 選択範囲かアクティブなセルが変わったときに呼ばれます。[イベント](#イベント)を参照してください。 |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | 列の幅・順序・表示・固定が変わったときに呼ばれます。 |
@@ -50,6 +51,7 @@ ref からは `DataGridHandle` を使えます。
 | `getState()` | クエリーと列の設定。保存用の `GridState` です。 |
 | `applyState(state)` | 保存した `GridState` を適用します。このバージョンで読めない値なら `false` を返します。 |
 | `goToRow(row)` | 現在のビューのその行までスクロールし、アクティブにします。 |
+| `openExport()` | ツールバーがなくても、書き出しパネルを開きます。source が今書き出せないときは `false` を返します。 |
 | `controller` | グリッドの状態（選択範囲、列の配置、ビュー）を持つ `GridController`。 |
 | `renderer` | `CanvasRenderer`。`renderer.timings()` などの診断に使います。グリッドがマウントされるまでは `null`。 |
 
@@ -182,7 +184,7 @@ const formats: Record<string, ColumnFormat> = {
 
 **値と表示。** 設定が変えるのは表示だけです。並べ替え、絞り込み（条件に入力する値も）、検索、表の中の検索、列の統計、選択範囲の集計、書き出しは値そのものに対して動きます。たとえばパーセントの列を「> 0.5」で絞り込むと、50% を超える値が残ります。文字列で届く 64 bit 整数や decimal は、JavaScript の数値を介さずにその桁から整形するので、`"9007199254740993"` も正確に表示されます。セルの値の表示（インスペクター）には、値と、その下に表示上の文字が出ます。
 
-**コピー。** 既定では、コピー（TSV・HTML・Markdown）には `plainText` が書く形の値と、見出しにはスキーマの列名が入り、表計算ソフトが数値や日付として読めます。`copyValues="formatted"` にすると、表示している文字の全体（切らず、改行も残す）と表示名をコピーします。列の `copy` を指定すると、その列のセルはそちらに従います。書き出し（`exportView`）はソースが書くので、常に値とスキーマの列名が入ります。
+**コピー。** 既定では、コピー（TSV・HTML・Markdown）には `plainText` が書く形の値と、見出しにはスキーマの列名が入り、表計算ソフトが数値や日付として読めます。`copyValues="formatted"` にすると、表示している文字の全体（切らず、改行も残す）と表示名をコピーします。列の `copy` を指定すると、その列のセルはそちらに従います。書き出し（`exportView`）はソースが書くので、値が入ります。書き出しパネルでは、表示名を見出しに、Excel ファイルでは数値・日時の書式を Excel の表示形式にできます（[書き出し](/ja/guides/export/)を参照）。
 
 正しくない設定（`currency` のない通貨の書式や、存在しないタイムゾーンなど）は、グリッドに渡した時点で `RangeError` を投げます。`ColumnFormatter`（`ValueFormatter.column(schema, format)` で作り、グリッドでは `controller.formatterOf(index)`）を使うと、グリッドの外でも同じ設定で値を整形でき、設定は `settings` で読めます。
 
@@ -201,3 +203,6 @@ const formats: Record<string, ColumnFormat> = {
 | `resolveTheme(element)`、`GridTheme` | キャンバスが要素の CSS 変数から読む、色と文字の設定。 |
 | `CopyTooLargeError` | `copyLimit` を超えるセルをコピーしようとしたときに投げられます。 |
 | `CopyRangesError` | 行も列も同じでない複数の範囲をコピーしようとしたときに投げられます。 |
+| `GridExportOptions`、`ExportChoice`、`ExportContext` | [書き出しパネル](/ja/guides/export/)のオプションと、それに渡す内容。 |
+| `runExport(controller, choice, options, signal)`、`exportRequest(controller, choice)`、`exportSupport(info, exportView)` | パネルと同じように書き出す、またはその要求を作ります。独自の書き出し画面向けです。 |
+| `downloadBlob(data, fileName)` | `Blob` をブラウザーのダウンロードとして保存します。 |

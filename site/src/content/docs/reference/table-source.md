@@ -45,7 +45,7 @@ new ArraySource({
 });
 ```
 
-Supports every capability but `export`. See [Data in memory](/guides/in-memory/).
+Supports every capability. `exportView` writes `csv`, `tsv`, `json` and `xlsx` (not `parquet`) and returns the file as a `Blob` in `ExportResult.data` (`exports.delivery` is `"data"`). See [Data in memory](/guides/in-memory/) and [Exporting](/guides/export/).
 
 ## `RemoteSource`
 
@@ -111,8 +111,13 @@ interface TableInfo {
     find: boolean;
     export: boolean;
   };
+  exports?: { formats: ExportFormat[]; delivery: "file" | "data" }; // what exportView writes, when it can
 }
 ```
+
+`exports.delivery` tells the grid how the file reaches the user: `"file"` sources write a new file at the
+request's `target` (a server), `"data"` sources return its bytes (`ExportResult.data`). A source with
+`capabilities.export` and no `exports` writes `csv`, `tsv`, `parquet` and `json` files.
 
 ## `ViewQuery`
 
@@ -231,14 +236,22 @@ interface FindRequest {
 }
 interface FindResult { row: number; column: number } // `column` is an index into `FindRequest.columns`
 
+type ExportFormat = "csv" | "tsv" | "parquet" | "json" | "xlsx";
+
 interface ExportRequest {
-  view: string | null;
-  format: "csv" | "tsv" | "parquet" | "json";
-  columns?: number[];
-  target: string;      // interpreted by the host, for example a path relative to a workspace
+  view: string | null;          // the view's filters, search and sort apply; null is the table
+  format: ExportFormat;
+  columns?: number[];           // schema column indexes, in the order to write them
+  headers?: string[];           // header per column for csv, tsv and xlsx (parquet and json keep the names)
+  numberFormats?: (string | null)[]; // xlsx: Excel number format code per column, null for the default
+  target: string;               // interpreted by the host, or the file name for "data" sources
 }
-interface ExportResult { target: string; rows: number }
+interface ExportResult { target: string; rows: number; data?: Blob }
 ```
+
+The [protocol](/reference/protocol/#excel-export-rules) defines how `xlsx` writes numbers, dates, text
+(never formulas) and `null`, and refuses more rows or columns than an Excel sheet holds with
+`export_too_large`.
 
 ## Errors
 
@@ -267,4 +280,9 @@ the error to reject with when a signal aborts, and `isAbortError(error)` recogni
 | `copyLayout(ranges)` | The rows and columns that a copy of several ranges writes, or null when they cannot be copied together. |
 | `isNumericType(type)`, `isTemporalType(type)` | Group column types. |
 | `parseProtocolRequest(body)` | Validates a protocol request, for servers. |
+| `writeTableFile(format, columns, rows, options?)` | Writes `csv`, `tsv`, `json` or `xlsx` from batches of rows as a stream of bytes, for sources that export themselves. |
+| `writeXlsx(columns, rows, options?)` | Writes an Excel workbook as a stream, without dependencies. `options.deflate` compresses (`browserDeflate()` uses `CompressionStream`). |
+| `excelNumberFormat(schema, format, options?)` | The Excel number format code for a column's `ColumnFormat`, or `null`. |
+| `checkXlsxSize(rows, columns)`, `XLSX_MAX_ROWS`, `XLSX_MAX_COLUMNS`, `XLSX_MAX_TEXT` | Excel's limits. |
+| `EXPORT_EXTENSIONS`, `EXPORT_MEDIA_TYPES` | File extension and media type of each export format. |
 | `RowCache`, `ScrollAxis`, `SelectionModel`, `ColumnLayout` | The grid's building blocks, framework-free, for building another grid. |

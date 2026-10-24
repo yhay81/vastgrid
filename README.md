@@ -17,8 +17,8 @@ hundreds of millions of rows — and Excel workbooks, and works like a spreadshe
   past the browser's element-size limit, to billions of rows.
 - **A spreadsheet's way of working.** Range selection with the mouse and Excel's keyboard shortcuts,
   copy as TSV / HTML / Markdown, multi-column sort, filters with a searchable value list or conditions,
-  search across all columns, find (⌘F), column statistics, and a running count, sum, average, min and
-  max of the selection.
+  search across all columns, find (⌘F), column statistics, a running count, sum, average, min and
+  max of the selection, and export of the current view to CSV, TSV, Parquet, JSON or Excel.
 - **Bring your engine.** The grid talks to a `TableSource`. Use the DuckDB server engine for files on
   disk, `vastgrid-browser` for files opened in the browser and Parquet URLs, `ArraySource` for data already
   in memory, or implement your own.
@@ -157,6 +157,7 @@ rows.
 | `copyLimit` | `number` | `1000000` | Cells that can be copied at once, over all selected ranges. |
 | `columnFormats` | `Record<string, ColumnFormat>` | | Display settings by schema column name: label, number and date formats, alignment, a format function. |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | Copy the values with the schema names, or the shown text with the labels. |
+| `exportOptions` | `GridExportOptions \| false` | `{}` | The export panel: where files go (`target`, `onExported`) and which formats to offer. `false` hides it. |
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | Called when the selection or the active cell changes. |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | Called when the columns' width, order, visibility or freezing change. |
@@ -167,7 +168,7 @@ rows.
 | `aria-label` | `string` | `messages.gridLabel` | The grid's name for screen readers. |
 
 A ref gives a `DataGridHandle`: `focus()`, `reload()`, `getQuery()`, `setQuery(query)`, `getState()`,
-`applyState(state)`, `goToRow(row)`, the `controller` with the grid's state, and the canvas `renderer` (for
+`applyState(state)`, `goToRow(row)`, `openExport()`, the `controller` with the grid's state, and the canvas `renderer` (for
 diagnostics such as `renderer.timings()`).
 
 Events give a cell's `row` in the view, its `rowId` in the original table, its visible column `col` and its
@@ -212,6 +213,29 @@ const formats: Record<string, ColumnFormat> = {
 
 Copies hold the values and the schema names unless `copyValues="formatted"` (or a column's `copy`
 setting) asks for the shown text and the labels. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#column-formats).
+
+### Exporting
+
+The toolbar's "Export" button opens a panel to write the current view (filters, search and sort as shown)
+or the whole table, with the shown columns in display order or all of them, in the formats the source
+offers (`info().exports`). The DuckDB server writes CSV, TSV, Parquet, JSON and Excel files into the
+folders you allow (only with `resolveTarget`), so large results never pass through the browser;
+`ArraySource` returns CSV, TSV, JSON and Excel files that the browser downloads. Excel files are written
+without dependencies, as a stream, with the labels of `columnFormats` as headers and their number and
+date formats; text is never written as a formula, and more than 1,048,575 rows are refused.
+
+```tsx
+<DataGrid
+  source={source}
+  exportOptions={{
+    // The server resolves this in `resolveTarget`; then offer the file for download.
+    target: ({ request }) => `exports/${request.target}`,
+    onExported: (result) => window.location.assign(`/downloads/${encodeURIComponent(result.target)}`),
+  }}
+/>
+```
+
+See [Exporting](https://vastgrid.yhay81.com/guides/export/).
 
 ## Performance
 

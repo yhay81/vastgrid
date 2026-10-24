@@ -3,7 +3,7 @@ title: メモリ上のデータ
 description: すでにブラウザーにある行を ArraySource で表示します。
 ---
 
-`ArraySource` は JavaScript の配列を扱う `TableSource` です。並べ替え、絞り込み、すべての列からの絞り込み、検索、列の統計、値の一覧、選択範囲の集計と、グリッドが求めることをすべて行います。
+`ArraySource` は JavaScript の配列を扱う `TableSource` です。並べ替え、絞り込み、すべての列からの絞り込み、検索、列の統計、値の一覧、選択範囲の集計と、グリッドが求めることをすべて行います。CSV・TSV・JSON・Excel ファイルへの書き出しもでき、グリッドの書き出しパネルからダウンロードできます（[書き出し](/ja/guides/export/)を参照）。
 
 ```tsx
 import { ArraySource, DataGrid } from "vastgrid";

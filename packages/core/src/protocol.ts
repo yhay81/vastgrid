@@ -48,7 +48,16 @@ export type ProtocolRequest =
       direction: 1 | -1;
       caseSensitive?: boolean;
     }
-  | { op: "export"; table: string; view: string | null; format: ExportFormat; columns?: number[]; target: string }
+  | {
+      op: "export";
+      table: string;
+      view: string | null;
+      format: ExportFormat;
+      columns?: number[];
+      headers?: string[];
+      numberFormats?: (string | null)[];
+      target: string;
+    }
   | { op: "close"; table: string };
 
 export type ProtocolOperation = ProtocolRequest["op"];
@@ -93,6 +102,8 @@ export const ErrorCodes = {
   notAllowed: "not_allowed",
   /** The host did not enable exports. */
   exportDisabled: "export_disabled",
+  /** The rows or columns do not fit in the export format (for example an Excel sheet). */
+  exportTooLarge: "export_too_large",
   /** The server closed its table engine (for example while it shuts down). */
   disposed: "disposed",
   /** Anything else. */
@@ -168,7 +179,7 @@ function comparable(value: unknown, name: string): string | number | boolean {
 const sortDirections = new Set(["asc", "desc"]);
 const compareOperators = new Set(["eq", "ne", "lt", "le", "gt", "ge"]);
 const textOperators = new Set(["contains", "notContains", "startsWith", "endsWith", "equals", "notEquals"]);
-const exportFormats = new Set(["csv", "tsv", "parquet", "json"]);
+const exportFormats = new Set(["csv", "tsv", "parquet", "json", "xlsx"]);
 
 function sortKeys(value: unknown): SortKey[] | undefined {
   if (value === undefined) return undefined;
@@ -266,6 +277,28 @@ function readOptions(value: unknown): ReadOptions | undefined {
   return result;
 }
 
+/** Header texts or number formats of an export: one per exported column. */
+function exportTexts(
+  value: unknown,
+  name: string,
+  columns: number[] | undefined,
+  nullable: false,
+  max: number,
+): string[] | undefined;
+function exportTexts(
+  value: unknown,
+  name: string,
+  columns: number[] | undefined,
+  nullable: true,
+  max: number,
+): (string | null)[] | undefined;
+function exportTexts(value: unknown, name: string, columns: number[] | undefined, nullable: boolean, max: number) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > 100_000) fail(`${name} must be an array`);
+  if (columns && value.length !== columns.length) fail(`${name} must have one item per column`);
+  return value.map((item, position) => (nullable && item === null ? null : string(item, `${name}[${position}]`, max)));
+}
+
 /**
  * Validates an untrusted request body. Throws `Error` with a readable message for invalid input.
  * Servers should answer those with status 400 and the code `invalid_request`.
@@ -335,12 +368,17 @@ export function parseProtocolRequest(body: unknown): ProtocolRequest {
     case "export": {
       const format = body.format;
       if (typeof format !== "string" || !exportFormats.has(format)) fail("format is invalid");
+      const columns = body.columns === undefined ? undefined : indexes(body.columns, "columns");
+      const headers = exportTexts(body.headers, "headers", columns, false, 32_767);
+      const numberFormats = exportTexts(body.numberFormats, "numberFormats", columns, true, 255);
       return {
         op: "export",
         table,
         view: view(body.view),
         format: format as ExportFormat,
-        ...(body.columns === undefined ? {} : { columns: indexes(body.columns, "columns") }),
+        ...(columns === undefined ? {} : { columns }),
+        ...(headers === undefined ? {} : { headers }),
+        ...(numberFormats === undefined ? {} : { numberFormats }),
         target: string(body.target, "target"),
       };
     }

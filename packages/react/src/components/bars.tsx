@@ -9,10 +9,13 @@ export function Toolbar({
   controller,
   messages,
   onColumns,
+  onExport,
 }: {
   controller: GridController;
   messages: Messages;
   onColumns: (button: HTMLButtonElement) => void;
+  /** Opens the export panel; the button is shown only when the source can export. */
+  onExport?: (button: HTMLButtonElement) => void;
 }) {
   const query = controller.query;
   const [search, setSearch] = useState(query.search ?? "");
@@ -129,6 +132,16 @@ export function Toolbar({
       >
         {messages.columns}
       </button>
+      {onExport && (
+        <button
+          type="button"
+          className="vg-button vg-button--small"
+          onClick={(event) => onExport(event.currentTarget)}
+          disabled={!ready || controller.viewPending}
+        >
+          {messages.export}
+        </button>
+      )}
     </div>
   );
 }

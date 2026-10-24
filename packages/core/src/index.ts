@@ -2,6 +2,13 @@ export { ArraySource, type ArraySourceOptions } from "./array-source.js";
 export { type BlockState, CacheBlock, RowCache, type RowCacheOptions } from "./cache.js";
 export { toHtmlTable, toMarkdownTable, toTsv } from "./clipboard.js";
 export { isNumericType, isTemporalType } from "./column-type.js";
+export {
+  EXPORT_EXTENSIONS,
+  EXPORT_MEDIA_TYPES,
+  TABLE_FILE_FORMATS,
+  type TableFileFormat,
+  writeTableFile,
+} from "./export-file.js";
 export { ColumnFormatter, type FormatOptions, numericValue, plainText, ValueFormatter } from "./format.js";
 export {
   GRID_STATE_VERSION,
@@ -44,3 +51,15 @@ export {
   type TableSource,
 } from "./source.js";
 export type * from "./types.js";
+export {
+  browserDeflate,
+  checkXlsxSize,
+  type ExportColumn,
+  excelNumberFormat,
+  excelSerial,
+  writeXlsx,
+  XLSX_MAX_COLUMNS,
+  XLSX_MAX_ROWS,
+  XLSX_MAX_TEXT,
+  type XlsxOptions,
+} from "./xlsx-writer.js";

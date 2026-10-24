@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { readdir, realpath, stat } from "node:fs/promises";
+import { mkdir, readdir, realpath, stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -93,6 +93,8 @@ export function tableServer(dataDirectory: string): Plugin {
     name: "vastgrid-table-server",
     async configureServer(server) {
       const root = await realpath(dataDirectory);
+      // Exports go to their own folder, so that they never replace a data file.
+      await mkdir(path.join(root, "exports"), { recursive: true });
       const engine = TableEngine.create({
         allowedDirectories: [root],
         tempDirectory: path.join(os.tmpdir(), "vastgrid-playground"),
@@ -102,7 +104,8 @@ export function tableServer(dataDirectory: string): Plugin {
       const handler = createTableHandler({
         engine: () => engine,
         resolve: (ref) => resolveInside(root, ref),
-        resolveTarget: (target) => resolveInside(root, target, false),
+        resolveTarget: (target) =>
+          resolveInside(root, path.posix.join("exports", path.posix.basename(target.replaceAll("\\", "/"))), false),
         onError: (error) => server.config.logger.error(String(error instanceof Error ? error.stack : error)),
       });
       server.middlewares.use("/api/table", (request, response) => {
