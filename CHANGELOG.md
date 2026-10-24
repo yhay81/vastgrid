@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fixes of grouping: `ArraySource` and `vastgrid-browser` order float keys that are not finite as DuckDB
+  does (-Infinity, numbers, Infinity, NaN, then null) and group `NaN` numbers with their text;
+  `GroupedSource.reload()` and a new base `revision` read the groups again, and the grid's `reload()` and
+  `reloadKey` call it; a cross tabulation's header groups and labels follow the columns of each new result.
+
 - `vastgrid`: grouping, cross tabulations and the totals row work with formula columns (keys, values,
   column axis and totals; `vastgrid-duckdb` reads them from the view's formula scope). The grouped table
   ignores the grid's `columnGroups` and frozen sides, freezes its key columns at the left, and shows a

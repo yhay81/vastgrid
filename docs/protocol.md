@@ -347,8 +347,8 @@ Rules, the same for every source (`ArraySource`, `vastgrid-browser`, `vastgrid-d
   unknown types. Other requests fail with `invalid_request`.
 - **Keys.** A null key is a group of its own, and so is the empty string: they are different values, as
   in SQL. Numbers group by value (`1.5` and `1.50` of a decimal column are one group).
-- **Order.** Groups are ordered by `sort` (blanks — null and `""` — last in both directions, as in
-  views), then by every key ascending with nulls last; without `sort`, by the keys ascending. The first
+- **Order.** Groups are ordered by `sort` (blanks — null, and `""` of text columns — last in both
+  directions, as in views; floats order -Infinity, numbers, Infinity, NaN), then by every key ascending with nulls last; without `sort`, by the keys ascending. The first
   `limit` groups of that order are returned, with the number of all groups in `groups`.
 - **Names.** Key columns keep their column's name and type. Aggregate columns are named `fn(column)`,
   and `count(*)` for rows. A name that an earlier result column has gets ` (2)`, ` (3)`, …, so names are

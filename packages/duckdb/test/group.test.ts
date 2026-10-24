@@ -426,3 +426,50 @@ test("formula columns of a view group, aggregate and pivot the same in DuckDB an
     ["cat", "large / sum(amount)", "small / sum(amount)"],
   );
 });
+
+test("float keys that are not finite group and sort as in DuckDB, with null last", async () => {
+  const table = await parquet(
+    "floats.parquet",
+    `SELECT * FROM (VALUES (1.0::DOUBLE, 'a'), ('NaN'::DOUBLE, 'b'), ('Infinity'::DOUBLE, 'a'), (NULL, 'b'),
+      ('-Infinity'::DOUBLE, 'a'), (-1.0::DOUBLE, 'b'), ('NaN'::DOUBLE, 'a')) t(x, tag)`,
+  );
+  const array = await mirror(table);
+  const ascending = await both(table, array, { keys: [0], aggregates: [{ fn: "count" }] });
+  assert.deepEqual(
+    ascending.rows.map((row) => row[0]),
+    ["-Infinity", -1, 1, "Infinity", "NaN", null],
+  );
+  assert.equal(ascending.rows[4][1], 2);
+  const descending = await both(table, array, {
+    keys: [0],
+    aggregates: [{ fn: "count" }],
+    sort: [{ column: 0, direction: "desc" }],
+  });
+  assert.deepEqual(
+    descending.rows.map((row) => row[0]),
+    ["NaN", "Infinity", 1, -1, "-Infinity", null],
+  );
+  const pivot = await both(table, array, { keys: [1], aggregates: [{ fn: "count" }], pivot: { columns: [0] } });
+  assert.deepEqual(
+    pivot.columns.map((column) => column.name),
+    [
+      "tag",
+      "-Infinity / count(*)",
+      "-1 / count(*)",
+      "1 / count(*)",
+      "Infinity / count(*)",
+      "NaN / count(*)",
+      "(null) / count(*)",
+    ],
+  );
+  // Numbers in memory group with their wire text.
+  const numbers = new ArraySource({
+    columns: [{ name: "x", type: "float" }],
+    rows: [[Number.NaN], ["NaN"], [Number.POSITIVE_INFINITY], [null]],
+  });
+  assert.deepEqual((await numbers.group({ view: null, keys: [0], aggregates: [{ fn: "count" }] })).rows, [
+    ["Infinity", 1],
+    ["NaN", 2],
+    [null, 1],
+  ]);
+});
