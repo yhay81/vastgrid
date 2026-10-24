@@ -320,6 +320,7 @@ class SourceError extends Error {
 | `numericValue(value, type)` | 値を JavaScript の数値にしたもの。数値でなければ `null`。 |
 | `ValueFormatter` | グリッドと同じように、ロケールに合わせて値を表示用に整えます。 |
 | `toTsv`、`toHtmlTable`、`toMarkdownTable` | グリッドのコピーと同じ形式で、値の行を文字列にします。 |
+| `parseTsv(text)`、`parseHtmlTable(html)` | クリップボードからセルの行を読みます。表計算ソフトがコピーするタブ区切り（タブや改行を含む引用符付きのフィールド）と、HTML の最初の表（`colspan`・`rowspan` は空のセルで埋める）を、DOM を使わずに読みます。 |
 | `copyLayout(ranges)` | 複数の範囲をコピーするときの行と列。まとめてコピーできない範囲では null を返します。 |
 | `isNumericType(type)`、`isTemporalType(type)` | 列の型を分類します。 |
 | `parseProtocolRequest(body)` | サーバー向けに、プロトコルの要求を検証します。 |

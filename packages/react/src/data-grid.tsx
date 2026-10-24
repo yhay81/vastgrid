@@ -21,6 +21,8 @@ import {
   editText,
   filterLeaves,
   type GridState,
+  parseHtmlTable,
+  parseTsv,
   type RowSelection,
   type TableSource,
   type ViewQuery,
@@ -44,6 +46,7 @@ import {
   EditTooLargeError,
   type GridCellsChangeEvent,
   type GridEditReason,
+  PasteRangesError,
   type TargetCell,
   type ValidateCell,
 } from "./editing.js";
@@ -482,8 +485,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     const onCopy = (event: ClipboardEvent) => {
       if (document.activeElement === scroller) copyHandler.current(event);
     };
+    const onPaste = (event: ClipboardEvent) => {
+      if (document.activeElement === scroller) pasteHandler.current(event);
+    };
     document.addEventListener("beforecopy", onBeforeCopy);
     document.addEventListener("copy", onCopy);
+    document.addEventListener("paste", onPaste);
     const refreshTheme = () => renderer.setTheme(resolveTheme(root));
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     media.addEventListener("change", refreshTheme);
@@ -502,6 +509,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       scroller.removeEventListener("scroll", onScroll);
       document.removeEventListener("beforecopy", onBeforeCopy);
       document.removeEventListener("copy", onCopy);
+      document.removeEventListener("paste", onPaste);
       media.removeEventListener("change", refreshTheme);
       themeObserver.disconnect();
       renderer.dispose();
@@ -854,12 +862,91 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     }
   }
 
-  /** Checks and writes cells as one write, telling the user what failed. Resolves whether it was written. */
-  async function writeCells(inputs: (TargetCell & { text: string })[], reason: GridEditReason) {
+  /** The paste that is reading rows, which Esc or a newer paste cancels. */
+  const pasteAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => pasteAbort.current?.abort(), []);
+
+  /**
+   * Pastes rows of values from the selection's top-left cell (see `GridEdits.pasteTargets`), checking
+   * every value first: one value that does not fit refuses the whole paste.
+   */
+  async function pasteValues(values: string[][] | null) {
     const c = controller;
-    const prepared = await c.edits.prepare(inputs, reason);
+    if (!c.edits.enabled) return;
+    if (!values || values.length === 0) {
+      announce(messages.pasteEmpty);
+      return;
+    }
+    pasteAbort.current?.abort();
+    const abort = new AbortController();
+    pasteAbort.current = abort;
+    const slow = setTimeout(() => announce(messages.pasting), 300);
+    try {
+      const plan = await c.edits.pasteTargets(values, abort.signal);
+      abort.signal.throwIfAborted();
+      if (plan.inputs.length === 0) {
+        announce(messages.pasteEmpty);
+        return;
+      }
+      clearTimeout(slow);
+      const saved = await writeCells(plan.inputs, "paste", abort.signal);
+      if (saved && (plan.cutRows > 0 || plan.cutCols > 0)) {
+        announce(
+          `${messages.editSaved(count(plan.inputs.length))} ${messages.pasteCut(count(plan.cutRows), count(plan.cutCols))}`,
+        );
+      }
+    } catch (error) {
+      if (abort.signal.aborted) {
+        if (pasteAbort.current === abort) announce(messages.pasteCanceled);
+      } else if (error instanceof PasteRangesError) announce(messages.pasteRanges);
+      else if (error instanceof EditTooLargeError) announce(messages.editTooLarge(count(error.limit)));
+      else announce(messages.editFailed(error instanceof Error ? error.message : String(error)));
+    } finally {
+      clearTimeout(slow);
+      if (pasteAbort.current === abort) pasteAbort.current = null;
+    }
+  }
+
+  /** The browser's paste command (⌘V or Ctrl+V, or Paste in the app's Edit menu) while the grid has focus. */
+  const pasteHandler = useRef<(event: ClipboardEvent) => void>(() => undefined);
+  pasteHandler.current = (event: ClipboardEvent) => {
+    if (!event.clipboardData || !controller.edits.enabled) return;
+    event.preventDefault();
+    const text = event.clipboardData.getData("text/plain");
+    const html = event.clipboardData.getData("text/html");
+    // Spreadsheets copy both; their text is tab-separated values. A table copied from a page may have only HTML.
+    void pasteValues(text ? parseTsv(text) : html ? parseHtmlTable(html) : null);
+  };
+
+  /** Paste from the context menu, which reads the clipboard with the Clipboard API (the browser may ask). */
+  async function pasteFromClipboard() {
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
+    try {
+      if (!clipboard) throw new Error("The clipboard is not available.");
+      let text = "";
+      let html = "";
+      if (clipboard.read) {
+        for (const item of await clipboard.read()) {
+          if (!text && item.types.includes("text/plain")) text = await (await item.getType("text/plain")).text();
+          if (!html && item.types.includes("text/html")) html = await (await item.getType("text/html")).text();
+        }
+      } else {
+        text = await clipboard.readText();
+      }
+      await pasteValues(text ? parseTsv(text) : html ? parseHtmlTable(html) : null);
+    } catch (error) {
+      announce(messages.pasteFailed(error instanceof Error ? error.message : String(error)));
+    }
+  }
+
+  /** Checks and writes cells as one write, telling the user what failed. Resolves whether it was written. */
+  async function writeCells(inputs: (TargetCell & { text: string })[], reason: GridEditReason, signal?: AbortSignal) {
+    const c = controller;
+    const prepared = await c.edits.prepare(inputs, reason, signal);
     if (!prepared.ok) {
-      announce(messages.editProblems(count(prepared.problems.length), problemText(prepared.problems[0].problem)));
+      const first = prepared.problems[0];
+      const where = messages.cell(count(first.row + 1), labelOf(first.col));
+      announce(messages.editProblems(count(prepared.problems.length), `${where}: ${problemText(first.problem)}`));
       return false;
     }
     const saved = await c.edits.write(prepared.changes, reason);
@@ -1214,6 +1301,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       }
       case "Escape":
         if (copyAbort.current) copyAbort.current.abort();
+        else if (pasteAbort.current) pasteAbort.current.abort();
         else if (findOpen) setFindOpen(false);
         else if (!c.selection.single) {
           c.selection.select(c.selection.active);
@@ -1425,6 +1513,11 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                 // After the menu returned the focus to the grid.
                 setTimeout(() => startEdit("edit"), 0);
               },
+            },
+            {
+              label: messages.paste,
+              shortcut: isMac ? "⌘V" : "Ctrl+V",
+              onSelect: () => void pasteFromClipboard(),
             },
             {
               label: messages.clearCells,

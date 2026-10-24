@@ -218,3 +218,77 @@ test("target cells read the rows' positions of a view when they are not loaded",
   );
   grid.dispose();
 });
+
+test("pasted values go from the top-left cell, repeat over a multiple, and stop at the table's end", async () => {
+  const grid = await mounted(people());
+  const plan = async () =>
+    (await grid.edits.pasteTargets([["a", "1"], ["b"]])).inputs.map((cell) => [cell.rowId, cell.column, cell.text]);
+  grid.selection.select({ row: 1, col: 0 });
+  assert.deepEqual(await plan(), [
+    [1, 0, "a"],
+    [1, 1, "1"],
+    [2, 0, "b"],
+    [2, 1, ""],
+  ]);
+  // Two rows of values cut at the end of the table.
+  grid.selection.select({ row: 2, col: 2 });
+  const cut = await grid.edits.pasteTargets([
+    ["1", "2", "3"],
+    ["4", "5", "6"],
+  ]);
+  assert.deepEqual([cut.cutRows, cut.cutCols], [1, 1]);
+  assert.deepEqual(
+    cut.inputs.map((cell) => cell.column),
+    [2, 3],
+    "the read-only column is returned so that the paste is refused",
+  );
+  const refused = await grid.edits.prepare(cut.inputs, "paste");
+  assert.equal(refused.ok, false);
+  // A selection twice the values' height repeats them.
+  grid.selection.select({ row: 0, col: 1 });
+  grid.selection.select({ row: 1, col: 1 }, "extend");
+  const repeated = await grid.edits.pasteTargets([["7"]]);
+  assert.deepEqual(
+    repeated.inputs.map((cell) => cell.text),
+    ["7", "7"],
+  );
+  // One value fills several ranges; more values cannot be pasted into them.
+  grid.selection.select({ row: 0, col: 0 }, "add");
+  assert.equal((await grid.edits.pasteTargets([["z"]])).inputs.length, 3);
+  await assert.rejects(grid.edits.pasteTargets([["a", "b"]]), { name: "Error", message: /one range/ });
+  grid.dispose();
+});
+
+test("a paste is checked as a whole and written as one write", async () => {
+  const source = people();
+  const grid = await mounted(source);
+  grid.selection.select({ row: 0, col: 1 });
+  const bad = await grid.edits.pasteTargets([
+    ["40", "10,000.5"],
+    ["x", "2"],
+  ]);
+  const refused = await grid.edits.prepare(bad.inputs, "paste");
+  assert.ok(!refused.ok);
+  assert.deepEqual(
+    refused.problems.map((problem) => [problem.row, problem.col, problem.problem]),
+    [
+      [0, 2, { kind: "input", error: "precision" }],
+      [1, 1, { kind: "input", error: "number" }],
+    ],
+  );
+  const good = await grid.edits.pasteTargets([
+    ["40", "1,000.5"],
+    ["41", "2"],
+  ]);
+  const prepared = await grid.edits.prepare(good.inputs, "paste");
+  assert.ok(prepared.ok);
+  assert.equal(await grid.edits.write(prepared.changes, "paste"), true);
+  const info = await source.info();
+  assert.deepEqual(info.edits, { version: 1, cells: 4 });
+  const rows = await source.readRows({ view: null, start: 0, end: 2, columns: [1, 2] });
+  assert.deepEqual(rows.columns, [
+    [40, 41],
+    ["1000.5", "2"],
+  ]);
+  grid.dispose();
+});

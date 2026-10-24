@@ -360,6 +360,7 @@ the error to reject with when a signal aborts, and `isAbortError(error)` recogni
 | `numericValue(value, type)` | A value as a JavaScript number, or `null`. |
 | `ValueFormatter` | Formats values for display in a locale, as the grid does. |
 | `toTsv`, `toHtmlTable`, `toMarkdownTable` | Serialize rows of values as the grid's copies do. |
+| `parseTsv(text)`, `parseHtmlTable(html)` | Read rows of cells from the clipboard: tab-separated values as spreadsheets copy them (quoted fields with tabs and line breaks), and the first HTML table (`colspan` and `rowspan` filled), without a DOM. |
 | `copyLayout(ranges)` | The rows and columns that a copy of several ranges writes, or null when they cannot be copied together. |
 | `isNumericType(type)`, `isTemporalType(type)` | Group column types. |
 | `parseProtocolRequest(body)` | Validates a protocol request, for servers. |

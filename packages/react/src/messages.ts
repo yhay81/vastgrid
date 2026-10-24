@@ -211,6 +211,16 @@ export interface Messages {
   editRevisionChanged: string;
   editOverwrite: string;
   editDiscard: string;
+  /** Pasting cells (in a grid that edits). */
+  paste: string;
+  pasting: string;
+  pasteCanceled: string;
+  pasteEmpty: string;
+  /** Several ranges are selected and the clipboard holds more than one value. */
+  pasteRanges: string;
+  /** Rows and columns of the pasted values past the end of the table. */
+  pasteCut: (rows: string, cols: string) => string;
+  pasteFailed: (message: string) => string;
 }
 
 export const en: Messages = {
@@ -437,6 +447,13 @@ export const en: Messages = {
   editRevisionChanged: "Not saved: the table was read again, so its rows may be other records now.",
   editOverwrite: "Overwrite",
   editDiscard: "Discard",
+  paste: "Paste",
+  pasting: "Reading the rows to paste into… Esc cancels.",
+  pasteCanceled: "Paste cancelled.",
+  pasteEmpty: "Nothing to paste.",
+  pasteRanges: "Several ranges can take one pasted value only. Select one range.",
+  pasteCut: (rows, cols) => `Left out past the end of the table: ${rows} rows, ${cols} columns.`,
+  pasteFailed: (message) => `Could not read the clipboard: ${message}`,
 };
 
 const number = (value: string) => value;
@@ -664,6 +681,13 @@ export const ja: Messages = {
   editRevisionChanged: "保存できませんでした：表が読み直され、行が別のレコードを指している可能性があります。",
   editOverwrite: "上書き",
   editDiscard: "破棄",
+  paste: "貼り付け",
+  pasting: "貼り付け先の行を読んでいます…（Esc で取消）",
+  pasteCanceled: "貼り付けを取り消しました。",
+  pasteEmpty: "貼り付けるものがありません。",
+  pasteRanges: "複数の範囲に貼り付けられるのは 1 つの値だけです。範囲を 1 つにしてください。",
+  pasteCut: (rows, cols) => `表の外にはみ出した ${rows} 行・${cols} 列は貼り付けませんでした。`,
+  pasteFailed: (message) => `クリップボードを読めませんでした：${message}`,
 };
 
 /** Picks the built-in messages for a locale ("ja…" → Japanese, otherwise English). */

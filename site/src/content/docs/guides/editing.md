@@ -38,6 +38,7 @@ const source = useMemo(() => new ArraySource({ columns, rows, editable: true }),
 | Alt + Enter (also ⌃↩ on a Mac) | New line in the editor |
 | Esc | Cancel, keeping the value |
 | Delete · Backspace | Clear the selected cells (every range) |
+| ⌘/Ctrl + V | Paste from the selection's top-left cell (see [Pasting](#pasting)) |
 
 Clicking elsewhere saves too. Keys that end an IME composition (Enter, Esc) are left to the IME. The
 editor is a text field over the cell, in the page rather than on the canvas, so it works with IMEs,
@@ -71,6 +72,30 @@ display is read whole before it is edited.
 After the type, `validateCell` checks the value: return a message to refuse it, or nothing to accept it.
 It may return a promise, for example to ask a server; the editor shows "Checking…" meanwhile. A refused
 value keeps the editor open with the message.
+
+## Pasting
+
+⌘/Ctrl + V (or "Paste" in the context menu, which may ask for permission to read the clipboard) pastes
+what Excel, Numbers, Google Sheets or a web page copied:
+
+- **What is read.** The clipboard's text as tab-separated values (`parseTsv`): rows end with a line
+  break, quoted fields may hold tabs, line breaks and `""` quotes, and empty cells are blanks. Without
+  text, the first HTML table (`parseHtmlTable`), with `colspan` and `rowspan` filled with empty cells.
+- **Where it goes.** From the top-left cell of the selection, over the visible columns in display order.
+  A selection that is a whole multiple of the pasted rows and columns is filled by repeating them, as in
+  spreadsheets. One value fills every selected cell, also of several ranges; more values cannot be
+  pasted into several ranges.
+- **Past the end.** Rows and columns beyond the end of the view are left out, and the notice says how
+  many; rows are never added.
+- **Values.** Every value is checked first, as typed values are, except that numbers may group their
+  digits with commas (`1,234.50`). One value that does not fit, a read-only column in the target, or a
+  value `validateCell` refuses, refuses the whole paste, and the notice names the first cell and the
+  number of cells. Nothing is written then.
+- **One write.** The cells are written with one `updateCells` request, which the source saves together
+  or not at all; a failure is shown as for one cell (Retry, Discard). At most 100,000 cells
+  (`MAX_UPDATE_CELLS`) are pasted at once.
+- **Rows not loaded.** Pasting into rows that are not loaded first reads their positions (a request
+  without columns). Esc cancels the paste while it reads them; nothing is written then.
 
 ## Saving
 

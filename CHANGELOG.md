@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `vastgrid`: ⌘/Ctrl + V (and "Paste" in the context menu) pastes cells copied from Excel, Numbers, Google
+  Sheets or web pages into a grid that edits: from the selection's top-left cell, repeated over a
+  selection that is a whole multiple of them, one value into every selected cell of several ranges, and
+  without the rows and columns past the end of the table (never adding rows). Every value is checked
+  first (numbers may group digits with commas); one value that does not fit refuses the paste. The cells
+  are written as one write of at most 100,000 cells, and Esc cancels a paste that reads rows first.
+- `vastgrid-core`: `parseTsv` and `parseHtmlTable` read the clipboard's tab-separated values (quoted
+  fields with tabs and line breaks) and HTML tables (`colspan`, `rowspan`) without a DOM;
+  `parseCellInput` takes `{ grouping: true }` for grouped digits.
+
 - `vastgrid`: cells can be edited in grids whose source can write them (`capabilities.edit`). Typing
   replaces the active cell's value (also with an IME: the editor is a text field over the cell), F2 or a
   double click edits it, Enter and Tab save and move, Alt+Enter starts a new line, Esc cancels, and Delete

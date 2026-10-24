@@ -31,6 +31,14 @@ export type CellInputError =
 
 export type CellInputResult = { ok: true; value: CellValue } | { ok: false; error: CellInputError };
 
+export interface CellInputOptions {
+  /**
+   * Accept numbers with their digits grouped by commas (`1,234.5`), as spreadsheets copy formatted
+   * numbers. The commas must group three digits each.
+   */
+  grouping?: boolean;
+}
+
 const writable = new Set<ColumnType>([
   "integer",
   "bigint",
@@ -54,6 +62,10 @@ export function editableType(type: ColumnType) {
 /** Whether the grid may write a column: its type can be written and the source does not mark it read-only. */
 export function editableColumn(column: ColumnSchema) {
   return column.readOnly !== true && editableType(column.type);
+}
+
+function isNumericColumn(type: ColumnType) {
+  return type === "integer" || type === "bigint" || type === "float" || type === "decimal";
 }
 
 /** Ranges of integer types by their engine name; others are checked as 64-bit (bigint) or exact JS integers. */
@@ -187,12 +199,15 @@ function parseTimestamp(text: string, zoned: boolean): CellInputResult {
  * `yyyy-MM-dd` (or `yyyy/MM/dd`), times as `HH:mm[:ss[.fff]]`, timestamps as a date, a space or `T`,
  * and a time (with an offset or `Z` for `timestamptz`).
  */
-export function parseCellInput(text: string, column: ColumnSchema): CellInputResult {
+export function parseCellInput(text: string, column: ColumnSchema, options: CellInputOptions = {}): CellInputResult {
   if (!editableType(column.type)) return { ok: false, error: "type" };
   // Text keeps its spaces, unless it is only spaces.
   if (column.type === "string") return { ok: true, value: text.trim() === "" ? null : text };
-  const trimmed = text.trim();
+  let trimmed = text.trim();
   if (trimmed === "") return { ok: true, value: null };
+  if (options.grouping && /^[+-]?\d{1,3}(,\d{3})+(\.\d*)?$/.test(trimmed) && isNumericColumn(column.type)) {
+    trimmed = trimmed.replaceAll(",", "");
+  }
   switch (column.type) {
     case "integer":
     case "bigint":

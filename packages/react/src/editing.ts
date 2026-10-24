@@ -114,6 +114,22 @@ export type Prepared =
   | { ok: true; changes: PlacedChange[] }
   | { ok: false; problems: (CellInput & { problem: CellProblem })[] };
 
+/** Where pasted values go (see `GridEdits.pasteTargets`). */
+export interface PastePlan {
+  /** The cells and their pasted text. */
+  inputs: (TargetCell & { text: string })[];
+  /** Rows and columns of the pasted values that fell outside the table and were left out. */
+  cutRows: number;
+  cutCols: number;
+}
+
+/** Values cannot be pasted into several ranges at once, unless they are one value. */
+export class PasteRangesError extends Error {
+  constructor() {
+    super("Paste into one range, or paste a single value.");
+  }
+}
+
 export class EditTooLargeError extends Error {
   constructor(readonly limit: number) {
     super(`Write at most ${limit} cells at once.`);
@@ -209,7 +225,8 @@ export class GridEdits {
         problems.push({ ...input, problem: { kind: "readOnly" } });
         continue;
       }
-      const parsed = parseCellInput(input.text, schema);
+      // Pasted numbers may be formatted with grouped digits (1,234.5).
+      const parsed = parseCellInput(input.text, schema, { grouping: reason === "paste" });
       if (!parsed.ok) {
         problems.push({ ...input, problem: { kind: "input", error: parsed.error } });
         continue;
@@ -252,14 +269,21 @@ export class GridEdits {
   }
 
   /**
-   * The cells of view rows `[start, end)` in the visible columns `cols` that can be written, with their
-   * rows' positions in the table: from the loaded rows, or read from the source for the others.
+   * The cells of view rows `[start, end)` in the visible columns `cols` that can be written (with
+   * `readOnly`, also the others), with their rows' positions in the table: from the loaded rows, or read
+   * from the source for the others.
    */
-  async targetCells(start: number, end: number, cols: number[], signal?: AbortSignal): Promise<TargetCell[]> {
+  async targetCells(
+    start: number,
+    end: number,
+    cols: number[],
+    signal?: AbortSignal,
+    readOnly = false,
+  ): Promise<TargetCell[]> {
     const c = this.controller;
     const columns = cols.flatMap((col) => {
       const state = c.visible[col];
-      return state && this.columnEditable(state.index) ? [{ col, column: state.index }] : [];
+      return state && (readOnly || this.columnEditable(state.index)) ? [{ col, column: state.index }] : [];
     });
     if (columns.length === 0 || end <= start) return [];
     if ((end - start) * columns.length > MAX_UPDATE_CELLS) throw new EditTooLargeError(MAX_UPDATE_CELLS);
@@ -286,6 +310,55 @@ export class GridEdits {
       }
     }
     return cells;
+  }
+
+  /**
+   * The cells that pasted values (rows of cells, for example from `parseTsv`) go into, from the top-left
+   * cell of the selection:
+   *
+   * - The values are pasted once, or repeated over a selection that is a whole multiple of their rows
+   *   and columns (as spreadsheets do).
+   * - A single value goes into every selected cell, also of several ranges; more values cannot be
+   *   pasted into several ranges (`PasteRangesError`).
+   * - Rows and columns past the end of the view are left out (`cutRows`, `cutCols`); rows are never added.
+   * - Read-only columns are not skipped: their cells are returned, so that `prepare` refuses the paste.
+   */
+  async pasteTargets(values: string[][], signal?: AbortSignal): Promise<PastePlan> {
+    const c = this.controller;
+    const height = values.length;
+    const width = values.reduce((most, row) => Math.max(most, row.length), 0);
+    const ranges = c.selection.ranges;
+    if (height === 0 || width === 0 || ranges.length === 0) return { inputs: [], cutRows: 0, cutCols: 0 };
+    const single = height === 1 && width === 1;
+    if (ranges.length > 1 && !single) throw new PasteRangesError();
+    const areas = ranges.map((range) => {
+      const rows = range.bottom - range.top + 1;
+      const cols = range.right - range.left + 1;
+      // A selection that holds the values a whole number of times is filled with them.
+      const repeat = ranges.length > 1 || (rows % height === 0 && cols % width === 0);
+      return { top: range.top, left: range.left, rows: repeat ? rows : height, cols: repeat ? cols : width };
+    });
+    let cutRows = 0;
+    let cutCols = 0;
+    let cells = 0;
+    for (const area of areas) {
+      cutRows = Math.max(cutRows, area.top + area.rows - c.rowCount);
+      cutCols = Math.max(cutCols, area.left + area.cols - c.visible.length);
+      area.rows = Math.max(0, Math.min(area.rows, c.rowCount - area.top));
+      area.cols = Math.max(0, Math.min(area.cols, c.visible.length - area.left));
+      cells += area.rows * area.cols;
+    }
+    if (cells > MAX_UPDATE_CELLS) throw new EditTooLargeError(MAX_UPDATE_CELLS);
+    const inputs: (TargetCell & { text: string })[] = [];
+    for (const area of areas) {
+      const cols = Array.from({ length: area.cols }, (_, offset) => area.left + offset);
+      const targets = await this.targetCells(area.top, area.top + area.rows, cols, signal, true);
+      for (const target of targets) {
+        const text = values[(target.row - area.top) % height]?.[(target.col - area.left) % width] ?? "";
+        inputs.push({ ...target, text });
+      }
+    }
+    return { inputs, cutRows: Math.max(0, cutRows), cutCols: Math.max(0, cutCols) };
   }
 
   /**

@@ -385,7 +385,8 @@ See [Exporting](https://vastgrid.yhay81.com/guides/export/).
 The grid edits sources that can write cells (`capabilities.edit`): `ArraySource` with `editable: true`,
 and the DuckDB server when its engine is created with `editable: true`; other sources stay read-only.
 Typing replaces the active cell (IMEs work: the editor is a text field over the cell), F2 or a double
-click edits it, Enter or Tab saves and moves, Esc cancels, and Delete clears the selected cells. Values
+click edits it, Enter or Tab saves and moves, Esc cancels, Delete clears the selected cells, and ⌘/Ctrl +
+V pastes ranges copied from Excel or Google Sheets (TSV or HTML tables), checking every value first. Values
 are checked against the column's type without losing digits (64-bit integers and decimals stay text) and
 by `validateCell`, which may be asynchronous. Writes show while they save, and failures and conflicts with
 other users' changes offer Retry, Overwrite or Discard. After a write the grid reads the rows again and,
@@ -470,7 +471,7 @@ flowchart LR
 | ⌘/Ctrl + F | Find |
 | Alt + ↓ | Column menu (sort, filter, statistics, freeze, hide) |
 | F2 · double click | Show the full value of the cell (edit it, in a grid that edits) |
-| Typing · Delete (in a grid that edits) | Replace the active cell's value · clear the selected cells |
+| Typing · Delete · ⌘/Ctrl + V (in a grid that edits) | Replace the active cell's value · clear the selected cells · paste |
 | Alt + Enter (again: into the panel) · Esc | Open the detail panel of the active row · close it |
 | Shift + F10 · context menu key · right click | Cell menu (copy, filter to value, sort) |
 
