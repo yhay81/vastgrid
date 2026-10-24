@@ -46,7 +46,6 @@ import {
   type SelectionSummary,
   type SheetInfo,
   SourceError,
-  sameCellValue,
   type TableEdits,
   type TableInfo,
   tooManyColumns,
@@ -880,25 +879,32 @@ export class OpenTable {
     const engine = this.engine;
     return engine.withConnection(signal, async (connection) => {
       if (this.disposed) throw new SourceError(ErrorCodes.cancelled, "The table was closed.", 409);
-      // Cells changed since the client read them are not overwritten.
+      // Cells changed since the client read them are not overwritten. The values are compared as the column's
+      // type, so that what the client typed (1.5) matches what the column holds (1.500, or the nearest FLOAT).
       for (const [index, rows] of columns) {
         const checked = [...rows].filter(([, update]) => update.previous !== undefined);
         const column = this.column(index);
+        const id = quoteIdentifier(column.name);
         for (let from = 0; from < checked.length; from += LOOKUP_BATCH) {
           const batch = checked.slice(from, from + LOOKUP_BATCH);
+          const params = new Parameters();
           // The positions are validated integers, so listing them inline is safe.
-          const result = await connection.runAndReadAll(
-            `SELECT ${this.position}, ${selectExpression(column, MAX_TEXT_LIMIT)} FROM ${this.relation} WHERE ${this.position} IN (${batch.map(([row]) => row).join(", ")})`,
+          const expected = batch.map(
+            ([row, update]) =>
+              `(${row}, CAST(${params.add(update.previous === null || update.previous === undefined ? null : String(update.previous))} AS VARCHAR))`,
           );
-          const current = new Map(result.getRowsJS().map((row) => [Number(row[0]), wireValue(row[1])]));
-          for (const [row, update] of batch) {
-            if (!sameCellValue(current.get(row) ?? null, update.previous)) {
-              throw new SourceError(
-                ErrorCodes.editConflict,
-                `Row ${row + 1} of ${column.label ?? column.name} was changed meanwhile.`,
-                409,
-              );
-            }
+          const typed = `TRY_CAST(r.p AS ${column.sqlType})`;
+          const result = await connection.runAndReadAll(
+            `SELECT r.r FROM (VALUES ${expected.join(", ")}) r(r, p) JOIN ${this.relation} b ON b.${this.position} = r.r WHERE NOT (b.${id} IS NOT DISTINCT FROM ${typed} AND (r.p IS NULL) = (${typed} IS NULL)) LIMIT 1`,
+            params.values,
+          );
+          const conflict = result.getRowsJS()[0];
+          if (conflict) {
+            throw new SourceError(
+              ErrorCodes.editConflict,
+              `Row ${Number(conflict[0]) + 1} of ${column.label ?? column.name} was changed meanwhile.`,
+              409,
+            );
           }
         }
       }
@@ -906,6 +912,8 @@ export class OpenTable {
       /** The first write: requests read the written cells through a new relation from now on. */
       let switched = false;
       let updated = 0;
+      // The file's rows, under the written cells.
+      const base = this.base ?? { relation: this.relation, position: this.position };
       await connection.run("BEGIN TRANSACTION");
       try {
         for (const [index, rows] of columns) {
@@ -930,6 +938,11 @@ export class OpenTable {
               ([row, update]) => `(${row}, CAST(${params.add(update.value)} AS ${column.sqlType}), false)`,
             );
             await connection.run(`INSERT INTO ${quoteIdentifier(table)} VALUES ${values.join(", ")}`, params.values);
+            // A value written back to what the file holds is no change: the cell reads the file's value again,
+            // and saving leaves its record as it is.
+            await connection.run(
+              `DELETE FROM ${quoteIdentifier(table)} e WHERE ${ROW_COLUMN} IN (${batch.map(([row]) => row).join(", ")}) AND v IS NOT DISTINCT FROM (SELECT b.${quoteIdentifier(column.name)} FROM ${base.relation} b WHERE b.${base.position} = e.${ROW_COLUMN})`,
+            );
           }
           updated += rows.size;
         }
@@ -1031,10 +1044,19 @@ export class OpenTable {
     if ((await fileRevision(this.path)) !== this.fileState) throw changed();
     const { edits, dialect } = await engine.withConnection(signal, async (connection) => {
       const edits = new Map<number, Map<number, string | null>>();
+      if (this.editedCells === 0) return { edits, dialect: null };
+      const dialect = await this.dialect(connection);
       for (const [index, table] of this.editTables) {
-        // DuckDB's own text of each value, which it reads back as the same value.
+        // The text DuckDB reads back as the same value: in the file's date or timestamp format, when it has
+        // one, otherwise DuckDB's own text.
+        const column = this.column(index);
+        const format =
+          column.type === "date" ? dialect.dateFormat : column.type === "timestamp" ? dialect.timestampFormat : "";
+        const text = format ? "strftime(v, $1)" : "CAST(v AS VARCHAR)";
+        if (format) await this.checkFormat(connection, table, column, format);
         const result = await connection.runAndReadAll(
-          `SELECT ${ROW_COLUMN}, CAST(v AS VARCHAR) FROM ${quoteIdentifier(table)} WHERE NOT saved`,
+          `SELECT ${ROW_COLUMN}, ${text} FROM ${quoteIdentifier(table)} WHERE NOT saved`,
+          format ? [format] : [],
         );
         for (const [row, value] of result.getRowsJS()) {
           let fields = edits.get(Number(row));
@@ -1045,7 +1067,7 @@ export class OpenTable {
           fields.set(index, value === null ? null : String(value));
         }
       }
-      return { edits, dialect: edits.size > 0 ? await this.dialect(connection) : null };
+      return { edits, dialect };
     });
     if (!dialect || edits.size === 0) return 0;
     const temporary = path.join(
@@ -1082,9 +1104,24 @@ export class OpenTable {
       throw error;
     }
     this.fileState = await fileRevision(this.path);
+    // The file has the written values now: they become the table's own, so that a value written later is
+    // compared with what the file holds (see `write`).
     await engine.withConnection(undefined, async (connection) => {
-      for (const table of this.editTables.values())
-        await connection.run(`UPDATE ${quoteIdentifier(table)} SET saved = true`);
+      const base = this.base ?? { relation: this.relation, position: this.position };
+      await connection.run("BEGIN TRANSACTION");
+      try {
+        for (const [index, table] of this.editTables) {
+          const id = quoteIdentifier(this.column(index).name);
+          await connection.run(
+            `UPDATE ${base.relation} SET ${id} = e.v FROM ${quoteIdentifier(table)} e WHERE ${base.relation}.${base.position} = e.${ROW_COLUMN}`,
+          );
+          await connection.run(`DELETE FROM ${quoteIdentifier(table)}`);
+        }
+        await connection.run("COMMIT");
+      } catch (error) {
+        await connection.run("ROLLBACK").catch(() => undefined);
+        throw error;
+      }
       this.editedCells = await this.countEdits(connection);
     });
     this.editVersion++;
@@ -1096,7 +1133,7 @@ export class OpenTable {
     const options = `${this.format === "tsv" ? ", delim='\\t'" : ""}, null_padding=true${this.loadAttempt === 1 ? ", sample_size=-1" : ""}`;
     const row = (
       await connection.runAndReadAll(
-        `SELECT Delimiter, Quote, Escape, Comment, SkipRows, HasHeader FROM sniff_csv($1${options})`,
+        `SELECT Delimiter, Quote, Escape, Comment, SkipRows, HasHeader, DateFormat, TimestampFormat FROM sniff_csv($1${options})`,
         [this.loadedSource],
       )
     ).getRowsJS()[0];
@@ -1109,7 +1146,35 @@ export class OpenTable {
       escape: text(row[2]) || quote,
       skipRows: Number(row[4] ?? 0),
       header: row[5] === true,
+      dateFormat: text(row[6]),
+      timestampFormat: text(row[7]),
     };
+  }
+
+  /**
+   * Refuses to save values of a column read with a date or timestamp format that does not read back what
+   * it writes (for example a format without the year), since the file would hold other values.
+   */
+  private async checkFormat(connection: DuckDBConnection, table: string, column: SqlColumn, format: string) {
+    const read =
+      column.type === "date" ? "CAST(try_strptime(strftime(v, $1), $1) AS DATE)" : "try_strptime(strftime(v, $1), $1)";
+    let lost: unknown;
+    try {
+      lost = (
+        await connection.runAndReadAll(
+          `SELECT count(*) FROM ${quoteIdentifier(table)} WHERE NOT saved AND v IS NOT NULL AND ${read} IS DISTINCT FROM v`,
+          [format],
+        )
+      ).getRowsJS()[0][0];
+    } catch {
+      lost = 1;
+    }
+    if (Number(lost) > 0) {
+      throw new CsvSaveError(
+        "unsupported",
+        `The values of ${column.label ?? column.name} cannot be written in the file's format (${format}).`,
+      );
+    }
   }
 
   /** Creates (or replaces) the view that reads the written cells over the file's rows. Returns its name. */

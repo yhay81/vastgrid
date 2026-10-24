@@ -24,6 +24,9 @@ export interface CsvDialect {
   header: boolean;
   /** Lines before the header, as DuckDB skips them. */
   skipRows: number;
+  /** The `strptime` formats DuckDB read dates and timestamps with, or "" for ISO text. */
+  dateFormat?: string;
+  timestampFormat?: string;
 }
 
 /** Why a file cannot be saved, as a stable code with a message. */
