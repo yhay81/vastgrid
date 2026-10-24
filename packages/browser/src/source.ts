@@ -11,6 +11,7 @@ import {
   type RowRequest,
   type SelectionSummary,
   SourceError,
+  type TableChangeListener,
   type TableInfo,
   type TableSource,
   type ViewInfo,
@@ -30,6 +31,12 @@ export type BrowserSourceOptions = TableInput &
      * `import BrowserWorker from "vastgrid-browser/worker?worker"` in Vite.
      */
     worker?: () => WorkerLike;
+    /**
+     * Files at a URL: how often a subscribed grid asks the server whether the file changed (a `HEAD`
+     * request comparing `ETag`, `Last-Modified` or the size), in milliseconds. Default 5,000, at least
+     * 500; `0` turns it off. Local files cannot be watched.
+     */
+    changeInterval?: number;
   };
 
 interface Pending {
@@ -60,6 +67,8 @@ export class BrowserSource implements TableSource {
   private nextId = 1;
   private failure: SourceError | null = null;
   private closed = false;
+  private readonly listeners = new Set<TableChangeListener>();
+  private stopWatching: (() => void) | null = null;
 
   constructor(options: BrowserSourceOptions) {
     this.options = options;
@@ -67,7 +76,7 @@ export class BrowserSource implements TableSource {
 
   private connect() {
     if (this.worker) return this.worker;
-    const { worker: create = defaultWorker, ...rest } = this.options;
+    const { worker: create = defaultWorker, changeInterval: _interval, ...rest } = this.options;
     const input: TableInput =
       "url" in rest ? { url: rest.url } : { file: rest.file, name: rest.name ?? (rest.file as Partial<File>).name };
     const { url: _url, file: _file, name: _name, ...options } = rest as Record<string, unknown>;
@@ -174,6 +183,47 @@ export class BrowserSource implements TableSource {
     return this.call("find", [request], signal);
   }
 
+  /**
+   * Files at a URL: calls `listener` when the file on the server changed, checked every
+   * `changeInterval` milliseconds while there are listeners. The next `info()` reads the new file.
+   */
+  subscribe(listener: TableChangeListener): () => void {
+    this.listeners.add(listener);
+    if (!this.stopWatching) this.stopWatching = this.watch();
+    return () => {
+      this.listeners.delete(listener);
+      if (this.listeners.size === 0) this.unwatch();
+    };
+  }
+
+  private watch() {
+    const interval = this.options.changeInterval ?? 5000;
+    if (!("url" in this.options) || interval <= 0) return () => undefined;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      try {
+        // Only an open file is compared; `info()` opens it.
+        if (this.worker && (await this.call<boolean>("checkChanges", [], controller.signal))) {
+          for (const listener of [...this.listeners]) listener({});
+        }
+      } catch {
+        // Ask again at the next interval; errors reach the grid through its own requests.
+      }
+      if (!controller.signal.aborted && !this.closed) timer = setTimeout(tick, Math.max(500, interval));
+    };
+    timer = setTimeout(tick, Math.max(500, interval));
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }
+
+  private unwatch() {
+    this.stopWatching?.();
+    this.stopWatching = null;
+  }
+
   /** Bytes read from the file or the network so far, and how many reads (HTTP requests) it took. */
   transfer(signal?: AbortSignal): Promise<Transfer> {
     return this.call("transfer", [], signal);
@@ -183,6 +233,8 @@ export class BrowserSource implements TableSource {
   close() {
     if (this.closed) return;
     this.closed = true;
+    this.unwatch();
+    this.listeners.clear();
     const error = new SourceError(ErrorCodes.cancelled, "The source was closed.", 499);
     for (const pending of this.pending.values()) pending.reject(error);
     this.pending.clear();

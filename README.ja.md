@@ -144,7 +144,8 @@ const source = new ArraySource({
 | `frozenColumns` | `number` | `0` | 表を開いたときに左に固定する列の数。 |
 | `toolbar` | `boolean` | `true` | 検索欄、適用中の絞り込み、行数を表示します。 |
 | `statusBar` | `boolean` | `true` | アクティブなセルと選択範囲の集計を表示します。 |
-| `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。 |
+| `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。変更を通知する source は自動で読み直されます。 |
+| `followTail` | `boolean` | `false` | 表が変わったとき、最後の行を表示していれば新しい末尾を表示します（`tail -f` のように追記された行を追います）。 |
 | `copyLimit` | `number` | `1000000` | 一度にコピーできるセルの数（選択したすべての範囲の合計）。 |
 | `columnFormats` | `Record<string, ColumnFormat>` | | スキーマの列名ごとの表示設定。表示名、数値と日時の書式、配置、整形関数。 |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | コピーするのを、値とスキーマの列名にするか、表示している文字と表示名にするか。 |
@@ -200,6 +201,21 @@ const formats: Record<string, ColumnFormat> = {
 ```
 
 コピーには値とスキーマの列名が入ります。表示している文字と表示名をコピーするには、`copyValues="formatted"`（列ごとには `copy`）を指定します。詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#列の表示設定)を参照してください。
+
+### 変わるファイル
+
+source が「表が変わった」と通知すると、グリッドは表を読み直します。クエリー・列の設定・スクロール位置・アクティブなセルはそのままです。`RemoteSource` はグリッドが表を表示している間、2 秒ごとにサーバーに問い合わせます。`vastgrid-duckdb` は、ファイルのサイズ・更新日時・先頭のハッシュで、行の追記や書き換えを検出します。続けて届いた通知は 1 回の読み直しにまとめます。
+
+```tsx
+const source = useMemo(
+  () => new RemoteSource({ endpoint: "/api/table", ref: "logs/app.csv", changes: pollChanges({ interval: 1000 }) }),
+  [],
+);
+
+<DataGrid source={source} followTail />; // 行が追記される間、末尾を表示し続ける
+```
+
+通知されるのは表全体の変更だけで、行ごとの差分は通知しません。グリッドは表全体を読み直し、DuckDB ではファイルを読み込み直します。`changes: false` で監視をやめられ、別の `ChangeTransport`（たとえば Server-Sent Events を受け取るもの）でポーリングを置き換えられます。`BrowserSource` は URL のファイルを `ETag`・`Last-Modified`・サイズで監視します（`changeInterval`、既定 5 秒）。ローカルのファイルは監視できません。ディスク上で変わった `File` をブラウザーが読めなくなるためです。
 
 ## 性能
 

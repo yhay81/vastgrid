@@ -23,7 +23,8 @@ import "vastgrid/styles.css";
 | `frozenColumns` | `number` | `0` | 表を開いたときに左に固定する列の数。 |
 | `toolbar` | `boolean` | `true` | 検索欄、適用中の絞り込み、行数を表示します。 |
 | `statusBar` | `boolean` | `true` | アクティブなセルと選択範囲の集計を表示します。 |
-| `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。 |
+| `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。変更を通知する source（`subscribe`）は自動で読み直されます。どちらの場合も、クエリー・列の設定・スクロール位置・アクティブなセルはそのままです。 |
+| `followTail` | `boolean` | `false` | 表が変わったとき、それまで最後の行を表示していれば新しい末尾を表示します（`tail -f` のように追記された行を追います）。 |
 | `copyLimit` | `number` | `1000000` | 一度にコピーできるセルの数（選択したすべての範囲の合計）。 |
 | `columnFormats` | `Record<string, ColumnFormat>` | | スキーマの列名ごとの表示設定。表示名、数値と日時の書式、配置、整形関数。 |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | コピーするのを、値とスキーマの列名にするか、表示している文字と表示名にするか。 |

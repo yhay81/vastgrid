@@ -153,7 +153,8 @@ rows.
 | `frozenColumns` | `number` | `0` | Columns frozen at the left when the table opens. |
 | `toolbar` | `boolean` | `true` | Shows the search box, active filters and row count. |
 | `statusBar` | `boolean` | `true` | Shows the active cell and the selection summary. |
-| `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. |
+| `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. Sources that report their changes are read again by themselves. |
+| `followTail` | `boolean` | `false` | After the table changed, show its end when the last row was shown (for appended rows, as `tail -f`). |
 | `copyLimit` | `number` | `1000000` | Cells that can be copied at once, over all selected ranges. |
 | `columnFormats` | `Record<string, ColumnFormat>` | | Display settings by schema column name: label, number and date formats, alignment, a format function. |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | Copy the values with the schema names, or the shown text with the labels. |
@@ -212,6 +213,28 @@ const formats: Record<string, ColumnFormat> = {
 
 Copies hold the values and the schema names unless `copyValues="formatted"` (or a column's `copy`
 setting) asks for the shown text and the labels. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#column-formats).
+
+### Files that change
+
+A grid reads its table again when the source reports that the table changed, and keeps the query, the
+column settings, the scroll position and the active cell. `RemoteSource` asks the server every 2 seconds
+while a grid shows the table; `vastgrid-duckdb` sees appended rows and rewrites by the file's size,
+modification time and a hash of its beginning. Changes reported close together are read once.
+
+```tsx
+const source = useMemo(
+  () => new RemoteSource({ endpoint: "/api/table", ref: "logs/app.csv", changes: pollChanges({ interval: 1000 }) }),
+  [],
+);
+
+<DataGrid source={source} followTail />; // stays at the end while rows are appended
+```
+
+Only the whole table is reported, never single rows: the grid reads it again, which for DuckDB means
+loading the file again. `changes: false` turns watching off, and another `ChangeTransport` (for example
+one that listens to server-sent events) can replace polling. `BrowserSource` watches files at a URL by
+their `ETag`, `Last-Modified` or size (`changeInterval`, 5 seconds by default); local files cannot be
+watched, since the browser refuses to read a `File` that changed on disk.
 
 ## Performance
 

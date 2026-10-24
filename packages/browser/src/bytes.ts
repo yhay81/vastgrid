@@ -215,6 +215,33 @@ export class HttpBytes implements ByteSource {
     return bytes;
   }
 
+  /**
+   * Asks the server (a `HEAD` request) whether the file changed since it was opened: its `ETag` or
+   * `Last-Modified`, or else its size, differ, or it is gone (404, 410). Null when the answer does not
+   * tell (the server refuses `HEAD`, or sends none of these headers).
+   */
+  async changed(signal?: AbortSignal): Promise<boolean | null> {
+    const fetcher = this.options.fetch ?? fetch;
+    let head: Response;
+    try {
+      head = await fetcher(this.url, {
+        method: "HEAD",
+        headers: this.options.headers,
+        credentials: this.options.credentials,
+        signal,
+      });
+    } catch (error) {
+      if (isKnownError(error)) throw error;
+      return null;
+    }
+    if (head.status === 404 || head.status === 410) return true;
+    if (!head.ok) return null;
+    const validator = validatorOf(head);
+    if (validator && this.revision) return validator !== this.revision;
+    const size = head.headers.get("content-encoding") ? null : lengthOf(head.headers.get("content-length"));
+    return size === null ? null : size !== this.size;
+  }
+
   /** Whether the server ignored `Range` and the whole file was downloaded. */
   get downloaded() {
     return this.whole !== null;

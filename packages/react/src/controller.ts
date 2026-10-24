@@ -1,4 +1,5 @@
 import {
+  type CellPosition,
   type CellValue,
   type ColumnFormat,
   type ColumnFormatter,
@@ -55,6 +56,10 @@ export interface GridOptions {
   columnFormats?: Record<string, ColumnFormat>;
   /** Text copied for cells: the values (`raw`, the default) or the shown text (`formatted`). */
   copyValues?: CopyValues;
+  /** After the table changed, show its end when the last row was shown before (for appended rows). */
+  followTail?: boolean;
+  /** Milliseconds to wait after a change of the table before reading it again, to merge changes (default 300). */
+  changeDelay?: number;
 }
 
 export interface ColumnState {
@@ -240,6 +245,11 @@ export class GridController {
   private disposed = false;
   private polling = false;
   private activeValue: CellValue | undefined;
+  /** Stops listening to the source's changes (`TableSource.subscribe`). */
+  private unsubscribe: (() => void) | null = null;
+  private changeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Where the grid was when it started reading the table again, to return there once it is read. */
+  private restore: { top: number; left: number; active: CellPosition; tail: boolean; lastRow: boolean } | null = null;
 
   constructor(source: TableSource, options: GridOptions) {
     this.source = source;
@@ -421,6 +431,9 @@ export class GridController {
     if (this.polling && !this.lifecycle.signal.aborted) return;
     if (this.lifecycle.signal.aborted) this.lifecycle = new AbortController();
     this.polling = true;
+    if (!this.unsubscribe && this.source.subscribe) {
+      this.unsubscribe = this.source.subscribe(() => this.sourceChanged());
+    }
     if (this.viewBuilding) {
       // `stop()` ended the polling of the view.
       const controller = new AbortController();
@@ -433,18 +446,46 @@ export class GridController {
     });
   }
 
-  /** Reads the table again (for example after the file changed). */
+  /**
+   * Reads the table again (for example after the file changed), keeping the query, the column settings,
+   * the scroll position and the active cell. With `followTail`, a grid that showed the last row shows the
+   * new last row.
+   */
   reload() {
+    if (!this.restore && this.info) {
+      const [, last] = this.visibleRows();
+      const end = this.rowCount > 0 && last >= this.rowCount;
+      this.restore = {
+        top: this.scrollY.position,
+        left: this.scrollX.position,
+        active: this.selection.active,
+        tail: this.options.followTail === true && end,
+        lastRow: this.selection.active.row === this.rowCount - 1,
+      };
+    }
     this.lifecycle.abort();
     this.polling = false;
     this.loadError = null;
     this.start();
   }
 
+  /** Merges the changes reported within `changeDelay` into one reload. */
+  private sourceChanged() {
+    if (this.disposed || this.changeTimer !== undefined) return;
+    this.changeTimer = setTimeout(() => {
+      this.changeTimer = undefined;
+      if (!this.disposed) this.reload();
+    }, this.options.changeDelay ?? 300);
+  }
+
   /** Stops loading and cancels requests. `start()` resumes. */
   stop() {
     this.lifecycle.abort();
     this.polling = false;
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+    clearTimeout(this.changeTimer);
+    this.changeTimer = undefined;
     this.viewAbort?.abort();
     this.summaryAbort?.abort();
     clearTimeout(this.summaryTimer);
@@ -550,7 +591,8 @@ export class GridController {
       this.view = { id: null, rowCount: info.rowCount ?? info.readableRows, query: {} };
       this.viewPending = false;
       this.cache.clear();
-      this.selection.select({ row: 0, col: 0 });
+      // A reload returns to the active cell once the table is read (see `finishRestore`).
+      if (!this.restore) this.selection.select({ row: 0, col: 0 });
       // The summary of the previous selection no longer applies.
       this.scheduleSummary();
     } else if (previous.status !== info.status && types(previous) !== types(info)) {
@@ -562,7 +604,9 @@ export class GridController {
     }
     this.updateLayout();
     if (info.status === "ready" && (reset || previous?.status !== "ready") && !isEmptyQuery(this.query)) {
-      void this.setQuery(this.query);
+      void this.runQuery(this.query, true);
+    } else if (info.status === "ready" && this.restore && !this.viewPending) {
+      this.finishRestore();
     }
     this.emit();
     this.requestRender();
@@ -1026,7 +1070,28 @@ export class GridController {
 
   // ----- views -----
 
-  async setQuery(query: ViewQuery) {
+  setQuery(query: ViewQuery) {
+    // A query of the user's own starts at the top, also while a reload would return elsewhere.
+    this.restore = null;
+    return this.runQuery(query, false);
+  }
+
+  /** Returns to where the grid was before `reload()`, now that the table and its view are read. */
+  private finishRestore() {
+    const restore = this.restore;
+    if (!restore) return;
+    this.restore = null;
+    this.updateLayout();
+    const lastRow = Math.max(0, this.rowCount - 1);
+    const col = Math.min(restore.active.col, Math.max(0, this.visible.length - 1));
+    const row = restore.tail && restore.lastRow ? lastRow : Math.min(restore.active.row, lastRow);
+    this.selection.select({ row, col });
+    const top = restore.tail ? this.rowCount * this.options.rowHeight : restore.top;
+    this.scrollToVirtual(restore.left, top);
+    this.scheduleSummary();
+  }
+
+  private async runQuery(query: ViewQuery, restoring: boolean) {
     this.query = query;
     this.viewAbort?.abort();
     if (this.info?.status !== "ready") {
@@ -1049,9 +1114,16 @@ export class GridController {
       this.viewPending = false;
       this.cache.clear();
       this.updateLayout();
-      this.selection.select({ row: 0, col: Math.min(this.selection.active.col, Math.max(0, this.visible.length - 1)) });
-      this.scrollToVirtual(null, 0);
-      this.scheduleSummary();
+      if (restoring && this.restore) {
+        this.finishRestore();
+      } else {
+        this.selection.select({
+          row: 0,
+          col: Math.min(this.selection.active.col, Math.max(0, this.visible.length - 1)),
+        });
+        this.scrollToVirtual(null, 0);
+        this.scheduleSummary();
+      }
       if (this.viewBuilding) void this.followView(query, controller);
     } catch (error) {
       // Only this grid's own cancellation (a newer query replaced this one) is silent.
@@ -1061,6 +1133,7 @@ export class GridController {
       // The server is loading the table again (it closed it, for example because the file changed):
       // follow that load, which applies the query once the table is ready.
       if (codeOf(error) === ErrorCodes.notReady) this.reload();
+      else this.restore = null;
     }
     this.emit();
     this.requestRender();
