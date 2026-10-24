@@ -64,6 +64,8 @@ export type ProtocolRequest =
     }
   /** Writes cells (see `TableSource.updateCells`): all of them, or none. */
   | { op: "update"; table: string; updates: CellUpdate[]; revision?: string }
+  /** Saves the written cells into the table's file (see `TableSource.saveEdits`). */
+  | { op: "save"; table: string }
   /** The current revision of the table's data, for watching it for changes without reading it again. */
   | { op: "revision"; table: string }
   | { op: "close"; table: string };
@@ -132,6 +134,10 @@ export const ErrorCodes = {
   editConflict: "edit_conflict",
   /** The table has another revision than the request's: its rows may be other records now. Nothing was written. */
   revisionChanged: "revision_changed",
+  /** The file was changed by someone else since the table read it, so written cells were not saved into it. */
+  fileChanged: "file_changed",
+  /** The file cannot be written back (its format, compression or layout); it was left as it was. */
+  saveUnsupported: "save_unsupported",
   /** Anything else. */
   internalError: "internal_error",
 } as const;
@@ -147,6 +153,7 @@ const operations = new Set<ProtocolOperation>([
   "find",
   "export",
   "update",
+  "save",
   "revision",
   "close",
 ]);
@@ -458,6 +465,8 @@ export function parseProtocolRequest(body: unknown): ProtocolRequest {
       const revision = optionalString(body.revision, "revision", 1024);
       return { op: "update", table, updates: updates(body.updates), ...(revision === undefined ? {} : { revision }) };
     }
+    case "save":
+      return { op: "save", table };
     case "revision":
       return { op: "revision", table };
     case "close":

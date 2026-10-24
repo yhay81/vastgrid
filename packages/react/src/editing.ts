@@ -25,6 +25,7 @@ import {
   MAX_TEXT_LIMIT,
   MAX_UPDATE_CELLS,
   parseCellInput,
+  type SaveResult,
   sameCellValue,
   type UpdateResult,
 } from "vastgrid-core";
@@ -240,6 +241,41 @@ export class GridEdits {
       previous: change.previous,
     }));
     return this.writeBatch(changes, "redo", { entry, direction: "redo" });
+  }
+
+  /** A save into the file is running (see `save`). */
+  savingFile = false;
+
+  /** Whether the source can save written cells into its file now. */
+  get canSave() {
+    const c = this.controller;
+    return this.enabled && typeof c.source.saveEdits === "function" && c.info?.capabilities.save === true;
+  }
+
+  /** Cells written but not saved into the file yet, for sources that save (`capabilities.save`). */
+  get unsaved() {
+    return this.canSave ? (this.controller.info?.edits?.cells ?? 0) : 0;
+  }
+
+  /**
+   * Saves the written cells into the source's file (`TableSource.saveEdits`), after the writes that are
+   * saving. Rejects with the source's error (for example `file_changed`); the file is then left as it was.
+   */
+  async save(signal?: AbortSignal): Promise<SaveResult> {
+    const c = this.controller;
+    const save = c.source.saveEdits;
+    if (!save || !this.canSave) throw new Error("This table cannot be saved into its file.");
+    this.savingFile = true;
+    this.changed();
+    try {
+      await this.queue;
+      const result = await save.call(c.source, signal);
+      if (c.info) c.info = { ...c.info, edits: result.edits };
+      return result;
+    } finally {
+      this.savingFile = false;
+      this.changed();
+    }
   }
 
   /** Forgets what can be undone, for example because the rows' positions name other records now. */

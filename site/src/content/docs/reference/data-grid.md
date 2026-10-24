@@ -75,6 +75,7 @@ A ref gives a `DataGridHandle`:
 | `detailOpen` | Whether the detail panel is open. |
 | `undo()`, `redo()` | Undo or redo the last write, as ⌘/Ctrl + Z and ⌘/Ctrl + Shift + Z do. Resolve whether it was saved. |
 | `history` | What can be undone and redone now (`GridHistoryState`). |
+| `save()` | Saves the written cells into the source's file, as ⌘/Ctrl + S does (sources with `capabilities.save`). Resolves with the records written, or `null` when it failed. |
 | `controller` | The `GridController` with the grid's state: the selection, the layout of the columns, the view. |
 | `renderer` | The `CanvasRenderer`, for diagnostics such as `renderer.timings()`. `null` before the grid mounts. |
 

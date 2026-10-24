@@ -24,6 +24,7 @@ import {
   parseHtmlTable,
   parseTsv,
   type RowSelection,
+  type SaveResult,
   type TableSource,
   type ViewQuery,
 } from "vastgrid-core";
@@ -224,6 +225,12 @@ export interface DataGridHandle {
   redo(): Promise<boolean>;
   /** What can be undone and redone now. */
   readonly history: GridHistoryState;
+  /**
+   * Saves the written cells into the source's file, for sources that can (`capabilities.save`, for example
+   * the DuckDB server with `saveFiles`), as ⌘/Ctrl + S does. Resolves with the records written, or null
+   * when it failed (the grid tells the user why).
+   */
+  save(): Promise<SaveResult | null>;
   readonly controller: GridController;
   /** The canvas renderer, for diagnostics such as `renderer.timings()`. Null before the grid mounts. */
   readonly renderer: CanvasRenderer | null;
@@ -287,13 +294,16 @@ function EditBar({
   controller,
   messages,
   count,
+  onSave,
 }: {
   controller: GridController;
   messages: Messages;
   count: (value: number) => string;
+  onSave: () => void;
 }) {
   const saving = controller.edits.saving;
   const failed = controller.edits.failed;
+  const unsaved = controller.edits.unsaved;
   // Saving is shown only when it takes a moment, so that quick saves do not blink.
   const [slow, setSlow] = useState(false);
   useEffect(() => {
@@ -304,7 +314,18 @@ function EditBar({
     const timer = setTimeout(() => setSlow(true), 400);
     return () => clearTimeout(timer);
   }, [saving]);
-  if (!failed && !(slow && saving > 0)) return null;
+  if (!failed && !(slow && saving > 0) && unsaved === 0) return null;
+  if (!failed && !(slow && saving > 0)) {
+    // Written cells that the file does not have yet.
+    return (
+      <div className="vg-editbar" role="status">
+        <span>{controller.edits.savingFile ? messages.fileSaving : messages.unsavedCells(count(unsaved))}</span>
+        <button type="button" className="vg-button" disabled={controller.edits.savingFile} onClick={onSave}>
+          {messages.saveFile}
+        </button>
+      </div>
+    );
+  }
   if (!failed) {
     return (
       <div className="vg-editbar" role="status">
@@ -654,6 +675,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         return detailOpenRef.current;
       },
       undo: () => controller.edits.undo(),
+      save: () => saveFileRef.current(),
       redo: () => controller.edits.redo(),
       get history() {
         return controller.edits.historyState;
@@ -991,6 +1013,27 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       );
     }
   }
+
+  /** Saves the written cells into the source's file (⌘/Ctrl + S, the edit bar's button). */
+  async function saveFile(): Promise<SaveResult | null> {
+    const c = controller;
+    if (!c.edits.canSave || c.edits.savingFile) return null;
+    try {
+      const result = await c.edits.save();
+      announce(messages.fileSaved(count(result.records)));
+      return result;
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? error.code : undefined;
+      announce(
+        code === "file_changed"
+          ? messages.fileChanged
+          : messages.fileSaveFailed(error instanceof Error ? error.message : String(error)),
+      );
+      return null;
+    }
+  }
+  const saveFileRef = useRef(saveFile);
+  saveFileRef.current = saveFile;
 
   /** Checks and writes cells as one write, telling the user what failed. Resolves whether it was written. */
   async function writeCells(inputs: (TargetCell & { text: string })[], reason: GridEditReason, signal?: AbortSignal) {
@@ -1395,6 +1438,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         } else if (primary && !event.altKey && !event.shiftKey && /^[dr]$/i.test(event.key) && c.edits.enabled) {
           // Instead of the browser's bookmark and reload shortcuts, while the grid has focus.
           void fill(event.key.toLowerCase() === "d" ? "down" : "right");
+        } else if (primary && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "s" && c.edits.canSave) {
+          void saveFile();
         } else if (primary && !event.altKey && event.key.toLowerCase() === "z" && c.edits.enabled) {
           void undoRedo(event.shiftKey ? "redo" : "undo");
         } else if (
@@ -1940,7 +1985,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           />
         )}
       </div>
-      <EditBar controller={c} messages={messages} count={count} />
+      <EditBar controller={c} messages={messages} count={count} onSave={() => void saveFile()} />
       {statusBar && <StatusBar controller={c} messages={messages} />}
       {overlay?.kind === "columnMenu" && (
         <Popover

@@ -184,7 +184,7 @@ rows.
 | `aria-label` | `string` | `messages.gridLabel` | The grid's name for screen readers. |
 
 A ref gives a `DataGridHandle`: `focus()`, `reload()`, `getQuery()`, `setQuery(query)`, `getState()`,
-`applyState(state)`, `goToRow(row)`, `undo()`, `redo()`, `history`, `openDetail({ focus })`, `closeDetail()`, `detailOpen`, `openExport()`, `getRowSelection()`, `setRowSelection(selection)`, the `controller` with the grid's state, and the canvas `renderer` (for
+`applyState(state)`, `goToRow(row)`, `undo()`, `redo()`, `history`, `save()`, `openDetail({ focus })`, `closeDetail()`, `detailOpen`, `openExport()`, `getRowSelection()`, `setRowSelection(selection)`, the `controller` with the grid's state, and the canvas `renderer` (for
 diagnostics such as `renderer.timings()`).
 
 Events give a cell's `row` in the view, its `rowId` in the original table, its visible column `col` and its
@@ -392,9 +392,12 @@ V pastes ranges copied from Excel or Google Sheets (TSV or HTML tables), checkin
 Shift + Z undo and redo whole writes (a paste or a fill at once), keeping types and digits. Values
 are checked against the column's type without losing digits (64-bit integers and decimals stay text) and
 by `validateCell`, which may be asynchronous. Writes show while they save, and failures and conflicts with
-other users' changes offer Retry, Overwrite or Discard. After a write the grid reads the rows again and,
+other users' changes offer Retry, Overwrite or Discard. The DuckDB server can save edited cells back into
+CSV and TSV files with `saveFiles` (⌘/Ctrl + S), rewriting only the edited fields and keeping every other
+byte — quoted line breaks, encodings such as Shift_JIS, the final line break — through a temporary file,
+and refusing files changed by someone else meanwhile. After a write the grid reads the rows again and,
 when the sort or filters use the written column, sorts and filters again; statistics, summaries and
-exports read the new values. The DuckDB engine keeps written values apart from the file.
+exports read the new values. The DuckDB engine keeps written values apart from the file until they are saved.
 
 ```tsx
 <DataGrid source={new ArraySource({ columns, rows, editable: true })} onCellsChange={(event) => save(event)} />
@@ -477,6 +480,7 @@ flowchart LR
 | Typing · Delete · ⌘/Ctrl + V (in a grid that edits) | Replace the active cell's value · clear the selected cells · paste |
 | ⌘/Ctrl + D · ⌘/Ctrl + R (in a grid that edits) | Fill down · right from the selection's first row or column |
 | ⌘/Ctrl + Z · ⌘/Ctrl + Shift + Z or Ctrl + Y (in a grid that edits) | Undo · redo the last write |
+| ⌘/Ctrl + S (sources that save, such as the DuckDB server with `saveFiles`) | Save the edited cells into the file |
 | Alt + Enter (again: into the panel) · Esc | Open the detail panel of the active row · close it |
 | Shift + F10 · context menu key · right click | Cell menu (copy, filter to value, sort) |
 
@@ -512,7 +516,6 @@ npm run bench
 
 ## Roadmap
 
-- CSV write-back of edited cells that keeps untouched rows byte for byte.
 - Formula columns.
 
 See [docs/research.ja.md](docs/research.ja.md) (Japanese) for the survey of existing viewers and grids

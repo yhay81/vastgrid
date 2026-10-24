@@ -441,3 +441,36 @@ test("fill reads the rows it fills when they are not loaded", async () => {
   assert.equal(columnData[0][1999], "v1999");
   grid.dispose();
 });
+
+test("written cells are saved into the source's file after the writes before", async () => {
+  const source = people();
+  let saves = 0;
+  const saving: TableSource = Object.assign(Object.create(source), {
+    info: async () => {
+      const info = await source.info();
+      return { ...info, capabilities: { ...info.capabilities, save: true } };
+    },
+    saveEdits: async () => {
+      saves++;
+      const info = await source.info();
+      return { records: 1, edits: { version: (info.edits?.version ?? 0) + 1, cells: 0 } };
+    },
+  });
+  const grid = await mounted(saving);
+  assert.equal(grid.edits.canSave, true);
+  assert.equal(grid.edits.unsaved, 0);
+  const written = edit(grid, 0, 0, "Ada L.");
+  assert.equal(grid.edits.unsaved, 0, "counted once saved");
+  await written;
+  assert.equal(grid.edits.unsaved, 1);
+  const result = await grid.edits.save();
+  assert.equal(result.records, 1);
+  assert.equal(saves, 1);
+  assert.equal(grid.edits.unsaved, 0);
+  assert.equal(grid.edits.savingFile, false);
+  const plain = await mounted(people());
+  assert.equal(plain.edits.canSave, false);
+  await assert.rejects(plain.edits.save(), /cannot be saved/);
+  grid.dispose();
+  plain.dispose();
+});

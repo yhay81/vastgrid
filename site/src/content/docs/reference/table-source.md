@@ -30,6 +30,8 @@ interface TableSource {
   exportView?(request: ExportRequest, signal?: AbortSignal): Promise<ExportResult>;
   /** Writes cells, all or none, for sources that report `capabilities.edit` (see below). */
   updateCells?(request: UpdateRequest, signal?: AbortSignal): Promise<UpdateResult>;
+  /** Saves the written cells into the table's file, for sources that report `capabilities.save`. */
+  saveEdits?(signal?: AbortSignal): Promise<{ records: number; edits: TableEdits }>;
   /** Calls `listener` when the whole table changed, until the returned function is called. */
   subscribe?(listener: (change: { revision?: string | null; edits?: number }) => void): () => void;
   /** Releases the table. The source must not be used afterwards. */
@@ -326,6 +328,11 @@ Writes keep row positions and the `revision`; they change `TableInfo.edits.versi
 that report changes call their `subscribe` listeners with `{ edits }`. Every later request reads the new
 values; views made before may keep their old rows and order, so the grid creates its view again when its
 query uses a written column. Columns the source does not write have `readOnly: true` in their schema.
+
+Sources that report `capabilities.save` also save the written cells into the file they read with
+`saveEdits` (the DuckDB server with `saveFiles`). It rejects with `file_changed` when the file was changed
+by someone else since it was read, and `save_unsupported` when the file cannot be written back; the
+table keeps its revision and row positions, and its cells count as saved (`edits.cells` is 0).
 
 `parseCellInput(text, column)` reads typed text as a column's type, and `normalizeCellValue(value,
 column)` checks a value written by a program the same way; both keep 64-bit integers and decimals as

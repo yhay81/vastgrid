@@ -99,6 +99,7 @@ export function tableServer(dataDirectory: string): Plugin {
         allowedDirectories: [root],
         tempDirectory: path.join(os.tmpdir(), "vastgrid-playground"),
         editable: true,
+        saveFiles: true,
         log: (message, error) =>
           server.config.logger.warn(`${message}: ${error instanceof Error ? error.message : String(error)}`),
       });

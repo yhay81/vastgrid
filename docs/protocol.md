@@ -61,6 +61,7 @@ seen. It answers `null` when the file is gone.
 | `find` | `table`, `view`, `text`, `columns`, `row`, `column`, `direction` (`1` or `-1`), optional `caseSensitive` | `{ row, column }` or `null` |
 | `export` | `table`, `view`, `format` (`csv`, `tsv`, `parquet`, `json`, `xlsx`), optional `columns`, `headers`, `numberFormats`, `target` | `{ target, rows }` |
 | `update` | `table`, `updates: { row, column, value, previous? }[]`, optional `revision` | `{ updated, edits: { version, cells } }` (see [Writing cells](#writing-cells)) |
+| `save` | `table` | `{ records, edits: { version, cells } }`: written cells saved into the table's file (see [Saving into the file](#saving-into-the-file)) |
 | `revision` | `table` | `{ revision: string \| null, edits?: number }`, the data's current revision (see [Watching for changes](#watching-for-changes)) |
 | `close` | `table` | `null` |
 
@@ -106,6 +107,23 @@ report. Later requests of every client read the written values; views created be
 (`view_not_found`) and are created again. `vastgrid-duckdb` keeps written values in the engine, apart
 from the file, until the table is closed.
 
+### Saving into the file
+
+Servers that report `capabilities.save` accept `save`, which writes the cells written since the last save
+into the file the table was read from. `vastgrid-duckdb` (with `saveFiles`) writes anew only the edited
+fields of the records that hold written cells, keeping every other byte of the file (byte order mark,
+header, other records and fields, delimiters, line breaks, the encoding), in a temporary file that it
+renames over the original. The table keeps its `revision` (the `revision` request keeps answering it for
+the saved file) and its row positions; `edits.cells` becomes 0. Errors, after which the file is as it
+was:
+
+- `file_changed` (409): the file was changed by someone else since the table read (or saved) it.
+- `save_unsupported` (422): the file cannot be written back (not CSV or TSV, compressed, read as
+  irregular text, with comment lines, or records that do not match the rows).
+- `invalid_value` (422): a value cannot be written in the file's encoding.
+- `read_only` (403): saving is not enabled; `not_allowed` (403): the file is not at its real location in
+  the allowed folders any more.
+
 ### `TableInfo`
 
 ```ts
@@ -122,7 +140,7 @@ from the file, until the table is closed.
   notes?: string[];            // encoding:shift_jis, all_varchar, invalid_utf8_replaced, merged_cells, formulas_without_values
   sheets?: { name: string; hidden?: boolean }[]; // workbooks: the sheets, in workbook order
   sheet?: string;              // workbooks: the sheet that was read
-  capabilities: { sort, filter, search, stats, distinct, aggregate, find, export: boolean; conditions?, edit?: boolean };
+  capabilities: { sort, filter, search, stats, distinct, aggregate, find, export: boolean; conditions?, edit?, save?: boolean };
   edits?: { version: number; cells: number }; // written cells, with capabilities.edit
   exports?: { formats: ExportFormat[]; delivery: "file" | "data" }; // what export can write, when it can
 }
@@ -269,6 +287,8 @@ whole query, `where` included.
 | `invalid_value` | 422 | A written value does not fit its column. Nothing was written. |
 | `edit_conflict` | 409 | A cell no longer holds the `previous` value of its update. Nothing was written. |
 | `revision_changed` | 409 | The table has another revision than the `update`'s. Nothing was written. |
+| `file_changed` | 409 | The file was changed by someone else since the table read it; it was not saved. |
+| `save_unsupported` | 422 | The file cannot be written back (its format, compression or layout); it was left as it was. |
 | `internal_error` | 500 | Anything else. |
 
 ## Excel export rules

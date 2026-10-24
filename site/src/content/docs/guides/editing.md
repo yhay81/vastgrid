@@ -37,6 +37,7 @@ const source = useMemo(() => new ArraySource({ columns, rows, editable: true }),
 | Tab · Shift + Tab | Save and move right · left |
 | Alt + Enter (also ⌃↩ on a Mac) | New line in the editor |
 | Esc | Cancel, keeping the value |
+| ⌘/Ctrl + S | Save the written cells into the file (sources that can, see [Saving into the file](#saving-into-the-file)) |
 | Delete · Backspace | Clear the selected cells (every range) |
 | ⌘/Ctrl + V | Paste from the selection's top-left cell (see [Pasting](#pasting)) |
 | ⌘/Ctrl + D · ⌘/Ctrl + R | Fill down · right (see [Filling](#filling)) |
@@ -176,6 +177,53 @@ const [history, setHistory] = useState<GridHistoryState | null>(null);
 <DataGrid ref={grid} source={source} onHistoryChange={setHistory} />
 ```
 
+## Saving into the file
+
+The DuckDB server can write the edited cells back into the CSV or TSV file they came from, when its
+engine is created with `editable: true` and `saveFiles: true` (`capabilities.save`). While cells are
+written but not saved, a line above the status bar says how many, with **Save to file**; ⌘/Ctrl + S and
+the ref's `save()` do the same.
+
+```ts
+const engine = await TableEngine.create({ allowedDirectories: [dataDir], tempDirectory, editable: true, saveFiles: true });
+```
+
+**Every byte that holds no edited cell stays as it was.** The engine finds the file's records as DuckDB
+read them and writes anew only the records with cells written since the last save — and in those, only
+the edited fields. The other fields keep their text (`1.50` stays `1.50`, not `1.5`), and the delimiters
+and line breaks stay. A 74 MB file of a million rows with 100 edited cells saves in about 0.4 s, and
+exactly those 100 lines differ.
+
+| Part of the file | How it is written |
+| --- | --- |
+| Byte order mark, header, lines before the header | Kept |
+| Records without edited cells | Kept, also with line breaks inside quotes |
+| Edited records | The edited fields written anew; the other fields, delimiters and the record's own line break kept |
+| An edited field | DuckDB's text of the value (`2024-01-31`, `12.50`, `true`), quoted with the file's quote when it holds the delimiter, a quote, an escape or a line break; quotes inside are doubled (or escaped with the file's escape); a blank is an empty field |
+| A short record (fewer fields than columns) | Filled with empty fields up to the edited one |
+| Last line break | Kept as it was: present or absent |
+| Encoding | The file's: UTF-8 (with or without a byte order mark), UTF-16 (LE or BE, with its byte order mark), Shift_JIS, EUC-JP and Latin-1. A value the encoding cannot hold (for example an emoji in Shift_JIS) refuses the save (`invalid_value`). |
+| Delimiter, quote, escape | As DuckDB detected them (`sniff_csv`); one ASCII character each. Shift_JIS files whose delimiter, quote or escape is `@` or above (such as `|` or `\`) cannot be saved, since those bytes also occur inside characters. |
+
+**Safety.**
+
+- The file is written under a temporary name next to it (`.name.random.tmp`), synced, and renamed over
+  the original once complete, keeping its permissions. A failed or cancelled save deletes the temporary
+  file and leaves the original as it was.
+- **Changed by someone else.** The engine keeps the revision of the file it read (or last saved). When
+  the file differs before or after writing, nothing is saved (`file_changed`) and the written cells are
+  kept; reopen the file to edit its new content.
+- **Allowed folders.** The file is saved only at its real location (links followed), inside the allowed
+  folders; a file replaced by a link to another place is refused (`not_allowed`).
+- **What cannot be saved** (`save_unsupported`): Parquet, JSON and workbooks, compressed files (`.gz`,
+  `.zst`), files DuckDB could read only as irregular text (all columns as text), files with comment lines,
+  and files whose records do not match the table's rows (for example a file changed in a way the revision
+  missed).
+
+After a save the table keeps its revision and row positions: checked rows, the undo history and the view
+stay. The cells count as saved (`edits.cells` is 0), and saving again writes only cells written since. A
+hard link to the file keeps the old content, since the file is replaced.
+
 ## Writing to the DuckDB server
 
 ```ts
@@ -186,7 +234,8 @@ Written values are checked, converted to the column's DuckDB type, and kept in a
 inside the engine. A view joins them to the file's rows, so rows, sorted and filtered views, statistics,
 summaries, find and exports all read them; reading a block of a 5M-row table with 1,000 written cells
 takes about as long as before (3–4 ms). Views whose rows or order may depend on the written columns are
-dropped and created again on the next request. The file itself is not changed.
+dropped and created again on the next request. The file itself is not changed until it is saved (see
+above).
 
 A table with written cells stays open: it is not closed to keep `maxTables`, nor opened again when its
 file changes. Closing the table (`close`) or disposing the engine discards them.

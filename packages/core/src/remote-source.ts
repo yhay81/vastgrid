@@ -12,6 +12,7 @@ import type {
   ReadOptions,
   RowBlock,
   RowRequest,
+  SaveResult,
   SelectionSummary,
   TableInfo,
   UpdateRequest,
@@ -332,6 +333,13 @@ export class RemoteSource implements TableSource {
       ...(request.revision === undefined ? {} : { revision: request.revision }),
     };
     const result = await this.call<UpdateResult>("update", fields, signal);
+    this.editVersion = result.edits.version;
+    return result;
+  }
+
+  /** Saves the written cells into the file on the server (see `TableSource.saveEdits`). */
+  async saveEdits(signal?: AbortSignal): Promise<SaveResult> {
+    const result = await this.call<SaveResult>("save", {} satisfies Operation<"save">, signal);
     this.editVersion = result.edits.version;
     return result;
   }

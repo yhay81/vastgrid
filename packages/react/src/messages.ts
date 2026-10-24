@@ -234,6 +234,14 @@ export interface Messages {
   fillRight: string;
   /** The selection has no cells to fill (for example one cell in the first row). */
   fillEmpty: string;
+  /** Saving written cells into the source's file (⌘/Ctrl + S). */
+  saveFile: string;
+  unsavedCells: (cells: string) => string;
+  fileSaving: string;
+  fileSaved: (records: string) => string;
+  /** The file was changed by someone else since it was read: it was not saved. */
+  fileChanged: string;
+  fileSaveFailed: (message: string) => string;
 }
 
 export const en: Messages = {
@@ -476,6 +484,12 @@ export const en: Messages = {
   fillDown: "Fill down",
   fillRight: "Fill right",
   fillEmpty: "Select the cells to fill, with the values to copy in the first row or column.",
+  saveFile: "Save to file",
+  unsavedCells: (cells) => `${cells} changed cells are not saved to the file yet.`,
+  fileSaving: "Saving to the file…",
+  fileSaved: (records) => `Saved to the file: ${records} rows written.`,
+  fileChanged: "Not saved: the file was changed by someone else since it was read. Open it again to edit it.",
+  fileSaveFailed: (message) => `Not saved to the file: ${message}`,
 };
 
 const number = (value: string) => value;
@@ -719,6 +733,12 @@ export const ja: Messages = {
   fillDown: "下方向へコピー",
   fillRight: "右方向へコピー",
   fillEmpty: "埋めるセルを選んでください。コピーする値は選択範囲の先頭の行か列から取ります。",
+  saveFile: "ファイルに保存",
+  unsavedCells: (cells) => `変更した ${cells} セルは、まだファイルに保存していません。`,
+  fileSaving: "ファイルに保存しています…",
+  fileSaved: (records) => `ファイルに保存しました（${records} 行を書き直しました）。`,
+  fileChanged: "保存できませんでした：読み込んだ後にファイルが別の人に変更されました。開き直してから編集してください。",
+  fileSaveFailed: (message) => `ファイルに保存できませんでした：${message}`,
 };
 
 /** Picks the built-in messages for a locale ("ja…" → Japanese, otherwise English). */

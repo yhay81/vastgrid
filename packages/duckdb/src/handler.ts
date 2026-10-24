@@ -73,6 +73,8 @@ async function answer(
     }
     case "update":
       return engine.get(request.table).updateCells(request, signal);
+    case "save":
+      return engine.get(request.table).saveEdits(signal);
     case "revision": {
       const table = engine.get(request.table);
       const revision = await table.currentRevision();

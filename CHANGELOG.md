@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- `vastgrid-duckdb`: with `saveFiles` (and `editable`), `saveEdits` and the `save` request write edited
+  cells back into the CSV or TSV file. Only the edited fields of records with cells written since the
+  last save are written anew; every other byte stays — the byte order mark, the header, other records
+  (also with quoted line breaks), the other fields of edited records, delimiters, line breaks and the
+  final line break — in the file's encoding (UTF-8, UTF-16, Shift_JIS, EUC-JP, Latin-1). The file is
+  written to a temporary file next to it and renamed over it; a file changed by someone else meanwhile is
+  not saved (`file_changed`), a failed or cancelled save leaves it as it was, and only files at their real
+  location in the allowed folders are saved. Compressed files, files read as irregular text, files with
+  comments and other formats are refused (`save_unsupported`). The table keeps its revision and rows.
+- `vastgrid-core`: `TableSource.saveEdits`, `capabilities.save`, `SaveResult`, the `save` request and the
+  error codes `file_changed` and `save_unsupported`; `RemoteSource.saveEdits`.
+- `vastgrid`: while edited cells are not saved into a source that saves, a line above the status bar says
+  how many, with "Save to file"; ⌘/Ctrl + S and the ref's `save()` save them.
+
 - `vastgrid`: ⌘/Ctrl + D fills down and ⌘/Ctrl + R fills right in a grid that edits (also "Fill down" and
   "Fill right" in the context menu): the first row (column) of each selected range is copied into the
   rest of it, and a range of one row (column) takes the one above (left of) it. Values are copied as

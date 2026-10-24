@@ -28,6 +28,8 @@ interface TableSource {
   exportView?(request: ExportRequest, signal?: AbortSignal): Promise<ExportResult>;
   /** capabilities.edit を報告する source で、セルをすべて書き込むか、何も書き込まない（下記）。 */
   updateCells?(request: UpdateRequest, signal?: AbortSignal): Promise<UpdateResult>;
+  /** capabilities.save を報告する source で、書き込んだセルを表のファイルに保存する。 */
+  saveEdits?(signal?: AbortSignal): Promise<{ records: number; edits: TableEdits }>;
   /** 表を解放する。以後、そのソースは使えない。 */
   /** 表全体が変わったときに `listener` を呼びます。返す関数を呼ぶまで続きます。 */
   subscribe?(listener: (change: { revision?: string | null }) => void): () => void;
@@ -291,6 +293,8 @@ interface UpdateResult {
 `capabilities.edit` を報告する source は、`updateCells` でセルを書き込みます。`row` は表の中の行の位置（`RowBlock.rowIds`）、`column` はスキーマの列番号です。要求は不可分で、すべてを書き込むか、何も書き込まずに `SourceError` で reject します。コードは `read_only`（source か列が書き込めない）、`invalid_value`（値が列に合わない）、`edit_conflict`（セルが `previous` の値ではなくなっている）、`revision_changed`（表の `revision` が違う）、`invalid_request` です。
 
 書き込みは行の位置と `revision` を変えず、代わりに `TableInfo.edits.version` を増やします。変更を通知する source は、`subscribe` のリスナーを `{ edits }` で呼びます。以降の要求はすべて新しい値を読みますが、それ以前に作ったビューは古い行と順序のままのことがあるため、グリッドはクエリが書き込んだ列を使うときにビューを作り直します。source が書き込まない列は、スキーマで `readOnly: true` になります。
+
+`capabilities.save` を報告する source は、`saveEdits` で書き込んだセルを読み込んだファイルにも保存します（`saveFiles` を指定した DuckDB サーバー）。読み込んだ後にファイルが他の人に変更されていれば `file_changed`、書き戻せないファイルなら `save_unsupported` で reject します。保存後も表の revision と行の位置は変わらず、セルは保存済み（`edits.cells` が 0）になります。
 
 `parseCellInput(text, column)` は入力した文字列を列の型として読み、`normalizeCellValue(value, column)` はプログラムが書き込む値を同じ規則で確かめます。どちらも 64 ビット整数と decimal を文字列のまま保ちます。`editableType(type)`・`editableColumn(schema)`・`editText(value)`・`sameCellValue(a, b)` も source とエディターで使えます。[セルの編集](/ja/guides/editing/)を参照してください。
 

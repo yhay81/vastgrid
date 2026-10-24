@@ -64,6 +64,10 @@ export interface TableCapabilities {
    * offers no editing.
    */
   edit?: boolean;
+  /**
+   * Saves written cells into the file they came from (`TableSource.saveEdits`). Absent means false.
+   */
+  save?: boolean;
 }
 
 export type TableStatus = "loading" | "ready" | "error";
@@ -147,6 +151,13 @@ export interface UpdateRequest {
    * when the table has another revision now, since row positions then name other records.
    */
   revision?: string;
+}
+
+export interface SaveResult {
+  /** Records of the file written anew (records with cells written since the last save). */
+  records: number;
+  /** The table's edits after the save: its cells count as saved (`cells` is 0). */
+  edits: TableEdits;
 }
 
 export interface UpdateResult {

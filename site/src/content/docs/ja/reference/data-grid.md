@@ -75,6 +75,7 @@ ref からは `DataGridHandle` を使えます。
 | `detailOpen` | 詳細パネルが開いているかどうか。 |
 | `undo()`、`redo()` | ⌘/Ctrl + Z、⌘/Ctrl + Shift + Z と同じく、最後の書き込みを元に戻す・やり直します。保存できたかどうかで解決します。 |
 | `history` | いま元に戻せる・やり直せる操作（`GridHistoryState`）。 |
+| `save()` | ⌘/Ctrl + S と同じく、書き込んだセルを source のファイルに保存します（`capabilities.save` の source）。書き直したレコード数で解決し、失敗したときは `null` で解決します。 |
 | `controller` | グリッドの状態（選択範囲、列の配置、ビュー）を持つ `GridController`。 |
 | `renderer` | `CanvasRenderer`。`renderer.timings()` などの診断に使います。グリッドがマウントされるまでは `null`。 |
 

@@ -10,6 +10,7 @@ import type {
   FindResult,
   RowBlock,
   RowRequest,
+  SaveResult,
   SelectionSummary,
   TableInfo,
   UpdateRequest,
@@ -53,6 +54,13 @@ export interface TableSource {
    * result's `edits.version` changes, and sources that report changes (`subscribe`) report it.
    */
   updateCells?(request: UpdateRequest, signal?: AbortSignal): Promise<UpdateResult>;
+  /**
+   * Saves the written cells into the file the table was read from, for sources that report
+   * `capabilities.save`. The table keeps its revision and row positions. Rejects with `file_changed` when
+   * the file was changed by someone else since it was read, and `save_unsupported` when the file cannot be
+   * written back; the file is then left as it was.
+   */
+  saveEdits?(signal?: AbortSignal): Promise<SaveResult>;
   /**
    * Calls `listener` when the table as a whole changed (for example rows were appended to its file),
    * until the returned function is called. The listener learns only that the table changed, not which

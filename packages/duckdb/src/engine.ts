@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, open as openFile, readdir, realpath, rename, rm, stat } from "node:fs/promises";
+import { chmod, mkdir, open as openFile, readdir, realpath, rename, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pipeline, Readable } from "node:stream";
@@ -31,6 +31,7 @@ import {
   type ReadOptions,
   type RowBlock,
   type RowRequest,
+  type SaveResult,
   type SelectionSummary,
   type SheetInfo,
   SourceError,
@@ -46,7 +47,8 @@ import {
   writeXlsx,
   XLSX_MAX_TEXT,
 } from "vastgrid-core";
-import { convertToUtf8, detectEncoding } from "./encoding.js";
+import { type CsvDialect, CsvSaveError, rewriteCsv } from "./csv-save.js";
+import { convertToUtf8, detectEncoding, type TextEncoding } from "./encoding.js";
 import {
   columnTypeOf,
   conditionExpression,
@@ -121,6 +123,12 @@ export interface TableEngineOptions {
    * or the engine is disposed, which discards them. Defaults to `false`.
    */
   editable?: boolean;
+  /**
+   * Lets clients save written cells into the CSV or TSV file they came from (the `save` request,
+   * `TableSource.saveEdits`), with `editable`. Only the records with written cells are written anew; every
+   * other byte of the file stays as it was (see `rewriteCsv`). Defaults to `false`.
+   */
+  saveFiles?: boolean;
   /** Reports problems that are not caused by a request (for logs). */
   log?: (message: string, error?: unknown) => void;
 }
@@ -285,6 +293,7 @@ export class TableEngine {
       previewRows: options.previewRows ?? 1000,
       textLimit: options.textLimit ?? 2000,
       editable: options.editable === true,
+      saveFiles: options.saveFiles === true,
       log: options.log,
     });
   }
@@ -375,7 +384,7 @@ export class TableEngine {
     // answer every poll of a loading table with a new load, so clients would never see the error.
     // A table with written cells keeps them: it is not opened again from the changed file.
     const reusable = (table: OpenTable) =>
-      (table.revision === revision && !table.failureReported) || table.editedCells > 0;
+      (table.readsFile(revision) && !table.failureReported) || table.editedCells > 0;
     const options = readOptionsOf(fileFormat, read);
     const key = tableKey(absolute, options);
     let existing = this.byPath.get(key);
@@ -600,8 +609,14 @@ export class OpenTable {
   private editVersion = 0;
   /** Cells that hold a written value. */
   editedCells = 0;
-  /** Writes run one at a time. */
+  /** Writes and saves run one at a time. */
   private writes: Promise<unknown> = Promise.resolve();
+  /** The revision of the file as the table holds it: the one it was read from, or the one it saved. */
+  private fileState: string;
+  /** Delimited files: the encoding of the file, the file DuckDB read (converted to UTF-8) and how. */
+  private encoding: TextEncoding = "utf-8";
+  private loadedSource = "";
+  private loadAttempt = 0;
   private ready: Promise<void> = Promise.resolve();
   private listed: () => void = () => undefined;
   private readonly sheetsKnown = new Promise<void>((resolve) => {
@@ -616,7 +631,14 @@ export class OpenTable {
     readonly revision: string,
     readonly byteSize: number,
     readonly read: ReadOptions = {},
-  ) {}
+  ) {
+    this.fileState = revision;
+  }
+
+  /** Whether the table holds the file with this revision (also after saving into it). */
+  readsFile(revision: string) {
+    return revision === this.fileState;
+  }
 
   touch() {
     this.lastUsed = Date.now();
@@ -628,7 +650,9 @@ export class OpenTable {
    */
   async currentRevision(): Promise<string | null> {
     try {
-      return await fileRevision(this.path);
+      const revision = await fileRevision(this.path);
+      // A file the table saved into holds the table's data: the table's revision stays.
+      return revision === this.fileState ? this.revision : revision;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
@@ -691,6 +715,7 @@ export class OpenTable {
         export: ready,
         conditions: ready,
         ...(editable ? { edit: ready } : {}),
+        ...(editable && this.engine.options.saveFiles ? { save: ready && this.savable() } : {}),
       },
       ...(ready ? { exports: { formats: ["csv", "tsv", "parquet", "json", "xlsx"], delivery: "file" } } : {}),
       ...(editable && ready ? { edits: this.edits() } : {}),
@@ -800,7 +825,10 @@ export class OpenTable {
           let table = this.editTables.get(index);
           if (!table) {
             table = engine.createId("vg_e");
-            await connection.run(`CREATE TABLE ${quoteIdentifier(table)} (${ROW_COLUMN} BIGINT, v ${column.sqlType})`);
+            // `saved`: the value is in the file too (see `saveEdits`).
+            await connection.run(
+              `CREATE TABLE ${quoteIdentifier(table)} (${ROW_COLUMN} BIGINT, v ${column.sqlType}, saved BOOLEAN)`,
+            );
             created.set(index, table);
           }
           const list = [...rows];
@@ -811,7 +839,7 @@ export class OpenTable {
             );
             const params = new Parameters();
             const values = batch.map(
-              ([row, update]) => `(${row}, CAST(${params.add(update.value)} AS ${column.sqlType}))`,
+              ([row, update]) => `(${row}, CAST(${params.add(update.value)} AS ${column.sqlType}), false)`,
             );
             await connection.run(`INSERT INTO ${quoteIdentifier(table)} VALUES ${values.join(", ")}`, params.values);
           }
@@ -840,8 +868,7 @@ export class OpenTable {
         this.editTables.set(index, table);
         this.objects.push(`TABLE ${quoteIdentifier(table)}`);
       }
-      const counts = [...this.editTables.values()].map((table) => `(SELECT count(*) FROM ${quoteIdentifier(table)})`);
-      this.editedCells = Number((await connection.runAndReadAll(`SELECT ${counts.join(" + ")}`)).getRowsJS()[0][0]);
+      this.editedCells = await this.countEdits(connection);
       this.editVersion++;
       // Views copy the rows (kind `rows`), or hold an order and rows that may depend on the new values.
       const touched = new Set(columns.keys());
@@ -853,6 +880,140 @@ export class OpenTable {
       );
       return updated;
     });
+  }
+
+  /** Cells with a written value that is not saved into the file yet. */
+  private async countEdits(connection: DuckDBConnection) {
+    const counts = [...this.editTables.values()].map(
+      (table) => `(SELECT count(*) FROM ${quoteIdentifier(table)} WHERE NOT saved)`,
+    );
+    if (counts.length === 0) return 0;
+    return Number((await connection.runAndReadAll(`SELECT ${counts.join(" + ")}`)).getRowsJS()[0][0]);
+  }
+
+  /**
+   * Whether written cells can be saved into the file: a delimited file that is not compressed and was read
+   * with its types (not as irregular text, whose records DuckDB may have read loosely).
+   */
+  private savable() {
+    return (this.format === "csv" || this.format === "tsv") && !/\.(gz|zst)$/i.test(this.path) && this.loadAttempt < 2;
+  }
+
+  /**
+   * Saves the written cells into the file (see `rewriteCsv`): only the records with cells written since
+   * the last save are written anew, and every other byte stays as it was. The file is written under a
+   * temporary name next to it and renamed over it once complete, so that a failed or cancelled save leaves
+   * it as it was. A file changed by someone else since it was read (or saved) is not saved
+   * (`file_changed`). The table keeps its revision and row positions; written cells count as saved.
+   */
+  async saveEdits(signal?: AbortSignal): Promise<SaveResult> {
+    this.requireReady();
+    if (!this.engine.options.editable || !this.engine.options.saveFiles) {
+      throw new SourceError(ErrorCodes.readOnly, "Saving files is not enabled.", 403);
+    }
+    if (!this.savable()) {
+      throw new SourceError(
+        ErrorCodes.saveUnsupported,
+        "Only CSV and TSV files that are not compressed, and were read with their types, can be saved.",
+        422,
+      );
+    }
+    const run = this.writes.then(() => this.save(signal));
+    this.writes = run.catch(() => undefined);
+    const records = await run;
+    return { records, edits: this.edits() };
+  }
+
+  private async save(signal?: AbortSignal) {
+    const engine = this.engine;
+    if (this.disposed) throw new SourceError(ErrorCodes.cancelled, "The table was closed.", 409);
+    // The file must still be the one the table read, at its real location inside the allowed folders.
+    const real = await realpath(this.path).catch(() => null);
+    if (real !== this.path || !engine.allows(real)) throw notAllowed();
+    const changed = () =>
+      new SourceError(ErrorCodes.fileChanged, "The file was changed by someone else since it was read.", 409);
+    if ((await fileRevision(this.path)) !== this.fileState) throw changed();
+    const { edits, dialect } = await engine.withConnection(signal, async (connection) => {
+      const edits = new Map<number, Map<number, string | null>>();
+      for (const [index, table] of this.editTables) {
+        // DuckDB's own text of each value, which it reads back as the same value.
+        const result = await connection.runAndReadAll(
+          `SELECT ${ROW_COLUMN}, CAST(v AS VARCHAR) FROM ${quoteIdentifier(table)} WHERE NOT saved`,
+        );
+        for (const [row, value] of result.getRowsJS()) {
+          let fields = edits.get(Number(row));
+          if (!fields) {
+            fields = new Map();
+            edits.set(Number(row), fields);
+          }
+          fields.set(index, value === null ? null : String(value));
+        }
+      }
+      return { edits, dialect: edits.size > 0 ? await this.dialect(connection) : null };
+    });
+    if (!dialect || edits.size === 0) return 0;
+    const temporary = path.join(
+      path.dirname(this.path),
+      `.${path.basename(this.path)}.${randomBytes(6).toString("hex")}.tmp`,
+    );
+    let records: number;
+    try {
+      ({ records } = await rewriteCsv({
+        source: this.path,
+        target: temporary,
+        encoding: this.encoding,
+        dialect,
+        columns: this.columns.length,
+        rows: this.rowCount ?? 0,
+        edits,
+        signal,
+      }));
+      signal?.throwIfAborted();
+      // Changed while it was written: the new file would lose that change.
+      if ((await fileRevision(this.path)) !== this.fileState) throw changed();
+      await chmod(temporary, (await stat(this.path)).mode);
+      await rename(temporary, this.path);
+    } catch (error) {
+      await rm(temporary, { force: true });
+      if (signal?.aborted) throw new SourceError(ErrorCodes.cancelled, "The save was cancelled.", 499);
+      if (error instanceof CsvSaveError) {
+        throw new SourceError(
+          error.code === "encoding" ? ErrorCodes.invalidValue : ErrorCodes.saveUnsupported,
+          error.message,
+          422,
+        );
+      }
+      throw error;
+    }
+    this.fileState = await fileRevision(this.path);
+    await engine.withConnection(undefined, async (connection) => {
+      for (const table of this.editTables.values())
+        await connection.run(`UPDATE ${quoteIdentifier(table)} SET saved = true`);
+      this.editedCells = await this.countEdits(connection);
+    });
+    this.editVersion++;
+    return records;
+  }
+
+  /** How DuckDB read the file's records: its delimiter, quote, escape, header and skipped lines. */
+  private async dialect(connection: DuckDBConnection): Promise<CsvDialect> {
+    const options = `${this.format === "tsv" ? ", delim='\\t'" : ""}, null_padding=true${this.loadAttempt === 1 ? ", sample_size=-1" : ""}`;
+    const row = (
+      await connection.runAndReadAll(
+        `SELECT Delimiter, Quote, Escape, Comment, SkipRows, HasHeader FROM sniff_csv($1${options})`,
+        [this.loadedSource],
+      )
+    ).getRowsJS()[0];
+    const text = (value: unknown) => (value === null || value === "(empty)" ? "" : String(value));
+    if (text(row[3])) throw new CsvSaveError("unsupported", "Files with comment lines cannot be saved.");
+    const quote = text(row[1]) || '"';
+    return {
+      delimiter: text(row[0]) || (this.format === "tsv" ? "\t" : ","),
+      quote,
+      escape: text(row[2]) || quote,
+      skipRows: Number(row[4] ?? 0),
+      header: row[5] === true,
+    };
   }
 
   /** Creates (or replaces) the view that reads the written cells over the file's rows. Returns its name. */
@@ -961,6 +1122,7 @@ export class OpenTable {
     let source = this.path;
     if (this.format === "csv" || this.format === "tsv") {
       const encoding = await detectEncoding(this.path);
+      this.encoding = encoding;
       if (encoding !== "utf-8") {
         source = await this.convert(encoding);
       }
@@ -976,6 +1138,8 @@ export class OpenTable {
       for (let attempt = 0; attempt < attempts; attempt++) {
         try {
           await this.loadTable(source, attempt);
+          this.loadedSource = source;
+          this.loadAttempt = attempt;
           if (attempt === 2) this.notes.push("all_varchar");
           return;
         } catch (error) {
