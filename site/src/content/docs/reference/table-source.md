@@ -134,6 +134,7 @@ interface TableInfo {
     export: boolean;
     conditions?: boolean; // evaluates `ViewQuery.where`; absent means false
     group?: boolean;      // answers `group`; absent means false
+    pivot?: boolean;      // answers `group` with `pivot`; absent means false
   };
   exports?: { formats: ExportFormat[]; delivery: "file" | "data" }; // what exportView writes, when it can
 }
@@ -283,12 +284,14 @@ interface GroupRequest {
   aggregates: { fn: AggregateFunction; column?: number }[]; // `count` without `column` counts rows
   sort?: SortKey[];             // result columns; default: the keys ascending
   limit?: number;               // 1..100,000 groups, default 1,000
+  pivot?: { columns: number[]; maxColumns?: number }; // cross tabulation: values of `columns` become columns
 }
 interface GroupResult {
   columns: ColumnSchema[];      // the keys, then `fn(column)` per aggregate (`count(*)` for rows)
   rows: CellValue[][];          // one array per group
   groups: number;               // all groups, also those past `limit`
   truncated: boolean;
+  pivot?: { column: number; values: CellValue[]; aggregate: number }[]; // the generated columns
 }
 ```
 

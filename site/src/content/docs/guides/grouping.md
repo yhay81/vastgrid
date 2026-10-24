@@ -56,6 +56,25 @@ The grid offers the features only when the source reports `capabilities.group`.
   sorting, find and the selection summary remain.
 - **Checked rows** (`checkboxSelection`) belong to the rows of the table: groups have no checkboxes.
 
+## Cross tabulations
+
+"Columns from values (cross tabulation)" in the panel turns the values of one or more columns into
+columns, after the key columns: one column per value and aggregate, named like `Tokyo / sum(amount)`
+(`2024 / Tokyo / count(*)` with two columns; `(null)` and `(empty)` for null and empty text). Sources that
+make them report `capabilities.pivot` (`ArraySource`, `vastgrid-duckdb`, and `vastgrid-browser` with
+`fullScan`).
+
+- The value columns are in the order of the values: ascending, blanks last. Within a value, the
+  aggregates keep their order.
+- A cell whose group has no rows with that value is blank, except a count, which is 0.
+- A cross tabulation makes at most 200 columns. Settings that would make more are refused with a notice,
+  and the grid keeps what it showed: filter the rows, or pick columns with fewer values.
+- The names are the same for the same settings and data, so the grouped table's column settings (widths,
+  totals, sort) are kept by them in the state. `GroupResult.pivot` gives each generated column's values,
+  for apps that draw multi-level headers themselves.
+- No subtotal or grand total rows or columns are added: the totals row gives the totals of each column.
+  To see the rows of a cell, filter the rows by its values and show the rows again.
+
 ## What the totals row is
 
 - It is not a row of the grid. It is not selected, copied (except with "Copy total") or exported with the
@@ -79,13 +98,14 @@ The grid offers the features only when the source reports `capabilities.group`.
   "group": {
     "keys": ["region"],
     "aggregates": [{ "fn": "count" }, { "fn": "sum", "column": "amount" }],
+    "pivot": ["year"],
     "state": { "version": 1, "schema": ["region", "count(*)", "sum(amount)"], "query": { "sort": [{ "column": 2, "direction": "desc" }] } }
   }
 }
 ```
 
 - `columns[].total` is a column's aggregate in the totals row.
-- `group` names the key and value columns by name; `group.state` is the grouped table's own settings
+- `group` names the key, value and column-axis (`pivot`) columns by name; `group.state` is the grouped table's own settings
   (sort, filters, widths, totals), by the names of its columns. `query` and `columns` remain those of the
   rows, which the grid shows again when the grouping ends. `"group": null` shows the rows.
 - Applying a state with `group` reads the groups first; columns the table no longer has are dropped.
@@ -107,7 +127,9 @@ const result = await source.group({
 // result.rows: [["Tokyo", 120, "53210.50"], …], result.groups: 47, result.truncated: true
 ```
 
-Without `keys`, the result is one row of totals. `GroupedSource` shows a result as a table of its own,
+Without `keys`, the result is one row of totals. With `pivot: { columns: [1] }`, it is a cross
+tabulation; a request that would make more than `maxColumns` (200) columns fails with
+`too_many_columns`. `GroupedSource` shows a result as a table of its own,
 for a second grid or for your own UI:
 
 ```tsx

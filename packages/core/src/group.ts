@@ -11,6 +11,7 @@ import type {
   GroupAggregate,
   GroupRequest,
   GroupResult,
+  PivotColumn,
   SortKey,
 } from "./types.js";
 
@@ -22,6 +23,10 @@ export const MAX_GROUP_AGGREGATES = 64;
 export const MAX_GROUP_ROWS = 100_000;
 /** Groups returned when a `GroupRequest` gives no `limit`. */
 export const DEFAULT_GROUP_LIMIT = 1000;
+/** Columns a cross tabulation may generate when its `maxColumns` is not given. */
+export const DEFAULT_PIVOT_COLUMNS = 200;
+/** Columns a cross tabulation may generate at most. */
+export const MAX_PIVOT_COLUMNS = 1000;
 
 export const AGGREGATE_FUNCTIONS: readonly AggregateFunction[] = ["count", "sum", "avg", "min", "max"];
 
@@ -112,6 +117,63 @@ export function groupColumns(
   return columns;
 }
 
+/** The text of a column-axis value in the names of pivot columns. */
+export function pivotText(value: CellValue) {
+  if (value === null) return "(null)";
+  if (value === "") return "(empty)";
+  return plainText(value);
+}
+
+/**
+ * The generated columns of a cross tabulation, after the key columns: one per combination of column-axis
+ * values (in their order) and aggregate, named `Tokyo / sum(sales)`. Names are made unique together with
+ * the key columns'.
+ */
+export function pivotColumns(
+  schema: readonly ColumnSchema[],
+  request: Pick<GroupRequest, "keys" | "aggregates">,
+  combinations: readonly CellValue[][],
+  scaleOf: (aggregate: number) => number,
+): { columns: ColumnSchema[]; pivot: PivotColumn[] } {
+  const columns: ColumnSchema[] = request.keys.map((key) => ({ ...schema[key] }));
+  const pivot: PivotColumn[] = [];
+  for (const values of combinations) {
+    const prefix = values.map(pivotText).join(" / ");
+    request.aggregates.forEach((aggregate, index) => {
+      pivot.push({ column: columns.length, values, aggregate: index });
+      columns.push({
+        ...aggregateSchema(aggregate, schema, scaleOf(index)),
+        name: `${prefix} / ${aggregateName(aggregate, schema)}`,
+      });
+    });
+  }
+  const names = uniqueNames(columns.map((column) => column.name));
+  for (const [index, column] of columns.entries()) column.name = names[index];
+  return { columns, pivot };
+}
+
+/** The most columns a cross tabulation may generate. */
+export function pivotLimit(request: GroupRequest) {
+  return Math.min(Math.max(1, Math.floor(request.pivot?.maxColumns ?? DEFAULT_PIVOT_COLUMNS)), MAX_PIVOT_COLUMNS);
+}
+
+/** The error of a cross tabulation that would make more columns than its limit allows. */
+export function tooManyColumns(columns: number, limit: number) {
+  return new SourceError(
+    ErrorCodes.tooManyColumns,
+    `The cross tabulation would make ${columns} columns; at most ${limit} are allowed.`,
+    422,
+  );
+}
+
+/** Checks that the result has the columns that `sort` names. */
+export function checkGroupSort(request: Pick<GroupRequest, "sort">, width: number) {
+  for (const key of request.sort ?? []) {
+    if (!Number.isInteger(key.column) || key.column < 0 || key.column >= width)
+      invalid(`Result column ${key.column} does not exist.`);
+  }
+}
+
 function invalid(message: string): never {
   throw new SourceError(ErrorCodes.invalidRequest, message, 400);
 }
@@ -144,11 +206,23 @@ export function checkGroupRequest(schema: readonly ColumnSchema[], request: Grou
     if (!aggregateApplies(aggregate.fn, schemaColumn.type))
       invalid(`${aggregate.fn} does not apply to ${schemaColumn.name}.`);
   }
-  const width = request.keys.length + request.aggregates.length;
-  for (const key of request.sort ?? []) {
-    if (!Number.isInteger(key.column) || key.column < 0 || key.column >= width)
-      invalid(`Result column ${key.column} does not exist.`);
+  const pivot = request.pivot;
+  if (pivot) {
+    if (pivot.columns.length === 0 || pivot.columns.length > MAX_GROUP_KEYS)
+      invalid(`Pivot by 1 to ${MAX_GROUP_KEYS} columns.`);
+    if (request.aggregates.length === 0) invalid("A pivot needs an aggregate.");
+    if (new Set(pivot.columns).size !== pivot.columns.length) invalid("A pivot column is repeated.");
+    for (const index of pivot.columns) {
+      const schemaColumn = column(index);
+      if (request.keys.includes(index)) invalid(`${schemaColumn.name} is both a key and a pivot column.`);
+      if (!isGroupableType(schemaColumn.type)) invalid(`Rows cannot be pivoted by ${schemaColumn.name}.`);
+    }
+    if (pivot.maxColumns !== undefined && !(pivot.maxColumns >= 1 && pivot.maxColumns <= MAX_PIVOT_COLUMNS))
+      invalid(`maxColumns must be from 1 to ${MAX_PIVOT_COLUMNS}.`);
+    // The generated columns are known once the column-axis values are: sources check `sort` then.
+    return;
   }
+  checkGroupSort(request, request.keys.length + request.aggregates.length);
 }
 
 /** The number of groups to return for a request. */
@@ -208,7 +282,8 @@ interface AggregateState {
 
 interface Group {
   keys: CellValue[];
-  states: AggregateState[];
+  /** The aggregates by combination of column-axis values (`""` without a pivot). */
+  cells: Map<string, AggregateState[]>;
 }
 
 function newState(scale: number): AggregateState {
@@ -242,9 +317,12 @@ export class GroupAccumulator {
   private readonly schema: readonly ColumnSchema[];
   private readonly request: GroupRequest;
   private readonly keyAt: number[];
+  private readonly pivotAt: number[];
   private readonly valueAt: (number | null)[];
   private readonly scales: number[];
   private readonly groups = new Map<string, Group>();
+  /** The combinations of column-axis values seen, by their identity. */
+  private readonly combinations = new Map<string, CellValue[]>();
 
   constructor(schema: readonly ColumnSchema[], request: GroupRequest) {
     checkGroupRequest(schema, request);
@@ -253,11 +331,13 @@ export class GroupAccumulator {
     const columns = [
       ...new Set([
         ...request.keys,
+        ...(request.pivot?.columns ?? []),
         ...request.aggregates.flatMap((aggregate) => (aggregate.column === undefined ? [] : [aggregate.column])),
       ]),
     ];
     this.columns = columns;
     this.keyAt = request.keys.map((key) => columns.indexOf(key));
+    this.pivotAt = (request.pivot?.columns ?? []).map((column) => columns.indexOf(column));
     this.valueAt = request.aggregates.map((aggregate) =>
       aggregate.column === undefined ? null : columns.indexOf(aggregate.column),
     );
@@ -270,13 +350,20 @@ export class GroupAccumulator {
   }
 
   private newGroup(keys: CellValue[]): Group {
-    return { keys, states: this.scales.map((scale) => newState(scale)) };
+    return { keys, cells: new Map() };
+  }
+
+  private newStates() {
+    return this.scales.map((scale) => newState(scale));
   }
 
   /** Adds `count` rows: `values[i]` holds the values of `columns[i]`. */
   add(values: CellValue[][], count: number, signal?: AbortSignal) {
     const { keys, aggregates } = this.request;
     const keyTypes = keys.map((key) => this.schema[key].type);
+    const pivotTypes = (this.request.pivot?.columns ?? []).map((column) => this.schema[column].type);
+    const pivoted = this.pivotAt.length > 0;
+    const limit = pivoted ? Math.floor(pivotLimit(this.request) / aggregates.length) : 0;
     const types = aggregates.map((aggregate) =>
       aggregate.column === undefined ? "unknown" : this.schema[aggregate.column].type,
     );
@@ -294,9 +381,28 @@ export class GroupAccumulator {
         }
       }
       if (!group) continue;
+      let cell = "";
+      if (pivoted) {
+        const parts = this.pivotAt.map((at, index) => keyText(values[at][row] ?? null, pivotTypes[index]));
+        cell = parts.length === 1 ? parts[0] : JSON.stringify(parts);
+        if (!this.combinations.has(cell)) {
+          this.combinations.set(
+            cell,
+            this.pivotAt.map((at) => values[at][row] ?? null),
+          );
+          // Refused as soon as it is known, without reading the rest.
+          if (this.combinations.size > limit)
+            throw tooManyColumns(this.combinations.size * aggregates.length, pivotLimit(this.request));
+        }
+      }
+      let states = group.cells.get(cell);
+      if (!states) {
+        states = this.newStates();
+        group.cells.set(cell, states);
+      }
       for (let index = 0; index < aggregates.length; index++) {
         const at = this.valueAt[index];
-        const state = group.states[index];
+        const state = states[index];
         if (at === null) {
           state.count++;
           continue;
@@ -382,29 +488,62 @@ export class GroupAccumulator {
 
   /** The groups, sorted and limited as the request asks. */
   result(): GroupResult {
-    const { keys, aggregates } = this.request;
+    const { keys, aggregates, pivot } = this.request;
     const groups = [...this.groups.values()];
-    const rows = groups.map((group) => [
-      ...group.keys,
-      ...group.states.map((state, index) => this.output(index, state)),
-    ]);
     // Decimal sums have the scale of the column, or the most fraction digits of its values.
     const scales = aggregates.map((_, index) =>
-      Math.max(this.scales[index], ...groups.map((group) => group.states[index].scale)),
+      Math.max(
+        this.scales[index],
+        ...groups.flatMap((group) => [...group.cells.values()].map((states) => states[index].scale)),
+      ),
     );
-    const columns = groupColumns(this.schema, this.request, (index) => scales[index]);
-    aggregates.forEach((aggregate, index) => {
-      if (aggregate.fn !== "sum" || columns[keys.length + index].type !== "decimal") return;
-      const scale = scales[index];
-      for (const [at, group] of groups.entries()) {
-        const state = group.states[index];
-        if (state.count > 0)
-          rows[at][keys.length + index] = decimalText(rescale(state.exact, state.scale, scale), scale);
+    // Combinations of column-axis values in their order: by each column ascending, blanks last.
+    let cells = [""];
+    let columns: ColumnSchema[];
+    let pivoted: PivotColumn[] | undefined;
+    if (pivot) {
+      const combinations = [...this.combinations].map(([id, values]) => [...values, id]);
+      const axis = pivot.columns.map((column) => this.schema[column]);
+      sortGroupRows(combinations, axis, axis.length, groupSort({ keys: pivot.columns }));
+      cells = combinations.map((combination) => combination[axis.length] as string);
+      const made = pivotColumns(
+        this.schema,
+        this.request,
+        combinations.map((combination) => combination.slice(0, axis.length)),
+        (index) => scales[index],
+      );
+      columns = made.columns;
+      pivoted = made.pivot;
+      checkGroupSort(this.request, columns.length);
+    } else {
+      columns = groupColumns(this.schema, this.request, (index) => scales[index]);
+    }
+    const empty = this.newStates();
+    const rows = groups.map((group) => {
+      const row = [...group.keys];
+      for (const cell of cells) {
+        const states = group.cells.get(cell) ?? empty;
+        states.forEach((state, index) => {
+          const scale = scales[index];
+          const decimalSum = aggregates[index].fn === "sum" && columns[row.length].type === "decimal";
+          row.push(
+            decimalSum && state.count > 0
+              ? decimalText(rescale(state.exact, state.scale, scale), scale)
+              : this.output(index, state),
+          );
+        });
       }
+      return row;
     });
     if (keys.length > 0) sortGroupRows(rows, columns, keys.length, groupSort(this.request));
     const limit = groupLimit(this.request);
-    return { columns, rows: rows.slice(0, limit), groups: rows.length, truncated: rows.length > limit };
+    return {
+      columns,
+      rows: rows.slice(0, limit),
+      groups: rows.length,
+      truncated: rows.length > limit,
+      ...(pivoted ? { pivot: pivoted } : {}),
+    };
   }
 }
 

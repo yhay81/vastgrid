@@ -12,9 +12,11 @@ import {
   type CellValue,
   type ColumnStats,
   checkGroupRequest,
+  checkGroupSort,
   checkXlsxSize,
   type DistinctRequest,
   type DistinctValues,
+  decimalScale,
   ErrorCodes,
   type ExportRequest,
   type ExportResult,
@@ -29,6 +31,9 @@ import {
   isNumericType,
   isTemporalType,
   MAX_TEXT_LIMIT,
+  type PivotColumn,
+  pivotColumns,
+  pivotLimit,
   type ReadOptions,
   type RowBlock,
   type RowRequest,
@@ -36,6 +41,7 @@ import {
   type SheetInfo,
   SourceError,
   type TableInfo,
+  tooManyColumns,
   type ViewInfo,
   type ViewOptions,
   type ViewQuery,
@@ -49,9 +55,11 @@ import {
   columnTypeOf,
   conditionExpression,
   filterExpression,
+  type GroupOutput,
   groupStatement,
   orderTerms,
   Parameters,
+  pivotStatement,
   quoteIdentifier,
   quoteLiteral,
   type SqlColumn,
@@ -641,6 +649,7 @@ export class OpenTable {
         export: ready,
         conditions: ready,
         group: ready,
+        pivot: ready,
       },
       ...(ready ? { exports: { formats: ["csv", "tsv", "parquet", "json", "xlsx"], delivery: "file" } } : {}),
     };
@@ -1490,21 +1499,41 @@ export class OpenTable {
     const schema = this.info().columns;
     checkGroupRequest(schema, request);
     const from = this.unorderedRelation(view);
-    const result = groupColumns(schema, request);
     const limit = groupLimit(request);
-    const { sql, outputs } = groupStatement(request, this.columns, result, from, limit);
+    const read = (row: unknown[], outputs: GroupOutput[]) =>
+      outputs.map((output, at) => {
+        const value = row[at];
+        if (value === null || value === undefined) return null;
+        return output.integer ? wireInteger(BigInt(String(value))) : wireValue(value);
+      });
     return this.engine.work.run(() =>
       this.engine.withConnection(signal, async (connection) => {
+        let result = groupColumns(schema, request);
+        let pivot: PivotColumn[] | undefined;
+        let cells = 0;
+        if (request.pivot) {
+          // The combinations of column-axis values first: they make the columns, and too many are refused.
+          const most = pivotLimit(request);
+          const perAggregate = Math.floor(most / request.aggregates.length);
+          const combinations = pivotStatement(request.pivot.columns, this.columns, from, perAggregate + 1);
+          const found = (await connection.runAndReadAll(combinations.sql)).getRowsJS();
+          const total = found.length > 0 ? Number(found[0][combinations.outputs.length]) : 0;
+          if (total > perAggregate) throw tooManyColumns(total * request.aggregates.length, most);
+          const values = found.map((row) => read(row, combinations.outputs));
+          const made = pivotColumns(schema, request, values, (index) => {
+            const column = request.aggregates[index].column;
+            return column === undefined ? 0 : decimalScale(schema[column]);
+          });
+          result = made.columns;
+          pivot = made.pivot;
+          cells = values.length;
+          checkGroupSort(request, result.length);
+        }
+        const { sql, outputs } = groupStatement(request, this.columns, result, from, limit, cells);
         const data = (await connection.runAndReadAll(sql)).getRowsJS();
-        const rows = data.map((row) =>
-          outputs.map((output, at) => {
-            const value = row[at];
-            if (value === null || value === undefined) return null;
-            return output.integer ? wireInteger(BigInt(String(value))) : wireValue(value);
-          }),
-        );
+        const rows = data.map((row) => read(row, outputs));
         const groups = data.length > 0 ? Number(data[0][outputs.length]) : 0;
-        return { columns: result, rows, groups, truncated: groups > rows.length };
+        return { columns: result, rows, groups, truncated: groups > rows.length, ...(pivot ? { pivot } : {}) };
       }),
     );
   }

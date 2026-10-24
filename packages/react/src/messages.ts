@@ -221,6 +221,13 @@ export interface Messages {
   /** Groups shown, and all groups when only the first ones are shown. */
   groupCount: (shown: string, total: string | null) => string;
   groupFailed: (message: string) => string;
+  /** The grouping panel's column axis of a cross tabulation, and what it does. */
+  pivotColumns: string;
+  pivotHint: string;
+  /** In the chip of a cross tabulation, by the labels of the column-axis columns. */
+  pivotedBy: (columns: string) => string;
+  /** A cross tabulation would make more columns than the limit. */
+  pivotTooWide: (limit: string) => string;
 }
 
 export const en: Messages = {
@@ -439,6 +446,11 @@ export const en: Messages = {
   groupedFiltered: "filtered rows",
   groupCount: (shown, total) => (total === null ? `${shown} groups` : `First ${shown} of ${total} groups`),
   groupFailed: (message) => `The rows could not be grouped: ${message}`,
+  pivotColumns: "Columns from values (cross tabulation)",
+  pivotHint: "Each value of these columns makes a column per aggregate.",
+  pivotedBy: (columns) => `across ${columns}`,
+  pivotTooWide: (limit) =>
+    `The cross tabulation would make more than ${limit} columns. Filter the rows or pick columns with fewer values.`,
 };
 
 const number = (value: string) => value;
@@ -658,6 +670,10 @@ export const ja: Messages = {
   groupedFiltered: "絞り込んだ行",
   groupCount: (shown, total) => (total === null ? `${shown} グループ` : `${total} グループのうち先頭 ${shown}`),
   groupFailed: (message) => `グループ化できませんでした：${message}`,
+  pivotColumns: "値を列にする列（クロス集計）",
+  pivotHint: "この列の値ごとに、集計値の列を作ります。",
+  pivotedBy: (columns) => `${columns} の値で列を作成`,
+  pivotTooWide: (limit) => `クロス集計の列が ${limit} 列を超えます。行を絞り込むか、値の少ない列を選んでください。`,
 };
 
 /** Picks the built-in messages for a locale ("ja…" → Japanese, otherwise English). */

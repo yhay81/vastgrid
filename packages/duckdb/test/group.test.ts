@@ -274,3 +274,109 @@ test("the protocol carries group requests to the engine", async () => {
     { op: "group", table, view: null, keys: [1], aggregates: [{ fn: "count" }], limit: 5 },
   );
 });
+
+test("cross tabulations give the same columns, names and cells in DuckDB and ArraySource", async () => {
+  const table = await parquet("sales-pivot.parquet", sales);
+  const array = await mirror(table);
+  const pivot = await both(table, array, {
+    keys: [1],
+    aggregates: [{ fn: "count" }, { fn: "sum", column: 4 }],
+    pivot: { columns: [0] },
+  });
+  assert.deepEqual(
+    pivot.columns.map((column) => [column.name, column.type]),
+    [
+      ["cat", "string"],
+      ["East / count(*)", "bigint"],
+      ["East / sum(price)", "decimal"],
+      ["North / count(*)", "bigint"],
+      ["North / sum(price)", "decimal"],
+      ["West / count(*)", "bigint"],
+      ["West / sum(price)", "decimal"],
+      ["(empty) / count(*)", "bigint"],
+      ["(empty) / sum(price)", "decimal"],
+      ["(null) / count(*)", "bigint"],
+      ["(null) / sum(price)", "decimal"],
+    ],
+  );
+  // Cells without rows: counts are 0, other aggregates null.
+  assert.deepEqual(pivot.rows[0], ["A", 1, "1.25", 0, null, 2, "-0.75", 0, null, 0, null]);
+  assert.deepEqual(pivot.pivot?.[2], { column: 3, values: ["North"], aggregate: 0 });
+
+  await both(table, array, {
+    keys: [],
+    aggregates: [{ fn: "max", column: 6 }],
+    pivot: { columns: [7, 1] },
+  });
+  await both(table, array, {
+    keys: [1],
+    aggregates: [{ fn: "avg", column: 5 }],
+    pivot: { columns: [7] },
+    sort: [{ column: 2, direction: "desc" }],
+  });
+  await both(
+    table,
+    array,
+    { keys: [0], aggregates: [{ fn: "sum", column: 3 }], pivot: { columns: [1] } },
+    { filters: [{ type: "compare", column: 2, op: "ge", value: 3 }] },
+  );
+  const none = await both(
+    table,
+    array,
+    { keys: [], aggregates: [{ fn: "count" }], pivot: { columns: [1] } },
+    { filters: [{ type: "compare", column: 2, op: "gt", value: 99 }] },
+  );
+  assert.deepEqual(none.rows, [[]]);
+});
+
+test("cross tabulations that would make too many columns are refused", async () => {
+  const table = await parquet("sales-wide.parquet", sales);
+  const array = await mirror(table);
+  const request = {
+    view: null,
+    keys: [1],
+    aggregates: [{ fn: "count" as const }, { fn: "sum" as const, column: 2 }],
+    pivot: { columns: [0], maxColumns: 9 },
+  };
+  await assert.rejects(table.group(request), { code: "too_many_columns" });
+  await assert.rejects(array.group(request), { code: "too_many_columns" });
+  const fits = await table.group({ ...request, pivot: { columns: [0], maxColumns: 10 } });
+  assert.equal(fits.columns.length, 11);
+  for (const invalid of [
+    { ...request, pivot: { columns: [1] } },
+    { ...request, aggregates: [] },
+    { ...request, pivot: { columns: [0] }, sort: [{ column: 11, direction: "asc" as const }] },
+  ]) {
+    await assert.rejects(table.group(invalid), { code: "invalid_request" });
+    await assert.rejects(array.group(invalid), { code: "invalid_request" });
+  }
+  assert.deepEqual(
+    parseProtocolRequest({
+      op: "group",
+      table: "t",
+      keys: [1],
+      aggregates: [{ fn: "count" }],
+      pivot: { columns: [0], maxColumns: 50 },
+    }),
+    {
+      op: "group",
+      table: "t",
+      view: null,
+      keys: [1],
+      aggregates: [{ fn: "count" }],
+      pivot: { columns: [0], maxColumns: 50 },
+    },
+  );
+  assert.throws(() =>
+    parseProtocolRequest({ op: "group", table: "t", keys: [1], aggregates: [], pivot: { columns: [0] } }),
+  );
+  assert.throws(() =>
+    parseProtocolRequest({
+      op: "group",
+      table: "t",
+      keys: [1],
+      aggregates: [{ fn: "count" }],
+      pivot: { columns: [0], maxColumns: 1001 },
+    }),
+  );
+});

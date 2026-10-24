@@ -36,7 +36,10 @@ export {
   aggregateApplies,
   aggregateName,
   checkGroupRequest,
+  checkGroupSort,
   DEFAULT_GROUP_LIMIT,
+  DEFAULT_PIVOT_COLUMNS,
+  decimalScale,
   GroupAccumulator,
   groupColumns,
   groupLimit,
@@ -45,6 +48,11 @@ export {
   MAX_GROUP_AGGREGATES,
   MAX_GROUP_KEYS,
   MAX_GROUP_ROWS,
+  MAX_PIVOT_COLUMNS,
+  pivotColumns,
+  pivotLimit,
+  pivotText,
+  tooManyColumns,
   wireInteger,
 } from "./group.js";
 export { GroupedSource, type GroupedSourceOptions } from "./grouped-source.js";

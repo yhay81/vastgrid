@@ -333,12 +333,56 @@ function groupOutput(alias: string, column: ColumnSchema): GroupOutput {
   return { expression: selectExpression({ name: alias, sqlType, type: column.type }, MAX_TEXT_LIMIT), integer: false };
 }
 
-function aggregateExpression(aggregate: GroupAggregate, column: SqlColumn | undefined) {
-  if (!column) return "count(*)";
-  const id = quoteIdentifier(column.name);
+/** The number of a row's combination of column-axis values in a cross tabulation. */
+const PIVOT_COLUMN = "__vg_pivot";
+
+function aggregateExpression(aggregate: GroupAggregate, column: SqlColumn | undefined, cell: number | null) {
+  const conditions: string[] = [];
+  // Only the rows of one combination of column-axis values; the number is generated, not a value.
+  if (cell !== null) conditions.push(`${PIVOT_COLUMN} = ${cell}`);
+  const id = column ? quoteIdentifier(column.name) : null;
   // NaN and infinities are left out, as in the column statistics.
-  const finite = column.type === "float" && aggregate.fn !== "count" ? ` FILTER (WHERE isfinite(${id}))` : "";
-  return `${aggregate.fn}(${id})${finite}`;
+  if (id && column?.type === "float" && aggregate.fn !== "count") conditions.push(`isfinite(${id})`);
+  const filter = conditions.length > 0 ? ` FILTER (WHERE ${conditions.join(" AND ")})` : "";
+  return `${id ? `${aggregate.fn}(${id})` : "count(*)"}${filter}`;
+}
+
+/**
+ * The distinct combinations of column-axis values of a cross tabulation, numbered in their order (each
+ * column ascending, blanks last), as `p0`, `p1`, … and `n`.
+ */
+function pivotCombinations(pivot: readonly number[], columns: readonly SqlColumn[], from: string) {
+  const axis = pivot.map((index) => columns[index]);
+  const aliases = axis.map((_, at) => `p${at}`);
+  const schemas = axis.map((column) => ({ name: column.name, type: column.type }));
+  const order = [
+    ...groupOrder(
+      aliases.map((_, column) => ({ column, direction: "asc" as const })),
+      aliases,
+      schemas,
+    ),
+    ...aliases.map((alias) => `${alias} ASC NULLS LAST`),
+  ];
+  const distinct = `SELECT DISTINCT ${axis.map((column, at) => `${quoteIdentifier(column.name)} AS p${at}`).join(", ")} FROM ${from}`;
+  return { aliases, order, distinct };
+}
+
+/**
+ * The combinations of column-axis values of a cross tabulation (see `GroupRequest.pivot`), in their
+ * order, with how many there are: at most `limit` are read.
+ */
+export function pivotStatement(pivot: readonly number[], columns: readonly SqlColumn[], from: string, limit: number) {
+  const { aliases, order, distinct } = pivotCombinations(pivot, columns, from);
+  const outputs = pivot.map((index, at) => {
+    const column = columns[index];
+    return groupOutput(aliases[at], { name: column.name, type: column.type, sourceType: column.sqlType });
+  });
+  const select = outputs.map((output, at) => `${output.expression} AS o${at}`);
+  select.push("count(*) OVER () AS __vg_combinations");
+  return {
+    sql: `SELECT ${select.join(", ")} FROM (${distinct}) AS d ORDER BY ${order.join(", ")} LIMIT ${limit}`,
+    outputs,
+  };
 }
 
 /** ORDER BY terms of result columns, by alias: blanks last as in views. */
@@ -361,6 +405,8 @@ export function groupStatement(
   result: readonly ColumnSchema[],
   from: string,
   limit: number,
+  /** With a pivot: how many combinations of column-axis values there are (`pivotStatement`). */
+  cells = 0,
 ) {
   const inner: string[] = [];
   const aliases: string[] = [];
@@ -368,11 +414,27 @@ export function groupStatement(
     aliases.push(`k${at}`);
     inner.push(`${quoteIdentifier(columns[index].name)} AS k${at}`);
   });
-  request.aggregates.forEach((aggregate, at) => {
-    aliases.push(`a${at}`);
-    const column = aggregate.column === undefined ? undefined : columns[aggregate.column];
-    inner.push(`${aggregateExpression(aggregate, column)} AS a${at}`);
-  });
+  const pivot = request.pivot?.columns;
+  for (let cell = 0; cell < (pivot ? cells : 1); cell++) {
+    request.aggregates.forEach((aggregate) => {
+      const alias = `a${aliases.length - request.keys.length}`;
+      aliases.push(alias);
+      const column = aggregate.column === undefined ? undefined : columns[aggregate.column];
+      inner.push(`${aggregateExpression(aggregate, column, pivot ? cell : null)} AS ${alias}`);
+    });
+  }
+  let rows = from;
+  if (pivot) {
+    // Each row gets the number of its combination of column-axis values, joined from the few combinations.
+    const { aliases: axis, order, distinct } = pivotCombinations(pivot, columns, from);
+    const numbered = `SELECT *, row_number() OVER (ORDER BY ${order.join(", ")}) - 1 AS n FROM (${distinct}) AS d`;
+    const matches = pivot.map(
+      (index, at) => `f.${quoteIdentifier(columns[index].name)} IS NOT DISTINCT FROM c.${axis[at]}`,
+    );
+    rows = `(SELECT f.*, c.n AS ${PIVOT_COLUMN} FROM ${from} AS f JOIN (${numbered}) AS c ON ${matches.join(" AND ")})`;
+  }
+  // Totals of a cross tabulation without rows: one row without columns.
+  if (inner.length === 0) inner.push("count(*) AS __vg_empty");
   const outputs = result.map((column, at) => groupOutput(aliases[at], column));
   const groupBy = request.keys.length > 0 ? ` GROUP BY ${request.keys.map((_, at) => at + 1).join(", ")}` : "";
   const order =
@@ -385,6 +447,6 @@ export function groupStatement(
       : [];
   const select = outputs.map((output, at) => `${output.expression} AS o${at}`);
   select.push("count(*) OVER () AS __vg_groups");
-  const sql = `SELECT ${select.join(", ")} FROM (SELECT ${inner.join(", ")} FROM ${from}${groupBy}) AS g${order.length > 0 ? ` ORDER BY ${order.join(", ")}` : ""} LIMIT ${limit}`;
+  const sql = `SELECT ${select.join(", ")} FROM (SELECT ${inner.join(", ")} FROM ${rows}${groupBy}) AS g${order.length > 0 ? ` ORDER BY ${order.join(", ")}` : ""} LIMIT ${limit}`;
   return { sql, outputs };
 }

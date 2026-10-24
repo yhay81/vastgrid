@@ -263,6 +263,7 @@ export class BrowserTable implements TableSource {
       export: false,
       conditions: scan,
       group: scan,
+      pivot: scan,
     };
   }
 

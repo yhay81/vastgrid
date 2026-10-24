@@ -124,6 +124,7 @@ interface TableInfo {
     export: boolean;
     conditions?: boolean; // `ViewQuery.where` を評価できる。省略は false
     group?: boolean;      // `group` に答えられる。省略は false
+    pivot?: boolean;      // `pivot` 付きの `group` に答えられる。省略は false
   };
   exports?: { formats: ExportFormat[]; delivery: "file" | "data" }; // 書き出せるとき、exportView が書く形式
 }
@@ -257,12 +258,14 @@ interface GroupRequest {
   aggregates: { fn: AggregateFunction; column?: number }[]; // `column` のない `count` は行を数える
   sort?: SortKey[];             // 結果の列の番号。既定はキーの昇順
   limit?: number;               // 1〜100,000 グループ。既定は 1,000
+  pivot?: { columns: number[]; maxColumns?: number }; // クロス集計。`columns` の値を列にする
 }
 interface GroupResult {
   columns: ColumnSchema[];      // キーの列、続いて集計値ごとの `fn(column)`（行の件数は `count(*)`）
   rows: CellValue[][];          // グループごとの配列
   groups: number;               // `limit` を超えた分も含めたグループの数
   truncated: boolean;
+  pivot?: { column: number; values: CellValue[]; aggregate: number }[]; // 作った列
 }
 ```
 

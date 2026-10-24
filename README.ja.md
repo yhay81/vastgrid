@@ -330,7 +330,7 @@ const [checked, setChecked] = useState<RowSelection>({ type: "include", keys: []
 
 ### グループ化と集計
 
-ツールバーの「グループ化」で、絞り込みで残る行を 1 つ以上の列でまとめ、グループを表として表示します。キーの列のあとに件数・合計・平均・最小・最大が並びます。列のメニューの「下端の集計行に表示…」で、列の集計値を行の下に固定した行に表示します。どちらも source が計算します（`group`、`capabilities.group`）。対応するのは `ArraySource`、DuckDB のサーバー（組み立てた 1 つの SQL）、`fullScan` の `vastgrid-browser` です。結果は `limit` グループまで（既定 1,000）で、整数と decimal の合計は正確です。どちらも `GridState` に保存します。
+ツールバーの「グループ化」で、絞り込みで残る行を 1 つ以上の列でまとめ、グループを表として表示します。キーの列のあとに件数・合計・平均・最小・最大が並びます。列のメニューの「下端の集計行に表示…」で、列の集計値を行の下に固定した行に表示します。どちらも source が計算します（`group`、`capabilities.group`）。対応するのは `ArraySource`、DuckDB のサーバー（組み立てた 1 つの SQL）、`fullScan` の `vastgrid-browser` です。結果は `limit` グループまで（既定 1,000）で、整数と decimal の合計は正確です。クロス集計では選んだ列の値を列にし（`東京 / sum(amount)`）、200 列を超えるときは通知して拒否します。どれも `GridState` に保存します。
 
 ```ts
 const result = await source.group({ view: null, keys: [0], aggregates: [{ fn: "count" }, { fn: "sum", column: 2 }] });

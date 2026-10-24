@@ -54,7 +54,7 @@ seen. It answers `null` when the file is gone.
 | `stats` | `table`, `view`, `column` | `ColumnStats` |
 | `distinct` | `table`, `view`, `column`, optional `search`, `limit` | `{ values: { value, count }[], truncated }` |
 | `aggregate` | `table`, `view`, `ranges: { start, end, columns }[]` | `{ count, numericCount, sum, min, max, average }` |
-| `group` | `table`, `view`, `keys`, `aggregates`, optional `sort`, `limit` | `GroupResult`: `{ columns, rows, groups, truncated }` (see [Groups](#groups-and-totals)) |
+| `group` | `table`, `view`, `keys`, `aggregates`, optional `sort`, `limit`, `pivot` | `GroupResult`: `{ columns, rows, groups, truncated, pivot? }` (see [Groups](#groups-and-totals)) |
 | `find` | `table`, `view`, `text`, `columns`, `row`, `column`, `direction` (`1` or `-1`), optional `caseSensitive` | `{ row, column }` or `null` |
 | `export` | `table`, `view`, `format` (`csv`, `tsv`, `parquet`, `json`, `xlsx`), optional `columns`, `headers`, `numberFormats`, `target` | `{ target, rows }` |
 | `revision` | `table` | `{ revision: string \| null }`, the data's current revision (see [Watching for changes](#watching-for-changes)) |
@@ -97,7 +97,7 @@ deletes the partial file and answers `cancelled`. `xlsx` refuses more than 1,048
   notes?: string[];            // encoding:shift_jis, all_varchar, invalid_utf8_replaced, merged_cells, formulas_without_values
   sheets?: { name: string; hidden?: boolean }[]; // workbooks: the sheets, in workbook order
   sheet?: string;              // workbooks: the sheet that was read
-  capabilities: { sort, filter, search, stats, distinct, aggregate, find, export: boolean; conditions?, group?: boolean };
+  capabilities: { sort, filter, search, stats, distinct, aggregate, find, export: boolean; conditions?, group?, pivot?: boolean };
   exports?: { formats: ExportFormat[]; delivery: "file" | "data" }; // what export can write, when it can
 }
 ```
@@ -233,6 +233,7 @@ are none: the totals of the view. Servers that answer it report `capabilities.gr
   aggregates: { fn: "count" | "sum" | "avg" | "min" | "max"; column?: number }[];  // at most 64
   sort?: { column: number; direction: "asc" | "desc" }[];  // result columns
   limit?: number;                                   // 1..100,000 groups, default 1,000
+  pivot?: { columns: number[]; maxColumns?: number }; // a cross tabulation (see below)
 }
 // result
 {
@@ -240,6 +241,7 @@ are none: the totals of the view. Servers that answer it report `capabilities.gr
   rows: CellValue[][];                              // one array per group, in column order
   groups: number;                                   // all groups, also those past `limit`
   truncated: boolean;                               // groups > rows.length
+  pivot?: { column: number; values: CellValue[]; aggregate: number }[]; // the generated columns
 }
 ```
 
@@ -265,6 +267,27 @@ Rules, the same for every source (`ArraySource`, `vastgrid-browser`, `vastgrid-d
 
 `group` holds whole views: on a view that is still building it answers `not_ready` for a view that filters.
 
+### Cross tabulations
+
+With `pivot`, the values of `pivot.columns` (the column axis, 1 to 16 columns that are not keys) become
+columns: after the keys (the row axis), one column per combination of column-axis values and aggregate.
+Servers that answer it report `capabilities.pivot`.
+
+- **Order of the columns.** Combinations are ordered like keys: each column ascending, blanks last, then
+  null after the empty string. Within a combination, the aggregates keep the request's order.
+- **Names.** A generated column is named by its values and its aggregate, joined with ` / `:
+  `Tokyo / sum(sales)`, `2024 / Tokyo / count(*)`. Null is `(null)` and the empty string `(empty)`.
+  Repeated names get ` (2)`, … as above, so names are stable for the same request and data: clients keep
+  settings of the columns by them. `pivot` in the result lists each generated column with its values and
+  the index of its aggregate, for clients that need the values themselves (for example for multi-level
+  headers).
+- **Types and missing values.** A generated column has the type of its aggregate. A cell whose group has
+  no rows with that combination is null, except `count`, which is 0.
+- **How many.** `maxColumns` (default 200, at most 1,000) limits the generated columns. A request that
+  would make more fails with `too_many_columns` (422) instead of being cut, so a client never shows part
+  of the columns as if they were all. `sort` may name generated columns.
+- No subtotals or grand totals are added: the totals of a column come from a `group` without keys.
+
 ## Error codes
 
 `ErrorCodes` in `vastgrid-core` has a constant for each of these codes.
@@ -284,6 +307,7 @@ Rules, the same for every source (`ArraySource`, `vastgrid-browser`, `vastgrid-d
 | `not_file` | 400 | The path is not a file (for example a folder). |
 | `not_allowed` | 403 | The file, or the folder of an export, is outside the folders the server may use (links are followed). |
 | `export_disabled` | 403 | The host did not enable exports. |
+| `too_many_columns` | 422 | A cross tabulation would make more columns than its `maxColumns`. |
 | `export_too_large` | 413 | The rows or columns do not fit in the format (an Excel sheet), or the workbook would pass 4 GB. |
 | `disposed` | 503 | The server closed its table engine (for example while it shuts down). |
 | `internal_error` | 500 | Anything else. |

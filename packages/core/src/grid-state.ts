@@ -37,6 +37,8 @@ export interface GridColumnSetting {
 export interface GridGroupState {
   keys: string[];
   aggregates: { fn: AggregateFunction; column?: string }[];
+  /** A cross tabulation: the columns whose values become columns (see `GroupRequest.pivot`). */
+  pivot?: string[];
   /** The settings of the grouped table: its sort, filters and columns, by the names of the result columns. */
   state?: GridState;
 }
@@ -141,6 +143,11 @@ function groupState(value: unknown): GridGroupState | null {
   const keys = value.keys as string[];
   if (keys.length === 0 && aggregates.length === 0) return null;
   const group: GridGroupState = { keys, aggregates };
+  if (Array.isArray(value.pivot) && value.pivot.length > 0 && value.pivot.every((name) => typeof name === "string")) {
+    // A cross tabulation needs an aggregate.
+    if (aggregates.length === 0) return null;
+    group.pivot = value.pivot as string[];
+  }
   // The grouped table's own settings cannot be grouped again.
   const inner = value.state === undefined ? null : parseGridState(value.state);
   if (inner) {

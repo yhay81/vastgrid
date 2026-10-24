@@ -173,3 +173,57 @@ test("grid states keep the grouping and the totals of columns", () => {
   assert.equal(parseGridState({ version: 1, group: null })?.group, null);
   assert.equal(parseGridState({ version: 1, group: { keys: [], aggregates: [] } })?.group, undefined);
 });
+
+test("cross tabulations name their columns by values and keep them in the state", async () => {
+  const source = new ArraySource({
+    columns: [
+      { name: "region", type: "string" },
+      { name: "year", type: "integer" },
+      { name: "amount", type: "integer" },
+    ],
+    rows: [
+      ["East", 2024, 1],
+      ["East", 2023, 2],
+      ["West", 2024, 3],
+      ["West", null, 4],
+      ["East", 2024, 5],
+    ],
+  });
+  const result = await source.group({
+    view: null,
+    keys: [0],
+    aggregates: [{ fn: "sum", column: 2 }],
+    pivot: { columns: [1] },
+    sort: [{ column: 2, direction: "desc" }],
+  });
+  assert.deepEqual(
+    result.columns.map((column) => column.name),
+    ["region", "2023 / sum(amount)", "2024 / sum(amount)", "(null) / sum(amount)"],
+  );
+  assert.deepEqual(result.rows, [
+    ["East", 2, 6, null],
+    ["West", null, 3, 4],
+  ]);
+  assert.deepEqual(
+    result.pivot?.map((column) => [column.column, column.values]),
+    [
+      [1, [2023]],
+      [2, [2024]],
+      [3, [null]],
+    ],
+  );
+  // Refused once the column-axis values make too many columns, not cut.
+  await assert.rejects(
+    source.group({ view: null, keys: [0], aggregates: [{ fn: "count" }], pivot: { columns: [1], maxColumns: 2 } }),
+    { code: "too_many_columns" },
+  );
+  const state = parseGridState({
+    version: 1,
+    group: { keys: ["region"], aggregates: [{ fn: "sum", column: "amount" }], pivot: ["year"] },
+  });
+  assert.deepEqual(state?.group?.pivot, ["year"]);
+  assert.equal(
+    parseGridState({ version: 1, group: { keys: ["region"], aggregates: [], pivot: ["year"] } })?.group,
+    undefined,
+  );
+});

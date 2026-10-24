@@ -21,6 +21,8 @@ import {
   type ColumnFormat,
   type ColumnSchema,
   type CopyValues,
+  DEFAULT_PIVOT_COLUMNS,
+  ErrorCodes,
   filterLeaves,
   filtersRows,
   type GridGroupState,
@@ -231,6 +233,8 @@ interface Grouping {
   schema: ColumnSchema[];
   /** The rows grouped: the filters, condition tree and search of `baseState`. */
   query: ViewQuery;
+  /** The base source makes cross tabulations. */
+  pivotable: boolean;
 }
 
 /** Waits until a source's table is read (or failed to be read), and returns its info. */
@@ -426,6 +430,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       aggregates: value.draft.aggregates.map((aggregate) =>
         aggregate.column === undefined ? { fn: aggregate.fn } : { fn: aggregate.fn, column: name(aggregate.column) },
       ),
+      ...(value.draft.pivot?.length ? { pivot: value.draft.pivot.map(name) } : {}),
       ...(inner ? { state: inner } : {}),
     };
   }, []);
@@ -454,16 +459,26 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         if (info.status !== "ready") throw new Error(info.error ?? messages.error);
         const names = info.columns.map((column) => column.name);
         const query: ViewQuery = resolveGridState(baseState, names).query ?? {};
-        const grouped = new GroupedSource(source, { keys: draft.keys, aggregates: draft.aggregates, query });
+        const pivotable = info.capabilities.pivot === true;
+        if (draft.pivot?.length && !pivotable) throw new Error(messages.error);
+        const grouped = new GroupedSource(source, {
+          keys: draft.keys,
+          aggregates: draft.aggregates,
+          ...(draft.pivot?.length ? { pivot: { columns: draft.pivot } } : {}),
+          query,
+        });
         await grouped.load(abort.signal);
         if (abort.signal.aborted) return false;
         nextState.current = inner ?? null;
-        setGrouping({ base: source, source: grouped, draft, baseState, schema: info.columns, query });
+        setGrouping({ base: source, source: grouped, draft, baseState, schema: info.columns, query, pivotable });
         setOverlay(null);
         return true;
       } catch (error) {
         if (abort.signal.aborted || isAbortError(error)) return false;
-        const message = messages.groupFailed(error instanceof Error ? error.message : String(error));
+        const message =
+          error instanceof Error && "code" in error && error.code === ErrorCodes.tooManyColumns
+            ? messages.pivotTooWide(count(DEFAULT_PIVOT_COLUMNS))
+            : messages.groupFailed(error instanceof Error ? error.message : String(error));
         setGroupError(message);
         announce(message);
         return false;
@@ -474,7 +489,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         }
       }
     },
-    [announce, messages, source],
+    [announce, count, messages, source],
   );
 
   /** Shows the rows again, with `baseState` (the rows' grid as it was before grouping, by default). */
@@ -498,6 +513,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         ? [{ fn: aggregate.fn, column: index }]
         : [];
     });
+    const pivot = (group.pivot ?? [])
+      .map(indexOf)
+      .filter((index) => index >= 0 && !keys.includes(index) && isGroupableType(schema[index].type));
+    if (pivot.length > 0) {
+      return aggregates.length > 0 ? { keys: [...new Set(keys)], aggregates, pivot: [...new Set(pivot)] } : null;
+    }
     return keys.length + aggregates.length > 0 ? { keys: [...new Set(keys)], aggregates } : null;
   }, []);
 
@@ -1418,6 +1439,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       grouped.draft.keys.length > 0
         ? messages.groupedBy(grouped.draft.keys.map(baseLabel).join(", "))
         : messages.groupedTotals,
+      grouped.draft.pivot?.length ? messages.pivotedBy(grouped.draft.pivot.map(baseLabel).join(", ")) : "",
       filtersRows(grouped.query) ? messages.groupedFiltered : "",
       grouped.source.result
         ? messages.groupCount(
@@ -1908,6 +1930,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
             labelOf={baseLabel}
             messages={messages}
             initial={grouped?.draft ?? null}
+            pivotable={grouped ? grouped.pivotable : capabilities?.pivot === true}
             grouped={grouped !== null}
             pending={groupPending}
             error={groupError}

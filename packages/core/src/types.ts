@@ -56,6 +56,8 @@ export interface TableCapabilities {
   conditions?: boolean;
   /** Answers `group` (groups, aggregates and totals). Absent means false. */
   group?: boolean;
+  /** Answers `group` with `pivot` (cross tabulations). Absent means false. */
+  pivot?: boolean;
 }
 
 export type TableStatus = "loading" | "ready" | "error";
@@ -306,7 +308,8 @@ export interface GroupAggregate {
  * decide the rows; its sort does not matter. Without `keys`, the answer is one row over all the rows
  * (also when there are none), as the totals of a table.
  *
- * The result columns are the keys, then one column per aggregate. Groups are ordered by `sort` (indexes of result columns, blanks last as in views),
+ * The result columns are the keys, then one column per aggregate (with `pivot`, per column-axis value
+ * and aggregate). Groups are ordered by `sort` (indexes of result columns, blanks last as in views),
  * then by every key ascending; without `sort`, by the keys ascending. A null key is a group of its
  * own, and so is the empty string: they are different values, as in SQL.
  */
@@ -320,20 +323,38 @@ export interface GroupRequest {
   sort?: SortKey[];
   /** Groups to return, from 1 to `MAX_GROUP_ROWS` (default `DEFAULT_GROUP_LIMIT`). */
   limit?: number;
+  /**
+   * Makes a cross tabulation: after the keys (the row axis), one result column per combination of the
+   * values of `columns` (the column axis) and aggregate. Combinations are ordered like keys: ascending,
+   * blanks last. `maxColumns` (default `DEFAULT_PIVOT_COLUMNS`, at most `MAX_PIVOT_COLUMNS`) limits the
+   * generated columns: a request that would make more fails with `too_many_columns` rather than being cut.
+   */
+  pivot?: { columns: number[]; maxColumns?: number };
+}
+
+/** A generated column of a cross tabulation (`GroupRequest.pivot`). */
+export interface PivotColumn {
+  /** Index of the column in `GroupResult.columns`. */
+  column: number;
+  /** The values of the column-axis columns. */
+  values: CellValue[];
+  /** Index into `GroupRequest.aggregates`. */
+  aggregate: number;
 }
 
 /**
  * The answer to a `GroupRequest`: a small table, in row-major order.
  *
  * Key columns keep the schema of their column. Aggregate columns are named `fn(column)` (`count(*)`
- * for rows). A name that an
+ * for rows); generated pivot columns are named by their values and the aggregate, joined with " / "
+ * (`Tokyo / sum(sales)`; `(null)` and `(empty)` stand for null and the empty string). A name that an
  * earlier result column has gets " (2)", " (3)", …, so names are unique and the same for the same
  * request and data: they identify the columns in saved settings.
  *
  * Types: `count` is `bigint`; `sum` of integers is `bigint` and exact; `sum` of decimals is `decimal`
  * and exact, with the column's scale; `sum` of floats and every `avg` are `float`; `min` and `max`
  * have the column's type. Integers beyond 2^53 and decimals arrive as strings. An aggregate over no
- * values is null, except `count`, which is 0.
+ * values is null, except `count`, which is 0 (also in pivot cells without rows).
  */
 export interface GroupResult {
   columns: ColumnSchema[];
@@ -343,6 +364,8 @@ export interface GroupResult {
   groups: number;
   /** More groups exist than `rows` holds. */
   truncated: boolean;
+  /** The generated columns, with `pivot`, in column order. */
+  pivot?: PivotColumn[];
 }
 
 export interface FindRequest {

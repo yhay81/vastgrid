@@ -50,6 +50,7 @@ export type ProtocolRequest =
       aggregates: GroupAggregate[];
       sort?: SortKey[];
       limit?: number;
+      pivot?: { columns: number[]; maxColumns?: number };
     }
   | {
       op: "find";
@@ -128,6 +129,8 @@ export const ErrorCodes = {
   exportDisabled: "export_disabled",
   /** The rows or columns do not fit in the export format (for example an Excel sheet). */
   exportTooLarge: "export_too_large",
+  /** A cross tabulation would make more columns than its `maxColumns`. */
+  tooManyColumns: "too_many_columns",
   /** The server closed its table engine (for example while it shuts down). */
   disposed: "disposed",
   /** Anything else. */
@@ -426,6 +429,18 @@ export function parseProtocolRequest(body: unknown): ProtocolRequest {
       const sort = sortKeys(body.sort);
       const limit = body.limit === undefined ? undefined : index(body.limit, "limit", 100_000);
       if (limit === 0) fail("limit must be at least 1");
+      let pivot: { columns: number[]; maxColumns?: number } | undefined;
+      if (body.pivot !== undefined) {
+        // The limits match MAX_GROUP_KEYS and MAX_PIVOT_COLUMNS in group.ts.
+        if (!isRecord(body.pivot)) fail("pivot must be an object");
+        const columns = indexes(body.pivot.columns, "pivot.columns", 16);
+        if (columns.length === 0) fail("pivot.columns must not be empty");
+        if (list.length === 0) fail("a pivot needs aggregates");
+        const maxColumns =
+          body.pivot.maxColumns === undefined ? undefined : index(body.pivot.maxColumns, "pivot.maxColumns", 1000);
+        if (maxColumns === 0) fail("pivot.maxColumns must be at least 1");
+        pivot = { columns, ...(maxColumns === undefined ? {} : { maxColumns }) };
+      }
       return {
         op: "group",
         table,
@@ -434,6 +449,7 @@ export function parseProtocolRequest(body: unknown): ProtocolRequest {
         aggregates: list,
         ...(sort?.length ? { sort } : {}),
         ...(limit === undefined ? {} : { limit }),
+        ...(pivot ? { pivot } : {}),
       };
     }
     case "find": {

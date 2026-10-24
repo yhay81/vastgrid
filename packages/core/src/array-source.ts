@@ -193,6 +193,7 @@ export class ArraySource implements TableSource {
         export: true,
         conditions: true,
         group: true,
+        pivot: true,
       },
       exports: { formats: [...TABLE_FILE_FORMATS], delivery: "data" },
     };

@@ -385,7 +385,9 @@ groups as a table: the keys, then counts, sums, averages, minimums and maximums.
 row…" in a column's menu shows an aggregate of the column in a row fixed below the rows. The source
 computes both (`group`, with `capabilities.group`): `ArraySource`, the DuckDB server (one generated SQL
 statement) and `vastgrid-browser` with `fullScan`. Results hold at most `limit` groups (1,000 by default);
-sums of integers and decimals are exact. Both are part of `GridState`.
+sums of integers and decimals are exact. A cross tabulation turns the values of chosen columns into
+columns (`Tokyo / sum(amount)`), and is refused with a notice when it would make more than 200 columns.
+All of it is part of `GridState`.
 
 ```ts
 const result = await source.group({ view: null, keys: [0], aggregates: [{ fn: "count" }, { fn: "sum", column: 2 }] });

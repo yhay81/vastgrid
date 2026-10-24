@@ -11,10 +11,12 @@ import {
 } from "vastgrid-core";
 import type { Messages } from "../messages.js";
 
-/** The grouping being edited: schema indexes of the keys, and the aggregates. */
+/** The grouping being edited: schema indexes of the keys, the aggregates and the column axis of a pivot. */
 export interface GroupDraft {
   keys: number[];
   aggregates: GroupAggregate[];
+  /** Columns whose values become columns (a cross tabulation); empty or absent for plain groups. */
+  pivot?: number[];
 }
 
 /** Value of the column select that counts rows instead of a column's values. */
@@ -37,6 +39,7 @@ export function GroupPanel({
   labelOf,
   messages,
   initial,
+  pivotable,
   grouped,
   pending,
   error,
@@ -48,6 +51,8 @@ export function GroupPanel({
   labelOf: (index: number) => string;
   messages: Messages;
   initial: GroupDraft | null;
+  /** The source makes cross tabulations (`capabilities.pivot`): the panel offers the column axis. */
+  pivotable: boolean;
   /** The grid shows groups now: the panel offers to show the rows again. */
   grouped: boolean;
   pending: boolean;
@@ -59,11 +64,20 @@ export function GroupPanel({
   const id = useId();
   const [keys, setKeys] = useState<number[]>(initial?.keys ?? []);
   const [aggregates, setAggregates] = useState<GroupAggregate[]>(initial?.aggregates ?? [{ fn: "count" }]);
-  const empty = keys.length === 0 && aggregates.length === 0;
+  const [pivot, setPivot] = useState<number[]>(initial?.pivot ?? []);
+  // A cross tabulation needs a value to put in its cells.
+  const empty = (keys.length === 0 && aggregates.length === 0) || (pivot.length > 0 && aggregates.length === 0);
   const columns = schema.map((column, index) => ({ column, index }));
 
   function toggleKey(index: number, checked: boolean) {
     setKeys((current) => (checked ? [...current, index] : current.filter((key) => key !== index)));
+    // A column is either a row or a column of the cross tabulation.
+    if (checked) setPivot((current) => current.filter((column) => column !== index));
+  }
+
+  function togglePivot(index: number, checked: boolean) {
+    setPivot((current) => (checked ? [...current, index] : current.filter((column) => column !== index)));
+    if (checked) setKeys((current) => current.filter((key) => key !== index));
   }
 
   function setAggregate(position: number, aggregate: GroupAggregate | null) {
@@ -77,7 +91,7 @@ export function GroupPanel({
   function apply(event: FormEvent) {
     event.preventDefault();
     if (empty) return;
-    onApply({ keys, aggregates });
+    onApply(pivot.length > 0 ? { keys, aggregates, pivot } : { keys, aggregates });
   }
 
   return (
@@ -105,6 +119,28 @@ export function GroupPanel({
           )}
         </div>
       </fieldset>
+      {pivotable && (
+        <fieldset className="vg-export__group">
+          <legend className="vg-export__legend">{messages.pivotColumns}</legend>
+          <p className="vg-panel__muted">{messages.pivotHint}</p>
+          <div className="vg-filter__values">
+            {columns.map(({ column, index }) =>
+              isGroupableType(column.type) ? (
+                <label className="vg-check" key={index}>
+                  <input
+                    type="checkbox"
+                    checked={pivot.includes(index)}
+                    disabled={!pivot.includes(index) && pivot.length >= MAX_GROUP_KEYS}
+                    onChange={(event) => togglePivot(index, event.target.checked)}
+                  />
+                  <span className="vg-check__label">{labelOf(index)}</span>
+                  <span className="vg-check__count">{pivot.includes(index) ? pivot.indexOf(index) + 1 : ""}</span>
+                </label>
+              ) : null,
+            )}
+          </div>
+        </fieldset>
+      )}
       <fieldset className="vg-export__group">
         <legend className="vg-export__legend">{messages.groupValues}</legend>
         <ul className="vg-builder__list">

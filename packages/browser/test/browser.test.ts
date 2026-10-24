@@ -667,6 +667,7 @@ test("grouping in the browser matches the DuckDB engine, and needs fullScan", as
             { fn: "sum", column: 0 },
           ],
         },
+        { keys: [], aggregates: [{ fn: "avg", column: 3 }], pivot: { columns: [1] } },
       ],
     ],
     [
@@ -683,6 +684,7 @@ test("grouping in the browser matches the DuckDB engine, and needs fullScan", as
           sort: [{ column: 1, direction: "desc" }],
         },
         { keys: [6, 4], aggregates: [{ fn: "count", column: 8 }] },
+        { keys: [6], aggregates: [{ fn: "sum", column: 2 }, { fn: "count" }], pivot: { columns: [1] } },
       ],
     ],
   ] as const) {

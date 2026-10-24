@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `vastgrid-core`: `GroupRequest.pivot` makes cross tabulations on the source: the values of the
+  column-axis columns become columns after the keys, one per value combination and aggregate, ordered
+  like keys and named `Tokyo / sum(sales)` (`(null)` and `(empty)` for blanks), with `GroupResult.pivot`
+  listing their values. Cells without rows are null (counts 0). `maxColumns` (default 200, at most 1,000)
+  limits the generated columns, and a request that would make more fails with the new `too_many_columns`
+  code instead of being cut. `capabilities.pivot`, the protocol, `parseProtocolRequest`, `ArraySource`
+  and `GridState` (`group.pivot`) carry it.
+- `vastgrid-duckdb`: cross tabulations read the column-axis values first (refusing too many before
+  aggregating), then aggregate every cell in one statement, with the combinations numbered in SQL, so
+  no values are interpolated. `vastgrid-browser` makes them in its one pass with `fullScan`.
+- `vastgrid`: the grouping panel offers "Columns from values (cross tabulation)" when the source makes
+  them; settings that would make too many columns are refused with a notice, keeping the grid as it was.
+
 - `vastgrid-core`: `TableSource.group` groups the rows of a view by columns (`keys`) and computes `count`,
   `sum`, `avg`, `min` and `max` (`aggregates`) on the source; without keys it answers one row of totals.
   Results are small tables (`GroupResult`: `columns`, `rows`, `groups`, `truncated`) of at most `limit`
