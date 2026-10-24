@@ -456,3 +456,17 @@ export interface ColumnFormat {
   /** Overrides the grid's `copyValues` for this column's cells. */
   copy?: CopyValues;
 }
+
+/**
+ * A group of columns shown under one name in a header row above the column names (multi-row headers).
+ * Groups only change the headers: the schema, the query, the selection and copies use the columns.
+ */
+export interface ColumnGroup {
+  /** Shown in the group's header. */
+  name: string;
+  /**
+   * The group's members: schema column names and nested groups, which add a header row below this one.
+   * Names that the table does not have are ignored, so one definition can serve similar tables.
+   */
+  children: readonly (string | ColumnGroup)[];
+}

@@ -149,7 +149,9 @@ rows.
 | `locale` | `string` | the browser's language | Locale for numbers and the built-in texts: Japanese for `ja`, English otherwise. |
 | `messages` | `Partial<Messages>` | | Replaces some of the built-in texts (see `en` and `ja`). |
 | `rowHeight` | `number` | `--vg-row-height` or 24 | Row height in pixels. |
-| `headerHeight` | `number` | `--vg-header-height` or 32 | Header height in pixels. |
+| `headerHeight` | `number` | `--vg-header-height` or 32 | Height of the row of column names in pixels. Rows of `columnGroups` add to the header. |
+| `columnGroups` | `ColumnGroup[]` | | Groups of columns named in header rows above the column names; nested groups add rows. |
+| `groupHeaderHeight` | `number` | `--vg-group-header-height` or 24 | Height of each header row of groups in pixels. |
 | `maxLines` | `number` | `3` | Lines shown at most in cells of columns that wrap (`wrap` in `columnFormats`), 1 to 20. |
 | `nullText` | `string` | `""` | Text shown for null cells. |
 | `frozenColumns` | `number` | `0` | Columns frozen at the left when the table opens. |
@@ -248,6 +250,30 @@ setting) asks for the shown text and the labels.
 between Japanese, Chinese and Korean characters and at line breaks in the value; longer text ends with
 "…". All rows keep one height (`rowHeight` plus `--vg-line-height` per further line while a visible
 column wraps), so scrolling stays exact for any number of rows. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#column-formats).
+
+### Column groups
+
+`columnGroups` names groups of columns in header rows above the column names (multi-row headers).
+Members are schema column names or nested groups, which add a row each. Groups change only the header:
+sorting, filters, column menus, selection, events (`col` and `column`) and `GridState` work on the
+columns as before.
+
+```tsx
+const groups: ColumnGroup[] = [
+  { name: "Sales", children: [
+    { name: "Q1", children: ["jan", "feb", "mar"] },
+    { name: "Q2", children: ["apr", "may", "jun"] },
+  ] },
+];
+
+<DataGrid source={source} columnGroups={groups} groupHeaderHeight={24} />;
+```
+
+Groups follow their columns. When moving, hiding or freezing columns leaves a group's visible columns
+apart, or some frozen and some scrolling, its header is split and each part shows the name. Clicking a
+group header selects its columns (Shift extends, ⌘/Ctrl adds); dragging the header of a selected group
+moves its columns together. Copies and exports keep one header row, the column names. See the
+[DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#column-groups).
 
 ### Detail panel
 

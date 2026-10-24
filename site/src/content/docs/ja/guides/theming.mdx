@@ -31,7 +31,7 @@ import { ThemedGrid } from "../../../../components/examples.tsx";
 
 グリッドがプロパティを読むのは、マウントしたとき、`className` か `style` が変わったとき、文書のルートの要素の `class`・`style`・`data-theme` 属性が変わったとき、システムの配色が変わったときです。ほかの方法で見た目を変えるときは、`className` を変えてください。
 
-行と見出しの高さは、マウントしたときに読みます。あとから変えるには、`rowHeight` と `headerHeight` を渡してください。
+行と見出しの高さは、マウントしたときに読みます。あとから変えるには、`rowHeight`・`headerHeight`・`groupHeaderHeight` を渡してください。
 
 ## プロパティ
 
@@ -41,7 +41,8 @@ import { ThemedGrid } from "../../../../components/examples.tsx";
 | `--vg-font-size` | `13px` | | セル。見出しとメニューはこれをもとにする |
 | `--vg-row-height` | `24px` | | 行の高さ（`rowHeight` を渡さないとき） |
 | `--vg-line-height` | 文字の大きさの 1.4 倍 | | 折り返す列で、2 行目以降の 1 行ごとの高さ |
-| `--vg-header-height` | `32px` | | 見出しの高さ（`headerHeight` を渡さないとき） |
+| `--vg-header-height` | `32px` | | 列名の段の高さ（`headerHeight` を渡さないとき） |
+| `--vg-group-header-height` | `24px` | | 列のグループの段 1 段の高さ（`groupHeaderHeight` を渡さないとき） |
 | `--vg-radius` | `6px` | | 入力欄・ボタン・メニュー・パネルの角 |
 | `--vg-bg` | `#ffffff` | `#16161a` | セル |
 | `--vg-fg` | `#1f2328` | `#e6e6eb` | 文字 |

@@ -19,7 +19,9 @@ import "vastgrid/styles.css";
 | `messages` | `Partial<Messages>` | | Replaces some of the built-in texts (see `en` and `ja`). |
 | `rowHeight` | `number` | `--vg-row-height` or 24 | Row height in pixels. |
 | `maxLines` | `number` | `3` | Lines shown at most in cells of columns that wrap (`wrap` in `columnFormats`), 1 to 20. |
-| `headerHeight` | `number` | `--vg-header-height` or 32 | Header height in pixels. |
+| `headerHeight` | `number` | `--vg-header-height` or 32 | Height of the row of column names in pixels. Rows of `columnGroups` add to the header. |
+| `columnGroups` | `ColumnGroup[]` | | Groups of columns named in header rows above the column names (see [Column groups](#column-groups)). |
+| `groupHeaderHeight` | `number` | `--vg-group-header-height` or 24 | Height of each header row of groups in pixels. |
 | `nullText` | `string` | `""` | Text shown for null cells. |
 | `frozenColumns` | `number` | `0` | Columns frozen at the left when the table opens. |
 | `toolbar` | `boolean` | `true` | Shows the search box, active filters and row count. |
@@ -268,6 +270,73 @@ Invalid settings, such as a currency style without `currency` or an unknown time
 `RangeError` as soon as the grid receives them. `ColumnFormatter` (made by `ValueFormatter.column(schema,
 format)`, and `controller.formatterOf(index)` in the grid) formats values with the settings outside the
 grid, and keeps them in `settings`.
+
+## Column groups
+
+`columnGroups` names groups of columns in header rows above the column names. A `ColumnGroup` has a
+`name` and `children`: schema column names (`ColumnSchema.name`) and nested groups. Each level of
+nesting adds a header row of `groupHeaderHeight` pixels, so the whole header is `headerHeight` plus
+that for each level (`controller.headerHeight`); rows, scrolling, `goToRow` and the row checkboxes
+start below it.
+
+```tsx
+import { type ColumnGroup, DataGrid } from "vastgrid";
+
+const groups: ColumnGroup[] = [
+  { name: "Sales", children: [
+    { name: "Q1", children: ["jan", "feb", "mar"] },
+    { name: "Q2", children: ["apr", "may", "jun"] },
+  ] },
+  { name: "Notes", children: ["comment"] },
+];
+
+<DataGrid source={source} columnGroups={groups} />;
+```
+
+Keep the array stable (memoize it or define it outside components). Names the table does not have are
+ignored, so one definition can serve similar files. A column listed twice, a group without `children`
+or groups nested deeper than 8 levels throw a `RangeError` when the grid receives them.
+
+**Groups follow their columns.** The groups are a display definition separate from the schema and from
+the column settings. The header is computed from the visible columns in their current order:
+
+- A group's header spans its visible columns that are side by side. Moving a column between them, or
+  moving one of them away, splits the header; each part shows the group's name. Hiding a column leaves it
+  out, and hiding all of a group's columns hides the group.
+- Frozen columns split a group that continues into the scrolling columns, so each region shows its own
+  part. In the scrolling part, the name stays at the left edge while the columns scroll under it.
+- Resizing columns never splits a group; a narrow group cuts its name with "…".
+- The header's height depends only on how deep the groups nest, not on which columns are shown, so it
+  does not jump when columns are hidden.
+- A column with fewer groups than the header has rows has its header reach up through the empty rows.
+  Its name, sort and filter marks and menu stay in the row of column names.
+
+**Pointer.** Clicking a group header selects its columns, as clicking column headers does: Shift extends
+the selection over the group, ⌘/Ctrl (Ctrl on Windows and Linux) adds it as another range. Dragging the
+header of a group whose columns are selected moves them together, keeping their order
+(`controller.moveColumns(first, last, to)`); dropping it on one of its own columns does nothing. Moves
+are reported with the reason `move`, as for one column. Group headers have no menu and no resize
+handle: the column headers below them have.
+
+**Sorting, filters and events.** Group headers are only drawn: sorting, filters, the column menu,
+statistics, find and selection work on the columns under them. `controller.hitTest(x, y)` reports
+`zone: "group"` with the group's span (`hit.group`: `group`, `level`, and its first and last visible
+columns `start` and `end`) and `col`, the column under the pointer. Events give `col` and `column` for
+the columns, as without groups; `controller.groupSpans()` and `controller.groupsOf(col)` give the spans.
+
+**Keyboard and screen readers.** The keyboard moves between cells as before; group headers are not
+focused. For the active cell, the hidden ARIA rows describe each group above its column as a
+`columnheader` with `aria-colspan` (its visible columns) in its own header row, then the row of column
+names, so that screen readers can announce the groups with the column. `aria-rowcount` counts the
+group rows.
+
+**Copies and exports.** Copies with headers (TSV, HTML, Markdown) and exports (CSV, TSV, JSON, Parquet,
+Excel) keep one header row with the column names or labels: the files stay tables that other programs,
+and the grid itself, read back with the right column names. Groups are not written as merged cells.
+
+**Saved settings.** Groups are not part of `GridState`: they are the app's definition, given by a prop
+like `columnFormats`, while the state keeps what the user changes. The state keeps the columns' order,
+visibility and freezing by name, so applying it shows the same group headers, split where they were.
 
 ## Detail panel
 

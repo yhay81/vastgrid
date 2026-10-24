@@ -8,6 +8,7 @@
   --vg-font-size: 13px;
   --vg-row-height: 24px;
   --vg-header-height: 32px;
+  --vg-group-header-height: 24px;
   --vg-radius: 6px;
   --vg-bg: light-dark(#ffffff, #16161a);
   --vg-fg: light-dark(#1f2328, #e6e6eb);
@@ -389,7 +390,8 @@
 
 .vg-find {
   position: absolute;
-  top: calc(var(--vg-header-height) + 6px);
+  /* Below the whole header, group rows included (set by the grid). */
+  top: calc(var(--vg-header-total, var(--vg-header-height)) + 6px);
   right: 18px;
   z-index: 3;
   display: flex;

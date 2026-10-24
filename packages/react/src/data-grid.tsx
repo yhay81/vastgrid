@@ -17,6 +17,7 @@ import {
 import {
   type CellValue,
   type ColumnFormat,
+  type ColumnGroup,
   type CopyValues,
   filterLeaves,
   type GridState,
@@ -53,8 +54,21 @@ export interface DataGridProps {
   messages?: Partial<Messages>;
   /** Row height in pixels. Defaults to `--vg-row-height` or 24. */
   rowHeight?: number;
-  /** Header height in pixels. Defaults to `--vg-header-height` or 32. */
+  /**
+   * Height of the row of column names in pixels. Defaults to `--vg-header-height` or 32. Rows of
+   * `columnGroups` add to the header.
+   */
   headerHeight?: number;
+  /**
+   * Groups of columns, named in header rows above the column names; nested groups add rows. Members are
+   * schema column names. Groups follow their columns: moving, hiding or freezing columns so that a
+   * group's columns are no longer side by side splits its header, each part showing its name. Clicking a
+   * group header selects its columns; dragging a selected one moves them together. Groups are not part
+   * of `GridState`. Keep the array stable (memoize it).
+   */
+  columnGroups?: readonly ColumnGroup[];
+  /** Height of each header row of groups in pixels. Defaults to `--vg-group-header-height` or 24. */
+  groupHeaderHeight?: number;
   /**
    * Lines shown at most in cells of columns that wrap (`wrap` in `columnFormats`), from 1 to 20.
    * Defaults to 3. While a visible column wraps, every row is `rowHeight` plus `--vg-line-height` (1.4
@@ -208,7 +222,8 @@ type Drag =
   | { kind: "cells"; pointerId: number; x: number; y: number; row: number; col: number; moved: boolean }
   | { kind: "rows" | "cols"; pointerId: number; x: number; y: number }
   | { kind: "resize"; pointerId: number; col: number; startX: number; startWidth: number }
-  | { kind: "move"; pointerId: number; col: number; x: number; y: number; moved: boolean };
+  | { kind: "move"; pointerId: number; col: number; x: number; y: number; moved: boolean }
+  | { kind: "moveGroup"; pointerId: number; first: number; last: number; x: number; y: number; moved: boolean };
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
@@ -237,6 +252,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     locale,
     rowHeight,
     headerHeight,
+    columnGroups,
+    groupHeaderHeight,
     maxLines,
     nullText = "",
     frozenColumns = 0,
@@ -280,6 +297,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     const grid = new GridController(source, {
       rowHeight: rowHeight ?? 24,
       headerHeight: headerHeight ?? 32,
+      columnGroups,
+      groupHeaderHeight,
       maxLines,
       locale: resolvedLocale,
       nullText,
@@ -315,6 +334,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   useEffect(() => {
     controller.setMaxLines(maxLines);
   }, [controller, maxLines]);
+
+  useEffect(() => {
+    controller.setColumnGroups(columnGroups);
+  }, [controller, columnGroups]);
 
   useEffect(() => {
     controller.options.copyValues = copyValues;
@@ -360,6 +383,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     if (!root || !canvas || !scroller || !sizer) return;
     controller.options.rowHeight = rowHeight ?? cssLength(root, "--vg-row-height", 24);
     controller.options.headerHeight = headerHeight ?? cssLength(root, "--vg-header-height", 32);
+    controller.setGroupHeaderHeight(groupHeaderHeight ?? cssLength(root, "--vg-group-header-height", 24));
     const renderer = new CanvasRenderer(canvas, controller, resolveTheme(root));
     rendererRef.current = renderer;
     controller.attach(scroller, sizer);
@@ -403,7 +427,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       renderer.dispose();
       rendererRef.current = null;
     };
-  }, [controller, rowHeight, headerHeight]);
+  }, [controller, rowHeight, headerHeight, groupHeaderHeight]);
 
   // Theme changes through the grid's own class or style.
   // biome-ignore lint/correctness/useExhaustiveDependencies: className and style are the triggers.
@@ -554,12 +578,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
 
   function headerAnchor(col: number): Anchor {
     const x = Math.max(controller.gutterWidth, controller.columnX(col));
-    return anchorAt(x, 0, controller.options.headerHeight);
+    return anchorAt(x, 0, controller.headerHeight);
   }
 
   function cellAnchor(row: number, col: number): Anchor {
     const x = Math.max(controller.gutterWidth, controller.columnX(col));
-    const y = Math.max(controller.options.headerHeight, Math.min(controller.height - 8, controller.rowY(row)));
+    const y = Math.max(controller.headerHeight, Math.min(controller.height - 8, controller.rowY(row)));
     return anchorAt(x, y, controller.rowHeight);
   }
 
@@ -616,7 +640,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     if (!drag || (drag.kind !== "cells" && drag.kind !== "rows" && drag.kind !== "cols")) return;
     const c = controller;
     const clampedX = Math.min(Math.max(x, c.gutterWidth + 1), c.width - 1);
-    const clampedY = Math.min(Math.max(y, c.options.headerHeight + 1), c.height - 1);
+    const clampedY = Math.min(Math.max(y, c.headerHeight + 1), c.height - 1);
     const col = c.columnAt(clampedX);
     const row = c.rowAt(clampedY);
     if (drag.kind === "rows" && row >= 0) c.selection.selectRows(row, row, "extend");
@@ -638,7 +662,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     const speed = (distance: number) => Math.sign(distance) * Math.min(80, Math.abs(distance) * 0.6);
     let dx = 0;
     let dy = 0;
-    if (drag.y < c.options.headerHeight) dy = speed(drag.y - c.options.headerHeight);
+    if (drag.y < c.headerHeight) dy = speed(drag.y - c.headerHeight);
     else if (drag.y > c.height) dy = speed(drag.y - c.height);
     if (drag.kind !== "rows") {
       if (drag.x < c.gutterWidth + c.frozenWidth && c.scrollX.position > 0)
@@ -700,6 +724,27 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           dragRef.current = { kind: "cols", pointerId: event.pointerId, x, y };
         }
         break;
+      case "group": {
+        // A group header selects its columns; pressing one whose columns are selected drags them.
+        const span = hit.group;
+        if (!span) return;
+        let selected = mode === "replace";
+        for (let col = span.start; col <= span.end && selected; col++) selected = c.selection.colSelected(col);
+        if (selected) {
+          const { start: first, end: last } = span;
+          dragRef.current = { kind: "moveGroup", pointerId: event.pointerId, first, last, x, y, moved: false };
+        } else {
+          // Shift extends the selection over the whole group, toward the side the group is on.
+          if (mode === "extend") {
+            const right = span.start > c.selection.active.col;
+            c.selection.selectCols(span.start, right ? span.end : span.start, mode);
+          } else {
+            c.selection.selectCols(span.start, span.end, mode);
+          }
+          dragRef.current = { kind: "cols", pointerId: event.pointerId, x, y };
+        }
+        break;
+      }
       case "gutter":
         c.selection.selectRows(hit.row, hit.row, mode);
         dragRef.current = { kind: "rows", pointerId: event.pointerId, x, y };
@@ -726,7 +771,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         c.resizeColumn(drag.col, drag.startWidth + (x - drag.startX));
         return;
       }
-      if (drag.kind === "move") {
+      if (drag.kind === "move" || drag.kind === "moveGroup") {
         drag.moved = drag.moved || Math.abs(x - drag.x) > 4;
         drag.x = x;
         drag.y = y;
@@ -756,6 +801,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       previous.col !== hit.col ||
       previous.menu !== hit.menu ||
       previous.checkbox !== hit.checkbox ||
+      previous.group !== hit.group ||
       (hit.checkbox && previous.row !== hit.row) ||
       // A drawCell hook may draw the hovered cell differently.
       (c.options.drawCell && previous.row !== hit.row)
@@ -796,6 +842,19 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         c.selectionChanged();
       } else if (!drag.moved) {
         c.selection.selectCols(drag.col, drag.col);
+        c.selectionChanged();
+      }
+    } else if (drag.kind === "moveGroup") {
+      const { first, last } = drag;
+      const target = c.columnAt(local(event).x);
+      if (drag.moved && target >= 0 && (target < first || target > last)) {
+        c.moveColumns(first, last, target);
+        // The columns now end at the target when moved right, and start there when moved left.
+        const start = target > last ? target - (last - first) : target;
+        c.selection.selectCols(start, start + last - first);
+        c.selectionChanged();
+      } else if (!drag.moved) {
+        c.selection.selectCols(first, last);
         c.selectionChanged();
       }
     }
@@ -1187,6 +1246,9 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     const state = c.visible[col];
     return state ? c.columnLabel(state.index) : "";
   };
+  // Header rows of groups come first: the row of column names is row `groupRows + 1`.
+  const groupRows = c.groupRows;
+  const activeGroups = activeSchema ? c.groupsOf(active.col) : [];
 
   const record = detailOpen ? tracker.record : null;
   const detailProps: DetailPanelProps | null = record && {
@@ -1275,7 +1337,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           />
         </div>
       )}
-      <div ref={bodyRef} className="vg-body" data-detail={detailOpen || undefined}>
+      <div
+        ref={bodyRef}
+        className="vg-body"
+        data-detail={detailOpen || undefined}
+        style={groupRows > 0 ? ({ "--vg-header-total": `${c.headerHeight}px` } as CSSProperties) : undefined}
+      >
         <canvas ref={canvasRef} className="vg-canvas" />
         {/* biome-ignore lint/a11y/useSemanticElements: a canvas grid cannot use table elements; ARIA grid roles describe it. */}
         <div
@@ -1284,7 +1351,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           role="grid"
           tabIndex={0}
           aria-label={props["aria-label"] ?? messages.gridLabel}
-          aria-rowcount={c.rowCount + 1}
+          aria-rowcount={c.rowCount + groupRows + 1}
           aria-colcount={c.visible.length + 1}
           aria-multiselectable="true"
           aria-activedescendant={c.rowCount > 0 && activeSchema ? cellId : undefined}
@@ -1306,9 +1373,20 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           {activeSchema && c.rowCount > 0 && (
             // biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas (see above).
             <div className="vg-sr-only" role="rowgroup">
+              {activeGroups.map((span) => (
+                // biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas.
+                // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
+                <div role="row" aria-rowindex={span.level + 1} key={span.level}>
+                  {/* biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas. */}
+                  {/* biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant). */}
+                  <div role="columnheader" aria-colindex={span.start + 2} aria-colspan={span.end - span.start + 1}>
+                    {span.group.name}
+                  </div>
+                </div>
+              ))}
               {/* biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas. */}
               {/* biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant). */}
-              <div role="row" aria-rowindex={1}>
+              <div role="row" aria-rowindex={groupRows + 1}>
                 {checkboxSelection && (
                   // biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas.
                   // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
@@ -1328,7 +1406,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
               {/* biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant). */}
               <div
                 role="row"
-                aria-rowindex={active.row + 2}
+                aria-rowindex={active.row + groupRows + 2}
                 aria-selected={checkboxSelection && activeChecked !== null ? activeChecked : undefined}
               >
                 {checkboxSelection && (
