@@ -34,6 +34,10 @@ import "vastgrid/styles.css";
 | `onCellDoubleClick` | `(event: GridCellEvent) => void` | | Called when a cell is double-clicked, or F2 is pressed. `event.preventDefault()` keeps the cell inspector closed. |
 | `initialState` | `GridState` | | Settings applied when a grid starts, once the table's columns are known. See [Saving the settings](#saving-the-settings). |
 | `onStateChange` | `(state: GridState) => void` | | Called with the settings when the query or the column settings change. |
+| `detailOpen` | `boolean` | | Shows the [detail panel](#detail-panel) (controlled). Without it, the grid keeps the state. |
+| `defaultDetailOpen` | `boolean` | `false` | Whether the detail panel is open when the grid mounts, when `detailOpen` is not set. |
+| `onDetailOpenChange` | `(open: boolean) => void` | | Called when the detail panel is opened or closed by the user or the handle. |
+| `detailPanel` | `ComponentType<DetailPanelProps>` | `DetailFields` | Replaces the content of the detail panel. |
 | `className`, `style` | | | Added to the root element (`.vg-root`). |
 | `aria-label` | `string` | `messages.gridLabel` | The grid's name for screen readers. |
 
@@ -50,6 +54,9 @@ A ref gives a `DataGridHandle`:
 | `getState()` | The query and the column settings, as a `GridState` to save. |
 | `applyState(state)` | Applies a saved `GridState`. Returns `false` when the value is not a state this version reads. |
 | `goToRow(row)` | Scrolls to a row of the current view and makes it active. |
+| `openDetail({ focus })` | Opens the detail panel; with `focus: true`, moves the focus into it. |
+| `closeDetail()` | Closes the detail panel. |
+| `detailOpen` | Whether the detail panel is open. |
 | `controller` | The `GridController` with the grid's state: the selection, the layout of the columns, the view. |
 | `renderer` | The `CanvasRenderer`, for diagnostics such as `renderer.timings()`. `null` before the grid mounts. |
 
@@ -231,6 +238,78 @@ Invalid settings, such as a currency style without `currency` or an unknown time
 format)`, and `controller.formatterOf(index)` in the grid) formats values with the settings outside the
 grid, and keeps them in `settings`.
 
+## Detail panel
+
+The detail panel shows the whole record of the active row at a fixed place: beside the grid, or below
+it when the grid is narrower than 640px. Rows keep their height, so scrolling, `goToRow` and frozen
+columns work as without it. Open it with `detailOpen` (controlled, with `onDetailOpenChange`),
+`defaultDetailOpen`, the handle (`openDetail({ focus })`, `closeDetail()`), Alt+Enter or "Show row details"
+in the cell menu.
+
+The built-in content (`DetailFields`) lists every column in display order, hidden ones marked, with
+its label from `columnFormats` and its formatted value. Values that the table cut are read in full.
+
+**Which row it shows.** The panel follows the active cell, the `active` of `onSelectionChange`:
+
+- Moving to another row shows that row. Moving within the row, or moving, hiding, freezing or
+  formatting columns, keeps the record.
+- Values come from the loaded rows. Columns that are not loaded and text that the source cut (ending in
+  "…") are read in full for that row alone, after 120 ms; moving on before or during the read cancels it,
+  so going quickly through rows reads only the row where you stop.
+- A new view (sort, filters, search) makes its first row active, and the panel shows it, with its row in
+  the original table in the title.
+- Reading the table again keeps the record when the table did not change; a changed table starts again
+  at its first row, and the panel shows it.
+- Without rows, the panel says so.
+
+**Keyboard and focus.** In the grid, Alt+Enter opens the panel and leaves the focus in the grid, so the
+arrows keep moving through rows; Alt+Enter again moves the focus into the panel. In the panel, Esc
+closes it and Alt+Enter goes back to the grid, both returning the focus to the grid. Esc in the grid also
+closes the panel when it has nothing else to close. The panel is a complementary landmark (`<aside>`)
+named by its title, and it is `aria-busy` while values are read.
+
+**Errors.** When the row cannot be read, the panel shows the error with a Retry button
+(`retry()` in custom content) and keeps the values it had.
+
+**Custom content.** `detailPanel` takes a component that receives `DetailPanelProps`:
+
+| Prop | Type | Description |
+| --- | --- | --- |
+| `row` | `number` | The row in the current view. |
+| `rowId` | `number \| null` | The row in the original table, or `null` while the row of a view is not loaded. |
+| `values` | `(CellValue \| undefined)[]` | Values by schema column index, read in full; `undefined` while being read. |
+| `schema` | `ColumnSchema[]` | The table's columns. |
+| `status` | `"loading" \| "ready" \| "error"` | Whether the values are being read, read, or failed. |
+| `error` | `string \| null` | Why reading failed. |
+| `fields` | `DetailField[]` | Every column in display order: `column`, `name`, `label`, `hidden`, `value` and the shown `text`. |
+| `retry()` | | Reads the row again. |
+| `messages` | `Messages` | The grid's texts. |
+
+```tsx
+import { DataGrid, type DetailPanelProps } from "vastgrid";
+
+function Order({ fields, status, rowId }: DetailPanelProps) {
+  return (
+    <article aria-busy={status === "loading"}>
+      <h3>Order {rowId === null ? "" : rowId + 1}</h3>
+      {fields
+        .filter((field) => !field.hidden)
+        .map((field) => (
+          <p key={field.column}>
+            <strong>{field.label}</strong> {field.text}
+          </p>
+        ))}
+    </article>
+  );
+}
+
+<DataGrid source={source} defaultDetailOpen detailPanel={Order} />;
+```
+
+`--vg-detail-width` (340px) and `--vg-detail-height` (45%) set the panel's size. `DetailTracker` follows
+the active row of a `GridController` and reads its record outside React, for apps that show it
+elsewhere.
+
 ## Exports
 
 `vastgrid` re-exports everything in `vastgrid-core` (`ArraySource`, `RemoteSource`, the types and the
@@ -239,6 +318,7 @@ helpers), so most apps install only `vastgrid`. It also exports:
 | Export | Description |
 | --- | --- |
 | `DataGrid`, `DataGridProps`, `DataGridHandle` | The component, its props and its ref. |
+| `DetailPanelProps`, `DetailField`, `DetailFields`, `DetailTracker`, `DetailRecord`, `DetailStatus`, `detailKeyAction` | The [detail panel](#detail-panel): props of custom content, the built-in content, and the record outside React. |
 | `GridCell`, `GridCellEvent`, `GridSelectionEvent`, `GridSelectionRange`, `GridColumnsEvent`, `GridColumn`, `GridColumnsChangeReason` | Types of the [events](#events). |
 | `GridState`, `GridColumnSetting`, `parseGridState(value)`, `resolveGridState(state, names)`, `GRID_STATE_VERSION` | The [saved settings](#saving-the-settings), from `vastgrid-core`. |
 | `en`, `ja`, `Messages`, `messagesFor(locale)` | The built-in texts and the set the grid picks for a locale. |

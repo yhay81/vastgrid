@@ -115,6 +115,15 @@ export interface Messages {
   cell: (row: string, column: string) => string;
   originalRow: (row: string) => string;
   textTruncated: string;
+  /** The detail panel, which shows every column of the active row. */
+  detailLabel: string;
+  detailTitle: (row: string) => string;
+  /** Context menu item that opens or closes the detail panel. */
+  showDetail: string;
+  detailFailed: string;
+  /** After the label of a column that is hidden in the grid. */
+  detailHidden: string;
+  detailEmpty: string;
   notes: Record<string, string>;
   export: string;
 }
@@ -249,6 +258,12 @@ export const en: Messages = {
   cell: (row, column) => `Row ${row}, ${column}`,
   originalRow: (row) => `Row ${row} in the file`,
   textTruncated: "Long text is cut in the table. Show the full value to read all of it.",
+  detailLabel: "Row details",
+  detailTitle: (row) => `Row ${row}`,
+  showDetail: "Show row details",
+  detailFailed: "Could not read the row.",
+  detailHidden: "hidden",
+  detailEmpty: "No row to show.",
   notes: {
     all_varchar: "Some rows did not match the column types, so every column was read as text.",
     invalid_utf8_replaced: "Invalid characters were replaced with �.",
@@ -394,6 +409,12 @@ export const ja: Messages = {
   cell: (row, column) => `${row} 行目、${column}`,
   originalRow: (row) => `ファイルの ${row} 行目`,
   textTruncated: "長い文字列は表の中では途中まで表示します。全体は「値の全体を表示」で読めます。",
+  detailLabel: "行の詳細",
+  detailTitle: (row) => `${row} 行目`,
+  showDetail: "行の詳細を表示",
+  detailFailed: "行を読み込めませんでした。",
+  detailHidden: "非表示",
+  detailEmpty: "表示する行がありません。",
   notes: {
     all_varchar: "列の型に合わない行があったため、すべての列を文字列として読み込みました。",
     invalid_utf8_replaced: "読めない文字を � に置き換えました。",
