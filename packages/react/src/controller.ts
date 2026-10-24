@@ -716,6 +716,8 @@ export class GridController {
     const edited = !reset && info.status === "ready" && previous.edits?.version !== info.edits?.version;
     if (edited) this.cache.invalidate();
     if (previous) this.keepRowSelection(previous, info);
+    // Positions name other records in a new revision: written cells can no longer be undone.
+    if (previous && previous.revision !== info.revision) this.edits.clearHistory();
     if (reset) {
       if (previous?.columns.length && names(previous) !== names(info)) {
         const indexOf = (column: number) => {

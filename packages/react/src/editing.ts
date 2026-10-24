@@ -6,15 +6,22 @@
  * A write is one request: its cells are saved together or not at all. Writes are sent one at a time,
  * in the order they were made. While a write is saving, its cells show the new values; when it fails,
  * they show the values again that the source has, and the write waits to be retried or discarded.
+ *
+ * Saved writes are kept in a history (see `EditHistory`): undoing one writes its values before as a
+ * new write, and redoing it writes its values again. Each is one write, so a paste or a fill is undone
+ * at once.
  */
 
 import {
   type CellInputError,
   type CellValue,
   type ColumnSchema,
+  EditHistory,
   ErrorCodes,
   editableColumn,
+  type HistoryEntry,
   isAbortError,
+  MAX_TEXT_LIMIT,
   MAX_UPDATE_CELLS,
   parseCellInput,
   sameCellValue,
@@ -107,6 +114,21 @@ export interface EditBatch {
   error?: { code: string | undefined; message: string };
   /** Write without checking the previous values (after a conflict, the user chose to overwrite). */
   overwrite?: boolean;
+  /** For an undo or a redo: the history entry it writes again. */
+  history?: { entry: HistoryEntry<GridEditReason>; direction: "undo" | "redo" };
+}
+
+/** What can be undone and redone (see `GridEdits.history`). */
+export interface GridHistoryState {
+  /** Undo and redo can run now: there is an entry, and no write is saving or failed. */
+  canUndo: boolean;
+  canRedo: boolean;
+  /** Entries in the history. */
+  undo: number;
+  redo: number;
+  /** What the next undo and redo write again. */
+  undoReason: GridEditReason | null;
+  redoReason: GridEditReason | null;
 }
 
 /** The result of `GridEdits.prepare`: the changes to write, or the cells that cannot take their values. */
@@ -150,6 +172,13 @@ export class GridEdits {
   /** The state of cells in those writes, by `rowId:column`. */
   private readonly cells = new Map<string, "saving" | "failed">();
   private readonly listeners = new Set<(event: GridCellsChangeEvent) => void>();
+  private readonly historyListeners = new Set<(state: GridHistoryState) => void>();
+  private reportedHistory = "";
+  /**
+   * Saved writes that can be undone and redone. Entries are dropped beyond 100 writes, 1,000,000 cells or
+   * 32,000,000 characters, and all of them when the table has a new revision.
+   */
+  readonly history = new EditHistory<GridEditReason>();
   private queue: Promise<void> = Promise.resolve();
   private nextId = 1;
   private disposed = false;
@@ -162,6 +191,65 @@ export class GridEdits {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  /** Calls `listener` when what can be undone or redone changes. */
+  onHistoryChange(listener: (state: GridHistoryState) => void) {
+    this.historyListeners.add(listener);
+    return () => {
+      this.historyListeners.delete(listener);
+    };
+  }
+
+  get historyState(): GridHistoryState {
+    const idle = this.enabled && this.batches.length === 0;
+    return {
+      canUndo: idle && this.history.canUndo,
+      canRedo: idle && this.history.canRedo,
+      undo: this.history.undoSize,
+      redo: this.history.redoSize,
+      undoReason: this.history.peekUndo()?.reason ?? null,
+      redoReason: this.history.peekRedo()?.reason ?? null,
+    };
+  }
+
+  /** Writes the values before the last saved write. Resolves whether it was saved. */
+  undo() {
+    const entry = this.history.peekUndo();
+    if (!entry || !this.historyState.canUndo) return Promise.resolve(false);
+    const changes = entry.changes.map((change) => ({
+      row: this.placeOf(change.row),
+      rowId: change.row,
+      column: change.column,
+      value: change.previous,
+      previous: change.value,
+    }));
+    return this.writeBatch(changes, "undo", { entry, direction: "undo" });
+  }
+
+  /** Writes again the values of the last undone write. Resolves whether it was saved. */
+  redo() {
+    const entry = this.history.peekRedo();
+    if (!entry || !this.historyState.canRedo) return Promise.resolve(false);
+    const changes = entry.changes.map((change) => ({
+      row: this.placeOf(change.row),
+      rowId: change.row,
+      column: change.column,
+      value: change.value,
+      previous: change.previous,
+    }));
+    return this.writeBatch(changes, "redo", { entry, direction: "redo" });
+  }
+
+  /** Forgets what can be undone, for example because the rows' positions name other records now. */
+  clearHistory() {
+    this.history.clear();
+    this.changed();
+  }
+
+  /** The view row of a row of the table, when the view is the table itself; otherwise -1 (not shown until read). */
+  private placeOf(rowId: number) {
+    return this.controller.view.id === null ? rowId : -1;
   }
 
   /** Whether the source can write cells now, and the app did not make the grid read-only. */
@@ -287,27 +375,33 @@ export class GridEdits {
     });
     if (columns.length === 0 || end <= start) return [];
     if ((end - start) * columns.length > MAX_UPDATE_CELLS) throw new EditTooLargeError(MAX_UPDATE_CELLS);
-    const ids: number[] = [];
+    const known = (value: CellValue | undefined) =>
+      value !== undefined && !(typeof value === "string" && value.endsWith("…"));
     let missing = false;
-    for (let row = start; row < end; row++) {
-      const id = c.rowId(row);
-      if (id === null) missing = true;
-      ids.push(id ?? -1);
+    for (let row = start; row < end && !missing; row++) {
+      missing = c.rowId(row) === null || columns.some(({ column }) => !known(c.cache.value(row, column)));
     }
+    let ids: number[];
+    let read: CellValue[][] | null = null;
     if (missing) {
-      // Only the rows' positions: no column is read.
-      const block = await c.source.readRows({ view: c.view.id, start, end, columns: [] }, signal);
-      const read = block.rowIds ?? (c.view.id === null ? null : []);
-      for (let offset = 0; offset < end - start; offset++) ids[offset] = read ? (read[offset] ?? -1) : start + offset;
-      if (ids.includes(-1)) throw new Error("The rows could not be read.");
+      // The rows' positions and whole values (to check them, and to undo the write), read at once.
+      const block = await c.source.readRows(
+        { view: c.view.id, start, end, columns: columns.map(({ column }) => column), textLimit: MAX_TEXT_LIMIT },
+        signal,
+      );
+      if (block.end - block.start !== end - start) throw new Error("The rows could not be read.");
+      ids = block.rowIds ?? Array.from({ length: end - start }, (_, offset) => start + offset);
+      if (c.view.id !== null && !block.rowIds) throw new Error("The rows could not be read.");
+      read = block.columns;
+    } else {
+      ids = Array.from({ length: end - start }, (_, offset) => c.rowId(start + offset) as number);
     }
     const cells: TargetCell[] = [];
     for (let row = start; row < end; row++) {
-      for (const { col, column } of columns) {
-        const value = c.cache.value(row, column);
-        const previous = value === undefined || (typeof value === "string" && value.endsWith("…")) ? undefined : value;
-        cells.push({ row, col, rowId: ids[row - start], column, previous });
-      }
+      columns.forEach(({ col, column }, index) => {
+        const value = read ? read[index]?.[row - start] : c.cache.value(row, column);
+        cells.push({ row, col, rowId: ids[row - start], column, previous: known(value) ? value : undefined });
+      });
     }
     return cells;
   }
@@ -366,6 +460,10 @@ export class GridEdits {
    * it is saving. Resolves whether it was saved.
    */
   write(changes: PlacedChange[], reason: GridEditReason): Promise<boolean> {
+    return this.writeBatch(changes, reason);
+  }
+
+  private writeBatch(changes: PlacedChange[], reason: GridEditReason, history?: EditBatch["history"]) {
     if (changes.length === 0) return Promise.resolve(true);
     if (changes.length > MAX_UPDATE_CELLS) throw new EditTooLargeError(MAX_UPDATE_CELLS);
     const batch: EditBatch = {
@@ -374,6 +472,7 @@ export class GridEdits {
       changes,
       revision: this.controller.info?.revision,
       status: "saving",
+      ...(history ? { history } : {}),
     };
     this.batches.push(batch);
     return this.enqueue(batch);
@@ -405,6 +504,7 @@ export class GridEdits {
   dispose() {
     this.disposed = true;
     this.listeners.clear();
+    this.historyListeners.clear();
   }
 
   private enqueue(batch: EditBatch) {
@@ -449,9 +549,31 @@ export class GridEdits {
     }
     if (this.disposed) return true;
     this.remove(batch);
+    this.remember(batch);
     this.emit(batch, "saved");
+    this.changed();
     c.editsChanged([...new Set(batch.changes.map((change) => change.column))], result.edits);
     return true;
+  }
+
+  /** Records a saved write in the history, or moves the entry an undo or a redo wrote. */
+  private remember(batch: EditBatch) {
+    if (batch.history?.direction === "undo") this.history.undone(batch.history.entry);
+    else if (batch.history?.direction === "redo") this.history.redone(batch.history.entry);
+    else if (batch.changes.some((change) => change.previous === undefined)) {
+      // Without the values before, this write cannot be undone, and older writes no longer in order.
+      this.history.clear();
+    } else {
+      this.history.record({
+        reason: batch.reason,
+        changes: batch.changes.map(({ rowId, column, value, previous }) => ({
+          row: rowId,
+          column,
+          value,
+          previous: previous as CellValue,
+        })),
+      });
+    }
   }
 
   private remove(batch: EditBatch) {
@@ -488,5 +610,10 @@ export class GridEdits {
   private changed() {
     this.controller.requestRender();
     this.controller.emit();
+    const state = this.historyState;
+    const key = JSON.stringify(state);
+    if (key === this.reportedHistory) return;
+    this.reportedHistory = key;
+    for (const listener of [...this.historyListeners]) listener(state);
   }
 }

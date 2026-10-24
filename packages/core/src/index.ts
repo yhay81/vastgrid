@@ -14,6 +14,12 @@ export {
 export { parseHtmlTable, parseTsv, toHtmlTable, toMarkdownTable, toTsv } from "./clipboard.js";
 export { isNumericType, isTemporalType } from "./column-type.js";
 export {
+  EditHistory,
+  type EditHistoryOptions,
+  type HistoryChange,
+  type HistoryEntry,
+} from "./edit-history.js";
+export {
   EXPORT_EXTENSIONS,
   EXPORT_MEDIA_TYPES,
   TABLE_FILE_FORMATS,

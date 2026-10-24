@@ -40,6 +40,7 @@ import "vastgrid/styles.css";
 | `readOnly` | `boolean` | `false` | source がセルを書き込める（`capabilities.edit`）場合も、編集を提供しません。 |
 | `validateCell` | `(cell: GridCellValidation) => string \| null \| undefined \| Promise<…>` | | 書き込む前に値を検証します。拒否するときはメッセージを返します。[セルの編集](/ja/guides/editing/)を参照してください。 |
 | `onCellsChange` | `(event: GridCellsChangeEvent) => void` | | 編集したセルの保存が済んだとき、または失敗したときに呼ばれます。 |
+| `onHistoryChange` | `(state: GridHistoryState) => void` | | 元に戻せる・やり直せる操作が変わったときに呼ばれます（`canUndo`・`canRedo` など）。ref の `undo()`・`redo()`・`history` で実行・参照できます。 |
 | `initialState` | `GridState` | | グリッドを作るときに、表の列がわかった時点で適用する設定。[設定の保存](#設定の保存)を参照してください。 |
 | `onStateChange` | `(state: GridState) => void` | | クエリーか列の設定が変わったときに、その設定を渡して呼ばれます。 |
 | `checkboxSelection` | `boolean` | `false` | 行ごとのチェックボックスと、左上にすべての行のチェックボックスを表示します。[行の選択](#行の選択チェックボックス)を参照してください。 |
@@ -72,6 +73,8 @@ ref からは `DataGridHandle` を使えます。
 | `openDetail({ focus })` | 詳細パネルを開きます。`focus: true` ならフォーカスをパネルに移します。 |
 | `closeDetail()` | 詳細パネルを閉じます。 |
 | `detailOpen` | 詳細パネルが開いているかどうか。 |
+| `undo()`、`redo()` | ⌘/Ctrl + Z、⌘/Ctrl + Shift + Z と同じく、最後の書き込みを元に戻す・やり直します。保存できたかどうかで解決します。 |
+| `history` | いま元に戻せる・やり直せる操作（`GridHistoryState`）。 |
 | `controller` | グリッドの状態（選択範囲、列の配置、ビュー）を持つ `GridController`。 |
 | `renderer` | `CanvasRenderer`。`renderer.timings()` などの診断に使います。グリッドがマウントされるまでは `null`。 |
 

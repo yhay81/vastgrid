@@ -170,6 +170,7 @@ rows.
 | `readOnly` | `boolean` | `false` | Offers no editing, also when the source can write cells. |
 | `validateCell` | `(cell: GridCellValidation) => string \| null \| undefined \| Promise<…>` | | Checks a value before it is written; return a message to refuse it. |
 | `onCellsChange` | `(event: GridCellsChangeEvent) => void` | | Called when edited cells were saved, or failed to save. |
+| `onHistoryChange` | `(state: GridHistoryState) => void` | | Called when what can be undone or redone changes. |
 | `initialState` | `GridState` | | Settings applied when a grid starts, once the table's columns are known. |
 | `onStateChange` | `(state: GridState) => void` | | Called with the settings when the query or the column settings change. |
 | `checkboxSelection` | `boolean` | `false` | Shows a checkbox for each row, and one for every row in the corner. |
@@ -183,7 +184,7 @@ rows.
 | `aria-label` | `string` | `messages.gridLabel` | The grid's name for screen readers. |
 
 A ref gives a `DataGridHandle`: `focus()`, `reload()`, `getQuery()`, `setQuery(query)`, `getState()`,
-`applyState(state)`, `goToRow(row)`, `openDetail({ focus })`, `closeDetail()`, `detailOpen`, `openExport()`, `getRowSelection()`, `setRowSelection(selection)`, the `controller` with the grid's state, and the canvas `renderer` (for
+`applyState(state)`, `goToRow(row)`, `undo()`, `redo()`, `history`, `openDetail({ focus })`, `closeDetail()`, `detailOpen`, `openExport()`, `getRowSelection()`, `setRowSelection(selection)`, the `controller` with the grid's state, and the canvas `renderer` (for
 diagnostics such as `renderer.timings()`).
 
 Events give a cell's `row` in the view, its `rowId` in the original table, its visible column `col` and its
@@ -386,7 +387,8 @@ The grid edits sources that can write cells (`capabilities.edit`): `ArraySource`
 and the DuckDB server when its engine is created with `editable: true`; other sources stay read-only.
 Typing replaces the active cell (IMEs work: the editor is a text field over the cell), F2 or a double
 click edits it, Enter or Tab saves and moves, Esc cancels, Delete clears the selected cells, and ⌘/Ctrl +
-V pastes ranges copied from Excel or Google Sheets (TSV or HTML tables), checking every value first. Values
+V pastes ranges copied from Excel or Google Sheets (TSV or HTML tables), checking every value first. ⌘/Ctrl
++ Z and ⌘/Ctrl + Shift + Z undo and redo whole writes (a paste at once), keeping types and digits. Values
 are checked against the column's type without losing digits (64-bit integers and decimals stay text) and
 by `validateCell`, which may be asynchronous. Writes show while they save, and failures and conflicts with
 other users' changes offer Retry, Overwrite or Discard. After a write the grid reads the rows again and,
@@ -472,6 +474,7 @@ flowchart LR
 | Alt + ↓ | Column menu (sort, filter, statistics, freeze, hide) |
 | F2 · double click | Show the full value of the cell (edit it, in a grid that edits) |
 | Typing · Delete · ⌘/Ctrl + V (in a grid that edits) | Replace the active cell's value · clear the selected cells · paste |
+| ⌘/Ctrl + Z · ⌘/Ctrl + Shift + Z or Ctrl + Y (in a grid that edits) | Undo · redo the last write |
 | Alt + Enter (again: into the panel) · Esc | Open the detail panel of the active row · close it |
 | Shift + F10 · context menu key · right click | Cell menu (copy, filter to value, sort) |
 

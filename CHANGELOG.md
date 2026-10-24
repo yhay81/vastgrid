@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `vastgrid`: ⌘/Ctrl + Z undoes the last saved write in a grid that edits, and ⌘/Ctrl + Shift + Z (or
+  Ctrl + Y) redoes it, also from the context menu. Each write is one step (a paste or a cleared range at
+  once), and undoing writes the values before, with their types and digits, as a new write: a cell
+  changed meanwhile by someone else is a conflict to overwrite or discard. Undo and redo wait for writes
+  that are saving or failed; a new write drops the redo steps, and a new revision forgets the history.
+  Values not loaded are read before they are overwritten, so that every write can be undone.
+  `onHistoryChange` and the ref's `undo()`, `redo()` and `history` let apps offer them.
+- `vastgrid-core`: `EditHistory` keeps undo and redo steps of written cells, bounded to 100 writes,
+  1,000,000 cells and 32,000,000 characters.
+
 - `vastgrid`: ⌘/Ctrl + V (and "Paste" in the context menu) pastes cells copied from Excel, Numbers, Google
   Sheets or web pages into a grid that edits: from the selection's top-left cell, repeated over a
   selection that is a whole multiple of them, one value into every selected cell of several ranges, and

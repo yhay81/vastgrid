@@ -160,6 +160,7 @@ const source = new ArraySource({
 | `readOnly` | `boolean` | `false` | source がセルを書き込める場合も、編集を提供しません。 |
 | `validateCell` | `(cell: GridCellValidation) => string \| null \| undefined \| Promise<…>` | | 書き込む前に値を検証します。拒否するときはメッセージを返します。 |
 | `onCellsChange` | `(event: GridCellsChangeEvent) => void` | | 編集したセルの保存が済んだとき、または失敗したときに呼ばれます。 |
+| `onHistoryChange` | `(state: GridHistoryState) => void` | | 元に戻せる・やり直せる操作が変わったときに呼ばれます。 |
 | `initialState` | `GridState` | | グリッドを作るときに、表の列がわかった時点で適用する設定。 |
 | `onStateChange` | `(state: GridState) => void` | | クエリーか列の設定が変わったときに、その設定を渡して呼ばれます。 |
 | `checkboxSelection` | `boolean` | `false` | 行ごとのチェックボックスと、左上にすべての行のチェックボックスを表示します。 |
@@ -173,7 +174,7 @@ const source = new ArraySource({
 | `aria-label` | `string` | `messages.gridLabel` | スクリーンリーダー向けのグリッドの名前。 |
 
 ref からは `DataGridHandle` を使えます。`focus()`、`reload()`、`getQuery()`、`setQuery(query)`、`getState()`、
-`applyState(state)`、`goToRow(row)`、`openDetail({ focus })`、`closeDetail()`、`detailOpen`、`openExport()`、`getRowSelection()`、`setRowSelection(selection)`、グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()`
+`applyState(state)`、`goToRow(row)`、`undo()`、`redo()`、`history`、`openDetail({ focus })`、`closeDetail()`、`detailOpen`、`openExport()`、`getRowSelection()`、`setRowSelection(selection)`、グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()`
 などの診断用）があります。
 
 イベントは、セルのビューでの行 `row`、元の表での行 `rowId`、表示中の列の位置 `col`、表の列の番号 `column` を渡し、
@@ -333,7 +334,7 @@ const [checked, setChecked] = useState<RowSelection>({ type: "include", keys: []
 
 ### セルの編集
 
-グリッドは、セルを書き込める source（`capabilities.edit`）を編集できます。`editable: true` の `ArraySource` と、エンジンを `editable: true` で作った DuckDB サーバーが対応し、それ以外の source は読み取り専用のままです。文字を入力するとアクティブセルの値を置き換え（エディターはセルに重なるテキスト欄なので IME も使えます）、F2 かダブルクリックで編集し、Enter か Tab で確定して移動、Esc で取り消し、Delete で選択したセルを消去し、⌘/Ctrl + V で Excel や Google スプレッドシートからコピーした範囲（タブ区切りか HTML の表）をすべての値を検証してから貼り付けます。値は桁を失わずに列の型で検証し（64 ビット整数と decimal は文字列のまま）、`validateCell`（非同期も可）でも検証します。保存中の書き込みは画面に表示し、失敗や他の利用者の変更との競合では［再試行］［上書き］［破棄］を選べます。書き込み後は行を読み直し、並べ替えや絞り込みが書き込んだ列を使うときは並べ替え・絞り込みもやり直します。統計・集計・書き出しも新しい値を読みます。DuckDB エンジンは、書き込んだ値をファイルとは別に保持します。
+グリッドは、セルを書き込める source（`capabilities.edit`）を編集できます。`editable: true` の `ArraySource` と、エンジンを `editable: true` で作った DuckDB サーバーが対応し、それ以外の source は読み取り専用のままです。文字を入力するとアクティブセルの値を置き換え（エディターはセルに重なるテキスト欄なので IME も使えます）、F2 かダブルクリックで編集し、Enter か Tab で確定して移動、Esc で取り消し、Delete で選択したセルを消去し、⌘/Ctrl + V で Excel や Google スプレッドシートからコピーした範囲（タブ区切りか HTML の表）をすべての値を検証してから貼り付けます。⌘/Ctrl + Z と ⌘/Ctrl + Shift + Z は、書き込み単位（貼り付けは 1 回）で型と桁を保ったまま元に戻し、やり直します。値は桁を失わずに列の型で検証し（64 ビット整数と decimal は文字列のまま）、`validateCell`（非同期も可）でも検証します。保存中の書き込みは画面に表示し、失敗や他の利用者の変更との競合では［再試行］［上書き］［破棄］を選べます。書き込み後は行を読み直し、並べ替えや絞り込みが書き込んだ列を使うときは並べ替え・絞り込みもやり直します。統計・集計・書き出しも新しい値を読みます。DuckDB エンジンは、書き込んだ値をファイルとは別に保持します。
 
 ```tsx
 <DataGrid source={new ArraySource({ columns, rows, editable: true })} onCellsChange={(event) => save(event)} />
@@ -390,6 +391,7 @@ DuckDB の処理を含み、HTTP は含みません。
 | Alt ＋ ↓ | 列のメニュー（並べ替え・絞り込み・統計・固定・非表示） |
 | F2・ダブルクリック | セルの値の全体を表示（編集できるグリッドでは編集） |
 | 文字の入力・Delete・⌘/Ctrl + V（編集できるグリッド） | アクティブセルの値を置き換える・選択したセルを消去・貼り付け |
+| ⌘/Ctrl + Z・⌘/Ctrl + Shift + Z か Ctrl + Y（編集できるグリッド） | 最後の書き込みを元に戻す・やり直す |
 | Alt ＋ Enter（もう一度でパネルへ）・Esc | アクティブな行の詳細パネルを開く・閉じる |
 | Shift ＋ F10・コンテキストメニューのキー・右クリック | セルのメニュー（コピー・この値で絞り込む・並べ替え） |
 

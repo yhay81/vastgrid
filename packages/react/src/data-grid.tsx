@@ -46,6 +46,7 @@ import {
   EditTooLargeError,
   type GridCellsChangeEvent,
   type GridEditReason,
+  type GridHistoryState,
   PasteRangesError,
   type TargetCell,
   type ValidateCell,
@@ -149,6 +150,8 @@ export interface DataGridProps {
   validateCell?: ValidateCell;
   /** Called when edited cells were saved by the source, or failed to save (see the event's `status`). */
   onCellsChange?: (event: GridCellsChangeEvent) => void;
+  /** Called when what can be undone or redone changes, for example to enable an app's Undo button. */
+  onHistoryChange?: (state: GridHistoryState) => void;
   /**
    * Settings applied when a grid starts (for each new `source`), for example from `getState()` saved
    * earlier. They apply once the table's columns are known.
@@ -215,6 +218,12 @@ export interface DataGridHandle {
   closeDetail(): void;
   /** Whether the detail panel is open. */
   readonly detailOpen: boolean;
+  /** Undoes the last saved write (a typed value, a paste, a fill, a clear). Resolves whether it was saved. */
+  undo(): Promise<boolean>;
+  /** Writes the last undone write again. Resolves whether it was saved. */
+  redo(): Promise<boolean>;
+  /** What can be undone and redone now. */
+  readonly history: GridHistoryState;
   readonly controller: GridController;
   /** The canvas renderer, for diagnostics such as `renderer.timings()`. Null before the grid mounts. */
   readonly renderer: CanvasRenderer | null;
@@ -544,6 +553,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       controller.onStateChange((state) => handlers.current.onStateChange?.(state)),
       controller.onRowSelectionChange((event) => handlers.current.onRowSelectionChange?.(event)),
       controller.edits.onChange((event) => handlers.current.onCellsChange?.(event)),
+      controller.edits.onHistoryChange((state) => handlers.current.onHistoryChange?.(state)),
     ];
     return () => {
       for (const stop of stops) stop();
@@ -642,6 +652,11 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       closeDetail: () => setDetailOpen(false),
       get detailOpen() {
         return detailOpenRef.current;
+      },
+      undo: () => controller.edits.undo(),
+      redo: () => controller.edits.redo(),
+      get history() {
+        return controller.edits.historyState;
       },
       controller,
       get renderer() {
@@ -936,6 +951,22 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       await pasteValues(text ? parseTsv(text) : html ? parseHtmlTable(html) : null);
     } catch (error) {
       announce(messages.pasteFailed(error instanceof Error ? error.message : String(error)));
+    }
+  }
+
+  /** Undoes or redoes the last write, as ⌘/Ctrl + Z and ⌘/Ctrl + Shift + Z (or Ctrl + Y) do. */
+  async function undoRedo(direction: "undo" | "redo") {
+    const c = controller;
+    const state = c.edits.historyState;
+    const entry = direction === "undo" ? c.edits.history.peekUndo() : c.edits.history.peekRedo();
+    if (!entry || !(direction === "undo" ? state.canUndo : state.canRedo)) {
+      announce(direction === "undo" ? messages.nothingToUndo : messages.nothingToRedo);
+      return;
+    }
+    const saved = await (direction === "undo" ? c.edits.undo() : c.edits.redo());
+    if (saved) {
+      const cells = count(entry.changes.length);
+      announce(direction === "undo" ? messages.undone(cells) : messages.redone(cells));
     }
   }
 
@@ -1339,6 +1370,16 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
             ...c.selection.active,
             anchor: cellAnchor(c.selection.active.row, c.selection.active.col),
           });
+        } else if (primary && !event.altKey && event.key.toLowerCase() === "z" && c.edits.enabled) {
+          void undoRedo(event.shiftKey ? "redo" : "undo");
+        } else if (
+          event.ctrlKey &&
+          !event.metaKey &&
+          !event.shiftKey &&
+          event.key.toLowerCase() === "y" &&
+          c.edits.enabled
+        ) {
+          void undoRedo("redo");
         } else if ((event.key === "Delete" || event.key === "Backspace") && !primary && c.edits.enabled) {
           void clearSelection();
         } else if (startsTyping(event) && c.edits.enabled) {
@@ -1513,6 +1554,18 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                 // After the menu returned the focus to the grid.
                 setTimeout(() => startEdit("edit"), 0);
               },
+            },
+            {
+              label: messages.undo,
+              shortcut: isMac ? "⌘Z" : "Ctrl+Z",
+              disabled: !c.edits.historyState.canUndo,
+              onSelect: () => void undoRedo("undo"),
+            },
+            {
+              label: messages.redo,
+              shortcut: isMac ? "⇧⌘Z" : "Ctrl+Y",
+              disabled: !c.edits.historyState.canRedo,
+              onSelect: () => void undoRedo("redo"),
             },
             {
               label: messages.paste,

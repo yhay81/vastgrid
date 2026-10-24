@@ -202,7 +202,7 @@ test("another grid's writes are read again; the grid's own are not read twice", 
   second.dispose();
 });
 
-test("target cells read the rows' positions of a view when they are not loaded", async () => {
+test("target cells read the rows' positions and values of a view when they are not loaded", async () => {
   const columnData: CellValue[][] = [Array.from({ length: 1000 }, (_, index) => index)];
   const grid = await mounted(
     new ArraySource({ columns: [{ name: "n", type: "integer" }], columnData, editable: true }),
@@ -212,8 +212,8 @@ test("target cells read the rows' positions of a view when they are not loaded",
   assert.deepEqual(
     cells.map(({ rowId, previous }) => [rowId, previous]),
     [
-      [99, undefined],
-      [98, undefined],
+      [99, 99],
+      [98, 98],
     ],
   );
   grid.dispose();
@@ -290,5 +290,84 @@ test("a paste is checked as a whole and written as one write", async () => {
     [40, 41],
     ["1000.5", "2"],
   ]);
+  grid.dispose();
+});
+
+async function edit(grid: GridController, row: number, col: number, text: string) {
+  const prepared = await grid.edits.prepare([{ row, col, text, previous: grid.value(row, col) }], "edit");
+  assert.ok(prepared.ok);
+  return grid.edits.write(prepared.changes, "edit");
+}
+
+async function read(source: ArraySource, column: number) {
+  return (await source.readRows({ view: null, start: 0, end: 3, columns: [column] })).columns[0];
+}
+
+test("saved writes are undone and redone, a paste at once", async () => {
+  const source = people();
+  const grid = await mounted(source);
+  const states: boolean[][] = [];
+  grid.edits.onHistoryChange((state) => states.push([state.canUndo, state.canRedo]));
+  assert.deepEqual(grid.edits.historyState.canUndo, false);
+  await edit(grid, 0, 1, "37");
+  grid.selection.select({ row: 0, col: 0 });
+  const plan = await grid.edits.pasteTargets([["A"], ["B"], ["C"]]);
+  const pasted = await grid.edits.prepare(plan.inputs, "paste");
+  assert.ok(pasted.ok);
+  await grid.edits.write(pasted.changes, "paste");
+  assert.deepEqual(await read(source, 0), ["A", "B", "C"]);
+  assert.equal(grid.edits.historyState.undoReason, "paste");
+  assert.equal(await grid.edits.undo(), true);
+  assert.deepEqual(await read(source, 0), ["Ada", "Grace", "Linus"], "the whole paste");
+  assert.equal(await grid.edits.undo(), true);
+  assert.deepEqual(await read(source, 1), [36, 85, 54]);
+  assert.equal(await grid.edits.undo(), false, "nothing left");
+  assert.equal(await grid.edits.redo(), true);
+  assert.deepEqual(await read(source, 1), [37, 85, 54]);
+  assert.deepEqual(grid.edits.historyState, {
+    canUndo: true,
+    canRedo: true,
+    undo: 1,
+    redo: 1,
+    undoReason: "edit",
+    redoReason: "paste",
+  });
+  // A new write drops what could be redone.
+  await until(() => grid.value(0, 1) === 37);
+  await edit(grid, 2, 1, "55");
+  assert.equal(grid.edits.historyState.canRedo, false);
+  assert.ok(states.some(([undo, redo]) => undo && redo));
+  grid.dispose();
+});
+
+test("an undo refused because the cells changed meanwhile can overwrite them, and a new revision forgets the history", async () => {
+  const source = people();
+  const grid = await mounted(source);
+  await edit(grid, 0, 0, "Ada L.");
+  // Someone else changes the cell.
+  await source.updateCells({ updates: [{ row: 0, column: 0, value: "Countess" }] });
+  assert.equal(await grid.edits.undo(), false);
+  assert.equal(grid.edits.failed?.error?.code, "edit_conflict");
+  assert.equal(grid.edits.historyState.canUndo, false, "not while a write failed");
+  assert.equal(await grid.edits.retry(true), true);
+  assert.deepEqual((await read(source, 0))[0], "Ada");
+  assert.equal(grid.edits.historyState.canRedo, true);
+  grid.dispose();
+});
+
+test("a new revision of the table forgets what can be undone", async () => {
+  const people1 = people();
+  let revision = "1";
+  const versioned: TableSource = Object.assign(Object.create(people1), {
+    info: async () => ({ ...(await people1.info()), revision }),
+    updateCells: (request: UpdateRequest) => people1.updateCells(request),
+  });
+  const grid = await mounted(versioned);
+  await edit(grid, 1, 0, "G");
+  assert.equal(grid.edits.historyState.canUndo, true);
+  revision = "2";
+  grid.reload();
+  await until(() => grid.info?.revision === "2");
+  assert.equal(grid.edits.historyState.canUndo, false);
   grid.dispose();
 });

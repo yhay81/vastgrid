@@ -39,6 +39,7 @@ const source = useMemo(() => new ArraySource({ columns, rows, editable: true }),
 | Esc | Cancel, keeping the value |
 | Delete · Backspace | Clear the selected cells (every range) |
 | ⌘/Ctrl + V | Paste from the selection's top-left cell (see [Pasting](#pasting)) |
+| ⌘/Ctrl + Z · ⌘/Ctrl + Shift + Z (also Ctrl + Y) | Undo · redo the last write (see [Undo and redo](#undo-and-redo)) |
 
 Clicking elsewhere saves too. Keys that end an IME composition (Enter, Esc) are left to the IME. The
 editor is a text field over the cell, in the page rather than on the canvas, so it works with IMEs,
@@ -123,6 +124,37 @@ Cells are named by the row's position in the table (`rowId`), which stays the sa
 sorted or filtered again and while cells are written, so checked rows stay checked. Writes keep the
 table's `revision` and change `info().edits.version` instead; other grids of the same source learn of
 them through `subscribe` (`RemoteSource` asks the server every 2 seconds) and read the rows again.
+
+## Undo and redo
+
+Every saved write — a typed value, a cleared selection, a paste — is one step of the history, so a paste
+of thousands of cells is undone at once. ⌘/Ctrl + Z undoes it by writing the values before as a new
+write; ⌘/Ctrl + Shift + Z (or Ctrl + Y) writes it again. The context menu has both, disabled when there
+is nothing to do. Inside the cell editor, these keys undo typing in the editor instead.
+
+- **Types and digits.** The history keeps the values as the source sent them (64-bit integers and
+  decimals as text), and writes them back as they were. Before writing into cells whose values are not
+  loaded or were cut for display, the grid reads their whole values, so that the write can be undone.
+- **Saving and failures.** Undo and redo wait until no write is saving or failed. An undo is a write like
+  others: when it fails it shows Retry and Discard, and it moves in the history only once it is saved.
+- **Changes by others.** An undo carries the values it expects to find. When another user changed one of
+  the cells meanwhile, nothing is written (`edit_conflict`); the user can **Overwrite** or **Discard**.
+- **A new write** drops what could be redone. **A new revision** of the table (for example the file was
+  read again) forgets the whole history, since row positions may name other records then.
+- **Limits.** The history keeps at most 100 writes, 1,000,000 cells and 32,000,000 characters of text; the
+  oldest writes are forgotten beyond them, and a single write larger than that cannot be undone.
+
+The app reads the state with `onHistoryChange` (`canUndo`, `canRedo`, the number of steps and what the
+next step is), and runs the steps with `undo()` and `redo()` on the grid's ref, for example from its own
+toolbar. `EditHistory` in `vastgrid-core` is the same history without the grid.
+
+```tsx
+const grid = useRef<DataGridHandle>(null);
+const [history, setHistory] = useState<GridHistoryState | null>(null);
+
+<button disabled={!history?.canUndo} onClick={() => grid.current?.undo()}>Undo</button>
+<DataGrid ref={grid} source={source} onHistoryChange={setHistory} />
+```
 
 ## Writing to the DuckDB server
 

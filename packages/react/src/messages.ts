@@ -221,6 +221,14 @@ export interface Messages {
   /** Rows and columns of the pasted values past the end of the table. */
   pasteCut: (rows: string, cols: string) => string;
   pasteFailed: (message: string) => string;
+  /** Undo and redo of written cells. */
+  undo: string;
+  redo: string;
+  undone: (cells: string) => string;
+  redone: (cells: string) => string;
+  /** Nothing to undo, or a write is still saving or failed. */
+  nothingToUndo: string;
+  nothingToRedo: string;
 }
 
 export const en: Messages = {
@@ -454,6 +462,12 @@ export const en: Messages = {
   pasteRanges: "Several ranges can take one pasted value only. Select one range.",
   pasteCut: (rows, cols) => `Left out past the end of the table: ${rows} rows, ${cols} columns.`,
   pasteFailed: (message) => `Could not read the clipboard: ${message}`,
+  undo: "Undo",
+  redo: "Redo",
+  undone: (cells) => `Undone: ${cells} cells.`,
+  redone: (cells) => `Redone: ${cells} cells.`,
+  nothingToUndo: "Nothing to undo now.",
+  nothingToRedo: "Nothing to redo now.",
 };
 
 const number = (value: string) => value;
@@ -688,6 +702,12 @@ export const ja: Messages = {
   pasteRanges: "複数の範囲に貼り付けられるのは 1 つの値だけです。範囲を 1 つにしてください。",
   pasteCut: (rows, cols) => `表の外にはみ出した ${rows} 行・${cols} 列は貼り付けませんでした。`,
   pasteFailed: (message) => `クリップボードを読めませんでした：${message}`,
+  undo: "元に戻す",
+  redo: "やり直す",
+  undone: (cells) => `${cells} セルを元に戻しました。`,
+  redone: (cells) => `${cells} セルをやり直しました。`,
+  nothingToUndo: "いま元に戻せる操作はありません。",
+  nothingToRedo: "いまやり直せる操作はありません。",
 };
 
 /** Picks the built-in messages for a locale ("ja…" → Japanese, otherwise English). */
