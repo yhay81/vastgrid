@@ -160,7 +160,7 @@ export class CanvasRenderer {
     if (keyColumn >= 0 && !wanted.includes(keyColumn)) wanted.push(keyColumn);
     c.cache.want(firstRow, lastRow, wanted);
 
-    const headerHeight = c.options.headerHeight;
+    const headerHeight = c.headerHeight;
     const scrollLeft = c.gutterWidth + c.frozenWidth;
     // Scrollable columns.
     this.clipped(scrollLeft, headerHeight, c.width - scrollLeft, c.height - headerHeight, () => {
@@ -273,7 +273,7 @@ export class CanvasRenderer {
     const find = c.findText ? (c.findCaseSensitive ? c.findText : c.findText.toLowerCase()) : "";
     ctx.save();
     ctx.beginPath();
-    ctx.rect(x, c.options.headerHeight, width, c.height);
+    ctx.rect(x, c.headerHeight, width, c.height);
     ctx.clip();
     ctx.font = this.cellText.font;
     this.cellFont = ctx.font;
@@ -505,7 +505,7 @@ export class CanvasRenderer {
   private drawLines(firstCol: number, lastCol: number, firstRow: number, lastRow: number) {
     const c = this.controller;
     const ctx = this.context;
-    const top = c.options.headerHeight;
+    const top = c.headerHeight;
     const bottom = Math.min(c.height, c.rowY(c.rowCount));
     const left = firstCol < c.frozen ? c.gutterWidth : c.gutterWidth + c.frozenWidth;
     const right = lastCol >= 0 ? Math.min(c.width, c.columnX(lastCol) + c.layout.width(lastCol)) : left;
@@ -533,7 +533,7 @@ export class CanvasRenderer {
     if (left > right) return null;
     const x0 = c.columnX(left);
     const x1 = c.columnX(right) + c.layout.width(right);
-    const y0 = Math.max(c.options.headerHeight - 2, c.rowY(range.top));
+    const y0 = Math.max(c.headerHeight - 2, c.rowY(range.top));
     const y1 = Math.min(c.height + 2, c.rowY(range.bottom + 1));
     if (y1 <= y0) return null;
     return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
@@ -583,15 +583,17 @@ export class CanvasRenderer {
     const c = this.controller;
     const ctx = this.context;
     const t = this.theme;
-    const height = c.options.headerHeight;
+    const height = c.headerHeight;
     ctx.fillStyle = t.headerBackground;
     ctx.fillRect(0, 0, c.width, height);
     const scrollLeft = c.gutterWidth + c.frozenWidth;
     this.clipped(scrollLeft, 0, c.width - scrollLeft, height, () => {
       for (let col = firstCol; col <= lastCol; col++) this.drawHeader(col);
+      this.drawGroups(firstCol, lastCol, scrollLeft, c.width);
     });
     this.clipped(c.gutterWidth, 0, c.frozenWidth, height, () => {
       for (let col = 0; col < c.frozen; col++) this.drawHeader(col);
+      this.drawGroups(0, c.frozen - 1, c.gutterWidth, scrollLeft);
     });
     ctx.strokeStyle = t.lineStrong;
     ctx.lineWidth = 1 / this.ratio;
@@ -611,14 +613,20 @@ export class CanvasRenderer {
     if (!schema) return;
     const x = c.columnX(col);
     const width = c.layout.width(col);
+    // The column's header reaches up into the group rows where it has no group; its name, icons and
+    // menu stay in the row of column names.
+    const top = c.headerTop(col);
+    const bottom = c.headerHeight;
     const height = c.options.headerHeight;
+    ctx.save();
+    ctx.translate(0, bottom - height);
     const hovered = c.hover?.zone === "header" && c.hover.col === col;
     if (c.selection.colSelected(col)) {
       ctx.fillStyle = t.selection;
-      ctx.fillRect(x, 0, width, height);
+      ctx.fillRect(x, top - bottom + height, width, bottom - top);
     } else if (c.selection.colTouched(col) || hovered) {
       ctx.fillStyle = t.headerActive;
-      ctx.fillRect(x, 0, width, height);
+      ctx.fillRect(x, top - bottom + height, width, bottom - top);
     }
     ctx.textBaseline = "middle";
     ctx.textAlign = "left";
@@ -667,9 +675,60 @@ export class CanvasRenderer {
     ctx.lineWidth = 1 / this.ratio;
     ctx.beginPath();
     const line = this.snap(x + width) - 1 / this.ratio;
-    ctx.moveTo(line, 6);
+    ctx.moveTo(line, top < bottom - height ? top - bottom + height : 6);
     ctx.lineTo(line, height - 6);
     ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * The group headers over the visible columns `first` to `last`, in a region from `left` to `right`.
+   * A group's name stays at the region's left edge while its columns scroll under it.
+   */
+  private drawGroups(first: number, last: number, left: number, right: number) {
+    const c = this.controller;
+    if (c.groupRows === 0 || last < first) return;
+    const ctx = this.context;
+    const t = this.theme;
+    const height = c.groupHeaderHeight;
+    const hover = c.hover?.zone === "group" ? c.hover.group : undefined;
+    ctx.lineWidth = 1 / this.ratio;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    ctx.font = this.headerText.font;
+    for (const row of c.groupSpans()) {
+      for (const span of row) {
+        if (span.end < first || span.start > last) continue;
+        const x0 = c.columnX(span.start);
+        const x1 = c.columnX(span.end) + c.layout.width(span.end);
+        const y = span.level * height;
+        let selected = true;
+        let touched = false;
+        for (let col = span.start; col <= span.end; col++) {
+          selected &&= c.selection.colSelected(col);
+          touched ||= c.selection.colTouched(col);
+        }
+        if (selected || touched || hover === span) {
+          ctx.fillStyle = selected ? t.selection : t.headerActive;
+          ctx.fillRect(x0, y, x1 - x0, height);
+        }
+        const start = Math.max(x0, left) + PADDING;
+        const end = Math.min(x1, right) - PADDING;
+        if (end - start > 8) {
+          ctx.fillStyle = t.headerText;
+          ctx.fillText(this.headerText.fit(span.group.name, end - start), start, y + height / 2 + 0.5);
+        }
+        ctx.strokeStyle = t.line;
+        ctx.beginPath();
+        const line = this.snap(x1) - 1 / this.ratio;
+        ctx.moveTo(line, y);
+        ctx.lineTo(line, y + height);
+        const under = this.snap(y + height) - 1 / this.ratio;
+        ctx.moveTo(x0, under);
+        ctx.lineTo(x1, under);
+        ctx.stroke();
+      }
+    }
   }
 
   private chevron(x: number, y: number, color: string) {
@@ -719,7 +778,7 @@ export class CanvasRenderer {
     const ctx = this.context;
     const t = this.theme;
     const width = c.gutterWidth;
-    const top = c.options.headerHeight;
+    const top = c.headerHeight;
     const rowHeight = c.rowHeight;
     ctx.fillStyle = t.gutterBackground;
     ctx.fillRect(0, top, width, c.height - top);
@@ -762,13 +821,15 @@ export class CanvasRenderer {
     const ctx = this.context;
     const t = this.theme;
     const width = c.gutterWidth;
-    const height = c.options.headerHeight;
+    const height = c.headerHeight;
     const boxes = c.checkboxWidth;
     ctx.fillStyle = c.hover?.zone === "corner" && !c.hover.checkbox ? t.headerActive : t.headerBackground;
     ctx.fillRect(0, 0, width, height);
     if (boxes > 0) {
       const state = c.rowSelectionPending ? null : c.allRowsChecked;
-      this.checkbox(boxes / 2 + 2, height / 2, state, c.hover?.zone === "corner" && c.hover.checkbox);
+      // Level with the column names, below the group rows.
+      const middle = height - c.options.headerHeight / 2;
+      this.checkbox(boxes / 2 + 2, middle, state, c.hover?.zone === "corner" && c.hover.checkbox);
     }
     ctx.fillStyle = t.muted;
     ctx.beginPath();

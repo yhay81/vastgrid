@@ -19,7 +19,9 @@ import "vastgrid/styles.css";
 | `messages` | `Partial<Messages>` | | 組み込みの文言の一部を置き換えます（`en` と `ja` を参照）。 |
 | `rowHeight` | `number` | `--vg-row-height` か 24 | 行の高さ（px）。 |
 | `maxLines` | `number` | `3` | 折り返す列（`columnFormats` の `wrap`）のセルに表示する最大の行数（1〜20）。 |
-| `headerHeight` | `number` | `--vg-header-height` か 32 | 見出しの高さ（px）。 |
+| `headerHeight` | `number` | `--vg-header-height` か 32 | 列名の段の高さ（px）。`columnGroups` の段は、この上に加わります。 |
+| `columnGroups` | `ColumnGroup[]` | | 列名の上の段に名前を出す列のグループ（[列のグループ](#列のグループ)を参照）。 |
+| `groupHeaderHeight` | `number` | `--vg-group-header-height` か 24 | グループの段 1 段の高さ（px）。 |
 | `nullText` | `string` | `""` | null のセルに表示する文字。 |
 | `frozenColumns` | `number` | `0` | 表を開いたときに左に固定する列の数。 |
 | `toolbar` | `boolean` | `true` | 検索欄、適用中の絞り込み、行数を表示します。 |
@@ -213,6 +215,44 @@ const formats: Record<string, ColumnFormat> = {
 **コピー。** 既定では、コピー（TSV・HTML・Markdown）には `plainText` が書く形の値と、見出しにはスキーマの列名が入り、表計算ソフトが数値や日付として読めます。`copyValues="formatted"` にすると、表示している文字の全体（切らず、改行も残す）と表示名をコピーします。列の `copy` を指定すると、その列のセルはそちらに従います。書き出し（`exportView`）はソースが書くので、値が入ります。書き出しパネルでは、表示名を見出しに、Excel ファイルでは数値・日時の書式を Excel の表示形式にできます（[書き出し](/ja/guides/export/)を参照）。
 
 正しくない設定（`currency` のない通貨の書式や、存在しないタイムゾーンなど）は、グリッドに渡した時点で `RangeError` を投げます。`ColumnFormatter`（`ValueFormatter.column(schema, format)` で作り、グリッドでは `controller.formatterOf(index)`）を使うと、グリッドの外でも同じ設定で値を整形でき、設定は `settings` で読めます。
+
+## 列のグループ
+
+`columnGroups` で、列名の上の段に列のグループの名前を出します。`ColumnGroup` は `name` と `children` を持ち、`children` にはスキーマの列名（`ColumnSchema.name`）と入れ子のグループを並べます。入れ子 1 段ごとに `groupHeaderHeight` の高さの段が 1 つ増え、見出し全体の高さは `headerHeight` にその段の分を足した高さ（`controller.headerHeight`）です。行・スクロール・`goToRow`・行のチェックボックスは、その下から始まります。
+
+```tsx
+import { type ColumnGroup, DataGrid } from "vastgrid";
+
+const groups: ColumnGroup[] = [
+  { name: "売上", children: [
+    { name: "第1四半期", children: ["jan", "feb", "mar"] },
+    { name: "第2四半期", children: ["apr", "may", "jun"] },
+  ] },
+  { name: "メモ", children: ["comment"] },
+];
+
+<DataGrid source={source} columnGroups={groups} />;
+```
+
+配列は変わらないように（メモ化するか、コンポーネントの外で定義して）渡してください。表にない列名は無視するので、似たファイルに同じ定義を使えます。同じ列を 2 回挙げたとき、`children` のないグループ、8 段を超える入れ子は、グリッドに渡した時点で `RangeError` を投げます。
+
+**グループは列に付いて動きます。** グループはスキーマとも列の設定とも別の、表示用の定義です。見出しは、表示中の列の今の並びから作ります。
+
+- グループの見出しは、隣り合う表示中の列にまたがります。その間に別の列を動かしたり、1 列を離れた場所へ動かしたりすると見出しを分け、それぞれにグループ名を出します。隠した列は除き、グループの列をすべて隠すとグループも出しません。
+- 固定する列とスクロールする列にまたがるグループは、その境で分け、それぞれの領域に出します。スクロールする側では、列が流れても名前は左端に残ります。
+- 幅を変えてもグループは分けません。狭いグループの名前は「…」で切ります。
+- 見出しの高さはグループの入れ子の深さだけで決まり、表示する列によって変わらないので、列を隠しても高さは変わりません。
+- 見出しの段の数よりグループの少ない列は、空いている段まで列の見出しを伸ばします。列名・並べ替えと絞り込みの印・メニューは列名の段に出します。
+
+**ポインター。** グループの見出しをクリックすると、列の見出しと同じように、そのグループの列を選びます。Shift で選択をグループまで広げ、⌘（Windows・Linux では Ctrl）で別の範囲として加えます。列を選んだグループの見出しをドラッグすると、列を並びのまままとめて動かします（`controller.moveColumns(first, last, to)`）。自分の列の上で離すと何もしません。移動は 1 列のときと同じく理由 `move` で通知します。グループの見出しにはメニューと幅を変えるつまみはなく、その下の列の見出しにあります。
+
+**並べ替え・絞り込み・イベント。** グループの見出しは描くだけです。並べ替え、絞り込み、列のメニュー、統計、表の中の検索、選択は、その下の列に対して動きます。`controller.hitTest(x, y)` はグループの上で `zone: "group"` を返し、`hit.group` にグループの区間（`group`、`level`、最初と最後の表示中の列 `start` と `end`）、`col` にポインターの下の列が入ります。イベントの `col` と `column` は、グループがないときと同じく列を指します。区間は `controller.groupSpans()` と `controller.groupsOf(col)` で読めます。
+
+**キー操作とスクリーンリーダー。** キーボードでは、これまでどおりセルの間を動き、グループの見出しにはフォーカスしません。アクティブなセルについて、隠した ARIA の行で、列の上の各グループをそれぞれの見出しの行に `columnheader`（`aria-colspan` は表示中の列の数）として示し、その後に列名の行を置くので、スクリーンリーダーは列とともにグループを読み上げられます。`aria-rowcount` にはグループの段も数えます。
+
+**コピーと書き出し。** 見出し付きのコピー（TSV・HTML・Markdown）と書き出し（CSV・TSV・JSON・Parquet・Excel）の見出しは、列名か表示名の 1 段だけです。ほかのプログラムやこのグリッドが、正しい列名の表として読み直せるようにするためで、グループを結合セルとしては書きません。
+
+**設定の保存。** グループは `GridState` に入りません。グループは `columnFormats` と同じく prop で渡すアプリの定義で、状態はユーザーが変えたものを保存するからです。状態は列の並び・表示・固定を列名で保存するので、適用すると同じ位置で分かれた同じグループの見出しになります。
 
 ## 詳細パネル
 

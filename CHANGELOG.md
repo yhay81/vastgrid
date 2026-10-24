@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `vastgrid`: `columnGroups` names groups of columns in header rows above the column names; nested
+  groups add rows of `groupHeaderHeight` (`--vg-group-header-height`, 24px). Groups follow their columns:
+  moving, hiding or freezing columns so that a group's columns are apart splits its header, each part
+  showing the name. Clicking a group header selects its columns, and dragging a selected group moves
+  them together (`controller.moveColumns`). Sorting, filters, menus and events work on the columns;
+  hit tests report `zone: "group"`, screen readers hear the groups with `aria-colspan`, and copies and
+  exports keep one header row. Groups are not part of `GridState`.
+- `vastgrid-core`: `ColumnGroup`, and `columnGroupPaths`, `columnGroupDepth` and `columnGroupSpans`,
+  which lay out group headers over the visible columns.
 - `vastgrid`: `checkboxSelection` adds row checkboxes, separate from the cell selection. Checked rows
   are kept by key — the row's position in the file for one `revision`, or the values of a `rowKey`
   column — so the same records stay checked when the view is sorted or filtered. The corner checkbox

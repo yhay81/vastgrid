@@ -139,7 +139,9 @@ const source = new ArraySource({
 | `locale` | `string` | ブラウザーの言語 | 数値と組み込みの文言のロケール。`ja` なら日本語、それ以外は英語です。 |
 | `messages` | `Partial<Messages>` | | 組み込みの文言の一部を置き換えます（`en` と `ja` を参照）。 |
 | `rowHeight` | `number` | `--vg-row-height` か 24 | 行の高さ（px）。 |
-| `headerHeight` | `number` | `--vg-header-height` か 32 | 見出しの高さ（px）。 |
+| `headerHeight` | `number` | `--vg-header-height` か 32 | 列名の段の高さ（px）。`columnGroups` の段は、この上に加わります。 |
+| `columnGroups` | `ColumnGroup[]` | | 列名の上の段に名前を出す列のグループ。入れ子にすると段が増えます。 |
+| `groupHeaderHeight` | `number` | `--vg-group-header-height` か 24 | グループの段 1 段の高さ（px）。 |
 | `maxLines` | `number` | `3` | 折り返す列（`columnFormats` の `wrap`）のセルに表示する最大の行数（1〜20）。 |
 | `nullText` | `string` | `""` | null のセルに表示する文字。 |
 | `frozenColumns` | `number` | `0` | 表を開いたときに左に固定する列の数。 |
@@ -230,6 +232,23 @@ const formats: Record<string, ColumnFormat> = {
 コピーには値とスキーマの列名が入ります。表示している文字と表示名をコピーするには、`copyValues="formatted"`（列ごとには `copy`）を指定します。
 
 `wrap: true` を指定した列は、文字を `maxLines`（既定は 3）行まで折り返して表示します。空白と、日本語・中国語・韓国語の文字の間、値の中の改行で行を改め、収まらない分は「…」で示します。行の高さは全行で同じ（表示中の列が折り返す間は `rowHeight` に 2 行目以降の 1 行ごとに `--vg-line-height` を足した高さ）なので、行数にかかわらずスクロールは正確です。詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#列の表示設定)を参照してください。
+
+### 列のグループ
+
+`columnGroups` で、列名の上の段に列のグループの名前を出します（複数段の見出し）。メンバーはスキーマの列名か入れ子のグループで、入れ子 1 段ごとに見出しの段が 1 つ増えます。変わるのは見出しだけで、並べ替え・絞り込み・列のメニュー・選択・イベント（`col` と `column`）・`GridState` は、これまでどおり列に対して動きます。
+
+```tsx
+const groups: ColumnGroup[] = [
+  { name: "売上", children: [
+    { name: "第1四半期", children: ["jan", "feb", "mar"] },
+    { name: "第2四半期", children: ["apr", "may", "jun"] },
+  ] },
+];
+
+<DataGrid source={source} columnGroups={groups} groupHeaderHeight={24} />;
+```
+
+グループは列に付いて動きます。列の移動・非表示・固定で、グループの表示中の列が離れたり、固定する列とスクロールする列に分かれたりすると、見出しを分けて、それぞれに名前を出します。グループの見出しをクリックするとその列を選び（Shift で広げ、⌘/Ctrl で追加）、選んだグループの見出しをドラッグすると列をまとめて動かします。コピーと書き出しの見出しは 1 段（列名）のままです。詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#列のグループ)を参照してください。
 
 ### 詳細パネル
 

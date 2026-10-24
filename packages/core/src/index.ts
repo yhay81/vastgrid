@@ -1,6 +1,14 @@
 export { ArraySource, type ArraySourceOptions } from "./array-source.js";
 export { type BlockState, CacheBlock, RowCache, type RowCacheOptions } from "./cache.js";
 export { toHtmlTable, toMarkdownTable, toTsv } from "./clipboard.js";
+export {
+  type ColumnGroupSpan,
+  columnGroupDepth,
+  columnGroupPaths,
+  columnGroupSpans,
+  MAX_GROUP_DEPTH,
+  spanAt,
+} from "./column-groups.js";
 export { isNumericType, isTemporalType } from "./column-type.js";
 export {
   EXPORT_EXTENSIONS,

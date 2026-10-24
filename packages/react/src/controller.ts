@@ -4,10 +4,15 @@ import {
   type CellValue,
   type ColumnFormat,
   type ColumnFormatter,
+  type ColumnGroup,
+  type ColumnGroupSpan,
   ColumnLayout,
   type ColumnSchema,
   type ColumnStats,
   type CopyValues,
+  columnGroupDepth,
+  columnGroupPaths,
+  columnGroupSpans,
   copyLayout,
   type DistinctValues,
   ErrorCodes,
@@ -38,6 +43,7 @@ import {
   type SelectionSummary,
   type SortDirection,
   sameRowQuery,
+  spanAt,
   type TableCapabilities,
   type TableInfo,
   type TableSource,
@@ -66,7 +72,12 @@ export interface GridOptions {
   maxLines?: number;
   /** Height of each further line of wrapped text. Defaults to 18; the renderer sets it from the font. */
   lineHeight?: number;
+  /** Height of the row of column names. Group rows (`columnGroups`) add to the header's height. */
   headerHeight: number;
+  /** Groups of columns shown in header rows above the column names (see `ColumnGroup`). */
+  columnGroups?: readonly ColumnGroup[];
+  /** Height of each header row of groups. Defaults to 24. */
+  groupHeaderHeight?: number;
   locale?: string;
   nullText: string;
   frozenColumns: number;
@@ -104,7 +115,7 @@ export interface ColumnState {
   sized: boolean;
 }
 
-export type HitZone = "corner" | "header" | "gutter" | "cell" | "outside";
+export type HitZone = "corner" | "group" | "header" | "gutter" | "cell" | "outside";
 
 export interface Hit {
   zone: HitZone;
@@ -118,6 +129,8 @@ export interface Hit {
   menu: boolean;
   /** The pointer is over a row's checkbox (`gutter`) or the checkbox of every row (`corner`). */
   checkbox: boolean;
+  /** The group header under the pointer (zone `group`); `col` is then the column under the pointer. */
+  group?: ColumnGroupSpan;
 }
 
 export class CopyTooLargeError extends Error {
@@ -268,6 +281,12 @@ export class GridController {
   summaryPending = false;
   /** Increments on every change shown by the React UI. */
   version = 0;
+  /** Groups of each schema column name, outermost first (see `columnGroupPaths`). */
+  private groupPaths = new Map<string, ColumnGroup[]>();
+  /** Header rows of groups. */
+  private groupDepth = 0;
+  /** The spans of the group rows and what they were computed for. */
+  private spans: { key: string; schema: ColumnSchema[]; rows: ColumnGroupSpan[][] } | null = null;
   /** Measures text in the cell or header font; set by the renderer. */
   measure: ((text: string, header: boolean) => number) | null = null;
 
@@ -327,6 +346,8 @@ export class GridController {
     this.formatter = new ValueFormatter({ locale: options.locale, nullText: options.nullText });
     this.options.columnFormats ??= {};
     this.checkFormats(this.options.columnFormats);
+    this.groupPaths = columnGroupPaths(options.columnGroups ?? []);
+    this.groupDepth = columnGroupDepth(options.columnGroups ?? []);
     this.cache = new RowCache(source);
     this.cache.onChange(() => {
       this.autoSize();
@@ -805,7 +826,84 @@ export class GridController {
   }
 
   get bodyHeight() {
-    return Math.max(0, this.height - this.options.headerHeight);
+    return Math.max(0, this.height - this.headerHeight);
+  }
+
+  // ----- column groups -----
+
+  /** Height of the whole header: the rows of groups and the row of column names. Rows start below it. */
+  get headerHeight() {
+    return this.groupRows * this.groupHeaderHeight + this.options.headerHeight;
+  }
+
+  /** Header rows of groups above the column names (0 without groups). */
+  get groupRows() {
+    return this.groupDepth;
+  }
+
+  get groupHeaderHeight() {
+    return this.options.groupHeaderHeight ?? 24;
+  }
+
+  /**
+   * Replaces the column groups. Throws a `RangeError` for invalid groups (see `columnGroupPaths`),
+   * keeping the current ones. The header grows or shrinks with the groups' depth; the first visible
+   * row stays in place.
+   */
+  setColumnGroups(groups: readonly ColumnGroup[] | undefined) {
+    if (groups === this.options.columnGroups) return;
+    const paths = columnGroupPaths(groups ?? []);
+    this.options.columnGroups = groups;
+    this.groupPaths = paths;
+    this.groupDepth = columnGroupDepth(groups ?? []);
+    this.spans = null;
+    this.syncSizer();
+    this.requestRender();
+    this.emit();
+  }
+
+  /** Changes the height of the group rows. */
+  setGroupHeaderHeight(height: number | undefined) {
+    if (height === this.options.groupHeaderHeight) return;
+    this.options.groupHeaderHeight = height;
+    this.syncSizer();
+    this.requestRender();
+    this.emit();
+  }
+
+  /** The first visible column of each region that scrolls apart, where group headers are split. */
+  private groupBreaks() {
+    return this.frozen > 0 ? [this.frozen] : [];
+  }
+
+  /**
+   * The group headers of the visible columns: one list of spans for each group row, outermost first.
+   * A group is split where its columns are not side by side (moved apart, or some hidden between
+   * others) and between frozen and scrolling columns; each part shows the group's name.
+   */
+  groupSpans(): ColumnGroupSpan[][] {
+    if (this.groupDepth === 0) return [];
+    const breaks = this.groupBreaks();
+    const key = `${this.visibleKey}|${breaks.join(",")}`;
+    const schema = this.schema;
+    if (this.spans?.key !== key || this.spans.schema !== schema) {
+      const paths = this.visible.map((column) => this.groupPaths.get(schema[column.index]?.name ?? ""));
+      this.spans = { key, schema, rows: columnGroupSpans(paths, this.groupDepth, breaks) };
+    }
+    return this.spans.rows;
+  }
+
+  /** The groups of a visible column, outermost first, as their spans. */
+  groupsOf(col: number): ColumnGroupSpan[] {
+    return this.groupSpans().flatMap((row) => spanAt(row, col) ?? []);
+  }
+
+  /**
+   * Screen y where a visible column's own header starts: below its groups. Above a column with fewer
+   * groups than the header has rows, its header reaches up into the empty group rows.
+   */
+  headerTop(col: number) {
+    return this.groupsOf(col).length * this.groupHeaderHeight;
   }
 
   /**
@@ -948,7 +1046,7 @@ export class GridController {
       this.sizedRowHeight > 0 && rowHeight !== this.sizedRowHeight ? this.scrollY.position / this.sizedRowHeight : null;
     this.sizedRowHeight = rowHeight;
     const nativeWidth = this.scrollX.resize(this.gutterWidth + this.layout.total, this.width);
-    const nativeHeight = this.scrollY.resize(this.options.headerHeight + this.rowCount * rowHeight, this.height);
+    const nativeHeight = this.scrollY.resize(this.headerHeight + this.rowCount * rowHeight, this.height);
     if (topRow !== null) this.scrollY.scrollTo(topRow * rowHeight);
     if (this.sizer) {
       this.sizer.style.width = `${Math.ceil(nativeWidth)}px`;
@@ -1005,7 +1103,7 @@ export class GridController {
   }
 
   rowY(row: number) {
-    return this.options.headerHeight + row * this.rowHeight - this.scrollY.position;
+    return this.headerHeight + row * this.rowHeight - this.scrollY.position;
   }
 
   /** The visible column at screen x, or -1. */
@@ -1019,16 +1117,20 @@ export class GridController {
   }
 
   rowAt(y: number) {
-    if (y < this.options.headerHeight) return -1;
-    const row = Math.floor((y - this.options.headerHeight + this.scrollY.position) / this.rowHeight);
+    if (y < this.headerHeight) return -1;
+    const row = Math.floor((y - this.headerHeight + this.scrollY.position) / this.rowHeight);
     return row >= 0 && row < this.rowCount ? row : -1;
   }
 
   hitTest(x: number, y: number): Hit {
-    const header = y < this.options.headerHeight;
+    const header = y < this.headerHeight;
     const gutter = x < this.gutterWidth;
     const col = gutter ? -1 : this.columnAt(x);
     const row = header ? -1 : this.rowAt(y);
+    // A group row above a column that has a group there; otherwise the column's own header.
+    const level = header && !gutter && col >= 0 ? Math.floor(y / this.groupHeaderHeight) : -1;
+    const group = level >= 0 && level < this.groupRows ? spanAt(this.groupSpans()[level], col) : null;
+    if (group) return { zone: "group", row: -1, col, resize: -1, menu: false, checkbox: false, group };
     let zone: HitZone = "outside";
     if (header && gutter) zone = "corner";
     else if (header && col >= 0) zone = "header";
@@ -1044,7 +1146,9 @@ export class GridController {
       if (Math.abs(x - right) <= 5) resize = nearest;
       else if (nearest > 0 && Math.abs(x - left) <= 5 && (nearest !== this.frozen || this.scrollX.position === 0))
         resize = nearest - 1;
-      menu = col >= 0 && resize < 0 && x >= right - 24 && x < right - 4;
+      // The menu button is in the row of column names.
+      const names = y >= this.headerHeight - this.options.headerHeight;
+      menu = col >= 0 && resize < 0 && names && x >= right - 24 && x < right - 4;
     }
     return { zone, row, col, resize, menu, checkbox };
   }
@@ -1788,6 +1892,22 @@ export class GridController {
     const list = this.columns.filter((column) => column !== moving);
     const at = list.indexOf(target);
     list.splice(from < to ? at + 1 : at, 0, moving);
+    this.columns = list;
+    this.changeColumns("move");
+  }
+
+  /**
+   * Moves the visible columns `first` to `last` (inclusive, for example a group's span), keeping their
+   * order, before the visible column `to` when moving left, or after it when moving right. Nothing
+   * moves when `to` is one of them.
+   */
+  moveColumns(first: number, last: number, to: number) {
+    const moving = this.visible.slice(first, last + 1);
+    const target = this.visible[to];
+    if (moving.length === 0 || !target || (to >= first && to <= last)) return;
+    const list = this.columns.filter((column) => !moving.includes(column));
+    const at = list.indexOf(target);
+    list.splice(to > last ? at + 1 : at, 0, ...moving);
     this.columns = list;
     this.changeColumns("move");
   }
