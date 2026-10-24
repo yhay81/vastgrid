@@ -100,6 +100,12 @@ without changing which rows are shown; use the search box for that.
 minimum and maximum and, for numbers, the mean, standard deviation, quartiles and a histogram, or for
 text the shortest and longest length. It also lists the most common values.
 
+## Grouping and totals
+
+"Group" in the toolbar groups the rows by columns, with counts, sums, averages, minimums and maximums of
+each group; "Total in the bottom row…" in a column's menu shows an aggregate of the column below the rows.
+See [Grouping and totals](/guides/grouping/).
+
 ## Exporting
 
 "Export" in the toolbar writes the current view (as filtered and sorted) or the whole table, with the

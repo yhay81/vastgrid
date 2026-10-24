@@ -1,12 +1,17 @@
 import {
   type CellValue,
+  type ColumnSchema,
   type ColumnType,
   type CompareOperator,
   type Filter,
   type FilterNode,
+  type GroupAggregate,
+  type GroupRequest,
+  groupSort,
   isFilterGroup,
   isNumericType,
   isTemporalType,
+  MAX_TEXT_LIMIT,
   pruneFilterNode,
   type SortKey,
 } from "vastgrid-core";
@@ -311,4 +316,75 @@ export function orderTerms(sort: readonly SortKey[], columns: readonly SqlColumn
     const value = column.type === "string" ? `NULLIF(${id}, '')` : id;
     return `${value} ${key.direction === "desc" ? "DESC" : "ASC"} NULLS LAST`;
   });
+}
+
+/** How a result column of a grouping is read: integers exactly, other values as the grid reads them. */
+export interface GroupOutput {
+  expression: string;
+  integer: boolean;
+}
+
+function groupOutput(alias: string, column: ColumnSchema): GroupOutput {
+  if (column.type === "integer" || column.type === "bigint") {
+    // HUGEINT sums do not fit JavaScript numbers; their digits are read and sent as numbers when exact.
+    return { expression: `CAST(${alias} AS VARCHAR)`, integer: true };
+  }
+  const sqlType = column.sourceType ?? (column.type === "float" ? "DOUBLE" : "VARCHAR");
+  return { expression: selectExpression({ name: alias, sqlType, type: column.type }, MAX_TEXT_LIMIT), integer: false };
+}
+
+function aggregateExpression(aggregate: GroupAggregate, column: SqlColumn | undefined) {
+  if (!column) return "count(*)";
+  const id = quoteIdentifier(column.name);
+  // NaN and infinities are left out, as in the column statistics.
+  const finite = column.type === "float" && aggregate.fn !== "count" ? ` FILTER (WHERE isfinite(${id}))` : "";
+  return `${aggregate.fn}(${id})${finite}`;
+}
+
+/** ORDER BY terms of result columns, by alias: blanks last as in views. */
+function groupOrder(sort: readonly SortKey[], aliases: readonly string[], result: readonly ColumnSchema[]) {
+  return sort.map((key) => {
+    const alias = aliases[key.column];
+    const value = result[key.column]?.type === "string" ? `NULLIF(${alias}, '')` : alias;
+    return `${value} ${key.direction === "desc" ? "DESC" : "ASC"} NULLS LAST`;
+  });
+}
+
+/**
+ * A grouping as one statement over the rows of `from` (see `GroupRequest`): the result columns, then
+ * the number of groups. `result` is the result schema (`groupColumns`). Every value in it comes from
+ * the request's indexes, so it needs no parameters.
+ */
+export function groupStatement(
+  request: GroupRequest,
+  columns: readonly SqlColumn[],
+  result: readonly ColumnSchema[],
+  from: string,
+  limit: number,
+) {
+  const inner: string[] = [];
+  const aliases: string[] = [];
+  request.keys.forEach((index, at) => {
+    aliases.push(`k${at}`);
+    inner.push(`${quoteIdentifier(columns[index].name)} AS k${at}`);
+  });
+  request.aggregates.forEach((aggregate, at) => {
+    aliases.push(`a${at}`);
+    const column = aggregate.column === undefined ? undefined : columns[aggregate.column];
+    inner.push(`${aggregateExpression(aggregate, column)} AS a${at}`);
+  });
+  const outputs = result.map((column, at) => groupOutput(aliases[at], column));
+  const groupBy = request.keys.length > 0 ? ` GROUP BY ${request.keys.map((_, at) => at + 1).join(", ")}` : "";
+  const order =
+    request.keys.length > 0
+      ? [
+          ...groupOrder(groupSort(request), aliases, result),
+          // Ties follow the keys, with the empty string as a value of its own.
+          ...request.keys.map((_, at) => `k${at} ASC NULLS LAST`),
+        ]
+      : [];
+  const select = outputs.map((output, at) => `${output.expression} AS o${at}`);
+  select.push("count(*) OVER () AS __vg_groups");
+  const sql = `SELECT ${select.join(", ")} FROM (SELECT ${inner.join(", ")} FROM ${from}${groupBy}) AS g${order.length > 0 ? ` ORDER BY ${order.join(", ")}` : ""} LIMIT ${limit}`;
+  return { sql, outputs };
 }

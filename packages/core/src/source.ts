@@ -8,6 +8,8 @@ import type {
   ExportResult,
   FindRequest,
   FindResult,
+  GroupRequest,
+  GroupResult,
   RowBlock,
   RowRequest,
   SelectionSummary,
@@ -21,7 +23,7 @@ import type {
  * A table the grid can display. Implementations decide where the data lives: in memory, in a
  * worker, or behind a server (see `RemoteSource`). Only `info`, `createView` and `readRows` are
  * required; optional methods enable the matching features in the grid (statistics, filters by
- * value, the selection summary, find, export).
+ * value, the selection summary, find, export, grouping and totals).
  */
 export interface TableSource {
   /** Opens the table on the first call and returns its current state. Poll while `status` is `loading`. */
@@ -38,6 +40,12 @@ export interface TableSource {
   distinctValues?(request: DistinctRequest, signal?: AbortSignal): Promise<DistinctValues>;
   aggregate?(request: AggregateRequest, signal?: AbortSignal): Promise<SelectionSummary>;
   find?(request: FindRequest, signal?: AbortSignal): Promise<FindResult | null>;
+  /**
+   * Groups the rows of a view and computes aggregates over them (see `GroupRequest`), or the totals of
+   * the view without keys. Offered when `capabilities.group` is true. The answer holds at most
+   * `limit` groups, so a source never sends more than a small table.
+   */
+  group?(request: GroupRequest, signal?: AbortSignal): Promise<GroupResult>;
   exportView?(request: ExportRequest, signal?: AbortSignal): Promise<ExportResult>;
   /**
    * Calls `listener` when the table as a whole changed (for example rows were appended to its file),

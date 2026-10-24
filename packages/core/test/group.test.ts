@@ -1,0 +1,175 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { ArraySource } from "../src/array-source.ts";
+import { parseGridState } from "../src/grid-state.ts";
+import { GroupedSource } from "../src/grouped-source.ts";
+import type { TableChangeListener } from "../src/source.ts";
+import type { GroupRequest } from "../src/types.ts";
+
+function orders() {
+  return new ArraySource({
+    columns: [
+      { name: "region", type: "string" },
+      { name: "qty", type: "integer" },
+      { name: "price", type: "decimal", sourceType: "DECIMAL(10,2)" },
+      { name: "big", type: "bigint" },
+    ],
+    rows: [
+      ["East", 3, "1.25", "9007199254740993"],
+      ["West", 5, "2.5", "1"],
+      ["East", null, "0.1", "9007199254740993"],
+      ["North", 2, null, null],
+      [null, 1, "3", "2"],
+      ["", 4, "-1.00", "3"],
+    ],
+  });
+}
+
+test("array sources group exactly, with decimal scales, big integers, nulls and empty strings", async () => {
+  const result = await orders().group({
+    view: null,
+    keys: [0],
+    aggregates: [
+      { fn: "count" },
+      { fn: "sum", column: 1 },
+      { fn: "sum", column: 2 },
+      { fn: "sum", column: 3 },
+      { fn: "min", column: 3 },
+      { fn: "avg", column: 1 },
+    ],
+  });
+  assert.deepEqual(result.rows, [
+    ["East", 2, 3, "1.35", "18014398509481986", "9007199254740993", 3],
+    ["North", 1, 2, null, null, null, 2],
+    ["West", 1, 5, "2.50", 1, 1, 5],
+    ["", 1, 4, "-1.00", 3, 3, 4],
+    [null, 1, 1, "3.00", 2, 2, 1],
+  ]);
+  assert.equal(result.columns[3].sourceType, "DECIMAL(38,2)");
+  // Numbers group by value: 1.5 and "1.50" are one group.
+  const numbers = new ArraySource({
+    columns: [{ name: "n", type: "decimal" }],
+    rows: [["1.5"], ["1.50"], [1.5], ["2"]],
+  });
+  assert.deepEqual((await numbers.group({ view: null, keys: [0], aggregates: [{ fn: "count" }] })).rows, [
+    ["1.5", 3],
+    ["2", 1],
+  ]);
+});
+
+test("result names are unique and say what they aggregate", async () => {
+  const source = new ArraySource({ columns: ["count(*)", "x"], rows: [[1, 2]] });
+  const result = await source.group({
+    view: null,
+    keys: [0],
+    aggregates: [{ fn: "count" }, { fn: "count" }, { fn: "max", column: 1 }],
+  });
+  assert.deepEqual(
+    result.columns.map((column) => column.name),
+    ["count(*)", "count(*) (2)", "count(*) (3)", "max(x)"],
+  );
+});
+
+test("a grouped source shows the groups as a table and sorts truncated results on the base", async () => {
+  const base = orders();
+  const requests: GroupRequest[] = [];
+  const counted = Object.assign(Object.create(base) as ArraySource, {
+    group(request: GroupRequest) {
+      requests.push(request);
+      return base.group(request);
+    },
+  });
+  const grouped = new GroupedSource(counted, {
+    keys: [0],
+    aggregates: [{ fn: "sum", column: 1 }],
+    query: { filters: [{ type: "compare", column: 1, op: "ge", value: 2 }], sort: [{ column: 1, direction: "desc" }] },
+    limit: 2,
+  });
+  const info = await grouped.info();
+  assert.equal(info.status, "ready");
+  assert.deepEqual(
+    info.columns.map((column) => column.name),
+    ["region", "sum(qty)"],
+  );
+  assert.equal(info.rowCount, 2);
+  // Truncated: only what works on the returned groups is offered.
+  assert.equal(info.capabilities.sort, true);
+  assert.equal(info.capabilities.filter, false);
+  assert.equal(info.capabilities.export, false);
+  assert.equal(grouped.result?.groups, 4);
+  const first = await grouped.readRows({ view: null, start: 0, end: 2, columns: [0, 1] });
+  assert.deepEqual(first.columns, [
+    ["East", "North"],
+    [3, 2],
+  ]);
+  const view = await grouped.createView({ sort: [{ column: 1, direction: "desc" }] });
+  const sorted = await grouped.readRows({ view: view.id, start: 0, end: 2, columns: [0, 1] });
+  assert.deepEqual(sorted.columns, [
+    ["West", ""],
+    [5, 4],
+  ]);
+  assert.deepEqual(requests.at(-1)?.sort, [{ column: 1, direction: "desc" }]);
+  assert.notEqual(requests.at(-1)?.view, null);
+
+  // Complete results run filters, totals and exports on the groups themselves.
+  const complete = new GroupedSource(base, { keys: [0], aggregates: [{ fn: "count" }] });
+  const all = await complete.info();
+  assert.equal(all.capabilities.filter, true);
+  assert.equal(all.capabilities.group, true);
+  const filtered = await complete.createView({ filters: [{ type: "values", column: 0, values: ["East", "West"] }] });
+  assert.equal(filtered.rowCount, 2);
+  const totals = await complete.group({ view: filtered.id, keys: [], aggregates: [{ fn: "sum", column: 1 }] });
+  assert.deepEqual(totals.rows, [[3]]);
+});
+
+test("a grouped source reports errors as its status and follows changes of the base", async () => {
+  const base = orders();
+  const failing = new GroupedSource(base, { keys: [0], aggregates: [{ fn: "sum", column: 0 }] });
+  const info = await failing.info();
+  assert.equal(info.status, "error");
+  await assert.rejects(failing.load(), { code: "invalid_request" });
+
+  let listener: TableChangeListener | null = null;
+  const watched = Object.assign(Object.create(base) as ArraySource, {
+    subscribe(next: TableChangeListener) {
+      listener = next;
+      return () => undefined;
+    },
+  });
+  const grouped = new GroupedSource(watched, { keys: [], aggregates: [{ fn: "count" }] });
+  const before = await grouped.info();
+  const changes: unknown[] = [];
+  grouped.subscribe((change) => changes.push(change));
+  (listener as TableChangeListener | null)?.({});
+  assert.equal(changes.length, 1);
+  assert.equal(grouped.result, null);
+  const after = await grouped.info();
+  assert.notEqual(after.revision, before.revision);
+});
+
+test("grid states keep the grouping and the totals of columns", () => {
+  const state = parseGridState({
+    version: 1,
+    columns: [
+      { name: "qty", total: "sum" },
+      { name: "price", total: "median" },
+    ],
+    group: {
+      keys: ["region"],
+      aggregates: [{ fn: "sum", column: "qty" }, { fn: "count" }, { fn: "avg" }, { fn: "nope", column: "x" }],
+      state: {
+        version: 1,
+        query: { sort: [{ column: 1, direction: "desc" }] },
+        group: { keys: ["x"], aggregates: [] },
+      },
+    },
+  });
+  assert.deepEqual(state?.columns, [{ name: "qty", total: "sum" }, { name: "price" }]);
+  assert.deepEqual(state?.group, {
+    keys: ["region"],
+    aggregates: [{ fn: "sum", column: "qty" }, { fn: "count" }],
+    state: { version: 1, query: { sort: [{ column: 1, direction: "desc" }] } },
+  });
+  assert.equal(parseGridState({ version: 1, group: null })?.group, null);
+  assert.equal(parseGridState({ version: 1, group: { keys: [], aggregates: [] } })?.group, undefined);
+});

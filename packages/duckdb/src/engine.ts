@@ -11,6 +11,7 @@ import {
   type AggregateRequest,
   type CellValue,
   type ColumnStats,
+  checkGroupRequest,
   checkXlsxSize,
   type DistinctRequest,
   type DistinctValues,
@@ -20,6 +21,10 @@ import {
   type FindRequest,
   type FindResult,
   filtersRows,
+  type GroupRequest,
+  type GroupResult,
+  groupColumns,
+  groupLimit,
   isEmptyQuery,
   isNumericType,
   isTemporalType,
@@ -35,6 +40,7 @@ import {
   type ViewOptions,
   type ViewQuery,
   type ViewStatus,
+  wireInteger,
   writeXlsx,
   XLSX_MAX_TEXT,
 } from "vastgrid-core";
@@ -43,6 +49,7 @@ import {
   columnTypeOf,
   conditionExpression,
   filterExpression,
+  groupStatement,
   orderTerms,
   Parameters,
   quoteIdentifier,
@@ -633,6 +640,7 @@ export class OpenTable {
         find: ready,
         export: ready,
         conditions: ready,
+        group: ready,
       },
       ...(ready ? { exports: { formats: ["csv", "tsv", "parquet", "json", "xlsx"], delivery: "file" } } : {}),
     };
@@ -1468,6 +1476,35 @@ export class OpenTable {
           max: numericCount > 0 ? max : null,
           average: numericCount > 0 ? sum / numericCount : null,
         };
+      }),
+    );
+  }
+
+  /**
+   * Groups the rows of a view and computes aggregates in one statement (see `GroupRequest`). Only the
+   * first `limit` groups are read; the number of all groups comes with them.
+   */
+  async group(request: GroupRequest, signal?: AbortSignal): Promise<GroupResult> {
+    this.requireReady();
+    const view = this.view(request.view);
+    const schema = this.info().columns;
+    checkGroupRequest(schema, request);
+    const from = this.unorderedRelation(view);
+    const result = groupColumns(schema, request);
+    const limit = groupLimit(request);
+    const { sql, outputs } = groupStatement(request, this.columns, result, from, limit);
+    return this.engine.work.run(() =>
+      this.engine.withConnection(signal, async (connection) => {
+        const data = (await connection.runAndReadAll(sql)).getRowsJS();
+        const rows = data.map((row) =>
+          outputs.map((output, at) => {
+            const value = row[at];
+            if (value === null || value === undefined) return null;
+            return output.integer ? wireInteger(BigInt(String(value))) : wireValue(value);
+          }),
+        );
+        const groups = data.length > 0 ? Number(data[0][outputs.length]) : 0;
+        return { columns: result, rows, groups, truncated: groups > rows.length };
       }),
     );
   }

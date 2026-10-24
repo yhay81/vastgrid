@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- `vastgrid-core`: `TableSource.group` groups the rows of a view by columns (`keys`) and computes `count`,
+  `sum`, `avg`, `min` and `max` (`aggregates`) on the source; without keys it answers one row of totals.
+  Results are small tables (`GroupResult`: `columns`, `rows`, `groups`, `truncated`) of at most `limit`
+  groups (1,000 by default, up to 100,000), sorted by `sort` or the keys with blanks last. Null and the
+  empty string are groups of their own, sums of integers and decimals are exact (`bigint`, and `decimal`
+  with the column's scale), NaN and infinities are left out, and result columns have stable unique names
+  (`sum(amount)`, `count(*)`). `capabilities.group`, the `group` operation of the protocol,
+  `parseProtocolRequest` and `RemoteSource` carry it. `ArraySource` groups in memory with
+  `GroupAccumulator`; `GroupedSource` shows a result as a table that sorts on the base source and filters,
+  totals and exports the groups; `GridState` keeps `group` (keys, aggregates and the grouped table's own
+  state) and a column's `total`.
+- `vastgrid-duckdb`: `group` runs one generated statement over the view (no values are interpolated: the
+  SQL is built from column indexes), with 128-bit integer sums read exactly and the number of all groups
+  counted in the same statement.
+- `vastgrid-browser`: `group` reads the file once in the worker, when `fullScan` is on.
+- `vastgrid`: "Group" in the toolbar opens a panel to group the rows by columns with counts, sums,
+  averages, minimums and maximums, and shows the groups as a table (a chip tells what they are grouped by,
+  and its × shows the rows again with their settings); "Group by this column" in the column menu counts
+  the rows by a column. "Total in the bottom row…" in the column menu, or a click on a total, picks an
+  aggregate per column for a totals row fixed below the rows, computed by the source over the current
+  view. The totals row is not selected, copied or exported with the rows; its cells are buttons after the
+  grid in the tab order, read by screen readers. `getState()` and `applyState()` keep both, and
+  `GridController` has `setTotal`, `totalOf`, `totals` and `totalValues`.
+
 - `vastgrid`: `checkboxSelection` adds row checkboxes, separate from the cell selection. Checked rows
   are kept by key — the row's position in the file for one `revision`, or the values of a `rowKey`
   column — so the same records stay checked when the view is sorted or filtered. The corner checkbox

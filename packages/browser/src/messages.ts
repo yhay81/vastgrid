@@ -8,6 +8,7 @@ export type TableMethod =
   | "columnStats"
   | "distinctValues"
   | "aggregate"
+  | "group"
   | "find"
   | "checkChanges"
   | "transfer";

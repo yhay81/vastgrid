@@ -1,4 +1,6 @@
 import {
+  type AggregateFunction,
+  aggregateApplies,
   type CellPosition,
   type CellStyle,
   type CellValue,
@@ -266,6 +268,12 @@ export class GridController {
   findCaseSensitive = false;
   summary: SelectionSummary | null = null;
   summaryPending = false;
+  /** The aggregate shown for each schema column in the totals row at the bottom (see `setTotal`). */
+  totals = new Map<number, AggregateFunction>();
+  /** The totals of the current view by schema column; null while they are read, or when they failed. */
+  totalValues: Map<number, CellValue> | null = null;
+  totalsPending = false;
+  totalsError: string | null = null;
   /** Increments on every change shown by the React UI. */
   version = 0;
   /** Measures text in the cell or header font; set by the renderer. */
@@ -292,11 +300,18 @@ export class GridController {
   private columnChange: GridColumnsChangeReason | null = null;
   /** Increments on every change of the column settings that the state keeps. */
   private columnsRevision = 0;
+  /** Increments when the totals row changes its aggregates, which the state keeps. */
+  private totalsRevision = 0;
+  /** What the shown totals were read for, so that unchanged totals are not read again. */
+  private totalsKey = "";
+  private totalsAbort: AbortController | null = null;
+  /** Increments when the table is read anew (a new revision or other columns). */
+  private dataRevision = 0;
   /** Increments when the visible columns or their order change. */
   private visibleRevision = 0;
   private visibleKey = "";
   /** What the last events reported, so that unchanged values are not reported again. */
-  private reported: { selection: string; query: ViewQuery; columns: number };
+  private reported: { selection: string; query: ViewQuery; columns: number; totals: number };
   /** A column's width changed while its edge is dragged. */
   private resized = false;
   private activeRowId: number | null = 0;
@@ -343,7 +358,7 @@ export class GridController {
         this.emit();
       }
     });
-    this.reported = { selection: this.selectionKey(), query: this.query, columns: 0 };
+    this.reported = { selection: this.selectionKey(), query: this.query, columns: 0, totals: 0 };
   }
 
   /** Changes the locale and the text for blanks. */
@@ -484,9 +499,14 @@ export class GridController {
         for (const listener of this.rowSelectionListeners) listener(event);
       }
     }
-    if (this.query !== this.reported.query || this.columnsRevision !== this.reported.columns) {
+    if (
+      this.query !== this.reported.query ||
+      this.columnsRevision !== this.reported.columns ||
+      this.totalsRevision !== this.reported.totals
+    ) {
       this.reported.query = this.query;
       this.reported.columns = this.columnsRevision;
+      this.reported.totals = this.totalsRevision;
       if (this.gridStateListeners.size > 0) {
         const state = this.getState();
         for (const listener of this.gridStateListeners) listener(state);
@@ -585,6 +605,9 @@ export class GridController {
     this.viewAbort?.abort();
     this.summaryAbort?.abort();
     this.rowSelectionAbort?.abort();
+    this.totalsAbort?.abort();
+    this.totalsKey = "";
+    this.totalsPending = false;
     clearTimeout(this.summaryTimer);
     if (this.rowSelectionPending) this.rowSelectionPending = false;
     if (this.viewPending) {
@@ -681,6 +704,14 @@ export class GridController {
           ...(filters ? { filters } : {}),
           ...(where ? { where } : {}),
         };
+        // Totals follow their columns by name.
+        const totals = new Map<number, AggregateFunction>();
+        for (const [column, fn] of this.totals) {
+          const index = indexOf(column);
+          if (index >= 0) totals.set(index, fn);
+        }
+        if (totals.size !== this.totals.size) this.totalsRevision++;
+        this.totals = totals;
         this.columnsChanged("schema");
       }
       // Settings follow their columns by name, also when the file's columns moved.
@@ -707,6 +738,7 @@ export class GridController {
       }
       this.autoSized = this.columns.every((column) => column.sized);
       this.viewAbort?.abort();
+      this.dataRevision++;
       this.view = { id: null, rowCount: info.rowCount ?? info.readableRows, query: {} };
       this.viewPending = false;
       this.cache.clear();
@@ -935,6 +967,85 @@ export class GridController {
     this.selection.setBounds(this.rowCount, this.visible.length);
     this.cache.setView(this.view.id, this.rowCount, this.readableRows, this.schema.length);
     this.syncSizer();
+    this.refreshTotals();
+  }
+
+  // ----- totals row -----
+
+  /** Whether the source computes totals (`capabilities.group`) and the table is ready. */
+  get totalsAvailable() {
+    return Boolean(this.source.group && this.info?.status === "ready" && this.info.capabilities.group);
+  }
+
+  /** The aggregate shown for a schema column in the totals row, or null. */
+  totalOf(index: number): AggregateFunction | null {
+    return this.totals.get(index) ?? null;
+  }
+
+  /**
+   * Shows an aggregate of a schema column in the totals row at the bottom of the grid, computed by the
+   * source over the current view; `null` removes it. Functions that do not apply to the column's type
+   * are ignored (see `aggregateApplies`).
+   */
+  setTotal(index: number, fn: AggregateFunction | null) {
+    const type = this.schema[index]?.type;
+    if (fn !== null && (!type || !aggregateApplies(fn, type))) return;
+    if ((this.totals.get(index) ?? null) === fn) return;
+    if (fn === null) this.totals.delete(index);
+    else this.totals.set(index, fn);
+    this.totalsRevision++;
+    this.refreshTotals();
+    this.emit();
+  }
+
+  /** Reads the totals of the current view once it is ready, unless they are already shown. */
+  private refreshTotals() {
+    const entries = [...this.totals].filter(([index, fn]) => {
+      const type = this.schema[index]?.type;
+      return type !== undefined && aggregateApplies(fn, type);
+    });
+    if (entries.length === 0 || !this.totalsAvailable) {
+      this.totalsAbort?.abort();
+      this.totalsKey = "";
+      this.totalValues = null;
+      this.totalsPending = false;
+      this.totalsError = null;
+      return;
+    }
+    // A view still building has not got all its rows: the totals wait for it.
+    if (this.viewPending || this.viewBuilding) {
+      this.totalsAbort?.abort();
+      this.totalsKey = "";
+      this.totalsPending = true;
+      return;
+    }
+    const key = `${this.view.id}|${this.dataRevision}|${JSON.stringify(entries)}`;
+    if (key === this.totalsKey) return;
+    this.totalsKey = key;
+    this.totalsAbort?.abort();
+    const controller = new AbortController();
+    this.totalsAbort = controller;
+    this.totalsPending = true;
+    this.totalsError = null;
+    const aggregates = entries.map(([column, fn]) => ({ fn, column }));
+    this.source.group?.({ view: this.view.id, keys: [], aggregates }, controller.signal).then(
+      (result) => {
+        if (controller.signal.aborted) return;
+        const row = result.rows[0] ?? [];
+        this.totalValues = new Map(entries.map(([column], at) => [column, row[at] ?? null]));
+        this.totalsPending = false;
+        this.emit();
+      },
+      (error: unknown) => {
+        if (controller.signal.aborted || isAbortError(error)) return;
+        // Asked again with the next view or setting.
+        this.totalsKey = "";
+        this.totalValues = null;
+        this.totalsPending = false;
+        this.totalsError = messageOf(error);
+        this.emit();
+      },
+    );
   }
 
   /**
@@ -1805,11 +1916,15 @@ export class GridController {
       version: GRID_STATE_VERSION,
       schema: this.schema.map((column) => column.name),
       query: this.query,
-      columns: this.columns.map((state) => ({
-        name: this.schema[state.index]?.name ?? "",
-        ...(state.sized ? { width: state.width } : {}),
-        ...(state.hidden ? { hidden: true } : {}),
-      })),
+      columns: this.columns.map((state) => {
+        const total = this.totals.get(state.index);
+        return {
+          name: this.schema[state.index]?.name ?? "",
+          ...(state.sized ? { width: state.width } : {}),
+          ...(state.hidden ? { hidden: true } : {}),
+          ...(total ? { total } : {}),
+        };
+      }),
       frozenColumns: this.frozen,
     };
   }
@@ -1855,6 +1970,16 @@ export class GridController {
         return [{ index, hidden, sized: false, width: automatic }];
       });
       this.columns = [...listed, ...this.columns.filter((column) => current.has(column.index))];
+      // Listed columns without a total show none, as they show when `hidden` is left out.
+      const totals = new Map([...this.totals].filter(([index]) => current.has(index)));
+      for (const { index, total } of resolved.columns) {
+        const type = this.schema[index]?.type;
+        if (total && type && aggregateApplies(total, type)) totals.set(index, total);
+      }
+      if (JSON.stringify([...totals]) !== JSON.stringify([...this.totals])) {
+        this.totals = totals;
+        this.totalsRevision++;
+      }
       if (this.columns.length > 0 && this.columns.every((column) => column.hidden)) this.columns[0].hidden = false;
       this.autoSized = this.columns.every((column) => column.sized);
     }

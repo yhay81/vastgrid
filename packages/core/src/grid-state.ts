@@ -13,8 +13,9 @@
  */
 
 import { mapFilterNode } from "./filter-tree.js";
+import { AGGREGATE_FUNCTIONS } from "./group.js";
 import { parseViewQuery } from "./protocol.js";
-import type { ViewQuery } from "./types.js";
+import type { AggregateFunction, ViewQuery } from "./types.js";
 
 export const GRID_STATE_VERSION = 1;
 
@@ -24,6 +25,20 @@ export interface GridColumnSetting {
   /** Width in pixels set by the user. Left out, the grid fits the column to its values. */
   width?: number;
   hidden?: boolean;
+  /** The column's value in the totals row at the bottom of the grid. */
+  total?: AggregateFunction;
+}
+
+/**
+ * The grid shows the rows grouped (see `GroupRequest`): by the columns named in `keys`, with
+ * `aggregates` of named columns (`column` left out counts rows). The state's `query` still decides
+ * which rows are grouped, and its `columns` are those of the table, for when the grouping ends.
+ */
+export interface GridGroupState {
+  keys: string[];
+  aggregates: { fn: AggregateFunction; column?: string }[];
+  /** The settings of the grouped table: its sort, filters and columns, by the names of the result columns. */
+  state?: GridState;
 }
 
 export interface GridState {
@@ -41,6 +56,8 @@ export interface GridState {
   columns?: GridColumnSetting[];
   /** Visible columns frozen at the left. */
   frozenColumns?: number;
+  /** The rows are shown grouped; `null` shows them as they are. */
+  group?: GridGroupState | null;
 }
 
 /** A state mapped onto a table's columns, with schema indexes instead of names. */
@@ -50,7 +67,7 @@ export interface ResolvedGridState {
    * The listed columns that the table has, in display order. The table's other columns follow them,
    * with their current settings.
    */
-  columns?: { index: number; width?: number; hidden: boolean }[];
+  columns?: { index: number; width?: number; hidden: boolean; total?: AggregateFunction }[];
   frozenColumns?: number;
 }
 
@@ -95,12 +112,42 @@ export function parseGridState(value: unknown): GridState | null {
       const setting: GridColumnSetting = { name: item.name };
       if (typeof width === "number" && Number.isFinite(width) && width > 0) setting.width = width;
       if (item.hidden === true) setting.hidden = true;
+      if (isAggregateFunction(item.total)) setting.total = item.total;
       return [setting];
     });
   }
   const frozen = value.frozenColumns;
   if (typeof frozen === "number" && Number.isSafeInteger(frozen) && frozen >= 0) state.frozenColumns = frozen;
+  if (value.group === null) state.group = null;
+  else if (value.group !== undefined) {
+    const group = groupState(value.group);
+    if (group) state.group = group;
+  }
   return state;
+}
+
+function isAggregateFunction(value: unknown): value is AggregateFunction {
+  return typeof value === "string" && (AGGREGATE_FUNCTIONS as readonly string[]).includes(value);
+}
+
+function groupState(value: unknown): GridGroupState | null {
+  if (!isRecord(value) || !Array.isArray(value.keys) || !Array.isArray(value.aggregates)) return null;
+  if (!value.keys.every((name) => typeof name === "string")) return null;
+  const aggregates = value.aggregates.flatMap((item): GridGroupState["aggregates"] => {
+    if (!isRecord(item) || !isAggregateFunction(item.fn)) return [];
+    if (typeof item.column === "string") return [{ fn: item.fn, column: item.column }];
+    return item.fn === "count" && item.column === undefined ? [{ fn: item.fn }] : [];
+  });
+  const keys = value.keys as string[];
+  if (keys.length === 0 && aggregates.length === 0) return null;
+  const group: GridGroupState = { keys, aggregates };
+  // The grouped table's own settings cannot be grouped again.
+  const inner = value.state === undefined ? null : parseGridState(value.state);
+  if (inner) {
+    delete inner.group;
+    group.state = inner;
+  }
+  return group;
 }
 
 /** Positions of names, so that the nth column of a repeated name maps to the nth column of that name. */
@@ -177,6 +224,7 @@ export function resolveGridState(state: GridState, names: readonly string[]): Re
         index,
         hidden: setting.hidden === true,
         ...(setting.width === undefined ? {} : { width: setting.width }),
+        ...(setting.total === undefined ? {} : { total: setting.total }),
       });
     }
     result.columns = columns;

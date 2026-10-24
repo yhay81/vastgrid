@@ -9,6 +9,8 @@ import type {
   ExportResult,
   FindRequest,
   FindResult,
+  GroupRequest,
+  GroupResult,
   ReadOptions,
   RowBlock,
   RowRequest,
@@ -306,6 +308,10 @@ export class RemoteSource implements TableSource {
 
   aggregate(request: AggregateRequest, signal?: AbortSignal): Promise<SelectionSummary> {
     return this.call<SelectionSummary>("aggregate", { ...request } satisfies Operation<"aggregate">, signal);
+  }
+
+  group(request: GroupRequest, signal?: AbortSignal): Promise<GroupResult> {
+    return this.call<GroupResult>("group", { ...request } satisfies Operation<"group">, signal);
   }
 
   find(request: FindRequest, signal?: AbortSignal): Promise<FindResult | null> {

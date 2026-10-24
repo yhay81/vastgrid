@@ -54,6 +54,7 @@ seen. It answers `null` when the file is gone.
 | `stats` | `table`, `view`, `column` | `ColumnStats` |
 | `distinct` | `table`, `view`, `column`, optional `search`, `limit` | `{ values: { value, count }[], truncated }` |
 | `aggregate` | `table`, `view`, `ranges: { start, end, columns }[]` | `{ count, numericCount, sum, min, max, average }` |
+| `group` | `table`, `view`, `keys`, `aggregates`, optional `sort`, `limit` | `GroupResult`: `{ columns, rows, groups, truncated }` (see [Groups](#groups-and-totals)) |
 | `find` | `table`, `view`, `text`, `columns`, `row`, `column`, `direction` (`1` or `-1`), optional `caseSensitive` | `{ row, column }` or `null` |
 | `export` | `table`, `view`, `format` (`csv`, `tsv`, `parquet`, `json`, `xlsx`), optional `columns`, `headers`, `numberFormats`, `target` | `{ target, rows }` |
 | `revision` | `table` | `{ revision: string \| null }`, the data's current revision (see [Watching for changes](#watching-for-changes)) |
@@ -96,7 +97,7 @@ deletes the partial file and answers `cancelled`. `xlsx` refuses more than 1,048
   notes?: string[];            // encoding:shift_jis, all_varchar, invalid_utf8_replaced, merged_cells, formulas_without_values
   sheets?: { name: string; hidden?: boolean }[]; // workbooks: the sheets, in workbook order
   sheet?: string;              // workbooks: the sheet that was read
-  capabilities: { sort, filter, search, stats, distinct, aggregate, find, export: boolean; conditions?: boolean };
+  capabilities: { sort, filter, search, stats, distinct, aggregate, find, export: boolean; conditions?, group?: boolean };
   exports?: { formats: ExportFormat[]; delivery: "file" | "data" }; // what export can write, when it can
 }
 ```
@@ -216,6 +217,53 @@ A tree may nest groups up to 8 levels (`MAX_FILTER_DEPTH`), have up to 256 group
 evaluate `where` report the `conditions` capability; servers written before it existed ignore `where`,
 so clients send it only to tables that report `conditions: true`. Statistics, value lists, selection summaries, find and exports of a view use its
 whole query, `where` included.
+
+## Groups and totals
+
+`group` groups the rows of a view (or the table, `view: null`) by the values of `keys` and computes
+`aggregates` for each group, on the server. The view's filters, condition tree and search decide the
+rows; its sort does not matter. Without `keys`, the answer is one row over all the rows, also when there
+are none: the totals of the view. Servers that answer it report `capabilities.group`.
+
+```ts
+// request
+{
+  op: "group"; table; view;
+  keys: number[];                                   // schema columns, at most 16
+  aggregates: { fn: "count" | "sum" | "avg" | "min" | "max"; column?: number }[];  // at most 64
+  sort?: { column: number; direction: "asc" | "desc" }[];  // result columns
+  limit?: number;                                   // 1..100,000 groups, default 1,000
+}
+// result
+{
+  columns: { name: string; type: ColumnType; sourceType?: string }[];  // keys, then aggregates
+  rows: CellValue[][];                              // one array per group, in column order
+  groups: number;                                   // all groups, also those past `limit`
+  truncated: boolean;                               // groups > rows.length
+}
+```
+
+Rules, the same for every source (`ArraySource`, `vastgrid-browser`, `vastgrid-duckdb`):
+
+- **Functions.** `count` without `column` counts rows; with it, the values that are not null. `sum` and
+  `avg` take numeric columns; `min` and `max` take numeric, text, boolean, date, time and UUID columns.
+  Null values are left out, and so are `NaN` and infinities of `float` columns. A function over no values
+  is null, except `count`, which is 0. Keys may be any column but lists, structs, maps, binary, JSON and
+  unknown types. Other requests fail with `invalid_request`.
+- **Keys.** A null key is a group of its own, and so is the empty string: they are different values, as
+  in SQL. Numbers group by value (`1.5` and `1.50` of a decimal column are one group).
+- **Order.** Groups are ordered by `sort` (blanks — null and `""` — last in both directions, as in
+  views), then by every key ascending with nulls last; without `sort`, by the keys ascending. The first
+  `limit` groups of that order are returned, with the number of all groups in `groups`.
+- **Names.** Key columns keep their column's name and type. Aggregate columns are named `fn(column)`,
+  and `count(*)` for rows. A name that an earlier result column has gets ` (2)`, ` (3)`, …, so names are
+  unique and stable for the same request: clients use them to keep settings of the result.
+- **Types and precision.** `count` is `bigint`. `sum` of integers is `bigint` and exact (a 128-bit sum
+  in DuckDB); `sum` of decimals is `decimal`, exact, with the column's scale (`DECIMAL(38,s)`); `sum` of
+  floats and every `avg` are `float`. `min` and `max` have the column's type. As everywhere, integers
+  beyond 2^53 and decimals are strings.
+
+`group` holds whole views: on a view that is still building it answers `not_ready` for a view that filters.
 
 ## Error codes
 

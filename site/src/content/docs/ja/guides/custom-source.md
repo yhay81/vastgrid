@@ -77,6 +77,7 @@ export class ComputedSource implements TableSource {
 | `aggregate(request, signal?)` | `aggregate` | ステータスバーに出す、選択範囲のデータの個数・合計・平均・最小・最大。 |
 | `find(request, signal?)` | `find` | 検索（⌘/Ctrl ＋ F）。指定した文字列を含む次のセルを探します。 |
 | `exportView(request, signal?)` | `export` | ビューをファイルに書き出します。アプリから呼びます。 |
+| `group(request, signal?)` | `group` | [グループ化と集計行](/ja/guides/grouping/)。返すグループは `limit` までにします。 |
 | `subscribe(listener)` | | 表全体が変わったことを通知します。グリッドは `info` で表を読み直し、クエリー・列の設定・スクロール位置を保ちます。監視をやめる関数を返してください。グリッドは止まるときや外されるときに呼びます。続けて届いた通知は 1 回の読み直しにまとめます。通知するのは表全体の変更だけで、行ごとの差分は扱いません。データが変わらないソースでは要りません。 |
 | `close()` | | 表を解放します。アプリがそのソースを使わなくなったときに呼びます。グリッドは呼びません。 |
 

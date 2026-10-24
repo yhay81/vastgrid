@@ -18,8 +18,9 @@ hundreds of millions of rows — and Excel workbooks, and works like a spreadshe
 - **A spreadsheet's way of working.** Range selection with the mouse and Excel's keyboard shortcuts,
   copy as TSV / HTML / Markdown, multi-column sort, filters with a searchable value list or conditions,
   AND / OR conditions across columns and nested groups, search across all columns, find (⌘F), column
-  statistics, a running count, sum, average, min and max of the selection, and export of the current
-  view to CSV, TSV, Parquet, JSON or Excel.
+  statistics, a running count, sum, average, min and max of the selection, grouping by columns with
+  counts, sums, averages, minimums and maximums and a totals row (computed by the engine), and export of
+  the current view to CSV, TSV, Parquet, JSON or Excel.
 - **Bring your engine.** The grid talks to a `TableSource`. Use the DuckDB server engine for files on
   disk, `vastgrid-browser` for files opened in the browser and Parquet URLs, `ArraySource` for data already
   in memory, or implement your own.
@@ -376,6 +377,22 @@ date formats; text is never written as a formula, and more than 1,048,575 rows a
 ```
 
 See [Exporting](https://vastgrid.yhay81.com/guides/export/).
+
+### Grouping and totals
+
+"Group" in the toolbar groups the rows that the filters keep by one or more columns and shows the
+groups as a table: the keys, then counts, sums, averages, minimums and maximums. "Total in the bottom
+row…" in a column's menu shows an aggregate of the column in a row fixed below the rows. The source
+computes both (`group`, with `capabilities.group`): `ArraySource`, the DuckDB server (one generated SQL
+statement) and `vastgrid-browser` with `fullScan`. Results hold at most `limit` groups (1,000 by default);
+sums of integers and decimals are exact. Both are part of `GridState`.
+
+```ts
+const result = await source.group({ view: null, keys: [0], aggregates: [{ fn: "count" }, { fn: "sum", column: 2 }] });
+// { columns: [region, count(*), sum(amount)], rows: [["Tokyo", 120, "53210.50"], …], groups: 47, truncated: false }
+```
+
+See [Grouping and totals](https://vastgrid.yhay81.com/guides/grouping/).
 
 ## Performance
 

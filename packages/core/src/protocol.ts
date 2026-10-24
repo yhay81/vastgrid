@@ -1,10 +1,12 @@
 import { MAX_FILTER_DEPTH, MAX_FILTER_NODES, MAX_FILTER_TREE_VALUES, pruneFilterNode } from "./filter-tree.js";
 import type {
+  AggregateFunction,
   AggregateRange,
   CellValue,
   ExportFormat,
   Filter,
   FilterNode,
+  GroupAggregate,
   ReadOptions,
   SortKey,
   TableInfo,
@@ -39,6 +41,16 @@ export type ProtocolRequest =
   | { op: "stats"; table: string; view: string | null; column: number }
   | { op: "distinct"; table: string; view: string | null; column: number; search?: string; limit?: number }
   | { op: "aggregate"; table: string; view: string | null; ranges: AggregateRange[] }
+  /** Groups and aggregates, or the totals of a view without keys (see `GroupRequest`). */
+  | {
+      op: "group";
+      table: string;
+      view: string | null;
+      keys: number[];
+      aggregates: GroupAggregate[];
+      sort?: SortKey[];
+      limit?: number;
+    }
   | {
       op: "find";
       table: string;
@@ -130,6 +142,7 @@ const operations = new Set<ProtocolOperation>([
   "stats",
   "distinct",
   "aggregate",
+  "group",
   "find",
   "export",
   "revision",
@@ -193,6 +206,7 @@ const sortDirections = new Set(["asc", "desc"]);
 const compareOperators = new Set(["eq", "ne", "lt", "le", "gt", "ge"]);
 const textOperators = new Set(["contains", "notContains", "startsWith", "endsWith", "equals", "notEquals"]);
 const exportFormats = new Set(["csv", "tsv", "parquet", "json", "xlsx"]);
+const aggregateFunctions = new Set(["count", "sum", "avg", "min", "max"]);
 
 function sortKeys(value: unknown): SortKey[] | undefined {
   if (value === undefined) return undefined;
@@ -300,6 +314,21 @@ function ranges(value: unknown): AggregateRange[] {
   });
 }
 
+function aggregates(value: unknown): GroupAggregate[] {
+  // The limits match MAX_GROUP_AGGREGATES and MAX_GROUP_KEYS in group.ts.
+  if (!Array.isArray(value) || value.length > 64) fail("aggregates must be an array");
+  return value.map((item, position) => {
+    if (!isRecord(item)) fail(`aggregates[${position}] must be an object`);
+    if (typeof item.fn !== "string" || !aggregateFunctions.has(item.fn)) fail(`aggregates[${position}].fn is invalid`);
+    const fn = item.fn as AggregateFunction;
+    if (item.column === undefined || item.column === null) {
+      if (fn !== "count") fail(`aggregates[${position}].column is required`);
+      return { fn };
+    }
+    return { fn, column: index(item.column, `aggregates[${position}].column`) };
+  });
+}
+
 function readOptions(value: unknown): ReadOptions | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) fail("read must be an object");
@@ -390,6 +419,23 @@ export function parseProtocolRequest(body: unknown): ProtocolRequest {
     }
     case "aggregate":
       return { op: "aggregate", table, view: view(body.view), ranges: ranges(body.ranges) };
+    case "group": {
+      const keys = indexes(body.keys, "keys", 16);
+      const list = aggregates(body.aggregates);
+      if (keys.length === 0 && list.length === 0) fail("keys or aggregates must not be empty");
+      const sort = sortKeys(body.sort);
+      const limit = body.limit === undefined ? undefined : index(body.limit, "limit", 100_000);
+      if (limit === 0) fail("limit must be at least 1");
+      return {
+        op: "group",
+        table,
+        view: view(body.view),
+        keys,
+        aggregates: list,
+        ...(sort?.length ? { sort } : {}),
+        ...(limit === undefined ? {} : { limit }),
+      };
+    }
     case "find": {
       if (body.direction !== 1 && body.direction !== -1) fail("direction must be 1 or -1");
       return {

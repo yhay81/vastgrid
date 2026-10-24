@@ -15,12 +15,23 @@ import {
   useSyncExternalStore,
 } from "react";
 import {
+  AGGREGATE_FUNCTIONS,
+  aggregateApplies,
   type CellValue,
   type ColumnFormat,
+  type ColumnSchema,
   type CopyValues,
   filterLeaves,
+  filtersRows,
+  type GridGroupState,
   type GridState,
+  type GroupAggregate,
+  GroupedSource,
+  isAbortError,
+  isGroupableType,
+  parseGridState,
   type RowSelection,
+  resolveGridState,
   type TableSource,
   type ViewQuery,
 } from "vastgrid-core";
@@ -33,8 +44,10 @@ import { ExportPanel } from "./components/export-panel.js";
 import { FilterBuilder, type FilterDraft, initialDraft } from "./components/filter-builder.js";
 import { FilterPanel } from "./components/filter-panel.js";
 import { FindBar } from "./components/find-bar.js";
+import { type GroupDraft, GroupPanel } from "./components/group-panel.js";
 import { type Anchor, type MenuItem, MenuList, Popover } from "./components/popover.js";
 import { StatsPanel } from "./components/stats-panel.js";
+import { TotalsRow, totalText } from "./components/totals-row.js";
 import { CopyRangesError, CopyTooLargeError, GridController, type Hit, ViewBuildingError } from "./controller.js";
 import { DetailTracker, detailKeyAction } from "./detail.js";
 import type { GridCellEvent, GridColumnsEvent, GridRowSelectionEvent, GridSelectionEvent } from "./events.js";
@@ -202,7 +215,44 @@ type Overlay =
   | { kind: "inspector"; row: number; col: number; anchor: Anchor }
   | { kind: "columns"; anchor: Anchor }
   | { kind: "conditions"; anchor: Anchor; draft: FilterDraft }
-  | { kind: "export"; anchor: Anchor };
+  | { kind: "export"; anchor: Anchor }
+  | { kind: "group"; anchor: Anchor }
+  | { kind: "total"; col: number; anchor: Anchor };
+
+/**
+ * The grid shows the groups of `base` (see `GroupedSource`). `baseState` is the state of the rows'
+ * grid when the grouping started, applied again when it ends; `schema` is the base table's columns.
+ */
+interface Grouping {
+  base: TableSource;
+  source: GroupedSource;
+  draft: GroupDraft;
+  baseState: GridState;
+  schema: ColumnSchema[];
+  /** The rows grouped: the filters, condition tree and search of `baseState`. */
+  query: ViewQuery;
+}
+
+/** Waits until a source's table is read (or failed to be read), and returns its info. */
+async function readyInfo(source: TableSource, signal: AbortSignal) {
+  let delay = 100;
+  for (;;) {
+    const info = await source.info(signal);
+    if (info.status !== "loading") return info;
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    if (signal.aborted) throw new DOMException("The operation was aborted.", "AbortError");
+    delay = Math.min(500, delay * 1.4);
+  }
+}
+
+/** A state with the parts of `next` that it has, over `current`. */
+function mergeState(current: GridState, next: GridState): GridState {
+  const merged: GridState = { ...current, ...next };
+  // A query without `schema` refers to the table's columns as they are.
+  if (next.query && !next.schema) delete merged.schema;
+  delete merged.group;
+  return merged;
+}
 
 type Drag =
   | { kind: "cells"; pointerId: number; x: number; y: number; row: number; col: number; moved: boolean }
@@ -274,10 +324,23 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  // One controller per source. Options that can change later are applied in effects below.
+  // ----- grouping -----
+
+  const [grouping, setGrouping] = useState<Grouping | null>(null);
+  // A grouping of another source ends with that source.
+  const grouped = grouping?.base === source ? grouping : null;
+  const gridSource = grouped?.source ?? source;
+  /** The state the next grid starts with, when grouping starts or ends. */
+  const nextState = useRef<GridState | null>(null);
+  const [groupPending, setGroupPending] = useState(false);
+  const [groupError, setGroupError] = useState<string | null>(null);
+  const groupAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => groupAbort.current?.abort(), []);
+
+  // One controller per source (and per grouping). Options that can change later are applied in effects below.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the other options are applied without recreating the grid.
   const controller = useMemo(() => {
-    const grid = new GridController(source, {
+    const grid = new GridController(gridSource, {
       rowHeight: rowHeight ?? 24,
       headerHeight: headerHeight ?? 32,
       maxLines,
@@ -289,14 +352,18 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       copyLimit,
       columnFormats,
       copyValues,
-      checkboxSelection,
-      rowKey,
+      // Groups are not rows of the table: they have no checkboxes.
+      checkboxSelection: checkboxSelection && gridSource === source,
+      rowKey: gridSource === source ? rowKey : undefined,
       followTail,
     });
-    if (props.initialState) grid.applyState(props.initialState);
-    if (rowSelection) grid.setRowSelection(rowSelection);
+    const state = nextState.current ?? (gridSource === source ? props.initialState : undefined);
+    nextState.current = null;
+    if (state) grid.applyState(state);
+    // Checked rows are rows of the table; groups start unchecked.
+    if (rowSelection && gridSource === source) grid.setRowSelection(rowSelection);
     return grid;
-  }, [source]);
+  }, [gridSource]);
   useSyncExternalStore(controller.subscribe, controller.getVersion, controller.getVersion);
 
   const count = useMemo(() => countFormat(resolvedLocale), [resolvedLocale]);
@@ -321,17 +388,17 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   }, [controller, copyValues]);
 
   useEffect(() => {
-    controller.setCheckboxSelection(checkboxSelection);
-  }, [controller, checkboxSelection]);
+    controller.setCheckboxSelection(checkboxSelection && controller.source === source);
+  }, [controller, checkboxSelection, source]);
 
   useEffect(() => {
-    controller.setRowKey(rowKey);
-  }, [controller, rowKey]);
+    if (controller.source === source) controller.setRowKey(rowKey);
+  }, [controller, rowKey, source]);
 
   // A value that equals the checked rows changes nothing, so passing back what was reported is safe.
   useEffect(() => {
-    if (rowSelection) controller.setRowSelection(rowSelection);
-  }, [controller, rowSelection]);
+    if (rowSelection && controller.source === source) controller.setRowSelection(rowSelection);
+  }, [controller, rowSelection, source]);
 
   useEffect(() => {
     controller.options.followTail = followTail;
@@ -350,6 +417,141 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     noticeTimer.current = setTimeout(() => setNotice(null), 3000);
   }, []);
   useEffect(() => () => clearTimeout(noticeTimer.current), []);
+
+  /** The grouping as a state part, by column names. */
+  const groupState = useCallback((value: Grouping, inner?: GridState): GridGroupState => {
+    const name = (index: number) => value.schema[index]?.name ?? "";
+    return {
+      keys: value.draft.keys.map(name),
+      aggregates: value.draft.aggregates.map((aggregate) =>
+        aggregate.column === undefined ? { fn: aggregate.fn } : { fn: aggregate.fn, column: name(aggregate.column) },
+      ),
+      ...(inner ? { state: inner } : {}),
+    };
+  }, []);
+  /** The whole state: the rows' grid, and the grouping with the grouped grid's own state. */
+  const fullState = useCallback(
+    (state: GridState): GridState =>
+      grouped ? { ...grouped.baseState, group: groupState(grouped, state) } : { ...state, group: null },
+    [grouped, groupState],
+  );
+  const fullStateRef = useRef(fullState);
+  fullStateRef.current = fullState;
+
+  /**
+   * Shows the groups of the rows that `baseState` filters. Reads them first, so that settings the source
+   * refuses (for example too many columns) keep the grid as it is and are reported instead.
+   */
+  const startGrouping = useCallback(
+    async (draft: GroupDraft, baseState: GridState, inner?: GridState) => {
+      groupAbort.current?.abort();
+      const abort = new AbortController();
+      groupAbort.current = abort;
+      setGroupPending(true);
+      setGroupError(null);
+      try {
+        const info = await readyInfo(source, abort.signal);
+        if (info.status !== "ready") throw new Error(info.error ?? messages.error);
+        const names = info.columns.map((column) => column.name);
+        const query: ViewQuery = resolveGridState(baseState, names).query ?? {};
+        const grouped = new GroupedSource(source, { keys: draft.keys, aggregates: draft.aggregates, query });
+        await grouped.load(abort.signal);
+        if (abort.signal.aborted) return false;
+        nextState.current = inner ?? null;
+        setGrouping({ base: source, source: grouped, draft, baseState, schema: info.columns, query });
+        setOverlay(null);
+        return true;
+      } catch (error) {
+        if (abort.signal.aborted || isAbortError(error)) return false;
+        const message = messages.groupFailed(error instanceof Error ? error.message : String(error));
+        setGroupError(message);
+        announce(message);
+        return false;
+      } finally {
+        if (groupAbort.current === abort) {
+          groupAbort.current = null;
+          setGroupPending(false);
+        }
+      }
+    },
+    [announce, messages, source],
+  );
+
+  /** Shows the rows again, with `baseState` (the rows' grid as it was before grouping, by default). */
+  const endGrouping = useCallback((baseState?: GridState) => {
+    groupAbort.current?.abort();
+    setGroupError(null);
+    setGrouping((current) => {
+      if (current) nextState.current = baseState ?? current.baseState;
+      return null;
+    });
+  }, []);
+
+  /** Grouping settings by column names, as schema indexes of `schema`; null when none of them is known. */
+  const draftOf = useCallback((group: GridGroupState, schema: ColumnSchema[]): GroupDraft | null => {
+    const indexOf = (name: string) => schema.findIndex((column) => column.name === name);
+    const keys = group.keys.map(indexOf).filter((index) => index >= 0 && isGroupableType(schema[index].type));
+    const aggregates = group.aggregates.flatMap((aggregate): GroupAggregate[] => {
+      if (aggregate.column === undefined) return aggregate.fn === "count" ? [{ fn: aggregate.fn }] : [];
+      const index = indexOf(aggregate.column);
+      return index >= 0 && aggregateApplies(aggregate.fn, schema[index].type)
+        ? [{ fn: aggregate.fn, column: index }]
+        : [];
+    });
+    return keys.length + aggregates.length > 0 ? { keys: [...new Set(keys)], aggregates } : null;
+  }, []);
+
+  /** Applies a whole state, with its grouping (see `GridState.group`). */
+  const applyFullState = useCallback(
+    (value: GridState) => {
+      const parsed = parseGridState(value);
+      if (!parsed) return false;
+      const { group, ...rest } = parsed;
+      if (group === undefined && !grouped) return controller.applyState(rest);
+      const base = mergeState(grouped ? grouped.baseState : controller.getState(), rest);
+      if (group === null) {
+        if (grouped) endGrouping(base);
+        else controller.applyState(rest);
+        return true;
+      }
+      void (async () => {
+        let schema = grouped?.schema ?? controller.schema;
+        if (schema.length === 0) {
+          try {
+            schema = (await readyInfo(source, new AbortController().signal)).columns;
+          } catch {
+            return;
+          }
+        }
+        if (group === undefined) {
+          // Other rows of the same grouping: the grouped grid keeps its own settings.
+          if (grouped) void startGrouping(grouped.draft, base, controller.getState());
+          return;
+        }
+        const draft = draftOf(group, schema);
+        if (draft) void startGrouping(draft, base, group.state);
+        else if (grouped) endGrouping(base);
+        else controller.applyState(rest);
+      })();
+      return true;
+    },
+    [controller, draftOf, endGrouping, grouped, source, startGrouping],
+  );
+
+  // A grouping in the initial state starts once the table is read.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new source starts it again.
+  useEffect(() => {
+    const initial = props.initialState && parseGridState(props.initialState);
+    if (initial?.group) void applyFullState({ ...initial, group: initial.group });
+  }, [source]);
+
+  // The state changes when the grid is grouped or shows the rows again.
+  const shownGrouping = useRef(grouped);
+  useEffect(() => {
+    if (shownGrouping.current === grouped) return;
+    shownGrouping.current = grouped;
+    handlers.current.onStateChange?.(fullStateRef.current(controller.getState()));
+  }, [controller, grouped]);
 
   // Canvas, scrolling, sizes and theme.
   useEffect(() => {
@@ -429,7 +631,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     const stops = [
       controller.onSelectionChange((event) => handlers.current.onSelectionChange?.(event)),
       controller.onColumnsChange((event) => handlers.current.onColumnsChange?.(event)),
-      controller.onStateChange((state) => handlers.current.onStateChange?.(state)),
+      controller.onStateChange((state) => handlers.current.onStateChange?.(fullStateRef.current(state))),
       controller.onRowSelectionChange((event) => handlers.current.onRowSelectionChange?.(event)),
     ];
     return () => {
@@ -516,8 +718,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       reload: () => controller.reload(),
       getQuery: () => controller.query,
       setQuery: (query) => void controller.setQuery(query),
-      getState: () => controller.getState(),
-      applyState: (state) => controller.applyState(state),
+      getState: () => fullState(controller.getState()),
+      applyState: (state) => applyFullState(state),
       goToRow: (row) => {
         controller.selection.select({ row, col: controller.selection.active.col });
         controller.selectionChanged({ row, col: controller.selection.active.col });
@@ -535,7 +737,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         return rendererRef.current;
       },
     }),
-    [controller, openExport, setDetailOpen],
+    [controller, openExport, setDetailOpen, fullState, applyFullState],
   );
 
   // ----- helpers -----
@@ -1073,6 +1275,18 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         onSelect: () => setOverlay({ kind: "stats", col, anchor: headerAnchor(col) }),
       },
       {
+        label: messages.groupByColumn,
+        disabled: grouped !== null || !canGroup || !isGroupableType(schema.type),
+        onSelect: () =>
+          void startGrouping({ keys: [state.index], aggregates: [{ fn: "count" }] }, controller.getState()),
+      },
+      {
+        label: messages.totalInRow,
+        disabled: !c.totalsAvailable,
+        checked: c.totalOf(state.index) !== null,
+        onSelect: () => setOverlay({ kind: "total", col, anchor: headerAnchor(col) }),
+      },
+      {
         label: messages.autoFit,
         separator: true,
         onSelect: () => {
@@ -1150,6 +1364,73 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     );
     return items;
   }
+
+  /** The aggregates a column can show in the totals row, and copying the shown total. */
+  function totalMenuItems(col: number): MenuItem[] {
+    const state = c.visible[col];
+    const schema = state ? c.schema[state.index] : undefined;
+    if (!state || !schema) return [];
+    const current = c.totalOf(state.index);
+    const value = c.totalValues?.get(state.index);
+    const items: MenuItem[] = [
+      { label: messages.totalNone, checked: current === null, onSelect: () => c.setTotal(state.index, null) },
+      ...AGGREGATE_FUNCTIONS.map((fn) => ({
+        label: messages.aggregateNames[fn],
+        checked: current === fn,
+        disabled: !aggregateApplies(fn, schema.type),
+        onSelect: () => c.setTotal(state.index, fn),
+      })),
+    ];
+    if (current && value !== undefined) {
+      items.push({
+        label: messages.copyTotal,
+        separator: true,
+        onSelect: () =>
+          void writeClipboard(Promise.resolve(totalText(c, state.index)), null).then(
+            () => announce(messages.copied("1")),
+            (error: unknown) => announce(error instanceof Error ? error.message : String(error)),
+          ),
+      });
+    }
+    return items;
+  }
+
+  /** Opens the grouping panel below a button. */
+  function openGroup(button: HTMLElement) {
+    const root = rootRef.current?.getBoundingClientRect();
+    const rect = button.getBoundingClientRect();
+    setGroupError(null);
+    setOverlay({
+      kind: "group",
+      anchor: { x: rect.right - (root?.left ?? 0) - 360, y: rect.top - (root?.top ?? 0), height: rect.height },
+    });
+  }
+
+  // The base table's columns, for the grouping panel also while the grid shows groups.
+  const baseSchema = grouped ? grouped.schema : c.schema;
+  const baseLabel = (index: number) => {
+    const name = baseSchema[index]?.name ?? "";
+    return columnFormats?.[name]?.label ?? name;
+  };
+  const canGroup = grouped !== null || Boolean(source.group && ready && capabilities?.group);
+  const groupChip = grouped && {
+    label: [
+      grouped.draft.keys.length > 0
+        ? messages.groupedBy(grouped.draft.keys.map(baseLabel).join(", "))
+        : messages.groupedTotals,
+      filtersRows(grouped.query) ? messages.groupedFiltered : "",
+      grouped.source.result
+        ? messages.groupCount(
+            count(grouped.source.result.rows.length),
+            grouped.source.result.truncated ? count(grouped.source.result.groups) : null,
+          )
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    onClear: () => endGrouping(),
+  };
+  const showTotals = c.totals.size > 0 && c.totalsAvailable;
 
   const closeOverlay = useCallback(() => setOverlay(null), []);
   const loadDistinct = useCallback(
@@ -1254,9 +1535,11 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
             });
           }}
           onExport={canExport() ? (button) => openExport(button) : undefined}
+          onGroup={canGroup ? (button) => openGroup(button) : undefined}
+          group={groupChip}
         />
       )}
-      {(c.viewPending || c.viewBuilding || c.info?.status === "loading") && (
+      {(c.viewPending || c.viewBuilding || c.info?.status === "loading" || groupPending) && (
         <div
           className="vg-progress"
           role="progressbar"
@@ -1275,7 +1558,13 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           />
         </div>
       )}
-      <div ref={bodyRef} className="vg-body" data-detail={detailOpen || undefined}>
+      <div
+        ref={bodyRef}
+        className="vg-body"
+        data-detail={detailOpen || undefined}
+        data-totals={showTotals || undefined}
+        style={showTotals ? ({ "--vg-totals-height": `${c.options.rowHeight}px` } as CSSProperties) : undefined}
+      >
         <canvas ref={canvasRef} className="vg-canvas" />
         {/* biome-ignore lint/a11y/useSemanticElements: a canvas grid cannot use table elements; ARIA grid roles describe it. */}
         <div
@@ -1378,6 +1667,21 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
             </div>
           )}
         </div>
+        {showTotals && (
+          <TotalsRow
+            controller={c}
+            messages={messages}
+            onOpen={(col, button) => {
+              const root = rootRef.current?.getBoundingClientRect();
+              const rect = button.getBoundingClientRect();
+              setOverlay({
+                kind: "total",
+                col,
+                anchor: { x: rect.left - (root?.left ?? 0), y: rect.top - (root?.top ?? 0), height: rect.height },
+              });
+            }}
+          />
+        )}
         {overlayMessage && (
           <div
             className="vg-message"
@@ -1576,6 +1880,51 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           className="vg-popover--panel vg-popover--export"
         >
           <ExportPanel controller={c} messages={messages} options={exportOptions} count={count} onDone={announce} />
+        </Popover>
+      )}
+      {overlay?.kind === "total" && (
+        <Popover
+          anchor={overlay.anchor}
+          container={rootRef}
+          onClose={closeOverlay}
+          returnFocus={scrollerRef}
+          label={messages.totalOf(labelOf(overlay.col))}
+          role="menu"
+        >
+          <MenuList items={totalMenuItems(overlay.col)} onClose={closeOverlay} />
+        </Popover>
+      )}
+      {overlay?.kind === "group" && (
+        <Popover
+          anchor={overlay.anchor}
+          container={rootRef}
+          onClose={closeOverlay}
+          returnFocus={scrollerRef}
+          label={messages.groupTitle}
+          className="vg-popover--panel vg-popover--builder"
+        >
+          <GroupPanel
+            schema={baseSchema}
+            labelOf={baseLabel}
+            messages={messages}
+            initial={grouped?.draft ?? null}
+            grouped={grouped !== null}
+            pending={groupPending}
+            error={groupError}
+            onApply={(draft) =>
+              void startGrouping(
+                draft,
+                grouped ? grouped.baseState : controller.getState(),
+                // The same keys and values keep the grouped grid's settings.
+                grouped && JSON.stringify(grouped.draft) === JSON.stringify(draft) ? controller.getState() : undefined,
+              )
+            }
+            onUngroup={() => {
+              setOverlay(null);
+              endGrouping();
+            }}
+            onCancel={closeOverlay}
+          />
         </Popover>
       )}
       {overlay?.kind === "columns" && (

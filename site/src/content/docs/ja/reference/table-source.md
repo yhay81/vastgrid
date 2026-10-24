@@ -26,6 +26,8 @@ interface TableSource {
   aggregate?(request: AggregateRequest, signal?: AbortSignal): Promise<SelectionSummary>;
   find?(request: FindRequest, signal?: AbortSignal): Promise<FindResult | null>;
   exportView?(request: ExportRequest, signal?: AbortSignal): Promise<ExportResult>;
+  /** ビューの行をグループ化して集計する。キーがなければ全体を集計する。 */
+  group?(request: GroupRequest, signal?: AbortSignal): Promise<GroupResult>;
   /** 表を解放する。以後、そのソースは使えない。 */
   /** 表全体が変わったときに `listener` を呼びます。返す関数を呼ぶまで続きます。 */
   subscribe?(listener: (change: { revision?: string | null }) => void): () => void;
@@ -121,6 +123,7 @@ interface TableInfo {
     find: boolean;
     export: boolean;
     conditions?: boolean; // `ViewQuery.where` を評価できる。省略は false
+    group?: boolean;      // `group` に答えられる。省略は false
   };
   exports?: { formats: ExportFormat[]; delivery: "file" | "data" }; // 書き出せるとき、exportView が書く形式
 }
@@ -242,6 +245,28 @@ interface SelectionSummary {
   average: number | null;
 }
 ```
+
+## グループ化と集計
+
+```ts
+type AggregateFunction = "count" | "sum" | "avg" | "min" | "max";
+
+interface GroupRequest {
+  view: string | null;          // 対象の行はビューの絞り込み・条件・検索で決まる
+  keys: number[];               // グループ化する列（スキーマの番号）。なしなら全体の集計の 1 行
+  aggregates: { fn: AggregateFunction; column?: number }[]; // `column` のない `count` は行を数える
+  sort?: SortKey[];             // 結果の列の番号。既定はキーの昇順
+  limit?: number;               // 1〜100,000 グループ。既定は 1,000
+}
+interface GroupResult {
+  columns: ColumnSchema[];      // キーの列、続いて集計値ごとの `fn(column)`（行の件数は `count(*)`）
+  rows: CellValue[][];          // グループごとの配列
+  groups: number;               // `limit` を超えた分も含めたグループの数
+  truncated: boolean;
+}
+```
+
+`GroupAccumulator` は、`ArraySource` と `vastgrid-browser` と同じ方法で、値をまとまりごとに受け取って結果を計算します。`checkGroupRequest`・`groupColumns`・`aggregateApplies`・`isGroupableType` で、要求の検査と結果の列名を同じにできます。`GroupedSource` は結果を 1 つの表として見せます。キー・順序・null・型の意味は[グループ化と集計](/ja/guides/grouping/)で説明しています。
 
 ## 検索と書き出し
 

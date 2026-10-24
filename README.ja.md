@@ -15,7 +15,7 @@
 - **速い。** セルはキャンバスに描きます。1,000 セル以上を表示しても 1 フレーム約 2 ms です。ブラウザーの要素の高さの上限を越えて、
   数十億行までスクロールできます。
 - **表計算ソフトの操作。** マウスと Excel のキー操作での範囲の選択、コピー（TSV・HTML・Markdown）、複数の列での並べ替え、
-  値の一覧（検索・件数つき）と条件での絞り込み、列をまたぐ AND・OR と入れ子の条件、すべての列からの絞り込み、検索（⌘F）、列の統計、選択範囲のデータの個数・合計・平均・最小・最大、現在のビューの CSV・TSV・Parquet・JSON・Excel への書き出し。
+  値の一覧（検索・件数つき）と条件での絞り込み、列をまたぐ AND・OR と入れ子の条件、すべての列からの絞り込み、検索（⌘F）、列の統計、選択範囲のデータの個数・合計・平均・最小・最大、列での行のグループ化（件数・合計・平均・最小・最大）と集計行（計算はエンジン側）、現在のビューの CSV・TSV・Parquet・JSON・Excel への書き出し。
 - **エンジンを選べる。** グリッドは `TableSource` とだけやり取りします。ディスク上のファイルは DuckDB のサーバー（`vastgrid-duckdb`）、
   ブラウザーで開くファイルと URL の Parquet は `vastgrid-browser`、メモリ上のデータは `ArraySource`、ほかのエンジンは自作の `TableSource` で扱えます。
 - **安全。** DuckDB のエンジンは、リンクをたどった実際の場所が許可したフォルダーの中にあるファイルだけを読み、実行中は変えられません。SQL はすべて組み立てたもので、値は必ずパラメーターで渡します。
@@ -327,6 +327,17 @@ const [checked, setChecked] = useState<RowSelection>({ type: "include", keys: []
 ```
 
 詳しくは[書き出し](https://vastgrid.yhay81.com/ja/guides/export/)を参照してください。
+
+### グループ化と集計
+
+ツールバーの「グループ化」で、絞り込みで残る行を 1 つ以上の列でまとめ、グループを表として表示します。キーの列のあとに件数・合計・平均・最小・最大が並びます。列のメニューの「下端の集計行に表示…」で、列の集計値を行の下に固定した行に表示します。どちらも source が計算します（`group`、`capabilities.group`）。対応するのは `ArraySource`、DuckDB のサーバー（組み立てた 1 つの SQL）、`fullScan` の `vastgrid-browser` です。結果は `limit` グループまで（既定 1,000）で、整数と decimal の合計は正確です。どちらも `GridState` に保存します。
+
+```ts
+const result = await source.group({ view: null, keys: [0], aggregates: [{ fn: "count" }, { fn: "sum", column: 2 }] });
+// { columns: [region, count(*), sum(amount)], rows: [["東京", 120, "53210.50"], …], groups: 47, truncated: false }
+```
+
+詳しくは[グループ化と集計](https://vastgrid.yhay81.com/ja/guides/grouping/)を参照してください。
 
 ## 性能
 

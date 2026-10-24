@@ -2,6 +2,7 @@ import { isNumericType } from "./column-type.js";
 import { EXPORT_MEDIA_TYPES, TABLE_FILE_FORMATS, type TableFileFormat, writeTableFile } from "./export-file.js";
 import { matchesFilterNode, pruneFilterNode } from "./filter-tree.js";
 import { numericValue, plainText } from "./format.js";
+import { GroupAccumulator } from "./group.js";
 import { ErrorCodes } from "./protocol.js";
 import { abortError, isEmptyQuery, SourceError, type TableSource } from "./source.js";
 import type {
@@ -17,6 +18,8 @@ import type {
   Filter,
   FindRequest,
   FindResult,
+  GroupRequest,
+  GroupResult,
   RowBlock,
   RowRequest,
   SelectionSummary,
@@ -56,13 +59,13 @@ function inferType(values: CellValue[]): ColumnType {
   return "string";
 }
 
-interface Decimal {
+export interface Decimal {
   negative: boolean;
   digits: string;
   exponent: number;
 }
 
-type OrderedValue = CellValue | bigint | Decimal;
+export type OrderedValue = CellValue | bigint | Decimal;
 
 function isBlank(value: OrderedValue) {
   return value === null || value === "";
@@ -71,7 +74,7 @@ function isBlank(value: OrderedValue) {
 const integerText = /^[+-]?\d+$/;
 
 /** Keeps decimal digits and their power of ten without converting them to a floating-point number. */
-function decimalOf(text: string): Decimal | null {
+export function decimalOf(text: string): Decimal | null {
   const match = /^([+-]?)(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(text.trim());
   if (!match || !(match[2] || match[3])) return null;
   const digits = `${match[2]}${match[3] ?? ""}`.replace(/^0+/, "") || "0";
@@ -81,7 +84,7 @@ function decimalOf(text: string): Decimal | null {
 }
 
 /** Numeric values for exact comparisons; null when the value is not a number. */
-function exactNumber(value: CellValue, type: ColumnType): number | bigint | Decimal | null {
+export function exactNumber(value: CellValue, type: ColumnType): number | bigint | Decimal | null {
   if (typeof value === "string" && integerText.test(value)) {
     const number = Number(value);
     return Number.isSafeInteger(number) ? number : BigInt(value);
@@ -114,7 +117,7 @@ function compareDecimals(a: number | bigint | Decimal, b: number | bigint | Deci
 }
 
 /** Total order used for sorting: numbers, then booleans, then strings. Blanks are handled by the caller. */
-function compareValues(a: OrderedValue, b: OrderedValue): number {
+export function compareValues(a: OrderedValue, b: OrderedValue): number {
   const aNumber = typeof a === "number" || typeof a === "bigint" || (typeof a === "object" && a !== null);
   const bNumber = typeof b === "number" || typeof b === "bigint" || (typeof b === "object" && b !== null);
   if (aNumber && bNumber && (typeof a === "object" || typeof b === "object")) return compareDecimals(a, b);
@@ -189,6 +192,7 @@ export class ArraySource implements TableSource {
         find: true,
         export: true,
         conditions: true,
+        group: true,
       },
       exports: { formats: [...TABLE_FILE_FORMATS], delivery: "data" },
     };
@@ -476,6 +480,21 @@ export class ArraySource implements TableSource {
       max: numericCount > 0 ? max : null,
       average: numericCount > 0 ? sum / numericCount : null,
     };
+  }
+
+  async group(request: GroupRequest, signal?: AbortSignal): Promise<GroupResult> {
+    const view = this.view(request.view);
+    const accumulator = new GroupAccumulator(this.schema, request);
+    const size = this.viewSize(view);
+    const values = accumulator.columns.map((column) => {
+      const data = this.data[column] ?? [];
+      if (!view) return data;
+      const picked = new Array<CellValue>(size);
+      for (let position = 0; position < size; position++) picked[position] = data[view.rows[position]] ?? null;
+      return picked;
+    });
+    accumulator.add(values, size, signal);
+    return accumulator.result();
   }
 
   async find(request: FindRequest): Promise<FindResult | null> {

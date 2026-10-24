@@ -54,6 +54,8 @@ export interface TableCapabilities {
    * trees existed ignore them, so the grid sends them only to sources that report this.
    */
   conditions?: boolean;
+  /** Answers `group` (groups, aggregates and totals). Absent means false. */
+  group?: boolean;
 }
 
 export type TableStatus = "loading" | "ready" | "error";
@@ -283,6 +285,64 @@ export interface SelectionSummary {
   min: number | null;
   max: number | null;
   average: number | null;
+}
+
+/**
+ * Functions of `GroupRequest.aggregates`. `count` counts rows (without `column`) or the values that are
+ * not null; `sum` and `avg` take numeric columns; `min` and `max` take numeric, text, boolean, date,
+ * time and UUID columns. Null values are left out, and so are NaN and infinities of `float` columns.
+ */
+export type AggregateFunction = "count" | "sum" | "avg" | "min" | "max";
+
+export interface GroupAggregate {
+  fn: AggregateFunction;
+  /** Schema column index. Only `count` may leave it out, to count rows. */
+  column?: number;
+}
+
+/**
+ * Groups the rows of a view (or of the table) by the values of `keys` and computes `aggregates` for
+ * each group, on the source (see `TableSource.group`). The view's filters, condition tree and search
+ * decide the rows; its sort does not matter. Without `keys`, the answer is one row over all the rows
+ * (also when there are none), as the totals of a table.
+ *
+ * The result columns are the keys, then one column per aggregate. Groups are ordered by `sort` (indexes of result columns, blanks last as in views),
+ * then by every key ascending; without `sort`, by the keys ascending. A null key is a group of its
+ * own, and so is the empty string: they are different values, as in SQL.
+ */
+export interface GroupRequest {
+  view: string | null;
+  /** Schema column indexes to group by, at most `MAX_GROUP_KEYS`. */
+  keys: number[];
+  /** At most `MAX_GROUP_AGGREGATES`. */
+  aggregates: GroupAggregate[];
+  /** Result column indexes. */
+  sort?: SortKey[];
+  /** Groups to return, from 1 to `MAX_GROUP_ROWS` (default `DEFAULT_GROUP_LIMIT`). */
+  limit?: number;
+}
+
+/**
+ * The answer to a `GroupRequest`: a small table, in row-major order.
+ *
+ * Key columns keep the schema of their column. Aggregate columns are named `fn(column)` (`count(*)`
+ * for rows). A name that an
+ * earlier result column has gets " (2)", " (3)", …, so names are unique and the same for the same
+ * request and data: they identify the columns in saved settings.
+ *
+ * Types: `count` is `bigint`; `sum` of integers is `bigint` and exact; `sum` of decimals is `decimal`
+ * and exact, with the column's scale; `sum` of floats and every `avg` are `float`; `min` and `max`
+ * have the column's type. Integers beyond 2^53 and decimals arrive as strings. An aggregate over no
+ * values is null, except `count`, which is 0.
+ */
+export interface GroupResult {
+  columns: ColumnSchema[];
+  /** One array per group, in result column order. */
+  rows: CellValue[][];
+  /** Groups in all, also those beyond `limit`. */
+  groups: number;
+  /** More groups exist than `rows` holds. */
+  truncated: boolean;
 }
 
 export interface FindRequest {

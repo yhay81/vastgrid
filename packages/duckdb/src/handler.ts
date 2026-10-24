@@ -64,6 +64,8 @@ async function answer(
       return engine.get(request.table).distinctValues(request, signal);
     case "aggregate":
       return engine.get(request.table).aggregate(request, signal);
+    case "group":
+      return engine.get(request.table).group(request, signal);
     case "find":
       return engine.get(request.table).find(request, signal);
     case "export": {

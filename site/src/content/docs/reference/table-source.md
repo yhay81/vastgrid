@@ -28,6 +28,8 @@ interface TableSource {
   aggregate?(request: AggregateRequest, signal?: AbortSignal): Promise<SelectionSummary>;
   find?(request: FindRequest, signal?: AbortSignal): Promise<FindResult | null>;
   exportView?(request: ExportRequest, signal?: AbortSignal): Promise<ExportResult>;
+  /** Groups the rows of a view and aggregates them, or totals them without keys. */
+  group?(request: GroupRequest, signal?: AbortSignal): Promise<GroupResult>;
   /** Calls `listener` when the whole table changed, until the returned function is called. */
   subscribe?(listener: (change: { revision?: string | null }) => void): () => void;
   /** Releases the table. The source must not be used afterwards. */
@@ -131,6 +133,7 @@ interface TableInfo {
     find: boolean;
     export: boolean;
     conditions?: boolean; // evaluates `ViewQuery.where`; absent means false
+    group?: boolean;      // answers `group`; absent means false
   };
   exports?: { formats: ExportFormat[]; delivery: "file" | "data" }; // what exportView writes, when it can
 }
@@ -268,6 +271,31 @@ interface SelectionSummary {
   average: number | null;
 }
 ```
+
+## Groups and totals
+
+```ts
+type AggregateFunction = "count" | "sum" | "avg" | "min" | "max";
+
+interface GroupRequest {
+  view: string | null;          // the view's filters, condition tree and search decide the rows
+  keys: number[];               // schema columns to group by; none: one row of totals
+  aggregates: { fn: AggregateFunction; column?: number }[]; // `count` without `column` counts rows
+  sort?: SortKey[];             // result columns; default: the keys ascending
+  limit?: number;               // 1..100,000 groups, default 1,000
+}
+interface GroupResult {
+  columns: ColumnSchema[];      // the keys, then `fn(column)` per aggregate (`count(*)` for rows)
+  rows: CellValue[][];          // one array per group
+  groups: number;               // all groups, also those past `limit`
+  truncated: boolean;
+}
+```
+
+`GroupAccumulator` computes a result from batches of values, as `ArraySource` and `vastgrid-browser`
+do; `checkGroupRequest`, `groupColumns`, `aggregateApplies` and `isGroupableType` check requests and
+name results the same way. `GroupedSource` shows a result as a table of its own. [Grouping and
+totals](/guides/grouping/) explains what keys, order, nulls and types mean.
 
 ## Find and export
 

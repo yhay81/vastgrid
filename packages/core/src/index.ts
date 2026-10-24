@@ -25,11 +25,29 @@ export { ColumnFormatter, type FormatOptions, numericValue, plainText, ValueForm
 export {
   GRID_STATE_VERSION,
   type GridColumnSetting,
+  type GridGroupState,
   type GridState,
   parseGridState,
   type ResolvedGridState,
   resolveGridState,
 } from "./grid-state.js";
+export {
+  AGGREGATE_FUNCTIONS,
+  aggregateApplies,
+  aggregateName,
+  checkGroupRequest,
+  DEFAULT_GROUP_LIMIT,
+  GroupAccumulator,
+  groupColumns,
+  groupLimit,
+  groupSort,
+  isGroupableType,
+  MAX_GROUP_AGGREGATES,
+  MAX_GROUP_KEYS,
+  MAX_GROUP_ROWS,
+  wireInteger,
+} from "./group.js";
+export { GroupedSource, type GroupedSourceOptions } from "./grouped-source.js";
 export { ColumnLayout } from "./layout.js";
 export {
   ErrorCodes,

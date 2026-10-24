@@ -957,3 +957,125 @@
     --vg-focus: Highlight;
   }
 }
+
+/* Totals row: below the rows, following the columns and their horizontal scrolling. */
+
+.vg-body[data-totals] > .vg-scroller {
+  bottom: var(--vg-totals-height);
+}
+
+.vg-totals {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: var(--vg-totals-height);
+  overflow: hidden;
+  background: var(--vg-header-bg);
+  border-top: 1px solid var(--vg-line-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.vg-totals__gutter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--vg-muted);
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.vg-totals__frozen,
+.vg-totals__scroll {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+}
+
+.vg-totals__frozen {
+  right: auto;
+  z-index: 1;
+  background: var(--vg-header-bg);
+}
+
+.vg-totals__cell {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  overflow: hidden;
+  color: var(--vg-fg);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--vg-line);
+  cursor: pointer;
+}
+
+.vg-totals__cell[data-align="right"] {
+  justify-content: flex-end;
+}
+
+.vg-totals__cell[data-align="center"] {
+  justify-content: center;
+}
+
+.vg-totals__cell:hover {
+  background: var(--vg-header-active-bg);
+}
+
+.vg-totals__cell:focus-visible {
+  outline: 2px solid var(--vg-focus);
+  outline-offset: -2px;
+}
+
+.vg-totals__fn {
+  flex: none;
+  color: var(--vg-muted);
+  font-size: 0.85em;
+}
+
+.vg-totals__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vg-body[data-detail] > .vg-totals {
+  right: var(--vg-detail-width);
+}
+
+@container vg-body (max-width: 640px) {
+  .vg-body[data-detail][data-totals] > .vg-scroller {
+    bottom: calc(var(--vg-detail-height) + var(--vg-totals-height));
+  }
+
+  .vg-body[data-detail] > .vg-totals {
+    right: auto;
+    bottom: var(--vg-detail-height);
+  }
+}
+
+.vg-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vg-group .vg-filter__values {
+  max-height: 180px;
+}
+
+.vg-chip--group {
+  font-weight: 600;
+}

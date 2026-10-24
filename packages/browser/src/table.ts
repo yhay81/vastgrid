@@ -13,6 +13,9 @@ import {
   type FindRequest,
   type FindResult,
   filterLeaves,
+  GroupAccumulator,
+  type GroupRequest,
+  type GroupResult,
   isAbortError,
   isEmptyQuery,
   isNumericType,
@@ -259,6 +262,7 @@ export class BrowserTable implements TableSource {
       find: scan,
       export: false,
       conditions: scan,
+      group: scan,
     };
   }
 
@@ -612,6 +616,39 @@ export class BrowserTable implements TableSource {
         max: numericCount > 0 ? max : null,
         average: numericCount > 0 ? sum / numericCount : null,
       };
+    });
+  }
+
+  /** Groups in one pass over the file (or the view's rows), with the accumulator of `ArraySource`. */
+  async group(request: GroupRequest, signal?: AbortSignal): Promise<GroupResult> {
+    return this.use(async (reader) => {
+      this.requireScan("Grouping");
+      const state = this.requireReady(reader);
+      const view = this.view(request.view);
+      const accumulator = new GroupAccumulator(state.columns, request);
+      const columns = accumulator.columns;
+      const ids = view ? view.rows.slice().sort() : null;
+      let next = 0;
+      for (const [start, end] of reader.scanRanges()) {
+        if (signal?.aborted) throw abortError();
+        if (!ids) {
+          accumulator.add(await reader.read(start, end, columns, signal), end - start, signal);
+          continue;
+        }
+        let last = next;
+        while (last < ids.length && ids[last] < end) last++;
+        if (last === next) continue;
+        const first = ids[next];
+        const data = await reader.read(first, ids[last - 1] + 1, columns, signal);
+        const picked = data.map((values) => {
+          const kept: CellValue[] = [];
+          for (let index = next; index < last; index++) kept.push(values[ids[index] - first] ?? null);
+          return kept;
+        });
+        accumulator.add(picked, last - next, signal);
+        next = last;
+      }
+      return accumulator.result();
     });
   }
 

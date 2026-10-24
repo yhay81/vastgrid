@@ -196,6 +196,9 @@ function read(text: string | null) {
 
 `onStateChange` is also called when a state is applied, including `initialState`.
 
+The state also keeps the [grouping and the totals row](/guides/grouping/#saving-the-settings): `total` of a
+column, and `group` with the grouped table's own settings.
+
 `renderer.timings()` returns `{ frames, average, slowest }` in milliseconds over the last 120 frames
 drawn. The [demo](/demo/) shows it in its toolbar.
 

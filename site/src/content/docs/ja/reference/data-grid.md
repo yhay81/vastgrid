@@ -166,6 +166,8 @@ function read(text: string | null) {
 
 `onStateChange` は、`initialState` を含め、状態を適用したときにも呼ばれます。
 
+状態には[グループ化と集計行](/ja/guides/grouping/#設定の保存)も含みます。列の `total` と、グループの表自体の設定を含む `group` です。
+
 `renderer.timings()` は、直近に描いた 120 フレームについて `{ frames, average, slowest }`（時間はミリ秒）を返します。[デモ](/ja/demo/)では、これをツールバーに表示しています。
 
 ## 列の表示設定

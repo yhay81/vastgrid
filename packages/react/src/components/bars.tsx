@@ -11,6 +11,8 @@ export function Toolbar({
   onConditions,
   onColumns,
   onExport,
+  onGroup,
+  group,
 }: {
   controller: GridController;
   messages: Messages;
@@ -19,6 +21,10 @@ export function Toolbar({
   onColumns: (button: HTMLButtonElement) => void;
   /** Opens the export panel; the button is shown only when the source can export. */
   onExport?: (button: HTMLButtonElement) => void;
+  /** Opens the grouping panel; the button is shown only when the source can group. */
+  onGroup?: (button: HTMLButtonElement) => void;
+  /** The grid shows groups: what they are, and how to show the rows again. */
+  group?: { label: string; onClear: () => void } | null;
 }) {
   const query = controller.query;
   const [search, setSearch] = useState(query.search ?? "");
@@ -64,6 +70,27 @@ export function Toolbar({
 
   return (
     <div className="vg-toolbar">
+      {group && (
+        <span className="vg-chip vg-chip--group">
+          <button
+            type="button"
+            className="vg-chip__label"
+            title={group.label}
+            onClick={(event) => onGroup?.(event.currentTarget)}
+          >
+            {group.label}
+          </button>
+          <button
+            type="button"
+            className="vg-chip__remove"
+            aria-label={messages.ungroup}
+            title={messages.ungroup}
+            onClick={group.onClear}
+          >
+            ×
+          </button>
+        </span>
+      )}
       <input
         type="search"
         className="vg-input vg-toolbar__search"
@@ -191,6 +218,16 @@ export function Toolbar({
       >
         {messages.columns}
       </button>
+      {onGroup && (
+        <button
+          type="button"
+          className="vg-button vg-button--small"
+          aria-pressed={Boolean(group)}
+          onClick={(event) => onGroup(event.currentTarget)}
+        >
+          {messages.group}
+        </button>
+      )}
       {onExport && (
         <button
           type="button"

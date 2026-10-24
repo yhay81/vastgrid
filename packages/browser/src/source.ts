@@ -7,6 +7,8 @@ import {
   ErrorCodes,
   type FindRequest,
   type FindResult,
+  type GroupRequest,
+  type GroupResult,
   type RowBlock,
   type RowRequest,
   type SelectionSummary,
@@ -181,6 +183,11 @@ export class BrowserSource implements TableSource {
 
   find(request: FindRequest, signal?: AbortSignal): Promise<FindResult | null> {
     return this.call("find", [request], signal);
+  }
+
+  /** Groups and aggregates in the worker, which reads the whole file (only with `fullScan`). */
+  group(request: GroupRequest, signal?: AbortSignal): Promise<GroupResult> {
+    return this.call("group", [request], signal);
   }
 
   /**

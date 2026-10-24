@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { DuckDBInstance } from "@duckdb/node-api";
-import type { Filter, TableSource, ViewQuery } from "vastgrid-core";
+import type { Filter, GroupRequest, TableSource, ViewQuery } from "vastgrid-core";
 import { type OpenTable, TableEngine } from "vastgrid-duckdb";
 import { BrowserErrorCodes } from "../src/errors.ts";
 import { serveTable } from "../src/serve.ts";
@@ -650,4 +650,60 @@ test("a file at a URL that changed on the server is reported to subscribers and 
     source.close();
     await watched.close();
   }
+});
+
+test("grouping in the browser matches the DuckDB engine, and needs fullScan", async () => {
+  const round = (rows: unknown[][]) =>
+    rows.map((row) => row.map((value) => (typeof value === "number" ? Number(value.toPrecision(12)) : value)));
+  for (const [name, requests] of [
+    [
+      "big.parquet",
+      [
+        { keys: [1], aggregates: [{ fn: "count" }, { fn: "sum", column: 3 }, { fn: "avg", column: 0 }] },
+        {
+          keys: [],
+          aggregates: [
+            { fn: "max", column: 2 },
+            { fn: "sum", column: 0 },
+          ],
+        },
+      ],
+    ],
+    [
+      "mixed.parquet",
+      [
+        {
+          keys: [1],
+          aggregates: [
+            { fn: "sum", column: 2 },
+            { fn: "sum", column: 7 },
+            { fn: "max", column: 3 },
+            { fn: "min", column: 5 },
+          ],
+          sort: [{ column: 1, direction: "desc" }],
+        },
+        { keys: [6, 4], aggregates: [{ fn: "count", column: 8 }] },
+      ],
+    ],
+  ] as const) {
+    const browser = await local(name);
+    const duck = await server(name);
+    for (const request of requests) {
+      for (const query of [{}, { filters: [{ type: "compare", column: 0, op: "ge", value: 2 }] }] as ViewQuery[]) {
+        const left = await browser.createView(query);
+        const right = await duck.createView(query);
+        const ours = await browser.group({ ...request, view: left.id } as GroupRequest);
+        const theirs = await duck.group({ ...request, view: right.id } as GroupRequest);
+        assert.deepEqual(
+          ours.columns.map((column) => [column.name, column.type]),
+          theirs.columns.map((column) => [column.name, column.type]),
+        );
+        assert.deepEqual(round(ours.rows), round(theirs.rows), `${name}: ${JSON.stringify(request)}`);
+        assert.equal(ours.groups, theirs.groups);
+      }
+    }
+  }
+  const remote = await local("big.parquet", { fullScan: false });
+  assert.equal((await remote.info()).capabilities.group, false);
+  await assert.rejects(remote.group({ view: null, keys: [1], aggregates: [] }), { code: "invalid_request" });
 });

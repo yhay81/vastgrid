@@ -1,3 +1,5 @@
+import type { AggregateFunction } from "vastgrid-core";
+
 /** Every text the grid shows. Pass a partial object to `messages` to change some of them. */
 export interface Messages {
   gridLabel: string;
@@ -186,6 +188,39 @@ export interface Messages {
   exported: (rows: string, target: string) => string;
   exportXlsxRows: (rows: string) => string;
   exportXlsxColumns: (columns: string) => string;
+  /** Names of the aggregates of grouping and the totals row. */
+  aggregateNames: Record<AggregateFunction, string>;
+  /** The totals row at the bottom of the grid. */
+  totals: string;
+  /** Column menu item that picks the column's aggregate in the totals row. */
+  totalInRow: string;
+  /** The aggregate menu of a column, and its item that shows no total. */
+  totalOf: (column: string) => string;
+  totalNone: string;
+  copyTotal: string;
+  /** The toolbar button that opens the grouping panel, and the panel's title and parts. */
+  group: string;
+  groupTitle: string;
+  groupKeys: string;
+  /** Column menu item that groups the rows by the column, counting them. */
+  groupByColumn: string;
+  groupValues: string;
+  groupFunction: string;
+  /** Counts the rows of each group, rather than the values of a column. */
+  groupRows: string;
+  addValue: string;
+  removeValue: string;
+  /** Shows the rows again instead of the groups. */
+  ungroup: string;
+  grouping: string;
+  /** The toolbar's chip of a grouped grid, by the labels of the key columns (or none, for totals). */
+  groupedBy: (columns: string) => string;
+  groupedTotals: string;
+  /** In the chip of a grouped grid whose rows were filtered before grouping. */
+  groupedFiltered: string;
+  /** Groups shown, and all groups when only the first ones are shown. */
+  groupCount: (shown: string, total: string | null) => string;
+  groupFailed: (message: string) => string;
 }
 
 export const en: Messages = {
@@ -382,6 +417,28 @@ export const en: Messages = {
   exportXlsxRows: (rows) => `An Excel sheet holds at most ${rows} rows. Filter the rows or choose another format.`,
   exportXlsxColumns: (columns) =>
     `An Excel sheet holds at most ${columns} columns. Hide columns or choose another format.`,
+  aggregateNames: { count: "Count", sum: "Sum", avg: "Average", min: "Min", max: "Max" },
+  totals: "Totals",
+  totalInRow: "Total in the bottom row…",
+  totalOf: (column) => `Total of ${column}`,
+  totalNone: "None",
+  copyTotal: "Copy total",
+  group: "Group",
+  groupTitle: "Group rows",
+  groupKeys: "Group by",
+  groupByColumn: "Group by this column",
+  groupValues: "Values",
+  groupFunction: "Aggregate",
+  groupRows: "Rows",
+  addValue: "Add value",
+  removeValue: "Remove value",
+  ungroup: "Show rows",
+  grouping: "Grouping…",
+  groupedBy: (columns) => `Grouped by ${columns}`,
+  groupedTotals: "Totals without groups",
+  groupedFiltered: "filtered rows",
+  groupCount: (shown, total) => (total === null ? `${shown} groups` : `First ${shown} of ${total} groups`),
+  groupFailed: (message) => `The rows could not be grouped: ${message}`,
 };
 
 const number = (value: string) => value;
@@ -579,6 +636,28 @@ export const ja: Messages = {
   exported: (rows, target) => `${rows} 行を ${target} に書き出しました。`,
   exportXlsxRows: (rows) => `Excel のシートは ${rows} 行までです。行を絞り込むか、別の形式を選んでください。`,
   exportXlsxColumns: (columns) => `Excel のシートは ${columns} 列までです。列を隠すか、別の形式を選んでください。`,
+  aggregateNames: { count: "件数", sum: "合計", avg: "平均", min: "最小", max: "最大" },
+  totals: "集計",
+  totalInRow: "下端の集計行に表示…",
+  totalOf: (column) => `${column} の集計`,
+  totalNone: "なし",
+  copyTotal: "集計値をコピー",
+  group: "グループ化",
+  groupTitle: "行のグループ化",
+  groupKeys: "グループ化する列",
+  groupByColumn: "この列でグループ化",
+  groupValues: "集計値",
+  groupFunction: "集計方法",
+  groupRows: "行",
+  addValue: "集計値を追加",
+  removeValue: "集計値を削除",
+  ungroup: "行の表示に戻す",
+  grouping: "グループ化しています…",
+  groupedBy: (columns) => `${columns} でグループ化`,
+  groupedTotals: "グループなしの集計",
+  groupedFiltered: "絞り込んだ行",
+  groupCount: (shown, total) => (total === null ? `${shown} グループ` : `${total} グループのうち先頭 ${shown}`),
+  groupFailed: (message) => `グループ化できませんでした：${message}`,
 };
 
 /** Picks the built-in messages for a locale ("ja…" → Japanese, otherwise English). */
