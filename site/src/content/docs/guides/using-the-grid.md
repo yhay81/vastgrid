@@ -34,7 +34,7 @@ shows the row's position in the file.
 | ⌘/Ctrl + C · ⌘/Ctrl + Shift + C | Copy · copy with headers |
 | ⌘/Ctrl + F | Find |
 | Alt + ↓ | Column menu (sort, filter, statistics, freeze, hide) |
-| F2 · double click | Show the full value of the cell |
+| F2 · double click | Show the full value of the cell (edit it, in a grid that edits: see [Editing cells](/guides/editing/)) |
 | Alt + Enter (again: into the panel) · Esc | Open the detail panel of the active row · close it |
 | Shift + F10 · context menu key · right click | Cell menu (copy, filter to value, sort) |
 | Escape | Close a menu or panel, or cancel a copy that is still reading |

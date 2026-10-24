@@ -53,6 +53,8 @@ import {
   sameRowQuery,
   spanAt,
   type TableCapabilities,
+  type TableChange,
+  type TableEdits,
   type TableInfo,
   type TableSource,
   toHtmlTable,
@@ -63,6 +65,7 @@ import {
   type ViewQuery,
 } from "vastgrid-core";
 import type { CellAction, CellActionHook, DrawCell, GridCellContent } from "./cell-render.js";
+import { GridEdits, type ValidateCell } from "./editing.js";
 import type {
   GridCell,
   GridCellEvent,
@@ -114,6 +117,10 @@ export interface GridOptions {
   drawCell?: DrawCell;
   /** Tells which cells are links or buttons (see `CellActionHook`). */
   cellAction?: CellActionHook;
+  /** Offers no editing, also when the source can write cells (`capabilities.edit`). */
+  readOnly?: boolean;
+  /** Checks values before they are written (see `ValidateCell`). */
+  validateCell?: ValidateCell;
 }
 
 export interface ColumnState {
@@ -214,6 +221,20 @@ function codeOf(error: unknown) {
   return error instanceof Error && "code" in error ? error.code : undefined;
 }
 
+/**
+ * Whether a query's rows or order depend on the values of any of these schema columns. Formula columns
+ * (from `tableColumns` on) may use any column, so a query on them depends on every column.
+ */
+function queryUses(query: ViewQuery, columns: number[], tableColumns: number) {
+  if (query.search?.trim()) return true;
+  const used = new Set([
+    ...(query.sort ?? []).map((key) => key.column),
+    ...(query.filters ?? []).map((filter) => filter.column),
+    ...filterLeaves(query.where).map((filter) => filter.column),
+  ]);
+  return [...used].some((column) => column >= tableColumns) || columns.some((column) => used.has(column));
+}
+
 function sameQuery(a: ViewQuery, b: ViewQuery) {
   return a === b || JSON.stringify(a) === JSON.stringify(b);
 }
@@ -263,6 +284,8 @@ export class GridController {
    * new revision of the table unchecks them unless the keys come from a key column.
    */
   readonly rowSelection = new RowSelectionModel();
+  /** Writing cells, and the writes that are saving or failed (see `GridEdits`). */
+  readonly edits: GridEdits;
   /** The grid is listing the keys of an `exclude` selection (see `ROW_SELECTION_LIST_LIMIT`). */
   rowSelectionPending = false;
   readonly scrollX = new ScrollAxis();
@@ -379,6 +402,8 @@ export class GridController {
   /** Stops listening to the source's changes (`TableSource.subscribe`). */
   private unsubscribe: (() => void) | null = null;
   private changeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The `edits.version` of the changes merged into the next reload, when they were only writes. */
+  private changedEdits: number | null = null;
   /** The source reported a change; applied to the next table info (see `applyInfo`). */
   private changeReported = false;
   /** Where the grid was when it started reading the table again, to return there once it is read. */
@@ -397,6 +422,7 @@ export class GridController {
     this.groupPaths = columnGroupPaths(options.columnGroups ?? []);
     this.groupDepth = columnGroupDepth(options.columnGroups ?? []);
     this.cache = new RowCache(source);
+    this.edits = new GridEdits(this);
     this.cache.onChange(() => {
       this.autoSize();
       this.requestRender();
@@ -608,7 +634,7 @@ export class GridController {
     if (this.lifecycle.signal.aborted) this.lifecycle = new AbortController();
     this.polling = true;
     if (!this.unsubscribe && this.source.subscribe) {
-      this.unsubscribe = this.source.subscribe(() => this.sourceChanged());
+      this.unsubscribe = this.source.subscribe((change) => this.sourceChanged(change));
     }
     if (this.viewBuilding) {
       // `stop()` ended the polling of the view.
@@ -628,29 +654,70 @@ export class GridController {
    * new last row.
    */
   reload() {
-    if (!this.restore && this.info) {
-      const [, last] = this.visibleRows();
-      const end = this.rowCount > 0 && last >= this.rowCount;
-      this.restore = {
-        top: this.scrollY.position,
-        left: this.scrollX.position,
-        active: this.selection.active,
-        tail: this.options.followTail === true && end,
-        lastRow: this.selection.active.row === this.rowCount - 1,
-      };
-    }
+    this.keepPlace();
     this.lifecycle.abort();
     this.polling = false;
     this.loadError = null;
     this.start();
   }
 
+  /** Remembers where the grid is, to return there once the table or its view is read again. */
+  private keepPlace() {
+    if (this.restore || !this.info) return;
+    const [, last] = this.visibleRows();
+    const end = this.rowCount > 0 && last >= this.rowCount;
+    this.restore = {
+      top: this.scrollY.position,
+      left: this.scrollX.position,
+      active: this.selection.active,
+      tail: this.options.followTail === true && end,
+      lastRow: this.selection.active.row === this.rowCount - 1,
+    };
+  }
+
+  /**
+   * Cells were written (by this grid, with the source's new `edits`, or by someone else): reads the rows
+   * again, showing the old values meanwhile, and creates the view again when its rows or order may
+   * depend on the written columns (`null`: any column), returning to the same place.
+   */
+  editsChanged(columns: number[] | null, edits?: TableEdits) {
+    if (this.disposed || !this.info) return;
+    if (edits) this.setEdits(edits);
+    this.cache.invalidate();
+    if (
+      this.info.status === "ready" &&
+      !isEmptyQuery(this.query) &&
+      (columns === null || queryUses(this.query, columns, this.tableColumns))
+    ) {
+      this.keepPlace();
+      void this.runQuery(this.query, true);
+    }
+    this.scheduleSummary();
+    this.emit();
+    this.requestRender();
+  }
+
+  /** The table's edits after a write or a save of this grid; the table info that formulas are added to keeps them too. */
+  setEdits(edits: TableEdits) {
+    if (this.info) this.info = { ...this.info, edits };
+    if (this.tableInfo) this.tableInfo = { ...this.tableInfo, edits };
+  }
+
   /** Merges the changes reported within `changeDelay` into one reload. */
-  private sourceChanged() {
-    if (this.disposed || this.changeTimer !== undefined) return;
+  private sourceChanged(change: TableChange = {}) {
+    if (this.disposed) return;
+    // Writes only, which may be the grid's own: those are read again already (see `editsChanged`).
+    const edits = change.revision === undefined && change.edits !== undefined ? change.edits : null;
+    if (this.changeTimer === undefined) this.changedEdits = edits;
+    else if (edits === null || this.changedEdits === null) this.changedEdits = null;
+    else this.changedEdits = Math.max(this.changedEdits, edits);
+    if (this.changeTimer !== undefined) return;
     this.changeTimer = setTimeout(() => {
       this.changeTimer = undefined;
       if (this.disposed) return;
+      const edits = this.changedEdits;
+      this.changedEdits = null;
+      if (edits !== null && edits <= (this.info?.edits?.version ?? -1)) return;
       this.changeReported = true;
       this.reload();
     }, this.options.changeDelay ?? 300);
@@ -680,6 +747,7 @@ export class GridController {
 
   dispose() {
     this.disposed = true;
+    this.edits.dispose();
     this.stop();
     this.cache.clear();
     this.stateListeners.clear();
@@ -771,7 +839,12 @@ export class GridController {
       previous.revision !== info.revision ||
       names(previous) !== names(info) ||
       expressions(previous) !== expressions(info);
+    // Cells were written by someone else: their rows are read again, and the view is created again.
+    const edited = !reset && info.status === "ready" && previous.edits?.version !== info.edits?.version;
+    if (edited) this.cache.invalidate();
     if (previous) this.keepRowSelection(previous, info);
+    // Positions name other records in a new revision: written cells can no longer be undone.
+    if (previous && previous.revision !== info.revision) this.edits.clearHistory();
     if (reset) {
       if (previous?.columns.length && names(previous) !== names(info)) {
         const indexOf = (column: number) => {
@@ -860,7 +933,7 @@ export class GridController {
       this.view = { id: null, rowCount: info.rowCount ?? info.readableRows, query: {} };
     }
     this.updateLayout();
-    if (info.status === "ready" && (reset || previous?.status !== "ready") && !isEmptyQuery(this.query)) {
+    if (info.status === "ready" && (reset || edited || previous?.status !== "ready") && !isEmptyQuery(this.query)) {
       void this.runQuery(this.query, true);
     } else if (info.status === "ready" && this.restore && !this.viewPending) {
       this.finishRestore();
@@ -877,6 +950,11 @@ export class GridController {
 
   get schema(): ColumnSchema[] {
     return this.info?.columns ?? [];
+  }
+
+  /** Columns of the table itself, before the formula columns (which have an `expression`). */
+  get tableColumns() {
+    return this.schema.filter((column) => column.expression === undefined).length;
   }
 
   /** Rows in the current view. */
@@ -1411,6 +1489,27 @@ export class GridController {
 
   rowY(row: number) {
     return this.headerHeight + row * this.rowHeight - this.scrollY.position;
+  }
+
+  /**
+   * Where a cell is on the screen, cut to the part of the grid its column is drawn in (frozen at the left,
+   * scrolling, or frozen at the right) and to below the header rows; `shown` is false when none of it is
+   * visible. The cell editor is placed with it.
+   */
+  cellBox(row: number, col: number) {
+    const x = this.columnX(col);
+    const y = this.rowY(row);
+    const width = this.layout.width(col);
+    const scrolling = this.gutterWidth + this.frozenWidth;
+    const [start, end] =
+      col < this.frozen
+        ? [this.gutterWidth, scrolling]
+        : this.isFrozenRight(col)
+          ? [this.frozenRightX, this.width]
+          : [scrolling, this.frozenRightX];
+    const left = Math.max(x, start);
+    const shown = x + width > start && x < end && y + this.rowHeight > this.headerHeight && y < this.height;
+    return { left, top: y, width: Math.max(0, Math.min(x + width, end) - left), height: this.rowHeight, shown };
   }
 
   /** The visible column at screen x, or -1. */

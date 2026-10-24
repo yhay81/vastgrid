@@ -30,8 +30,12 @@ interface TableSource {
   exportView?(request: ExportRequest, signal?: AbortSignal): Promise<ExportResult>;
   /** Groups the rows of a view and aggregates them, or totals them without keys. */
   group?(request: GroupRequest, signal?: AbortSignal): Promise<GroupResult>;
+  /** Writes cells, all or none, for sources that report `capabilities.edit` (see below). */
+  updateCells?(request: UpdateRequest, signal?: AbortSignal): Promise<UpdateResult>;
+  /** Saves the written cells into the table's file, for sources that report `capabilities.save`. */
+  saveEdits?(signal?: AbortSignal): Promise<{ records: number; edits: TableEdits }>;
   /** Calls `listener` when the whole table changed, until the returned function is called. */
-  subscribe?(listener: (change: { revision?: string | null }) => void): () => void;
+  subscribe?(listener: (change: { revision?: string | null; edits?: number }) => void): () => void;
   /** Releases the table. The source must not be used afterwards. */
   close?(): void | Promise<void>;
 }
@@ -46,6 +50,7 @@ new ArraySource({
   columns: (string | ColumnSchema)[]; // names (types inferred) or schemas
   rows?: CellValue[][];               // row-major data, or
   columnData?: CellValue[][];         // column-major data, one array per column
+  editable?: boolean;                 // write cells with updateCells (default false)
 });
 ```
 
@@ -340,6 +345,40 @@ The [protocol](/reference/protocol/#excel-export-rules) defines how `xlsx` write
 (never formulas) and `null`, and refuses more rows or columns than an Excel sheet holds with
 `export_too_large`.
 
+## Writing cells
+
+```ts
+interface UpdateRequest {
+  updates: { row: number; column: number; value: CellValue; previous?: CellValue }[]; // at most MAX_UPDATE_CELLS (100,000)
+  revision?: string; // the TableInfo.revision the rows were read with
+}
+interface UpdateResult {
+  updated: number;
+  edits: { version: number; cells: number }; // TableInfo.edits after the write
+}
+```
+
+Sources that report `capabilities.edit` write cells with `updateCells`. `row` is the row's position in
+the table (`RowBlock.rowIds`), `column` the schema index. The request is atomic: every update is written,
+or none is and it rejects with a `SourceError` — `read_only` (the source or a column is not written),
+`invalid_value` (a value does not fit its column), `edit_conflict` (a cell no longer holds its
+`previous` value), `revision_changed` (the table has another `revision`) or `invalid_request`.
+
+Writes keep row positions and the `revision`; they change `TableInfo.edits.version` instead, and sources
+that report changes call their `subscribe` listeners with `{ edits }`. Every later request reads the new
+values; views made before may keep their old rows and order, so the grid creates its view again when its
+query uses a written column. Columns the source does not write have `readOnly: true` in their schema.
+
+Sources that report `capabilities.save` also save the written cells into the file they read with
+`saveEdits` (the DuckDB server with `saveFiles`). It rejects with `file_changed` when the file was changed
+by someone else since it was read, and `save_unsupported` when the file cannot be written back; the
+table keeps its revision and row positions, and its cells count as saved (`edits.cells` is 0).
+
+`parseCellInput(text, column)` reads typed text as a column's type, and `normalizeCellValue(value,
+column)` checks a value written by a program the same way; both keep 64-bit integers and decimals as
+text. `editableType(type)`, `editableColumn(schema)`, `editText(value)` and `sameCellValue(a, b)` help
+sources and editors. See [Editing cells](/guides/editing/).
+
 ## Errors
 
 ```ts
@@ -368,6 +407,7 @@ the error to reject with when a signal aborts, and `isAbortError(error)` recogni
 | `numericValue(value, type)` | A value as a JavaScript number, or `null`. |
 | `ValueFormatter` | Formats values for display in a locale, as the grid does. |
 | `toTsv`, `toHtmlTable`, `toMarkdownTable` | Serialize rows of values as the grid's copies do. |
+| `parseTsv(text)`, `parseHtmlTable(html)` | Read rows of cells from the clipboard: tab-separated values as spreadsheets copy them (quoted fields with tabs and line breaks), and the first HTML table (`colspan` and `rowspan` filled), without a DOM. |
 | `copyLayout(ranges)` | The rows and columns that a copy of several ranges writes, or null when they cannot be copied together. |
 | `isNumericType(type)`, `isTemporalType(type)` | Group column types. |
 | `parseProtocolRequest(body)` | Validates a protocol request, for servers. |

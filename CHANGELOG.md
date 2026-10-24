@@ -50,6 +50,72 @@
   view. The totals row is not selected, copied or exported with the rows; its cells are buttons after the
   grid in the tab order, read by screen readers. `getState()` and `applyState()` keep both, and
   `GridController` has `setTotal`, `totalOf`, `totals` and `totalValues`.
+- `vastgrid-duckdb`: with `saveFiles` (and `editable`), `saveEdits` and the `save` request write edited
+  cells back into the CSV or TSV file. Only the edited fields of records with cells written since the
+  last save are written anew; every other byte stays — the byte order mark, the header, other records
+  (also with quoted line breaks), the other fields of edited records, delimiters, line breaks and the
+  final line break — in the file's encoding (UTF-8, UTF-16, Shift_JIS, EUC-JP, Latin-1). The file is
+  written to a temporary file next to it and renamed over it; a file changed by someone else meanwhile is
+  not saved (`file_changed`), a failed or cancelled save leaves it as it was, and only files at their real
+  location in the allowed folders are saved. Compressed files, files read as irregular text, files with
+  comments and other formats are refused (`save_unsupported`). The table keeps its revision and rows.
+- `vastgrid-core`: `TableSource.saveEdits`, `capabilities.save`, `SaveResult`, the `save` request and the
+  error codes `file_changed` and `save_unsupported`; `RemoteSource.saveEdits`.
+- `vastgrid`: while edited cells are not saved into a source that saves, a line above the status bar says
+  how many, with "Save to file"; ⌘/Ctrl + S and the ref's `save()` save them.
+
+- `vastgrid`: ⌘/Ctrl + D fills down and ⌘/Ctrl + R fills right in a grid that edits (also "Fill down" and
+  "Fill right" in the context menu): the first row (column) of each selected range is copied into the
+  rest of it, and a range of one row (column) takes the one above (left of) it. Values are copied as
+  they are, never extended into a series, checked for their target columns, and written as one write that
+  one undo reverts, also into rows that are not loaded, up to `copyLimit` cells. There is no fill handle.
+
+- `vastgrid`: ⌘/Ctrl + Z undoes the last saved write in a grid that edits, and ⌘/Ctrl + Shift + Z (or
+  Ctrl + Y) redoes it, also from the context menu. Each write is one step (a paste or a cleared range at
+  once), and undoing writes the values before, with their types and digits, as a new write: a cell
+  changed meanwhile by someone else is a conflict to overwrite or discard. Undo and redo wait for writes
+  that are saving or failed; a new write drops the redo steps, and a new revision forgets the history.
+  Values not loaded are read before they are overwritten, so that every write can be undone.
+  `onHistoryChange` and the ref's `undo()`, `redo()` and `history` let apps offer them.
+- `vastgrid-core`: `EditHistory` keeps undo and redo steps of written cells, bounded to 100 writes,
+  1,000,000 cells and 32,000,000 characters.
+
+- `vastgrid`: ⌘/Ctrl + V (and "Paste" in the context menu) pastes cells copied from Excel, Numbers, Google
+  Sheets or web pages into a grid that edits: from the selection's top-left cell, repeated over a
+  selection that is a whole multiple of them, one value into every selected cell of several ranges, and
+  without the rows and columns past the end of the table (never adding rows). Every value is checked
+  first (numbers may group digits with commas); one value that does not fit refuses the paste. The cells
+  are written as one write of at most 100,000 cells, and Esc cancels a paste that reads rows first.
+- `vastgrid-core`: `parseTsv` and `parseHtmlTable` read the clipboard's tab-separated values (quoted
+  fields with tabs and line breaks) and HTML tables (`colspan`, `rowspan`) without a DOM;
+  `parseCellInput` takes `{ grouping: true }` for grouped digits.
+
+- `vastgrid`: cells can be edited in grids whose source can write them (`capabilities.edit`). Typing
+  replaces the active cell's value (also with an IME: the editor is a text field over the cell), F2 or a
+  double click edits it, Enter and Tab save and move, Alt+Enter starts a new line, Esc cancels, and Delete
+  clears the selected cells. Values are checked against the column's type and by `validateCell` (also
+  asynchronous); writes show while they save, and failed writes and conflicts with changes made meanwhile
+  offer Retry, Overwrite or Discard. After a write the grid reads the rows again without blinking and,
+  when its sort, filters or search use the written column, creates its view again in place. `readOnly`
+  keeps a grid read-only, and `onCellsChange` reports saved and failed writes. In a grid that edits, F2
+  and a double click open the editor instead of the cell inspector (which stays in the context menu);
+  `onCellDoubleClick` can prevent both. Read-only sources work as before. Formula columns are never
+  written, and show, sort and filter by the written values.
+- `vastgrid-core`: `TableSource.updateCells` writes cells of sources that report `capabilities.edit`, all
+  or none, by the row's position in the table (`rowIds`) and its `revision`, refusing values that do not
+  fit (`invalid_value`), cells changed meanwhile (`edit_conflict`), other revisions (`revision_changed`)
+  and read-only columns (`ColumnSchema.readOnly`). Writes change `TableInfo.edits` instead of the
+  revision, so checked rows stay checked. `ArraySource` writes with `editable: true`; `RemoteSource` and
+  the protocol carry the `update` request and report other clients' writes. `parseCellInput` and
+  `normalizeCellValue` check values without losing digits (64-bit integers and decimals stay text).
+  `RowCache.invalidate()` reads rows again while showing the old ones, and `RowCache.patch()` sets a
+  loaded cell.
+- `vastgrid-duckdb`: `TableEngine` writes cells with `editable: true`. Written values are kept in the
+  engine, apart from the file, and every request (rows, views, statistics, summaries, find, exports)
+  reads them; reading rows of a 5M-row table stays at 3–4 ms per block. Views that depend on a written
+  column are dropped. A table with written cells is not closed to keep `maxTables`, nor opened again when
+  its file changes.
+
 - `vastgrid`: `columnGroups` names groups of columns in header rows above the column names; nested
   groups add rows of `groupHeaderHeight` (`--vg-group-header-height`, 24px). Groups follow their columns:
   moving, hiding or freezing columns so that a group's columns are apart splits its header, each part

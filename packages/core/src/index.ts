@@ -1,6 +1,17 @@
 export { ArraySource, type ArraySourceOptions } from "./array-source.js";
 export { type BlockState, CacheBlock, RowCache, type RowCacheOptions } from "./cache.js";
-export { toHtmlTable, toMarkdownTable, toTsv } from "./clipboard.js";
+export {
+  type CellInputError,
+  type CellInputOptions,
+  type CellInputResult,
+  editableColumn,
+  editableType,
+  editText,
+  normalizeCellValue,
+  parseCellInput,
+  sameCellValue,
+} from "./cell-input.js";
+export { parseHtmlTable, parseTsv, toHtmlTable, toMarkdownTable, toTsv } from "./clipboard.js";
 export {
   type ColumnGroupSpan,
   columnGroupDepth,
@@ -10,6 +21,12 @@ export {
   spanAt,
 } from "./column-groups.js";
 export { isNumericType, isTemporalType } from "./column-type.js";
+export {
+  EditHistory,
+  type EditHistoryOptions,
+  type HistoryChange,
+  type HistoryEntry,
+} from "./edit-history.js";
 export {
   EXPORT_EXTENSIONS,
   EXPORT_MEDIA_TYPES,
@@ -138,6 +155,7 @@ export {
   isAbortError,
   isEmptyQuery,
   MAX_TEXT_LIMIT,
+  MAX_UPDATE_CELLS,
   queryFormulas,
   SourceError,
   type TableChange,

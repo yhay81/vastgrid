@@ -25,6 +25,7 @@ import {
   compileFormulas,
   DEFAULT_PIVOT_COLUMNS,
   ErrorCodes,
+  editText,
   type FormulaColumn,
   filterLeaves,
   filtersRows,
@@ -36,14 +37,18 @@ import {
   isAbortError,
   isGroupableType,
   parseGridState,
+  parseHtmlTable,
+  parseTsv,
   type RowSelection,
   resolveGridState,
+  type SaveResult,
   type TableInfo,
   type TableSource,
   type ViewQuery,
 } from "vastgrid-core";
 import type { CellActionHook, DrawCell } from "./cell-render.js";
 import { StatusBar, Toolbar } from "./components/bars.js";
+import { CellEditor } from "./components/cell-editor.js";
 import { CellInspector } from "./components/cell-inspector.js";
 import { ColumnsPanel } from "./components/columns-panel.js";
 import { DetailFields, DetailPanel, type DetailPanelProps } from "./components/detail-panel.js";
@@ -58,6 +63,16 @@ import { StatsPanel } from "./components/stats-panel.js";
 import { TotalsRow, totalText } from "./components/totals-row.js";
 import { CopyRangesError, CopyTooLargeError, GridController, type Hit, ViewBuildingError } from "./controller.js";
 import { DetailTracker, detailKeyAction } from "./detail.js";
+import {
+  type CellProblem,
+  EditTooLargeError,
+  type GridCellsChangeEvent,
+  type GridEditReason,
+  type GridHistoryState,
+  PasteRangesError,
+  type TargetCell,
+  type ValidateCell,
+} from "./editing.js";
 import type { GridCellEvent, GridColumnsEvent, GridRowSelectionEvent, GridSelectionEvent } from "./events.js";
 import { exportSupport, type GridExportOptions, offeredFormats } from "./export.js";
 import { pivotColumnFormats, pivotColumnGroups } from "./grouping.js";
@@ -172,9 +187,24 @@ export interface DataGridProps {
   onCellClick?: (event: GridCellEvent) => void;
   /**
    * Called when a cell is double-clicked, or F2 is pressed on the active cell. `event.preventDefault()`
-   * keeps the cell inspector closed.
+   * keeps the cell inspector closed and, in a grid that edits, the cell editor.
    */
   onCellDoubleClick?: (event: GridCellEvent) => void;
+  /**
+   * Offers no editing, also when the source can write cells. Grids edit only sources that report
+   * `capabilities.edit` (for example `ArraySource` with `editable`); columns marked `readOnly` stay
+   * read-only. Defaults to `false`.
+   */
+  readOnly?: boolean;
+  /**
+   * Checks a value before it is written, after the grid checked its type: return a message to refuse
+   * it. It may return a promise. Keep the function stable.
+   */
+  validateCell?: ValidateCell;
+  /** Called when edited cells were saved by the source, or failed to save (see the event's `status`). */
+  onCellsChange?: (event: GridCellsChangeEvent) => void;
+  /** Called when what can be undone or redone changes, for example to enable an app's Undo button. */
+  onHistoryChange?: (state: GridHistoryState) => void;
   /**
    * Settings applied when a grid starts (for each new `source`), for example from `getState()` saved
    * earlier. They apply once the table's columns are known.
@@ -245,6 +275,18 @@ export interface DataGridHandle {
   closeDetail(): void;
   /** Whether the detail panel is open. */
   readonly detailOpen: boolean;
+  /** Undoes the last saved write (a typed value, a paste, a fill, a clear). Resolves whether it was saved. */
+  undo(): Promise<boolean>;
+  /** Writes the last undone write again. Resolves whether it was saved. */
+  redo(): Promise<boolean>;
+  /** What can be undone and redone now. */
+  readonly history: GridHistoryState;
+  /**
+   * Saves the written cells into the source's file, for sources that can (`capabilities.save`, for example
+   * the DuckDB server with `saveFiles`), as ⌘/Ctrl + S does. Resolves with the records written, or null
+   * when it failed (the grid tells the user why).
+   */
+  save(): Promise<SaveResult | null>;
   readonly controller: GridController;
   /** The canvas renderer, for diagnostics such as `renderer.timings()`. Null before the grid mounts. */
   readonly renderer: CanvasRenderer | null;
@@ -335,6 +377,93 @@ async function writeClipboard(text: Promise<string>, html: Promise<string | null
     return;
   }
   await clipboard.writeText(await text);
+}
+
+/** The cell being edited, named by its row's position in the table so that it survives a new view. */
+interface EditorState {
+  row: number;
+  col: number;
+  rowId: number;
+  column: number;
+  /** The value when editing started (cut text is read whole). */
+  previous: CellValue | undefined;
+  error: string | null;
+  /** `validateCell` is checking the value. */
+  checking: boolean;
+}
+
+/** Whether a key types text (a character, or the start of an IME composition), which starts editing. */
+function startsTyping(event: KeyboardEvent<HTMLElement>) {
+  if (event.key === "Process" || event.keyCode === 229) return true;
+  // AltGr gives Ctrl+Alt on Windows; Option gives characters on a Mac.
+  const shortcut = event.metaKey || (event.ctrlKey && !event.altKey);
+  return event.key.length === 1 && event.key !== " " && !shortcut;
+}
+
+/** Shows writes that take a moment to save, and a write that failed, with what can be done about it. */
+function EditBar({
+  controller,
+  messages,
+  count,
+  onSave,
+}: {
+  controller: GridController;
+  messages: Messages;
+  count: (value: number) => string;
+  onSave: () => void;
+}) {
+  const saving = controller.edits.saving;
+  const failed = controller.edits.failed;
+  const unsaved = controller.edits.unsaved;
+  // Saving is shown only when it takes a moment, so that quick saves do not blink.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (saving === 0) {
+      setSlow(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlow(true), 400);
+    return () => clearTimeout(timer);
+  }, [saving]);
+  if (!failed && !(slow && saving > 0) && unsaved === 0) return null;
+  if (!failed && !(slow && saving > 0)) {
+    // Written cells that the file does not have yet.
+    return (
+      <div className="vg-editbar" role="status">
+        <span>{controller.edits.savingFile ? messages.fileSaving : messages.unsavedCells(count(unsaved))}</span>
+        <button type="button" className="vg-button" disabled={controller.edits.savingFile} onClick={onSave}>
+          {messages.saveFile}
+        </button>
+      </div>
+    );
+  }
+  if (!failed) {
+    return (
+      <div className="vg-editbar" role="status">
+        <span>{messages.editSaving(count(saving))}</span>
+      </div>
+    );
+  }
+  const conflict = failed.error?.code === "edit_conflict";
+  const retryable = controller.edits.retryable(failed);
+  const text = !retryable
+    ? messages.editRevisionChanged
+    : conflict
+      ? messages.editConflict
+      : messages.editFailed(failed.error?.message ?? "");
+  return (
+    <div className="vg-editbar" role="alert" data-failed="true">
+      <span>{text}</span>
+      {retryable && (
+        <button type="button" className="vg-button" onClick={() => void controller.edits.retry(conflict)}>
+          {conflict ? messages.editOverwrite : messages.retry}
+        </button>
+      )}
+      <button type="button" className="vg-button" onClick={() => controller.edits.discard()}>
+        {messages.editDiscard}
+      </button>
+    </div>
+  );
 }
 
 /**
@@ -436,6 +565,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       checkboxSelection: checkboxSelection && gridSource === source,
       rowKey: gridSource === source ? rowKey : undefined,
       followTail,
+      readOnly: props.readOnly,
+      validateCell: props.validateCell,
     });
     const state = nextState.current ?? (gridSource === source ? props.initialState : undefined);
     nextState.current = null;
@@ -494,6 +625,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   useEffect(() => {
     controller.options.followTail = followTail;
   }, [controller, followTail]);
+
+  useEffect(() => {
+    controller.options.readOnly = props.readOnly;
+    controller.options.validateCell = props.validateCell;
+    controller.emit();
+  }, [controller, props.readOnly, props.validateCell]);
 
   useEffect(() => {
     controller.options.drawCell = props.drawCell;
@@ -691,8 +828,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     const onCopy = (event: ClipboardEvent) => {
       if (document.activeElement === scroller) copyHandler.current(event);
     };
+    const onPaste = (event: ClipboardEvent) => {
+      if (document.activeElement === scroller) pasteHandler.current(event);
+    };
     document.addEventListener("beforecopy", onBeforeCopy);
     document.addEventListener("copy", onCopy);
+    document.addEventListener("paste", onPaste);
     const refreshTheme = () => renderer.setTheme(resolveTheme(root));
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     media.addEventListener("change", refreshTheme);
@@ -711,6 +852,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       scroller.removeEventListener("scroll", onScroll);
       document.removeEventListener("beforecopy", onBeforeCopy);
       document.removeEventListener("copy", onCopy);
+      document.removeEventListener("paste", onPaste);
       media.removeEventListener("change", refreshTheme);
       themeObserver.disconnect();
       renderer.dispose();
@@ -744,6 +886,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       controller.onColumnsChange((event) => handlers.current.onColumnsChange?.(event)),
       controller.onStateChange((state) => handlers.current.onStateChange?.(fullStateRef.current(state))),
       controller.onRowSelectionChange((event) => handlers.current.onRowSelectionChange?.(event)),
+      controller.edits.onChange((event) => handlers.current.onCellsChange?.(event)),
+      controller.edits.onHistoryChange((state) => handlers.current.onHistoryChange?.(state)),
       // The grid of groups has no formula columns of its own.
       controller.onFormulasChange((list) => {
         if (controller.source === handlers.current.source) handlers.current.onFormulasChange?.(list);
@@ -856,6 +1000,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       get detailOpen() {
         return detailOpenRef.current;
       },
+      undo: () => controller.edits.undo(),
+      save: () => saveFileRef.current(),
+      redo: () => controller.edits.redo(),
+      get history() {
+        return controller.edits.historyState;
+      },
       controller,
       get renderer() {
         return rendererRef.current;
@@ -928,6 +1078,299 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   /** Options of a copy started from the keyboard, answered by the browser's own copy event. */
   const pendingCopy = useRef<{ headers?: boolean } | null>(null);
   const copyHandler = useRef<(event: ClipboardEvent) => void>(() => undefined);
+
+  // ----- editing -----
+
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const editorBoxRef = useRef<HTMLDivElement>(null);
+  const [editing, setEditingState] = useState<EditorState | null>(null);
+  const editingRef = useRef<EditorState | null>(null);
+  const setEditing = useCallback((state: EditorState | null) => {
+    editingRef.current = state;
+    setEditingState(state);
+  }, []);
+
+  /** The text of a problem with a value, for the editor or a notice. */
+  function problemText(problem: CellProblem) {
+    if (problem.kind === "readOnly") return messages.editReadOnly;
+    if (problem.kind === "input") return messages.editInvalid[problem.error];
+    return problem.message;
+  }
+
+  /**
+   * Opens the editor on the active cell. `replace` starts empty, for the key being typed (the key's own
+   * text, also an IME's, goes into the editor); `edit` starts with the cell's value. Returns false when
+   * the cell cannot be edited.
+   */
+  function startEdit(mode: "replace" | "edit") {
+    const c = controller;
+    const textarea = editorRef.current;
+    const { row, col } = c.selection.active;
+    if (!textarea || !c.edits.cellEditable(row, col)) return false;
+    const value = c.value(row, col);
+    const rowId = c.rowId(row);
+    const column = c.visible[col]?.index;
+    if (rowId === null || column === undefined || value === undefined) return false;
+    if (!c.selection.single) c.selection.select({ row, col });
+    c.ensureVisible(row, col);
+    textarea.value = mode === "replace" ? "" : editText(value);
+    textarea.style.height = "";
+    placeEditor({ row, col });
+    textarea.focus({ preventScroll: true });
+    if (mode === "edit") textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    const state: EditorState = { row, col, rowId, column, previous: value, error: null, checking: false };
+    setEditing(state);
+    // Text cut for display is read whole before it is edited.
+    if (mode === "edit" && typeof value === "string" && value.endsWith("…")) {
+      void c.fullValue(row, col).then(
+        (full) => {
+          if (editingRef.current !== state || textarea.value !== editText(value)) return;
+          textarea.value = editText(full);
+          setEditing({ ...state, previous: full });
+        },
+        () => undefined,
+      );
+    }
+    return true;
+  }
+
+  /** Places the editor over its cell (or hides it while the cell is scrolled away). */
+  function placeEditor(cell: { row: number; col: number } | null = editingRef.current) {
+    const box = editorBoxRef.current?.firstElementChild as HTMLElement | null | undefined;
+    const c = controller;
+    if (!box || !cell) return;
+    const place = c.cellBox(cell.row, cell.col);
+    box.style.left = `${place.left}px`;
+    box.style.top = `${place.top}px`;
+    box.style.minWidth = `${Math.max(place.width, 60)}px`;
+    box.style.setProperty("--vg-editor-height", `${place.height}px`);
+    box.style.visibility = place.shown ? "" : "hidden";
+  }
+
+  useEffect(() => {
+    if (!editing) return;
+    placeEditor();
+    return controller.onRender(() => requestAnimationFrame(() => placeEditor()));
+  });
+
+  /** Closes the editor; the focus returns to the grid unless it moved elsewhere. */
+  function closeEditor() {
+    const focused = document.activeElement;
+    setEditing(null);
+    if (!focused || focused === editorRef.current || focused === document.body) focusGrid();
+  }
+
+  /** Checks and writes the editor's text, then moves the active cell by `move`. */
+  async function commitEdit(move: [number, number] | null) {
+    const state = editingRef.current;
+    const textarea = editorRef.current;
+    if (!state || state.checking || !textarea) return;
+    const c = controller;
+    const text = textarea.value;
+    const previous = typeof state.previous === "string" && state.previous.endsWith("…") ? undefined : state.previous;
+    const checking: EditorState = { ...state, checking: true, error: null };
+    if (c.options.validateCell) setEditing(checking);
+    else editingRef.current = checking;
+    const prepared = await c.edits.prepare(
+      [{ row: state.row, col: state.col, rowId: state.rowId, column: state.column, text, previous }],
+      "edit",
+    );
+    if (editingRef.current !== checking) return;
+    if (!prepared.ok) {
+      setEditing({ ...state, checking: false, error: problemText(prepared.problems[0].problem) });
+      if (move) textarea.focus({ preventScroll: true });
+      return;
+    }
+    closeEditor();
+    if (move) {
+      const target = c.selection.advance(move[0], move[1]);
+      c.selectionChanged(target);
+    }
+    void c.edits.write(prepared.changes, "edit");
+  }
+
+  function cancelEdit() {
+    if (!editingRef.current) return;
+    closeEditor();
+  }
+
+  /** Writes blanks into the cells of the selection that can be written (Delete, Backspace). */
+  async function clearSelection() {
+    const c = controller;
+    try {
+      const cells: TargetCell[] = [];
+      for (const range of c.selection.ranges) {
+        const cols: number[] = [];
+        for (let col = range.left; col <= range.right; col++) cols.push(col);
+        cells.push(...(await c.edits.targetCells(range.top, range.bottom + 1, cols)));
+      }
+      if (cells.length === 0) {
+        announce(messages.editReadOnly);
+        return;
+      }
+      await writeCells(
+        cells.map((cell) => ({ ...cell, text: "" })),
+        "clear",
+      );
+    } catch (error) {
+      announce(
+        error instanceof EditTooLargeError
+          ? messages.editTooLarge(count(error.limit))
+          : messages.editFailed(String(error)),
+      );
+    }
+  }
+
+  /** The paste that is reading rows, which Esc or a newer paste cancels. */
+  const pasteAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => pasteAbort.current?.abort(), []);
+
+  /**
+   * Pastes rows of values from the selection's top-left cell (see `GridEdits.pasteTargets`), checking
+   * every value first: one value that does not fit refuses the whole paste.
+   */
+  async function pasteValues(values: string[][] | null) {
+    const c = controller;
+    if (!c.edits.enabled) return;
+    if (!values || values.length === 0) {
+      announce(messages.pasteEmpty);
+      return;
+    }
+    pasteAbort.current?.abort();
+    const abort = new AbortController();
+    pasteAbort.current = abort;
+    const slow = setTimeout(() => announce(messages.pasting), 300);
+    try {
+      const plan = await c.edits.pasteTargets(values, abort.signal);
+      abort.signal.throwIfAborted();
+      if (plan.inputs.length === 0) {
+        announce(messages.pasteEmpty);
+        return;
+      }
+      clearTimeout(slow);
+      const saved = await writeCells(plan.inputs, "paste", abort.signal);
+      if (saved && (plan.cutRows > 0 || plan.cutCols > 0)) {
+        announce(
+          `${messages.editSaved(count(plan.inputs.length))} ${messages.pasteCut(count(plan.cutRows), count(plan.cutCols))}`,
+        );
+      }
+    } catch (error) {
+      if (abort.signal.aborted) {
+        if (pasteAbort.current === abort) announce(messages.pasteCanceled);
+      } else if (error instanceof PasteRangesError) announce(messages.pasteRanges);
+      else if (error instanceof EditTooLargeError) announce(messages.editTooLarge(count(error.limit)));
+      else announce(messages.editFailed(error instanceof Error ? error.message : String(error)));
+    } finally {
+      clearTimeout(slow);
+      if (pasteAbort.current === abort) pasteAbort.current = null;
+    }
+  }
+
+  /** The browser's paste command (⌘V or Ctrl+V, or Paste in the app's Edit menu) while the grid has focus. */
+  const pasteHandler = useRef<(event: ClipboardEvent) => void>(() => undefined);
+  pasteHandler.current = (event: ClipboardEvent) => {
+    if (!event.clipboardData || !controller.edits.enabled) return;
+    event.preventDefault();
+    const text = event.clipboardData.getData("text/plain");
+    const html = event.clipboardData.getData("text/html");
+    // Spreadsheets copy both; their text is tab-separated values. A table copied from a page may have only HTML.
+    void pasteValues(text ? parseTsv(text) : html ? parseHtmlTable(html) : null);
+  };
+
+  /** Paste from the context menu, which reads the clipboard with the Clipboard API (the browser may ask). */
+  async function pasteFromClipboard() {
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
+    try {
+      if (!clipboard) throw new Error("The clipboard is not available.");
+      let text = "";
+      let html = "";
+      if (clipboard.read) {
+        for (const item of await clipboard.read()) {
+          if (!text && item.types.includes("text/plain")) text = await (await item.getType("text/plain")).text();
+          if (!html && item.types.includes("text/html")) html = await (await item.getType("text/html")).text();
+        }
+      } else {
+        text = await clipboard.readText();
+      }
+      await pasteValues(text ? parseTsv(text) : html ? parseHtmlTable(html) : null);
+    } catch (error) {
+      announce(messages.pasteFailed(error instanceof Error ? error.message : String(error)));
+    }
+  }
+
+  /** Undoes or redoes the last write, as ⌘/Ctrl + Z and ⌘/Ctrl + Shift + Z (or Ctrl + Y) do. */
+  async function undoRedo(direction: "undo" | "redo") {
+    const c = controller;
+    const state = c.edits.historyState;
+    const entry = direction === "undo" ? c.edits.history.peekUndo() : c.edits.history.peekRedo();
+    if (!entry || !(direction === "undo" ? state.canUndo : state.canRedo)) {
+      announce(direction === "undo" ? messages.nothingToUndo : messages.nothingToRedo);
+      return;
+    }
+    const saved = await (direction === "undo" ? c.edits.undo() : c.edits.redo());
+    if (saved) {
+      const cells = count(entry.changes.length);
+      announce(direction === "undo" ? messages.undone(cells) : messages.redone(cells));
+    }
+  }
+
+  /**
+   * Fills down (⌘/Ctrl + D) or right (⌘/Ctrl + R): copies the first row or column of each selected range
+   * into the rest of it, as one write (see `GridEdits.fillTargets`).
+   */
+  async function fill(direction: "down" | "right") {
+    const c = controller;
+    try {
+      const inputs = await c.edits.fillTargets(direction, c.options.copyLimit);
+      if (inputs.length === 0) {
+        announce(messages.fillEmpty);
+        return;
+      }
+      await writeCells(inputs, "fill");
+    } catch (error) {
+      announce(
+        error instanceof EditTooLargeError
+          ? messages.editTooLarge(count(error.limit))
+          : messages.editFailed(error instanceof Error ? error.message : String(error)),
+      );
+    }
+  }
+
+  /** Saves the written cells into the source's file (⌘/Ctrl + S, the edit bar's button). */
+  async function saveFile(): Promise<SaveResult | null> {
+    const c = controller;
+    if (!c.edits.canSave || c.edits.savingFile) return null;
+    try {
+      const result = await c.edits.save();
+      announce(messages.fileSaved(count(result.records)));
+      return result;
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? error.code : undefined;
+      announce(
+        code === "file_changed"
+          ? messages.fileChanged
+          : messages.fileSaveFailed(error instanceof Error ? error.message : String(error)),
+      );
+      return null;
+    }
+  }
+  const saveFileRef = useRef(saveFile);
+  saveFileRef.current = saveFile;
+
+  /** Checks and writes cells as one write, telling the user what failed. Resolves whether it was written. */
+  async function writeCells(inputs: (TargetCell & { text: string })[], reason: GridEditReason, signal?: AbortSignal) {
+    const c = controller;
+    const prepared = await c.edits.prepare(inputs, reason, signal);
+    if (!prepared.ok) {
+      const first = prepared.problems[0];
+      const where = messages.cell(count(first.row + 1), labelOf(first.col));
+      announce(messages.editProblems(count(prepared.problems.length), `${where}: ${problemText(first.problem)}`));
+      return false;
+    }
+    const saved = await c.edits.write(prepared.changes, reason);
+    if (saved && prepared.changes.length > 1) announce(messages.editSaved(count(prepared.changes.length)));
+    return saved;
+  }
 
   // ----- pointer -----
 
@@ -1182,7 +1625,13 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     } else if (hit.zone === "cell") {
       const cellEvent = controller.cellEvent(hit.row, hit.col, "pointer", event);
       props.onCellDoubleClick?.(cellEvent);
-      if (!cellEvent.defaultPrevented) {
+      if (cellEvent.defaultPrevented) return;
+      // A grid that edits opens the editor; the inspector stays in the context menu.
+      if (controller.edits.cellEditable(hit.row, hit.col)) {
+        controller.selection.select({ row: hit.row, col: hit.col });
+        controller.selectionChanged();
+        startEdit("edit");
+      } else {
         setOverlay({ kind: "inspector", row: hit.row, col: hit.col, anchor: cellAnchor(hit.row, hit.col) });
       }
     }
@@ -1297,6 +1746,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           const cellEvent = c.cellEvent(c.selection.active.row, c.selection.active.col, "keyboard", event);
           props.onCellDoubleClick?.(cellEvent);
           if (cellEvent.defaultPrevented) break;
+          if (startEdit("edit")) break;
         }
         setOverlay({
           kind: "inspector",
@@ -1307,6 +1757,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       }
       case "Escape":
         if (copyAbort.current) copyAbort.current.abort();
+        else if (pasteAbort.current) pasteAbort.current.abort();
         else if (findOpen) setFindOpen(false);
         else if (!c.selection.single) {
           c.selection.select(c.selection.active);
@@ -1344,6 +1795,27 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
             ...c.selection.active,
             anchor: cellAnchor(c.selection.active.row, c.selection.active.col),
           });
+        } else if (primary && !event.altKey && !event.shiftKey && /^[dr]$/i.test(event.key) && c.edits.enabled) {
+          // Instead of the browser's bookmark and reload shortcuts, while the grid has focus.
+          void fill(event.key.toLowerCase() === "d" ? "down" : "right");
+        } else if (primary && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "s" && c.edits.canSave) {
+          void saveFile();
+        } else if (primary && !event.altKey && event.key.toLowerCase() === "z" && c.edits.enabled) {
+          void undoRedo(event.shiftKey ? "redo" : "undo");
+        } else if (
+          event.ctrlKey &&
+          !event.metaKey &&
+          !event.shiftKey &&
+          event.key.toLowerCase() === "y" &&
+          c.edits.enabled
+        ) {
+          void undoRedo("redo");
+        } else if ((event.key === "Delete" || event.key === "Backspace") && !primary && c.edits.enabled) {
+          void clearSelection();
+        } else if (startsTyping(event) && c.edits.enabled) {
+          // The key's text (or the IME's) goes into the editor, which takes the focus now.
+          if (startEdit("replace")) return;
+          announce(messages.editReadOnly);
         } else {
           return;
         }
@@ -1538,10 +2010,58 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         disabled: !ready || !capabilities?.sort,
         onSelect: () => c.sortBy(col, "desc"),
       },
+      ...(c.edits.enabled
+        ? [
+            {
+              label: messages.editCell,
+              separator: true,
+              shortcut: "F2",
+              disabled: !c.edits.cellEditable(row, col),
+              onSelect: () => {
+                c.selection.select({ row, col });
+                c.selectionChanged();
+                // After the menu returned the focus to the grid.
+                setTimeout(() => startEdit("edit"), 0);
+              },
+            },
+            {
+              label: messages.undo,
+              shortcut: isMac ? "⌘Z" : "Ctrl+Z",
+              disabled: !c.edits.historyState.canUndo,
+              onSelect: () => void undoRedo("undo"),
+            },
+            {
+              label: messages.redo,
+              shortcut: isMac ? "⇧⌘Z" : "Ctrl+Y",
+              disabled: !c.edits.historyState.canRedo,
+              onSelect: () => void undoRedo("redo"),
+            },
+            {
+              label: messages.paste,
+              shortcut: isMac ? "⌘V" : "Ctrl+V",
+              onSelect: () => void pasteFromClipboard(),
+            },
+            {
+              label: messages.fillDown,
+              shortcut: isMac ? "⌘D" : "Ctrl+D",
+              onSelect: () => void fill("down"),
+            },
+            {
+              label: messages.fillRight,
+              shortcut: isMac ? "⌘R" : "Ctrl+R",
+              onSelect: () => void fill("right"),
+            },
+            {
+              label: messages.clearCells,
+              shortcut: isMac ? "⌫" : "Delete",
+              onSelect: () => void clearSelection(),
+            },
+          ]
+        : []),
       {
         label: messages.inspectCell,
-        separator: true,
-        shortcut: "F2",
+        separator: !c.edits.enabled,
+        shortcut: c.edits.enabled ? undefined : "F2",
         onSelect: () => setOverlay({ kind: "inspector", row, col, anchor: cellAnchor(row, col) }),
       },
       {
@@ -1847,7 +2367,13 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                 )}
                 {/* biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas. */}
                 {/* biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant). */}
-                <div role="gridcell" id={cellId} aria-colindex={active.col + 2} aria-selected="true">
+                <div
+                  role="gridcell"
+                  id={cellId}
+                  aria-colindex={active.col + 2}
+                  aria-selected="true"
+                  aria-readonly={c.edits.enabled ? !c.edits.cellEditable(active.row, active.col) : undefined}
+                >
                   {/* Focus stays on the grid, and Space activates the cell (see cell-render.ts). */}
                   {activeAction?.kind === "link" ? (
                     // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
@@ -1924,6 +2450,24 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
             {notice}
           </div>
         )}
+        {c.edits.enabled && (
+          <div ref={editorBoxRef} className="vg-editor-layer">
+            <CellEditor
+              ref={editorRef}
+              open={editing !== null}
+              label={editing ? messages.editorLabel(messages.cell(count(editing.row + 1), labelOf(editing.col))) : ""}
+              error={editing?.error ?? null}
+              checking={editing?.checking ?? false}
+              messages={messages}
+              onCommit={(move) => void commitEdit(move)}
+              onCancel={cancelEdit}
+              onBlur={() => {
+                // Clicking elsewhere saves; a refused value keeps the editor open with its message.
+                if (editingRef.current && !editingRef.current.checking) void commitEdit(null);
+              }}
+            />
+          </div>
+        )}
         {detailOpen && (
           <DetailPanel
             ref={detailRef}
@@ -1952,6 +2496,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           />
         )}
       </div>
+      <EditBar controller={c} messages={messages} count={count} onSave={() => void saveFile()} />
       {statusBar && <StatusBar controller={c} messages={messages} />}
       {overlay?.kind === "columnMenu" && (
         <Popover

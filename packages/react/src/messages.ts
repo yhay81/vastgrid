@@ -1,4 +1,4 @@
-import type { AggregateFunction } from "vastgrid-core";
+import type { AggregateFunction, CellInputError } from "vastgrid-core";
 
 /** Every text the grid shows. Pass a partial object to `messages` to change some of them. */
 export interface Messages {
@@ -235,6 +235,60 @@ export interface Messages {
   pivotedBy: (columns: string) => string;
   /** A cross tabulation would make more columns than the limit. */
   pivotTooWide: (limit: string) => string;
+  /** Context menu items, and the label of the cell editor. */
+  editCell: string;
+  clearCells: string;
+  editorLabel: (cell: string) => string;
+  /** Under the editor: how to save, cancel and start a new line. */
+  editHint: string;
+  /** While `validateCell` checks a value. */
+  editChecking: string;
+  /** Why a value does not fit its column, by `CellInputError`. */
+  editInvalid: Record<CellInputError, string>;
+  editReadOnly: string;
+  /** Some cells cannot take their values: how many, and the first problem. */
+  editProblems: (cells: string, first: string) => string;
+  editTooLarge: (limit: string) => string;
+  editSaving: (cells: string) => string;
+  editSaved: (cells: string) => string;
+  editFailed: (message: string) => string;
+  /** Another change of the same cells was saved first. */
+  editConflict: string;
+  /** The table was read again (another revision): the write cannot be sent again. */
+  editRevisionChanged: string;
+  editOverwrite: string;
+  editDiscard: string;
+  /** Pasting cells (in a grid that edits). */
+  paste: string;
+  pasting: string;
+  pasteCanceled: string;
+  pasteEmpty: string;
+  /** Several ranges are selected and the clipboard holds more than one value. */
+  pasteRanges: string;
+  /** Rows and columns of the pasted values past the end of the table. */
+  pasteCut: (rows: string, cols: string) => string;
+  pasteFailed: (message: string) => string;
+  /** Undo and redo of written cells. */
+  undo: string;
+  redo: string;
+  undone: (cells: string) => string;
+  redone: (cells: string) => string;
+  /** Nothing to undo, or a write is still saving or failed. */
+  nothingToUndo: string;
+  nothingToRedo: string;
+  /** Copy the first row (column) of the selection into the rest of it. */
+  fillDown: string;
+  fillRight: string;
+  /** The selection has no cells to fill (for example one cell in the first row). */
+  fillEmpty: string;
+  /** Saving written cells into the source's file (⌘/Ctrl + S). */
+  saveFile: string;
+  unsavedCells: (cells: string) => string;
+  fileSaving: string;
+  fileSaved: (records: string) => string;
+  /** The file was changed by someone else since it was read: it was not saved. */
+  fileChanged: string;
+  fileSaveFailed: (message: string) => string;
   /** Column menu items for formula columns (computed per row by an expression). */
   addFormula: string;
   editFormula: string;
@@ -489,6 +543,58 @@ export const en: Messages = {
   pivotedBy: (columns) => `across ${columns}`,
   pivotTooWide: (limit) =>
     `The cross tabulation would make more than ${limit} columns. Filter the rows or pick columns with fewer values.`,
+  editCell: "Edit cell",
+  clearCells: "Clear contents",
+  editorLabel: (cell) => `Edit ${cell}`,
+  editHint: "Enter to save · Esc to cancel · Alt+Enter for a new line",
+  editChecking: "Checking…",
+  editInvalid: {
+    integer: "Enter a whole number.",
+    range: "The number is outside the range of this column.",
+    number: "Enter a number.",
+    decimal: "Enter a decimal number without an exponent.",
+    scale: "Too many digits after the decimal point for this column.",
+    precision: "Too many digits for this column.",
+    boolean: "Enter true or false.",
+    date: "Enter a date as yyyy-mm-dd.",
+    time: "Enter a time as hh:mm or hh:mm:ss.",
+    timestamp: "Enter a date and time as yyyy-mm-dd hh:mm:ss.",
+    uuid: "Enter a UUID.",
+    json: "Enter valid JSON.",
+    type: "Values of this type cannot be edited.",
+  },
+  editReadOnly: "This column is read-only.",
+  editProblems: (cells, first) => `${cells} cells cannot take their values. ${first}`,
+  editTooLarge: (limit) => `Change at most ${limit} cells at once.`,
+  editSaving: (cells) => `Saving ${cells} cells…`,
+  editSaved: (cells) => `Saved ${cells} cells.`,
+  editFailed: (message) => `Not saved: ${message}`,
+  editConflict: "Not saved: the cells were changed meanwhile. Their current values are shown.",
+  editRevisionChanged: "Not saved: the table was read again, so its rows may be other records now.",
+  editOverwrite: "Overwrite",
+  editDiscard: "Discard",
+  paste: "Paste",
+  pasting: "Reading the rows to paste into… Esc cancels.",
+  pasteCanceled: "Paste cancelled.",
+  pasteEmpty: "Nothing to paste.",
+  pasteRanges: "Several ranges can take one pasted value only. Select one range.",
+  pasteCut: (rows, cols) => `Left out past the end of the table: ${rows} rows, ${cols} columns.`,
+  pasteFailed: (message) => `Could not read the clipboard: ${message}`,
+  undo: "Undo",
+  redo: "Redo",
+  undone: (cells) => `Undone: ${cells} cells.`,
+  redone: (cells) => `Redone: ${cells} cells.`,
+  nothingToUndo: "Nothing to undo now.",
+  nothingToRedo: "Nothing to redo now.",
+  fillDown: "Fill down",
+  fillRight: "Fill right",
+  fillEmpty: "Select the cells to fill, with the values to copy in the first row or column.",
+  saveFile: "Save to file",
+  unsavedCells: (cells) => `${cells} changed cells are not saved to the file yet.`,
+  fileSaving: "Saving to the file…",
+  fileSaved: (records) => `Saved to the file: ${records} rows written.`,
+  fileChanged: "Not saved: the file was changed by someone else since it was read. Open it again to edit it.",
+  fileSaveFailed: (message) => `Not saved to the file: ${message}`,
   addFormula: "Add formula column…",
   editFormula: "Edit formula…",
   deleteFormula: "Delete formula column",
@@ -777,6 +883,58 @@ export const ja: Messages = {
   pivotHint: "この列の値ごとに、集計値の列を作ります。",
   pivotedBy: (columns) => `${columns} の値で列を作成`,
   pivotTooWide: (limit) => `クロス集計の列が ${limit} 列を超えます。行を絞り込むか、値の少ない列を選んでください。`,
+  editCell: "セルを編集",
+  clearCells: "内容を消去",
+  editorLabel: (cell) => `${cell} を編集`,
+  editHint: "Enter で確定・Esc で取消・Alt+Enter で改行",
+  editChecking: "確認しています…",
+  editInvalid: {
+    integer: "整数を入力してください。",
+    range: "この列の範囲を超える数値です。",
+    number: "数値を入力してください。",
+    decimal: "指数を使わない小数で入力してください。",
+    scale: "この列で使える小数点以下の桁数を超えています。",
+    precision: "この列で使える桁数を超えています。",
+    boolean: "true か false を入力してください。",
+    date: "日付を yyyy-mm-dd の形で入力してください。",
+    time: "時刻を hh:mm か hh:mm:ss の形で入力してください。",
+    timestamp: "日時を yyyy-mm-dd hh:mm:ss の形で入力してください。",
+    uuid: "UUID を入力してください。",
+    json: "正しい JSON を入力してください。",
+    type: "この型の値は編集できません。",
+  },
+  editReadOnly: "この列は読み取り専用です。",
+  editProblems: (cells, first) => `${cells} 個のセルに値を入れられません。${first}`,
+  editTooLarge: (limit) => `一度に変更できるのは ${limit} セルまでです。`,
+  editSaving: (cells) => `${cells} セルを保存しています…`,
+  editSaved: (cells) => `${cells} セルを保存しました。`,
+  editFailed: (message) => `保存できませんでした：${message}`,
+  editConflict: "保存できませんでした：その間にセルが変更されました。現在の値を表示しています。",
+  editRevisionChanged: "保存できませんでした：表が読み直され、行が別のレコードを指している可能性があります。",
+  editOverwrite: "上書き",
+  editDiscard: "破棄",
+  paste: "貼り付け",
+  pasting: "貼り付け先の行を読んでいます…（Esc で取消）",
+  pasteCanceled: "貼り付けを取り消しました。",
+  pasteEmpty: "貼り付けるものがありません。",
+  pasteRanges: "複数の範囲に貼り付けられるのは 1 つの値だけです。範囲を 1 つにしてください。",
+  pasteCut: (rows, cols) => `表の外にはみ出した ${rows} 行・${cols} 列は貼り付けませんでした。`,
+  pasteFailed: (message) => `クリップボードを読めませんでした：${message}`,
+  undo: "元に戻す",
+  redo: "やり直す",
+  undone: (cells) => `${cells} セルを元に戻しました。`,
+  redone: (cells) => `${cells} セルをやり直しました。`,
+  nothingToUndo: "いま元に戻せる操作はありません。",
+  nothingToRedo: "いまやり直せる操作はありません。",
+  fillDown: "下方向へコピー",
+  fillRight: "右方向へコピー",
+  fillEmpty: "埋めるセルを選んでください。コピーする値は選択範囲の先頭の行か列から取ります。",
+  saveFile: "ファイルに保存",
+  unsavedCells: (cells) => `変更した ${cells} セルは、まだファイルに保存していません。`,
+  fileSaving: "ファイルに保存しています…",
+  fileSaved: (records) => `ファイルに保存しました（${records} 行を書き直しました）。`,
+  fileChanged: "保存できませんでした：読み込んだ後にファイルが別の人に変更されました。開き直してから編集してください。",
+  fileSaveFailed: (message) => `ファイルに保存できませんでした：${message}`,
   addFormula: "計算列を追加…",
   editFormula: "式を編集…",
   deleteFormula: "計算列を削除",

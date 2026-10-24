@@ -159,7 +159,11 @@ const source = new ArraySource({
 | `onQueryChange` | `(query: ViewQuery) => void` | | 並べ替え・絞り込み・検索が変わったときに呼ばれます。 |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | 選択範囲かアクティブなセルが変わったときに呼ばれます。 |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | 列の幅・順序・表示・固定が変わったときに呼ばれます。 |
-| `onCellClick`、`onCellDoubleClick` | `(event: GridCellEvent) => void` | | セルのクリック（または Space）とダブルクリック（または F2）で呼ばれます。ダブルクリックで `preventDefault()` を呼ぶと、セルの詳細を開きません。 |
+| `onCellClick`、`onCellDoubleClick` | `(event: GridCellEvent) => void` | | セルのクリック（または Space）とダブルクリック（または F2）で呼ばれます。ダブルクリックで `preventDefault()` を呼ぶと、セルの詳細（またはセルのエディター）を開きません。 |
+| `readOnly` | `boolean` | `false` | source がセルを書き込める場合も、編集を提供しません。 |
+| `validateCell` | `(cell: GridCellValidation) => string \| null \| undefined \| Promise<…>` | | 書き込む前に値を検証します。拒否するときはメッセージを返します。 |
+| `onCellsChange` | `(event: GridCellsChangeEvent) => void` | | 編集したセルの保存が済んだとき、または失敗したときに呼ばれます。 |
+| `onHistoryChange` | `(state: GridHistoryState) => void` | | 元に戻せる・やり直せる操作が変わったときに呼ばれます。 |
 | `formulas` | `FormulaColumn[]` | | 計算列（`{ name, expression }`）。最初と、違う値を渡したときに適用します。 |
 | `onFormulasChange` | `(formulas: FormulaColumn[]) => void` | | 計算列が追加・編集・削除されたときに呼ばれます。 |
 | `initialState` | `GridState` | | グリッドを作るときに、表の列がわかった時点で適用する設定。 |
@@ -175,7 +179,7 @@ const source = new ArraySource({
 | `aria-label` | `string` | `messages.gridLabel` | スクリーンリーダー向けのグリッドの名前。 |
 
 ref からは `DataGridHandle` を使えます。`focus()`、`reload()`、`getQuery()`、`setQuery(query)`、`getState()`、
-`applyState(state)`、`goToRow(row)`、`openDetail({ focus })`、`closeDetail()`、`detailOpen`、`openExport()`、`getFormulas()`、`setFormulas(formulas)`、`getRowSelection()`、`setRowSelection(selection)`、グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()`
+`applyState(state)`、`goToRow(row)`、`undo()`、`redo()`、`history`、`save()`、`openDetail({ focus })`、`closeDetail()`、`detailOpen`、`openExport()`、`getFormulas()`、`setFormulas(formulas)`、`getRowSelection()`、`setRowSelection(selection)`、グリッドの状態を持つ `controller`、キャンバスの `renderer`（`renderer.timings()`
 などの診断用）があります。
 
 イベントは、セルのビューでの行 `row`、元の表での行 `rowId`、表示中の列の位置 `col`、表の列の番号 `column` を渡し、
@@ -362,6 +366,16 @@ const [checked, setChecked] = useState<RowSelection>({ type: "include", keys: []
 
 詳しくは[書き出し](https://vastgrid.yhay81.com/ja/guides/export/)を参照してください。
 
+### セルの編集
+
+グリッドは、セルを書き込める source（`capabilities.edit`）を編集できます。`editable: true` の `ArraySource` と、エンジンを `editable: true` で作った DuckDB サーバーが対応し、それ以外の source は読み取り専用のままです。文字を入力するとアクティブセルの値を置き換え（エディターはセルに重なるテキスト欄なので IME も使えます）、F2 かダブルクリックで編集し、Enter か Tab で確定して移動、Esc で取り消し、Delete で選択したセルを消去し、⌘/Ctrl + V で Excel や Google スプレッドシートからコピーした範囲（タブ区切りか HTML の表）をすべての値を検証してから貼り付けます。⌘/Ctrl + D と ⌘/Ctrl + R は選択範囲の先頭の行・列で下・右を埋め、⌘/Ctrl + Z と ⌘/Ctrl + Shift + Z は、書き込み単位（貼り付けや埋める操作は 1 回）で型と桁を保ったまま元に戻し、やり直します。値は桁を失わずに列の型で検証し（64 ビット整数と decimal は文字列のまま）、`validateCell`（非同期も可）でも検証します。保存中の書き込みは画面に表示し、失敗や他の利用者の変更との競合では［再試行］［上書き］［破棄］を選べます。DuckDB サーバーは `saveFiles` を指定すると、編集したセルを CSV・TSV ファイルに書き戻せます（⌘/Ctrl + S）。編集したフィールドだけを書き直し、ほかのバイト（引用符の中の改行、Shift_JIS などの文字コード、末尾の改行）はそのまま保ちます。一時ファイルを経由し、その間に他の人が変えたファイルには保存しません。書き込み後は行を読み直し、並べ替えや絞り込みが書き込んだ列を使うときは並べ替え・絞り込みもやり直します。統計・集計・書き出しも新しい値を読みます。DuckDB エンジンは、書き込んだ値を保存するまでファイルとは別に保持します。
+
+```tsx
+<DataGrid source={new ArraySource({ columns, rows, editable: true })} onCellsChange={(event) => save(event)} />
+```
+
+[セルの編集](https://vastgrid.yhay81.com/ja/guides/editing/)を参照してください。
+
 ### 計算列
 
 列メニューの「計算列を追加…」で、`qty * price` や `IF(due < '2024-07-01', '遅れ', '')` のような式で行ごとに計算する列を追加できます。計算は source が行い（DuckDB のエンジンは SQL で計算し、表をブラウザーに移しません）、ファイルの列と同じように並べ替え・絞り込み・統計・選択範囲の集計・書き出しができます。編集画面は入力中の式を確かめ、間違いを示します。式は独自の小さな言語（列名、四則演算、文字列をつなぐ `&`、比較、`AND`・`OR`・`NOT`、数値・文字列・日時・空白の関数）で、JavaScript や SQL として実行することはありません。エンジンは引用した列名・パラメーター・決まった関数の一覧だけで SQL を作ります。
@@ -436,7 +450,11 @@ DuckDB の処理を含み、HTTP は含みません。
 | ⌘/Ctrl ＋ C・⌘/Ctrl ＋ Shift ＋ C | コピー・見出しを含めてコピー |
 | ⌘/Ctrl ＋ F | 検索 |
 | Alt ＋ ↓ | 列のメニュー（並べ替え・絞り込み・統計・左右の固定・非表示） |
-| F2・ダブルクリック | セルの値の全体を表示 |
+| F2・ダブルクリック | セルの値の全体を表示（編集できるグリッドでは編集） |
+| 文字の入力・Delete・⌘/Ctrl + V（編集できるグリッド） | アクティブセルの値を置き換える・選択したセルを消去・貼り付け |
+| ⌘/Ctrl + D・⌘/Ctrl + R（編集できるグリッド） | 選択範囲の先頭の行・列で下方向・右方向へコピー |
+| ⌘/Ctrl + Z・⌘/Ctrl + Shift + Z か Ctrl + Y（編集できるグリッド） | 最後の書き込みを元に戻す・やり直す |
+| ⌘/Ctrl + S（`saveFiles` の DuckDB サーバーなど、保存できる source） | 編集したセルをファイルに保存 |
 | Alt ＋ Enter（もう一度でパネルへ）・Esc | アクティブな行の詳細パネルを開く・閉じる |
 | Shift ＋ F10・コンテキストメニューのキー・右クリック | セルのメニュー（コピー・この値で絞り込む・並べ替え） |
 
@@ -470,7 +488,7 @@ npm run bench
 
 ## 今後
 
-- セルの編集と、変えていない行を 1 バイトも変えない CSV への書き戻し
+これまでの予定（バイト単位で保つ CSV への書き戻しを含むセルの編集、式の列）は実装済みです。今後の予定は GitHub の issue で管理しています。
 
 既存のビューワーとグリッドの調査は [docs/research.ja.md](docs/research.ja.md) にあります。
 

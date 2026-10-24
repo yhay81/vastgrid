@@ -1,3 +1,4 @@
+import { editableType, normalizeCellValue, sameCellValue } from "./cell-input.js";
 import { isNumericType } from "./column-type.js";
 import { EXPORT_MEDIA_TYPES, TABLE_FILE_FORMATS, type TableFileFormat, writeTableFile } from "./export-file.js";
 import { matchesFilterNode, pruneFilterNode } from "./filter-tree.js";
@@ -5,7 +6,15 @@ import { numericValue, plainText } from "./format.js";
 import { formulaEvaluator, formulaSchema } from "./formula.js";
 import { GroupAccumulator } from "./group.js";
 import { ErrorCodes } from "./protocol.js";
-import { abortError, isEmptyQuery, queryFormulas, SourceError, type TableSource } from "./source.js";
+import {
+  abortError,
+  isEmptyQuery,
+  MAX_UPDATE_CELLS,
+  queryFormulas,
+  SourceError,
+  type TableChangeListener,
+  type TableSource,
+} from "./source.js";
 import type {
   AggregateRequest,
   CellValue,
@@ -19,12 +28,16 @@ import type {
   Filter,
   FindRequest,
   FindResult,
+  FormulaColumn,
   GroupRequest,
   GroupResult,
   RowBlock,
   RowRequest,
   SelectionSummary,
+  TableEdits,
   TableInfo,
+  UpdateRequest,
+  UpdateResult,
   ViewInfo,
   ViewQuery,
 } from "./types.js";
@@ -37,6 +50,12 @@ export interface ArraySourceOptions {
   rows?: CellValue[][];
   /** Column-major data: one array per column. */
   columnData?: CellValue[][];
+  /**
+   * Lets the grid write cells (`updateCells`), into these arrays. Columns marked `readOnly`, and of types
+   * that cannot be written (lists, structs, maps, binary values, intervals), stay read-only. Defaults to
+   * `false`.
+   */
+  editable?: boolean;
 }
 
 function inferType(values: CellValue[]): ColumnType {
@@ -158,6 +177,9 @@ const EXPORT_BATCH = 4096;
  *
  * `exportView` writes `csv`, `tsv`, `json` and `xlsx` (not `parquet`) and returns the file as a `Blob`
  * (`ExportResult.data`); `target` is only its name.
+ *
+ * With `editable`, `updateCells` writes into the arrays given (`rows` are copied into columns first, so
+ * write those through the source). Other grids of the same source learn of writes through `subscribe`.
  */
 export class ArraySource implements TableSource {
   private readonly schema: ColumnSchema[];
@@ -165,6 +187,11 @@ export class ArraySource implements TableSource {
   private readonly rowTotal: number;
   private readonly views = new Map<string, View>();
   private nextView = 1;
+  private readonly editable: boolean;
+  private editVersion = 0;
+  /** Cells written so far, as `row * columns + column`. */
+  private readonly written = new Set<number>();
+  private readonly listeners = new Set<TableChangeListener>();
   /** Values of the formula columns of recent queries, by their formulas. */
   private readonly formulaData = new Map<string, CellValue[][]>();
   private readonly table: Columns;
@@ -179,9 +206,11 @@ export class ArraySource implements TableSource {
     }
     while (this.data.length < columnCount) this.data.push([]);
     this.rowTotal = this.data.reduce((max, column) => Math.max(max, column.length), 0);
-    this.schema = options.columns.map((column, index) =>
-      typeof column === "string" ? { name: column, type: inferType(this.data[index]) } : column,
-    );
+    this.editable = options.editable === true;
+    this.schema = options.columns.map((column, index) => {
+      const schema = typeof column === "string" ? { name: column, type: inferType(this.data[index]) } : column;
+      return this.editable && !editableType(schema.type) && !schema.readOnly ? { ...schema, readOnly: true } : schema;
+    });
     this.table = { schema: this.schema, data: this.data };
   }
 
@@ -241,8 +270,93 @@ export class ArraySource implements TableSource {
         group: true,
         pivot: true,
         formulas: true,
+        ...(this.editable ? { edit: true } : {}),
       },
       exports: { formats: [...TABLE_FILE_FORMATS], delivery: "data" },
+      ...(this.editable ? { edits: this.edits() } : {}),
+    };
+  }
+
+  private edits(): TableEdits {
+    return { version: this.editVersion, cells: this.written.size };
+  }
+
+  /**
+   * Writes cells: every update, or none when one of them does not fit (see `TableSource.updateCells`).
+   * Values are checked and normalized with `normalizeCellValue`.
+   */
+  async updateCells(request: UpdateRequest): Promise<UpdateResult> {
+    if (!this.editable) throw new SourceError(ErrorCodes.readOnly, "This table is read-only.", 403);
+    if (request.updates.length > MAX_UPDATE_CELLS) {
+      throw new SourceError(ErrorCodes.invalidRequest, `Write at most ${MAX_UPDATE_CELLS} cells at a time.`, 400);
+    }
+    const values: CellValue[] = [];
+    for (const update of request.updates) {
+      const schema = this.schema[update.column];
+      if (!schema) throw new SourceError(ErrorCodes.invalidRequest, `Column ${update.column} does not exist.`, 400);
+      if (!Number.isSafeInteger(update.row) || update.row < 0 || update.row >= this.rowTotal) {
+        throw new SourceError(ErrorCodes.invalidRequest, `Row ${update.row} does not exist.`, 400);
+      }
+      if (schema.readOnly) throw new SourceError(ErrorCodes.readOnly, `The column ${schema.name} is read-only.`, 403);
+      const normalized = normalizeCellValue(update.value, schema);
+      if (!normalized.ok) {
+        throw new SourceError(
+          ErrorCodes.invalidValue,
+          `Row ${update.row + 1}: the value does not fit the column ${schema.name} (${normalized.error}).`,
+          422,
+        );
+      }
+      if (update.previous !== undefined && !sameCellValue(this.value(update.row, update.column), update.previous)) {
+        throw new SourceError(
+          ErrorCodes.editConflict,
+          `Row ${update.row + 1} of ${schema.name} was changed meanwhile.`,
+          409,
+        );
+      }
+      values.push(normalized.value);
+    }
+    request.updates.forEach((update, index) => {
+      const column = this.data[update.column];
+      while (column.length < update.row) column.push(null);
+      column[update.row] = values[index];
+      this.written.add(update.row * this.schema.length + update.column);
+    });
+    this.refreshFormulas(new Set(request.updates.map((update) => update.row)));
+    this.editVersion++;
+    const edits = this.edits();
+    for (const listener of [...this.listeners]) listener({ edits: edits.version });
+    return { updated: request.updates.length, edits };
+  }
+
+  /**
+   * Computes the formula columns again for written rows: those kept for recent queries and those of the
+   * views, which read them, so that rows, statistics and summaries show the new values. Views keep their
+   * order and rows; the grid creates its view again when it sorts or filters by a formula.
+   */
+  private refreshFormulas(rows: Set<number>) {
+    const sets: { formulas: FormulaColumn[]; extra: CellValue[][] }[] = [];
+    for (const [key, extra] of this.formulaData) sets.push({ formulas: JSON.parse(key), extra });
+    for (const view of this.views.values()) {
+      if (view.query.formulas?.length) {
+        sets.push({ formulas: view.query.formulas, extra: view.data.slice(this.schema.length) });
+      }
+    }
+    const done = new Set<CellValue[]>();
+    for (const { formulas, extra } of sets) {
+      if (extra.length === 0 || done.has(extra[0])) continue;
+      done.add(extra[0]);
+      queryFormulas(this.schema, { formulas }).forEach((formula, index) => {
+        const evaluate = formulaEvaluator(formula.tree as NonNullable<typeof formula.tree>);
+        for (const row of rows) extra[index][row] = evaluate((column) => this.data[column]?.[row] ?? null);
+      });
+    }
+  }
+
+  /** Calls `listener` after each write (`updateCells`), also by another grid of this source. */
+  subscribe(listener: TableChangeListener): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
     };
   }
 

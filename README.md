@@ -173,7 +173,11 @@ rows.
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | Called when the selection or the active cell changes. |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | Called when the columns' width, order, visibility or freezing change. |
-| `onCellClick`, `onCellDoubleClick` | `(event: GridCellEvent) => void` | | Called for a click (or Space) and a double click (or F2) on a cell. `preventDefault()` on a double click keeps the cell inspector closed. |
+| `onCellClick`, `onCellDoubleClick` | `(event: GridCellEvent) => void` | | Called for a click (or Space) and a double click (or F2) on a cell. `preventDefault()` on a double click keeps the cell inspector (or the cell editor) closed. |
+| `readOnly` | `boolean` | `false` | Offers no editing, also when the source can write cells. |
+| `validateCell` | `(cell: GridCellValidation) => string \| null \| undefined \| Promise<…>` | | Checks a value before it is written; return a message to refuse it. |
+| `onCellsChange` | `(event: GridCellsChangeEvent) => void` | | Called when edited cells were saved, or failed to save. |
+| `onHistoryChange` | `(state: GridHistoryState) => void` | | Called when what can be undone or redone changes. |
 | `initialState` | `GridState` | | Settings applied when a grid starts, once the table's columns are known. |
 | `onStateChange` | `(state: GridState) => void` | | Called with the settings when the query or the column settings change. |
 | `checkboxSelection` | `boolean` | `false` | Shows a checkbox for each row, and one for every row in the corner. |
@@ -187,7 +191,7 @@ rows.
 | `aria-label` | `string` | `messages.gridLabel` | The grid's name for screen readers. |
 
 A ref gives a `DataGridHandle`: `focus()`, `reload()`, `getQuery()`, `setQuery(query)`, `getState()`,
-`applyState(state)`, `goToRow(row)`, `openDetail({ focus })`, `closeDetail()`, `detailOpen`, `openExport()`, `getFormulas()`, `setFormulas(formulas)`, `getRowSelection()`, `setRowSelection(selection)`, the `controller` with the grid's state, and the canvas `renderer` (for
+`applyState(state)`, `goToRow(row)`, `undo()`, `redo()`, `history`, `save()`, `openDetail({ focus })`, `closeDetail()`, `detailOpen`, `openExport()`, `getFormulas()`, `setFormulas(formulas)`, `getRowSelection()`, `setRowSelection(selection)`, the `controller` with the grid's state, and the canvas `renderer` (for
 diagnostics such as `renderer.timings()`).
 
 Events give a cell's `row` in the view, its `rowId` in the original table, its visible column `col` and its
@@ -423,6 +427,30 @@ date formats; text is never written as a formula, and more than 1,048,575 rows a
 
 See [Exporting](https://vastgrid.yhay81.com/guides/export/).
 
+### Editing cells
+
+The grid edits sources that can write cells (`capabilities.edit`): `ArraySource` with `editable: true`,
+and the DuckDB server when its engine is created with `editable: true`; other sources stay read-only.
+Typing replaces the active cell (IMEs work: the editor is a text field over the cell), F2 or a double
+click edits it, Enter or Tab saves and moves, Esc cancels, Delete clears the selected cells, and ⌘/Ctrl +
+V pastes ranges copied from Excel or Google Sheets (TSV or HTML tables), checking every value first. ⌘/Ctrl
++ D and ⌘/Ctrl + R fill the first row or column of the selection down or right, and ⌘/Ctrl + Z and ⌘/Ctrl +
+Shift + Z undo and redo whole writes (a paste or a fill at once), keeping types and digits. Values
+are checked against the column's type without losing digits (64-bit integers and decimals stay text) and
+by `validateCell`, which may be asynchronous. Writes show while they save, and failures and conflicts with
+other users' changes offer Retry, Overwrite or Discard. The DuckDB server can save edited cells back into
+CSV and TSV files with `saveFiles` (⌘/Ctrl + S), rewriting only the edited fields and keeping every other
+byte — quoted line breaks, encodings such as Shift_JIS, the final line break — through a temporary file,
+and refusing files changed by someone else meanwhile. After a write the grid reads the rows again and,
+when the sort or filters use the written column, sorts and filters again; statistics, summaries and
+exports read the new values. The DuckDB engine keeps written values apart from the file until they are saved.
+
+```tsx
+<DataGrid source={new ArraySource({ columns, rows, editable: true })} onCellsChange={(event) => save(event)} />
+```
+
+See [Editing cells](https://vastgrid.yhay81.com/guides/editing/).
+
 ### Formula columns
 
 "Add formula column…" in a column's menu adds a column computed per row by an expression, such as
@@ -540,7 +568,11 @@ flowchart LR
 | ⌘/Ctrl + C · ⌘/Ctrl + Shift + C | Copy · copy with headers |
 | ⌘/Ctrl + F | Find |
 | Alt + ↓ | Column menu (sort, filter, statistics, freeze at the left or the right, hide) |
-| F2 · double click | Show the full value of the cell |
+| F2 · double click | Show the full value of the cell (edit it, in a grid that edits) |
+| Typing · Delete · ⌘/Ctrl + V (in a grid that edits) | Replace the active cell's value · clear the selected cells · paste |
+| ⌘/Ctrl + D · ⌘/Ctrl + R (in a grid that edits) | Fill down · right from the selection's first row or column |
+| ⌘/Ctrl + Z · ⌘/Ctrl + Shift + Z or Ctrl + Y (in a grid that edits) | Undo · redo the last write |
+| ⌘/Ctrl + S (sources that save, such as the DuckDB server with `saveFiles`) | Save the edited cells into the file |
 | Alt + Enter (again: into the panel) · Esc | Open the detail panel of the active row · close it |
 | Shift + F10 · context menu key · right click | Cell menu (copy, filter to value, sort) |
 
@@ -576,9 +608,8 @@ npm run bench
 
 ## Roadmap
 
-- Editing cells, with CSV write-back that keeps untouched rows byte for byte.
-
-See [docs/research.ja.md](docs/research.ja.md) (Japanese) for the survey of existing viewers and grids
+The items of the earlier roadmap (cell editing with byte-preserving CSV write-back, formula columns) are
+done; plans are tracked in the GitHub issues. See [docs/research.ja.md](docs/research.ja.md) (Japanese) for the survey of existing viewers and grids
 that shaped these choices.
 
 ## License

@@ -31,6 +31,8 @@ const engine = await TableEngine.create(options: TableEngineOptions);
 | `abandonedViewTimeout` | `3000` | 表のほかのビューが順番を待っていて、このビューがこのミリ秒数のあいだ求められなかったとき、背景での作成をやめます。 |
 | `previewRows` | `1000` | 区切りのテキストや JSON のファイルの読み込み中に読める行の数。 |
 | `textLimit` | `2000` | 既定でセルごとに送る文字列の最大の長さ。 |
+| `saveFiles` | `false` | `editable` と一緒に指定すると、クライアントが書き込んだセルを CSV・TSV ファイルに保存できます（`save`）。編集したセルを含まないバイトは変えません。[ファイルへの保存](/ja/guides/editing/#ファイルへの保存)を参照してください。 |
+| `editable` | `false` | クライアントがセルを書き込めるようにします（`update`）。書き込んだ値はファイルとは別にエンジンが保持し、すべての要求がそれを読みます。セルを書き込んだ表は開いたままにします。[セルの編集](/ja/guides/editing/#duckdb-サーバーでの書き込み)を参照してください。 |
 | `log` | | `(message, error?) => void`。要求が原因ではない問題を受け取ります。 |
 
 | メソッド | 説明 |

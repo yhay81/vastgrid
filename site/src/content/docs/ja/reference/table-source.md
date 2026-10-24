@@ -28,6 +28,10 @@ interface TableSource {
   exportView?(request: ExportRequest, signal?: AbortSignal): Promise<ExportResult>;
   /** ビューの行をグループ化して集計する。キーがなければ全体を集計する。 */
   group?(request: GroupRequest, signal?: AbortSignal): Promise<GroupResult>;
+  /** capabilities.edit を報告する source で、セルをすべて書き込むか、何も書き込まない（下記）。 */
+  updateCells?(request: UpdateRequest, signal?: AbortSignal): Promise<UpdateResult>;
+  /** capabilities.save を報告する source で、書き込んだセルを表のファイルに保存する。 */
+  saveEdits?(signal?: AbortSignal): Promise<{ records: number; edits: TableEdits }>;
   /** 表を解放する。以後、そのソースは使えない。 */
   /** 表全体が変わったときに `listener` を呼びます。返す関数を呼ぶまで続きます。 */
   subscribe?(listener: (change: { revision?: string | null }) => void): () => void;
@@ -44,6 +48,7 @@ new ArraySource({
   columns: (string | ColumnSchema)[]; // 列名（型は推測する）かスキーマ
   rows?: CellValue[][];               // 行ごとのデータ、または
   columnData?: CellValue[][];         // 列ごとのデータ。1 列に 1 つの配列
+  editable?: boolean;                 // updateCells でセルを書き込む（既定は false）
 });
 ```
 
@@ -304,6 +309,27 @@ interface ExportResult { target: string; rows: number; data?: Blob }
 
 `xlsx` が数値・日付・文字（数式にはしない）・`null` をどう書くか、Excel のシートに収まらない行・列を `export_too_large` で断ることは、[プロトコル](/ja/reference/protocol/#excel-export-rules)と[書き出し](/ja/guides/export/#excel-ファイル)にあります。
 
+## セルの書き込み
+
+```ts
+interface UpdateRequest {
+  updates: { row: number; column: number; value: CellValue; previous?: CellValue }[]; // MAX_UPDATE_CELLS（100,000）まで
+  revision?: string; // 行を読んだときの TableInfo.revision
+}
+interface UpdateResult {
+  updated: number;
+  edits: { version: number; cells: number }; // 書き込み後の TableInfo.edits
+}
+```
+
+`capabilities.edit` を報告する source は、`updateCells` でセルを書き込みます。`row` は表の中の行の位置（`RowBlock.rowIds`）、`column` はスキーマの列番号です。要求は不可分で、すべてを書き込むか、何も書き込まずに `SourceError` で reject します。コードは `read_only`（source か列が書き込めない）、`invalid_value`（値が列に合わない）、`edit_conflict`（セルが `previous` の値ではなくなっている）、`revision_changed`（表の `revision` が違う）、`invalid_request` です。
+
+書き込みは行の位置と `revision` を変えず、代わりに `TableInfo.edits.version` を増やします。変更を通知する source は、`subscribe` のリスナーを `{ edits }` で呼びます。以降の要求はすべて新しい値を読みますが、それ以前に作ったビューは古い行と順序のままのことがあるため、グリッドはクエリが書き込んだ列を使うときにビューを作り直します。source が書き込まない列は、スキーマで `readOnly: true` になります。
+
+`capabilities.save` を報告する source は、`saveEdits` で書き込んだセルを読み込んだファイルにも保存します（`saveFiles` を指定した DuckDB サーバー）。読み込んだ後にファイルが他の人に変更されていれば `file_changed`、書き戻せないファイルなら `save_unsupported` で reject します。保存後も表の revision と行の位置は変わらず、セルは保存済み（`edits.cells` が 0）になります。
+
+`parseCellInput(text, column)` は入力した文字列を列の型として読み、`normalizeCellValue(value, column)` はプログラムが書き込む値を同じ規則で確かめます。どちらも 64 ビット整数と decimal を文字列のまま保ちます。`editableType(type)`・`editableColumn(schema)`・`editText(value)`・`sameCellValue(a, b)` も source とエディターで使えます。[セルの編集](/ja/guides/editing/)を参照してください。
+
 ## エラー
 
 ```ts
@@ -330,6 +356,7 @@ class SourceError extends Error {
 | `numericValue(value, type)` | 値を JavaScript の数値にしたもの。数値でなければ `null`。 |
 | `ValueFormatter` | グリッドと同じように、ロケールに合わせて値を表示用に整えます。 |
 | `toTsv`、`toHtmlTable`、`toMarkdownTable` | グリッドのコピーと同じ形式で、値の行を文字列にします。 |
+| `parseTsv(text)`、`parseHtmlTable(html)` | クリップボードからセルの行を読みます。表計算ソフトがコピーするタブ区切り（タブや改行を含む引用符付きのフィールド）と、HTML の最初の表（`colspan`・`rowspan` は空のセルで埋める）を、DOM を使わずに読みます。 |
 | `copyLayout(ranges)` | 複数の範囲をコピーするときの行と列。まとめてコピーできない範囲では null を返します。 |
 | `isNumericType(type)`、`isTemporalType(type)` | 列の型を分類します。 |
 | `parseProtocolRequest(body)` | サーバー向けに、プロトコルの要求を検証します。 |

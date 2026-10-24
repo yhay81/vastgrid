@@ -15,8 +15,11 @@ import type {
   GroupResult,
   RowBlock,
   RowRequest,
+  SaveResult,
   SelectionSummary,
   TableInfo,
+  UpdateRequest,
+  UpdateResult,
   ViewInfo,
   ViewOptions,
   ViewQuery,
@@ -26,7 +29,7 @@ import type {
  * A table the grid can display. Implementations decide where the data lives: in memory, in a
  * worker, or behind a server (see `RemoteSource`). Only `info`, `createView` and `readRows` are
  * required; optional methods enable the matching features in the grid (statistics, filters by
- * value, the selection summary, find, export, grouping and totals).
+ * value, the selection summary, find, export, grouping and totals, editing).
  */
 export interface TableSource {
   /** Opens the table on the first call and returns its current state. Poll while `status` is `loading`. */
@@ -51,6 +54,25 @@ export interface TableSource {
   group?(request: GroupRequest, signal?: AbortSignal): Promise<GroupResult>;
   exportView?(request: ExportRequest, signal?: AbortSignal): Promise<ExportResult>;
   /**
+   * Writes cells, for sources that report `capabilities.edit`. The request is atomic: every update is
+   * written, or none is and the promise rejects with a `SourceError`: `read_only` (the source or a
+   * column is not written), `invalid_value` (a value does not fit its column; see
+   * `normalizeCellValue`), `edit_conflict` (a cell no longer holds its `previous` value),
+   * `revision_changed` (the table has another revision) or `invalid_request` (a row or column does not
+   * exist, or more than `MAX_UPDATE_CELLS` updates). Written values are seen by every later request
+   * (rows, views, statistics, summaries, find, export); views made before may keep their old order and
+   * rows, so the grid creates its view again. Row positions and the revision stay the same; the
+   * result's `edits.version` changes, and sources that report changes (`subscribe`) report it.
+   */
+  updateCells?(request: UpdateRequest, signal?: AbortSignal): Promise<UpdateResult>;
+  /**
+   * Saves the written cells into the file the table was read from, for sources that report
+   * `capabilities.save`. The table keeps its revision and row positions. Rejects with `file_changed` when
+   * the file was changed by someone else since it was read, and `save_unsupported` when the file cannot be
+   * written back; the file is then left as it was.
+   */
+  saveEdits?(signal?: AbortSignal): Promise<SaveResult>;
+  /**
    * Calls `listener` when the table as a whole changed (for example rows were appended to its file),
    * until the returned function is called. The listener learns only that the table changed, not which
    * rows: it reads the table again with `info`, which reports the new state. Sources call it after
@@ -66,6 +88,8 @@ export interface TableSource {
 export interface TableChange {
   /** The table's new `revision` (see `TableInfo.revision`) when the source knows it; null when the table is gone. */
   revision?: string | null;
+  /** The table's new `edits.version` when cells were written (see `TableEdits`), when the source knows it. */
+  edits?: number;
 }
 
 export type TableChangeListener = (change: TableChange) => void;
@@ -75,6 +99,9 @@ export type TableChangeListener = (change: TableChange) => void;
  * many characters for a cell, also when a request asks for more.
  */
 export const MAX_TEXT_LIMIT = 1_000_000;
+
+/** Updates one `updateCells` request may hold. */
+export const MAX_UPDATE_CELLS = 100_000;
 
 /** An error reported by a table source. `code` is stable and meant for programs; `message` is for people. */
 export class SourceError extends Error {
