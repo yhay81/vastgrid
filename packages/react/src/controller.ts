@@ -1,5 +1,6 @@
 import {
   type CellPosition,
+  type CellStyle,
   type CellValue,
   type ColumnFormat,
   type ColumnFormatter,
@@ -34,6 +35,7 @@ import {
   type ViewInfo,
   type ViewQuery,
 } from "vastgrid-core";
+import type { CellAction, CellActionHook, DrawCell, GridCellContent } from "./cell-render.js";
 import type {
   GridCell,
   GridCellEvent,
@@ -65,6 +67,10 @@ export interface GridOptions {
   followTail?: boolean;
   /** Milliseconds to wait after a change of the table before reading it again, to merge changes (default 300). */
   changeDelay?: number;
+  /** Draws loaded cells instead of the standard drawing (see `DrawCell`). */
+  drawCell?: DrawCell;
+  /** Tells which cells are links or buttons (see `CellActionHook`). */
+  cellAction?: CellActionHook;
 }
 
 export interface ColumnState {
@@ -167,7 +173,7 @@ function supportedQuery(query: ViewQuery, capabilities: TableCapabilities): View
 /** Whether two display settings are the same. Functions are compared by identity. */
 function sameFormat(a: ColumnFormat | undefined, b: ColumnFormat | undefined) {
   if (a === b) return true;
-  if (!a || !b || a.format !== b.format) return false;
+  if (!a || !b || a.format !== b.format || a.style !== b.style) return false;
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
@@ -736,6 +742,33 @@ export class GridController {
         return prevented;
       },
     };
+  }
+
+  /** A loaded cell as the drawing and action hooks see it, or null while it is not loaded. */
+  cellContent(row: number, col: number): GridCellContent | null {
+    const state = this.visible[col];
+    const schema = state ? this.schema[state.index] : undefined;
+    if (!state || !schema) return null;
+    const value = this.cache.value(row, state.index);
+    if (value === undefined) return null;
+    const text = this.formatterOf(state.index).format(value);
+    return { ...this.cell(row, col), value, schema, type: schema.type, text };
+  }
+
+  /** The action of a loaded cell from the `cellAction` option, or null. */
+  cellActionAt(row: number, col: number): CellAction | null {
+    const hook = this.options.cellAction;
+    const content = hook ? this.cellContent(row, col) : null;
+    return content && hook ? (hook(content) ?? null) : null;
+  }
+
+  /** The colors of a loaded cell from its column's `style` setting, or null. */
+  cellStyleAt(row: number, col: number): CellStyle | null {
+    const state = this.visible[col];
+    if (!state) return null;
+    const formatter = this.formatterOf(state.index);
+    const value = formatter.styled ? this.cache.value(row, state.index) : undefined;
+    return value === undefined ? null : formatter.style(value);
   }
 
   selectionEvent(): GridSelectionEvent {

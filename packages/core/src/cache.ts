@@ -1,5 +1,5 @@
 import { MAX_TEXT_LIMIT, type TableSource } from "./source.js";
-import type { CellValue } from "./types.js";
+import type { CellStyle, CellValue } from "./types.js";
 
 export interface RowCacheOptions {
   /** Rows per block. */
@@ -28,6 +28,8 @@ export class CacheBlock {
   priority = 0;
   /** Display text, filled lazily by a renderer. `textKey` tells which formatting produced it. */
   text: (string | undefined)[][] | null = null;
+  /** Cell colors from the columns' `style` settings, filled with `text` and cleared with it (`null`: defaults). */
+  styles: (CellStyle | null | undefined)[][] | null = null;
   textKey = "";
 
   constructor(

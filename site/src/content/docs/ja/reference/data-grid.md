@@ -29,6 +29,8 @@ import "vastgrid/styles.css";
 | `copyLimit` | `number` | `1000000` | 一度にコピーできるセルの数（選択したすべての範囲の合計）。 |
 | `columnFormats` | `Record<string, ColumnFormat>` | | スキーマの列名ごとの表示設定。表示名、数値と日時の書式、配置、整形関数。 |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | コピーするのを、値とスキーマの列名にするか、表示している文字と表示名にするか。 |
+| `drawCell` | `(args: DrawCellArgs) => void` | | 表示中の読み込み済みのセルを、グリッドの代わりに描きます。[セルの色と独自の描画](#セルの色と独自の描画)を参照してください。 |
+| `cellAction` | `(cell: GridCellContent) => CellAction \| null` | | セルをリンクやボタンにします（ポインター、下線、スクリーンリーダー向けの役割。クリックと Space で `onCellClick` を呼ぶ）。 |
 | `onQueryChange` | `(query: ViewQuery) => void` | | 並べ替え・絞り込み・検索が変わったときに呼ばれます。 |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | 選択範囲かアクティブなセルが変わったときに呼ばれます。[イベント](#イベント)を参照してください。 |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | 列の幅・順序・表示・固定が変わったときに呼ばれます。 |
@@ -187,6 +189,7 @@ const formats: Record<string, ColumnFormat> = {
 | `format(value, { column, text })` | 値の表示の文字を返す関数。`text` はほかの設定で作った文字です。結果は 1 行で（`wrap` では折り返して）表示します。 |
 | `copy` | `raw` か `formatted`。この列のセルについて `copyValues` を上書きします。 |
 | `wrap` | `true` で、文字を `maxLines` 行まで折り返して表示します（下記）。 |
+| `style(value, { column, text })` | 値に応じたセルの `color`、`background`、`description` を返す関数。`null` なら既定の見た目です。[セルの色と独自の描画](#セルの色と独自の描画)を参照してください。 |
 
 パターンでは `yyyy` `yy`（年）、`M` `MM` `MMM` `MMMM`（月）、`d` `dd`（日）、`EEE` `EEEE`（曜日）、`H` `HH`（0〜23 時）、`h` `hh` と `a`（1〜12 時と午前・午後）、`m` `mm`（分）、`s` `ss`（秒）、`S` `SS` `SSS`…（秒の小数の桁）を使います。一重引用符で囲んだ文字はそのまま残ります（`yyyy-MM-dd 'at' HH:mm`）。月と曜日の名前は `locale` に従います。
 
@@ -256,6 +259,68 @@ function Order({ fields, status, rowId }: DetailPanelProps) {
 ```
 
 パネルの大きさは `--vg-detail-width`（340px）と `--vg-detail-height`（45%）で変えられます。`DetailTracker` は `GridController` のアクティブな行に追従してレコードを React の外で読み込むので、詳細をほかの場所に表示するアプリで使えます。
+
+## セルの色と独自の描画
+
+セルの見た目と動作は、次の 3 つの設定で変えられます。どれも表示中の行と列の読み込み済みのセルにだけ呼ばれ、表のほかの部分には呼ばれません。読み込み中の行のセルは仮の表示のままです。関数は安定させてください（コンポーネントの外で定義するか、メモ化する）。新しい関数を渡すとグリッドを描き直します。
+
+```tsx
+import { type CellActionHook, type ColumnFormat, DataGrid, type DrawCell } from "vastgrid";
+
+const formats: Record<string, ColumnFormat> = {
+  // 0 未満は薄赤の背景に赤い文字。それ以外は標準の描画。
+  balance: {
+    style: (value) =>
+      Number(value) < 0 ? { color: "#b42318", background: "#fdecea", description: "残高不足" } : null,
+  },
+};
+
+// 真偽値の列は丸い印、ほかの列は標準のセル。
+const drawCell: DrawCell = (args) => {
+  if (args.schema.name !== "active") return args.drawDefault();
+  const { ctx, rect, theme } = args;
+  ctx.fillStyle = args.value === true ? "#1a7f37" : theme.placeholder;
+  ctx.beginPath();
+  ctx.roundRect(rect.x + args.padding, rect.y + (rect.height - 16) / 2, 36, 16, 8);
+  ctx.fill();
+};
+
+const cellAction: CellActionHook = (cell) =>
+  cell.schema.name === "url" && cell.value !== null ? { kind: "link", label: `${cell.text} を開く` } : null;
+
+<DataGrid
+  source={source}
+  columnFormats={formats}
+  drawCell={drawCell}
+  cellAction={cellAction}
+  onCellClick={(event) => {
+    if (event.column === urlColumn && typeof event.value === "string") window.open(event.value, "_blank");
+  }}
+/>;
+```
+
+**値に応じた色。** 列の `style(value, { column, text })` は `CellStyle`（`color`、`background`、`description`）を返します。`null` なら既定の見た目です。文字・配置・フォントは変わらず、背景は検索の強調と選択範囲の下に描きます。結果は読み込んだ行と一緒に文字と同じく保持するので、関数は読み込んだセルごとに 1 回だけ呼ばれ、フレームごとには呼ばれません。色は読み上げられないので、`description` をアクティブなセルの値の後にスクリーンリーダーが読み上げます。
+
+**描画。** `drawCell(args)` は、表示中の読み込み済みのセルの描画を置き換えます。`args` には、セルの位置（`row`、`rowId`、`col`、`column`）、`value`、`type`、`schema`、表示の文字 `text`、`rect`（CSS ピクセル）、列の `style` と `align`、`action`、`selected`、`active`、`hovered`、`matched`（検索）、`theme`、`padding` と、次のものがあります。
+
+- `ctx`：セルのフォント、`textBaseline = "middle"`、列の `textAlign` を設定したキャンバス。切り抜きは列の範囲で、セルの範囲ではないので、`rect` の中に描くか自分で切り抜いてください。状態はフックの後に元に戻します。
+- `drawDefault(options?)`：標準のセル（背景、検索の強調、スタイルかリンクの色の文字、リンクの下線）。`options` で `text`、`color`、`background`、`align`、`underline` を置き換えられます。
+- `fitText(text, width)`：幅に収まるよう「…」で縮めた文字（セルのフォント）。
+
+罫線と選択範囲は、その後でグリッドがセルの上に描きます。`drawCell` があるときは、ポインターが別の行に移ると描き直すので、`hovered` が追従します。
+
+**リンクとボタン。** `cellAction(cell)` は、操作できるセルには `{ kind: "link" | "button", label?, cursor? }` を、それ以外には `null` を返します。契約は[イベント](#イベント)に合わせています。
+
+| | 動作 |
+| --- | --- |
+| ポインター | セルの上ではポインターが `cursor`（既定は `pointer`）になります。クリックするとセルを選択してから `onCellClick` を `trigger: "pointer"` で呼びます。ドラッグは選択だけで、クリックになりません。 |
+| キーボード | アクティブなセルで Space を押すと `onCellClick` を `trigger: "keyboard"` で、F2 で `onCellDoubleClick` を呼びます。Enter、Tab、矢印キーはこれまでどおりアクティブなセルを移動するので、リンクの並ぶ列でも順にたどれます。 |
+| スクリーンリーダー | アクティブなセルの内容に `link` か `button` の役割と、`label` があればその名前を付けます。`onCellClick` があるときは `aria-keyshortcuts="Space"` も付けます。 |
+| 描画 | リンクは、スタイルや `drawCell` で変えない限り、`--vg-link-fg` の色で下線を付けて描きます。 |
+
+グリッドは自分では何も開きません。開くかどうかは `onCellClick` で決めます（たとえば `window.open`）。フックの外では、`controller.cellContent(row, col)`、`cellActionAt`、`cellStyleAt` で同じ情報を得られます。
+
+**描画時間。** 2520 × 1731 px で 1,349 セルを表示した 1 フレームは、この機能を入れる前が 2.7〜2.8 ms、入れた後でフックを使わないときが 2.8 ms、すべての列に `style` を付けると 2.5 ms、半分の列に `cellAction` を付けると 2.8 ms、`drawDefault()` を呼んで印を足す `drawCell` で 2.8 ms でした（180 フレームを 4 回測った中央値、Chromium、Apple M2 Pro）。セルごとに計測や割り当ての多いフックは時間がかかるので、`renderer.timings()` で確かめてください。
 
 ## エクスポート
 

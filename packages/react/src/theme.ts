@@ -26,6 +26,8 @@ export interface GridTheme {
   placeholder: string;
   match: string;
   error: string;
+  /** Text of cells whose `cellAction` is a link. */
+  link: string;
 }
 
 const colorTokens: Record<
@@ -51,6 +53,7 @@ const colorTokens: Record<
   placeholder: "--vg-placeholder",
   match: "--vg-match-bg",
   error: "--vg-error-fg",
+  link: "--vg-link-fg",
 };
 
 /** Resolves the theme of `root`. Colors given as `light-dark()` or system colors resolve to concrete values. */

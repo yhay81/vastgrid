@@ -37,6 +37,13 @@
 - `vastgrid-core`: `ColumnFormat`, `NumberFormat`, `DateFormat` and `ColumnFormatter`
   (`ValueFormatter.column(schema, format)`), which formats 64-bit integers and decimals from their
   digits without converting them to JavaScript numbers.
+- `vastgrid`: a column's `style` in `columnFormats` colors cells by value (text color, background, and a
+  description for screen readers) and keeps the standard drawing. `drawCell` draws the visible loaded
+  cells on the canvas with their rectangle, value, type, text, selection state and theme, and can call
+  the standard drawing (`drawDefault`). `cellAction` makes cells links or buttons: a pointer cursor, links
+  underlined in the new `--vg-link-fg`, the `link` or `button` role on the active cell for screen
+  readers, and `onCellClick` on a click or Space. Frames of 1,349 cells take as long as before.
+- `vastgrid-core`: `CellStyle`, `ColumnFormat.style` and `ColumnFormatter.style(value)`.
 - `vastgrid`: copies cover every selected range. Ranges with the same rows are copied side by side and
   ranges with the same columns one below the other, in the grid's order and with overlaps once; other
   combinations are refused with a message and `CopyRangesError`. `copyLimit` counts all ranges, cells

@@ -29,6 +29,8 @@ import "vastgrid/styles.css";
 | `copyLimit` | `number` | `1000000` | Cells that can be copied at once, over all selected ranges. |
 | `columnFormats` | `Record<string, ColumnFormat>` | | Display settings by schema column name: label, number and date formats, alignment, a format function, wrapping. |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | Copy the values with the schema names, or the shown text with the labels. |
+| `drawCell` | `(args: DrawCellArgs) => void` | | Draws the visible loaded cells instead of the grid. See [Cell colors and custom drawing](#cell-colors-and-custom-drawing). |
+| `cellAction` | `(cell: GridCellContent) => CellAction \| null` | | Makes cells links or buttons (pointer, underline, screen reader role; click and Space call `onCellClick`). |
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | Called when the selection or the active cell changes. See [Events](#events). |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | Called when the columns' width, order, visibility or freezing change. |
@@ -218,6 +220,7 @@ const formats: Record<string, ColumnFormat> = {
 | `format(value, { column, text })` | Returns the text of a value. `text` is what the other settings make. The result is shown in one line, or wrapped with `wrap`. |
 | `copy` | `raw` or `formatted`: overrides `copyValues` for the column's cells. |
 | `wrap` | `true` wraps the text onto up to `maxLines` lines (see below). |
+| `style(value, { column, text })` | Returns the cell's `color`, `background` and `description` by value, or `null`. See [Cell colors and custom drawing](#cell-colors-and-custom-drawing). |
 
 Patterns use `yyyy` `yy` (year), `M` `MM` `MMM` `MMMM` (month), `d` `dd` (day), `EEE` `EEEE` (weekday),
 `H` `HH` (0–23), `h` `hh` with `a` (1–12 and AM/PM), `m` `mm`, `s` `ss`, and `S`, `SS`, `SSS`… (fraction
@@ -326,6 +329,89 @@ function Order({ fields, status, rowId }: DetailPanelProps) {
 `--vg-detail-width` (340px) and `--vg-detail-height` (45%) set the panel's size. `DetailTracker` follows
 the active row of a `GridController` and reads its record outside React, for apps that show it
 elsewhere.
+
+## Cell colors and custom drawing
+
+Three settings change how cells look and what they do. They run only for the loaded cells in the
+visible rows and columns: never for the rest of the table, and cells whose rows are loading keep their
+placeholder. Keep the functions stable (outside the component, or memoized), since a new function draws
+the grid again.
+
+```tsx
+import { type CellActionHook, type ColumnFormat, DataGrid, type DrawCell } from "vastgrid";
+
+const formats: Record<string, ColumnFormat> = {
+  // Red on pink below zero, the standard drawing otherwise.
+  balance: {
+    style: (value) =>
+      Number(value) < 0 ? { color: "#b42318", background: "#fdecea", description: "Overdrawn" } : null,
+  },
+};
+
+// A pill for a boolean column, the standard cell elsewhere.
+const drawCell: DrawCell = (args) => {
+  if (args.schema.name !== "active") return args.drawDefault();
+  const { ctx, rect, theme } = args;
+  ctx.fillStyle = args.value === true ? "#1a7f37" : theme.placeholder;
+  ctx.beginPath();
+  ctx.roundRect(rect.x + args.padding, rect.y + (rect.height - 16) / 2, 36, 16, 8);
+  ctx.fill();
+};
+
+const cellAction: CellActionHook = (cell) =>
+  cell.schema.name === "url" && cell.value !== null ? { kind: "link", label: `Open ${cell.text}` } : null;
+
+<DataGrid
+  source={source}
+  columnFormats={formats}
+  drawCell={drawCell}
+  cellAction={cellAction}
+  onCellClick={(event) => {
+    if (event.column === urlColumn && typeof event.value === "string") window.open(event.value, "_blank");
+  }}
+/>;
+```
+
+**Colors by value.** A column's `style(value, { column, text })` returns a `CellStyle` (`color`,
+`background`, `description`) or `null` for the defaults. The cell keeps its text, alignment and font;
+the background lies under the find highlight and the selection. The result is kept with the loaded rows
+like the text, so the function runs once per loaded cell, not on every frame. `description` is read by
+screen readers after the value of the active cell, since colors are not announced.
+
+**Drawing.** `drawCell(args)` replaces the drawing of each visible loaded cell. `args` has the cell's
+coordinates (`row`, `rowId`, `col`, `column`), `value`, `type`, `schema`, the shown `text`, `rect` (in CSS
+pixels), the column's `style` and `align`, its `action`, `selected`, `active`, `hovered`, `matched` (find),
+the `theme`, `padding`, and:
+
+- `ctx`: the canvas context with the cell font, `textBaseline = "middle"` and the column's `textAlign`. It
+  is clipped to the column, not to the cell, so draw inside `rect` or clip yourself. Its state is restored
+  after the hook.
+- `drawDefault(options?)`: the standard cell (background, find highlight, text in the style's or the link
+  color, link underline). `options` replaces its `text`, `color`, `background`, `align` or `underline`.
+- `fitText(text, width)`: the text shortened with "…" to fit, in the cell font.
+
+The grid draws the lines and the selection over the cell afterwards. While `drawCell` is set, moving the
+pointer to another row draws again, so that `hovered` follows it.
+
+**Links and buttons.** `cellAction(cell)` returns `{ kind: "link" | "button", label?, cursor? }` for cells
+that do something, or `null`. The contract follows the [events](#events):
+
+| | Behavior |
+| --- | --- |
+| Pointer | Over the cell the pointer is `cursor` (`pointer` by default). A click selects the cell and then calls `onCellClick` with `trigger: "pointer"`; dragging selects without clicking. |
+| Keyboard | Space on the active cell calls `onCellClick` with `trigger: "keyboard"`, F2 `onCellDoubleClick`. Enter, Tab and the arrows keep moving the active cell, so a column of links can still be walked through. |
+| Screen readers | The active cell's content gets the role `link` or `button`, `label` as its name when given, and `aria-keyshortcuts="Space"` when `onCellClick` is set. |
+| Drawing | Links are drawn in `--vg-link-fg` and underlined unless a style or `drawCell` says otherwise. |
+
+The grid does not open anything itself: `onCellClick` decides, for example with `window.open`.
+`controller.cellContent(row, col)`, `cellActionAt` and `cellStyleAt` give the same information outside
+the hooks.
+
+**Cost.** On a 2520 × 1731 px viewport showing 1,349 cells, a frame took 2.7–2.8 ms before these hooks
+existed and 2.8 ms without them, 2.5 ms with a `style` on every column, 2.8 ms with `cellAction` on half
+the columns, and 2.8 ms with a `drawCell` that calls `drawDefault()` and adds a mark (median of four
+runs of 180 frames, Chromium, Apple M2 Pro). Hooks that measure or allocate much per cell cost more:
+check with `renderer.timings()`.
 
 ## Exports
 

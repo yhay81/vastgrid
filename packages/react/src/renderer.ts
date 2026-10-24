@@ -1,11 +1,14 @@
 import {
   type CacheBlock,
   type CellRange,
+  type CellStyle,
   type CellValue,
+  type ColumnAlign,
   type ColumnFormatter,
   type ColumnType,
   rangeContains,
 } from "vastgrid-core";
+import type { CellAction, DrawCell, GridCellContent } from "./cell-render.js";
 import type { GridController } from "./controller.js";
 import { TextFitter } from "./text.js";
 import type { GridTheme } from "./theme.js";
@@ -54,6 +57,8 @@ export class CanvasRenderer {
   private frame = 0;
   private ratio = 1;
   private formatKey = "";
+  /** The cell font as the context gives it back, to tell whether it is set. */
+  private cellFont = "";
   /** Widths numeric columns needed in the last frame. */
   private readonly needed = new Map<number, number>();
   /** Durations of the last frames in milliseconds, for diagnostics (`timings()`). */
@@ -206,6 +211,7 @@ export class CanvasRenderer {
   private textOf(block: CacheBlock, column: number, row: number, value: CellValue, formatter: ColumnFormatter) {
     if (block.textKey !== this.formatKey || !block.text) {
       block.text = block.columns.map(() => []);
+      block.styles = null;
       block.textKey = this.formatKey;
     }
     const list = block.text[column - block.firstColumn];
@@ -216,6 +222,26 @@ export class CanvasRenderer {
       list[offset] = text;
     }
     return text;
+  }
+
+  /** The colors of a cell from its column's `style` setting, kept with the block's text. */
+  private styleOf(
+    block: CacheBlock,
+    column: number,
+    row: number,
+    value: CellValue,
+    text: string,
+    formatter: ColumnFormatter,
+  ) {
+    block.styles ??= block.columns.map(() => []);
+    const list = block.styles[column - block.firstColumn];
+    const offset = row - block.start;
+    let style = list[offset];
+    if (style === undefined) {
+      style = formatter.style(value, text);
+      list[offset] = style;
+    }
+    return style;
   }
 
   private drawCells(col: number, firstRow: number, lastRow: number) {
@@ -234,6 +260,10 @@ export class CanvasRenderer {
     const wrap = formatter.wrap;
     const maxLines = c.maxLines;
     const lineHeight = c.options.lineHeight ?? 18;
+    this.cellLines = wrap ? maxLines : 0;
+    this.cellLineHeight = lineHeight;
+    const styled = formatter.styled;
+    const { drawCell, cellAction } = c.options;
     const textWidth = width - PADDING * 2;
     const find = c.findText ? (c.findCaseSensitive ? c.findText : c.findText.toLowerCase()) : "";
     ctx.save();
@@ -241,9 +271,9 @@ export class CanvasRenderer {
     ctx.rect(x, c.options.headerHeight, width, c.height);
     ctx.clip();
     ctx.font = this.cellText.font;
+    this.cellFont = ctx.font;
     ctx.textBaseline = "middle";
     ctx.textAlign = align;
-    const textX = align === "right" ? x + width - PADDING : align === "center" ? x + width / 2 : x + PADDING;
     for (let row = firstRow; row < lastRow; row++) {
       const y = c.rowY(row);
       const block = c.cache.blockAt(row, state.index);
@@ -263,29 +293,156 @@ export class CanvasRenderer {
       }
       const value = block.values[state.index - block.firstColumn]?.[row - block.start] ?? null;
       const text = this.textOf(block, state.index, row, value, formatter);
-      if (find && text && (c.findCaseSensitive ? text : text.toLowerCase()).includes(find)) {
-        ctx.fillStyle = t.match;
-        ctx.fillRect(x, y, width, rowHeight);
-      }
-      if (text === "") continue;
-      ctx.fillStyle = value === null ? t.nullText : t.text;
-      if (numeric && value !== null && !state.sized) {
+      const style = styled ? this.styleOf(block, state.index, row, value, text, formatter) : null;
+      const matched = find !== "" && text !== "" && (c.findCaseSensitive ? text : text.toLowerCase()).includes(find);
+      if (numeric && value !== null && text !== "" && !state.sized) {
         const needed = this.cellText.width(text) + PADDING * 2 + 2;
         if (needed > width && needed > (this.needed.get(col) ?? 0)) this.needed.set(col, needed);
       }
-      if (wrap) {
-        // The lines are centered in the row, so that one line is level with the other columns.
-        const lines = this.cellText.lines(text, textWidth, maxLines);
-        let lineY = y + (rowHeight - lines.length * lineHeight) / 2 + lineHeight / 2 + 0.5;
-        for (const line of lines) {
-          ctx.fillText(line, textX, lineY);
-          lineY += lineHeight;
-        }
-      } else {
-        ctx.fillText(this.cellText.fit(text, textWidth), textX, y + rowHeight / 2 + 0.5);
+      if (!drawCell && !cellAction) {
+        this.paintCell(x, y, width, rowHeight, text, value, style, align, matched, null);
+        continue;
       }
+      const content: GridCellContent = {
+        row,
+        rowId: c.rowId(row),
+        col,
+        column: state.index,
+        value,
+        schema,
+        type: schema.type,
+        text,
+      };
+      const action = cellAction?.(content) ?? null;
+      if (drawCell) this.customCell(drawCell, content, x, y, width, rowHeight, style, align, matched, action);
+      else this.paintCell(x, y, width, rowHeight, text, value, style, align, matched, action);
     }
     ctx.restore();
+  }
+
+  /** Lines a wrapping column draws in each cell (0: one line, cut to fit), set for each column drawn. */
+  private cellLines = 0;
+  private cellLineHeight = 18;
+
+  /** The standard drawing of a loaded cell. `ctx.textAlign` must already be `align`. */
+  private paintCell(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    text: string,
+    value: CellValue,
+    style: CellStyle | null,
+    align: ColumnAlign,
+    matched: boolean,
+    action: CellAction | null,
+    color?: string,
+    underline?: boolean,
+  ) {
+    const ctx = this.context;
+    const t = this.theme;
+    const background = style?.background;
+    if (background) {
+      ctx.fillStyle = background;
+      ctx.fillRect(x, y, width, height);
+    }
+    if (matched) {
+      ctx.fillStyle = t.match;
+      ctx.fillRect(x, y, width, height);
+    }
+    if (text === "") return;
+    const link = action?.kind === "link";
+    ctx.fillStyle = color ?? style?.color ?? (link ? t.link : value === null ? t.nullText : t.text);
+    const textX = align === "right" ? x + width - PADDING : align === "center" ? x + width / 2 : x + PADDING;
+    // A wrapping column draws up to `cellLines` lines, centered in the row so that one line is level
+    // with the other columns.
+    const lines =
+      this.cellLines > 0
+        ? this.cellText.lines(text, width - PADDING * 2, this.cellLines)
+        : [this.cellText.fit(text, width - PADDING * 2)];
+    const lineHeight = this.cellLines > 0 ? this.cellLineHeight : height;
+    let middle = y + (height - lines.length * lineHeight) / 2 + lineHeight / 2 + 0.5;
+    for (const shown of lines) {
+      ctx.fillText(shown, textX, middle);
+      if (underline ?? link) {
+        const length = this.cellText.width(shown);
+        const left = align === "right" ? textX - length : align === "center" ? textX - length / 2 : textX;
+        ctx.fillRect(left, Math.round(middle + this.theme.fontSize / 2), length, 1);
+      }
+      middle += lineHeight;
+    }
+  }
+
+  /** Sets the cell font, unless it is set: setting a font costs more than drawing a cell. */
+  private useCellFont() {
+    if (this.context.font !== this.cellFont) {
+      this.context.font = this.cellText.font;
+      this.cellFont = this.context.font;
+    }
+  }
+
+  /** Lets the `drawCell` hook draw a loaded cell, clipped to it. */
+  private customCell(
+    drawCell: DrawCell,
+    content: GridCellContent,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    style: CellStyle | null,
+    align: ColumnAlign,
+    matched: boolean,
+    action: CellAction | null,
+  ) {
+    const c = this.controller;
+    const ctx = this.context;
+    const { row, col } = content;
+    const hover = c.hover;
+    const active = c.selection.active;
+    ctx.save();
+    try {
+      drawCell({
+        ...content,
+        ctx,
+        rect: { x, y, width, height },
+        style,
+        align,
+        action,
+        selected: c.selection.contains(row, col),
+        active: active.row === row && active.col === col,
+        hovered: hover?.zone === "cell" && hover.row === row && hover.col === col,
+        matched,
+        theme: this.theme,
+        padding: PADDING,
+        drawDefault: (options = {}) => {
+          const cellAlign = options.align ?? align;
+          this.useCellFont();
+          if (ctx.textBaseline !== "middle") ctx.textBaseline = "middle";
+          if (ctx.textAlign !== cellAlign) ctx.textAlign = cellAlign;
+          const cellStyle = options.background === undefined ? style : { ...style, background: options.background };
+          this.paintCell(
+            x,
+            y,
+            width,
+            height,
+            options.text ?? content.text,
+            content.value,
+            cellStyle,
+            cellAlign,
+            matched,
+            action,
+            options.color,
+            options.underline,
+          );
+        },
+        fitText: (text, maxWidth) => {
+          this.useCellFont();
+          return this.cellText.fit(text, maxWidth);
+        },
+      });
+    } finally {
+      ctx.restore();
+    }
   }
 
   private drawLines(firstCol: number, lastCol: number, firstRow: number, lastRow: number) {

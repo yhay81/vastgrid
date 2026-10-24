@@ -1,5 +1,6 @@
 import { isNumericType } from "./column-type.js";
 import type {
+  CellStyle,
   CellValue,
   ColumnAlign,
   ColumnFormat,
@@ -402,6 +403,7 @@ export class ColumnFormatter {
   private readonly number: ((value: number | string) => string) | null;
   private readonly date: ((parts: DateParts) => string) | null;
   private readonly custom: ColumnFormat["format"];
+  private readonly styler: ColumnFormat["style"];
 
   constructor(base: ValueFormatter, schema: ColumnSchema, format: ColumnFormat) {
     this.base = base;
@@ -415,6 +417,17 @@ export class ColumnFormatter {
     this.number = format.number ? numberFormatter(base.locale, format.number, base.grouping) : null;
     this.date = format.date ? dateFormatter(base.locale, format.date) : null;
     this.custom = format.format;
+    this.styler = format.style;
+  }
+
+  /** Whether the column has a `style` setting. */
+  get styled() {
+    return this.styler !== undefined;
+  }
+
+  /** The colors of a cell from the column's `style` setting, or null for the defaults. `text` is the shown text. */
+  style(value: CellValue, text: string = this.format(value)): CellStyle | null {
+    return this.styler?.(value, { column: this.schema, text }) ?? null;
   }
 
   /** The text of a value from the number and date settings, or null to use the grid's default. */

@@ -150,6 +150,8 @@ const source = new ArraySource({
 | `copyLimit` | `number` | `1000000` | 一度にコピーできるセルの数（選択したすべての範囲の合計）。 |
 | `columnFormats` | `Record<string, ColumnFormat>` | | スキーマの列名ごとの表示設定。表示名、数値と日時の書式、配置、整形関数、折り返し。 |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | コピーするのを、値とスキーマの列名にするか、表示している文字と表示名にするか。 |
+| `drawCell` | `(args: DrawCellArgs) => void` | | 表示中の読み込み済みのセルを、グリッドの代わりに描きます。`args.drawDefault()` で標準の描画を呼べます。 |
+| `cellAction` | `(cell: GridCellContent) => CellAction \| null` | | セルをリンクやボタンにします。ポインター、下線、スクリーンリーダー向けの役割を付け、クリックと Space で `onCellClick` を呼びます。 |
 | `onQueryChange` | `(query: ViewQuery) => void` | | 並べ替え・絞り込み・検索が変わったときに呼ばれます。 |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | 選択範囲かアクティブなセルが変わったときに呼ばれます。 |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | 列の幅・順序・表示・固定が変わったときに呼ばれます。 |
@@ -239,6 +241,34 @@ const source = useMemo(
 
 通知されるのは表全体の変更だけで、行ごとの差分は通知しません。グリッドは表全体を読み直し、DuckDB ではファイルを読み込み直します。`changes: false` で監視をやめられ、別の `ChangeTransport`（たとえば Server-Sent Events を受け取るもの）でポーリングを置き換えられます。`BrowserSource` は URL のファイルを `ETag`・`Last-Modified`・サイズで監視します（`changeInterval`、既定 5 秒）。ローカルのファイルは監視できません。ディスク上で変わった `File` をブラウザーが読めなくなるためです。
 
+### セルの色と独自の描画
+
+列の `style` で、標準の描画のまま値に応じて文字色と背景色を変えられます。`drawCell` はセルの矩形・値・型・表示の文字・選択の状態・テーマを受け取ってキャンバスに直接描き、先に標準の描画を呼ぶこともできます。`cellAction` はセルをリンクやボタンにします。上ではポインターが変わり、リンクには下線を引き、アクティブなセルにはスクリーンリーダー向けに `link` か `button` の役割を付け、クリックと Space で `onCellClick` を呼びます（Enter と矢印キーは表計算と同じくセルを移動します）。どのフックも、画面に表示している読み込み済みのセルにだけ呼ばれます。
+
+```tsx
+const formats: Record<string, ColumnFormat> = {
+  balance: { style: (value) => (Number(value) < 0 ? { color: "#b42318", background: "#fdecea", description: "残高不足" } : null) },
+};
+const drawCell: DrawCell = (args) => {
+  args.drawDefault();
+  if (args.schema.name === "status" && args.value === "new") {
+    args.ctx.fillStyle = args.theme.accent;
+    args.ctx.fillRect(args.rect.x + 2, args.rect.y + 6, 3, args.rect.height - 12);
+  }
+};
+const cellAction: CellActionHook = (cell) => (cell.schema.name === "url" ? { kind: "link", label: `${cell.text} を開く` } : null);
+
+<DataGrid
+  source={source}
+  columnFormats={formats}
+  drawCell={drawCell}
+  cellAction={cellAction}
+  onCellClick={(event) => event.column === urlColumn && window.open(String(event.value))}
+/>;
+```
+
+詳しくは [DataGrid のリファレンス](https://vastgrid.yhay81.com/ja/reference/data-grid/#セルの色と独自の描画)を参照してください。
+
 ## 性能
 
 Apple M2 Pro（12 スレッド・32 GB）、Node.js 24、DuckDB 1.5 で `npm run bench -- --csv-rows=10000000 --parquet-rows=100000000` を実行した結果です。
@@ -258,7 +288,7 @@ DuckDB の処理を含み、HTTP は含みません。
 | Parquet: 数値の列での並べ替え | 1.9 秒 |
 | Parquet（並べ替え後）: 任意の位置の 256 行（中央値・95 パーセンタイル） | 147 ms・208 ms |
 
-2280 × 1371 px（56 行 × 20 列）の描画は、フレームごとにキャンバスを確定させて測り、中央値 2.0 ms・99 パーセンタイル 3.0 ms でした。
+2280 × 1371 px（56 行 × 20 列）の描画は、フレームごとにキャンバスを確定させて測り、中央値 2.0 ms・99 パーセンタイル 3.0 ms でした。列の `style`、`cellAction`、標準の描画に印を足す `drawCell` を使っても、1,349 セルの 1 フレームは測定のばらつきの範囲に収まりました（使わないときの 2.7〜2.8 ms に対して 2.5〜2.8 ms）。
 
 ## 仕組み
 
