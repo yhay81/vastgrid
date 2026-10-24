@@ -71,8 +71,13 @@ async function answer(
       const target = await options.resolveTarget(request.target);
       return engine.get(request.table).exportView(request, target, signal);
     }
-    case "revision":
-      return { revision: await engine.get(request.table).currentRevision() };
+    case "update":
+      return engine.get(request.table).updateCells(request, signal);
+    case "revision": {
+      const table = engine.get(request.table);
+      const revision = await table.currentRevision();
+      return engine.options.editable ? { revision, edits: table.edits().version } : { revision };
+    }
     case "close":
       await engine.close(request.table);
       return null;

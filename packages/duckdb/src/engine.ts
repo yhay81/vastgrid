@@ -17,20 +17,28 @@ import {
   ErrorCodes,
   type ExportRequest,
   type ExportResult,
+  editableType,
   type FindRequest,
   type FindResult,
+  filterLeaves,
   filtersRows,
   isEmptyQuery,
   isNumericType,
   isTemporalType,
   MAX_TEXT_LIMIT,
+  MAX_UPDATE_CELLS,
+  normalizeCellValue,
   type ReadOptions,
   type RowBlock,
   type RowRequest,
   type SelectionSummary,
   type SheetInfo,
   SourceError,
+  sameCellValue,
+  type TableEdits,
   type TableInfo,
+  type UpdateRequest,
+  type UpdateResult,
   type ViewInfo,
   type ViewOptions,
   type ViewQuery,
@@ -105,6 +113,14 @@ export interface TableEngineOptions {
   previewRows?: number;
   /** Longest text sent for a cell by default. */
   textLimit?: number;
+  /**
+   * Lets clients write cells (the `update` request, `TableSource.updateCells`). Written values are kept
+   * in the engine, apart from the file, and every request reads them: rows, views, statistics,
+   * summaries, find and exports. The file itself is not changed. A table with written cells stays open
+   * (it is not closed to keep `maxTables`, nor opened again when its file changes) until it is closed
+   * or the engine is disposed, which discards them. Defaults to `false`.
+   */
+  editable?: boolean;
   /** Reports problems that are not caused by a request (for logs). */
   log?: (message: string, error?: unknown) => void;
 }
@@ -268,6 +284,7 @@ export class TableEngine {
       abandonedViewTimeout: options.abandonedViewTimeout ?? 3000,
       previewRows: options.previewRows ?? 1000,
       textLimit: options.textLimit ?? 2000,
+      editable: options.editable === true,
       log: options.log,
     });
   }
@@ -356,7 +373,9 @@ export class TableEngine {
     const revision = await fileRevision(absolute);
     // Until its failure is reported, a failed table is returned as it is: reopening it right away would
     // answer every poll of a loading table with a new load, so clients would never see the error.
-    const reusable = (table: OpenTable) => table.revision === revision && !table.failureReported;
+    // A table with written cells keeps them: it is not opened again from the changed file.
+    const reusable = (table: OpenTable) =>
+      (table.revision === revision && !table.failureReported) || table.editedCells > 0;
     const options = readOptionsOf(fileFormat, read);
     const key = tableKey(absolute, options);
     let existing = this.byPath.get(key);
@@ -373,7 +392,7 @@ export class TableEngine {
     this.tables.set(table.id, table);
     this.byPath.set(key, table);
     table.start();
-    await this.trim();
+    await this.trim(table);
     // Clients can offer the other sheets of a workbook from the first answer on.
     if (fileFormat === "xlsx") await table.whenListed();
     return table;
@@ -395,11 +414,16 @@ export class TableEngine {
     await table.dispose();
   }
 
-  private async trim() {
-    const open = [...this.tables.values()].sort((a, b) => a.lastUsed - b.lastUsed);
-    while (open.length > this.options.maxTables) {
+  /** Closes the least recently used tables beyond `maxTables`, other than `opened`. */
+  private async trim(opened: OpenTable) {
+    // Tables with written cells are not closed: closing them would discard the cells.
+    const open = [...this.tables.values()].filter((table) => table.editedCells === 0 && table !== opened);
+    open.sort((a, b) => a.lastUsed - b.lastUsed);
+    let count = this.tables.size;
+    while (count > this.options.maxTables && open.length > 0) {
       const table = open.shift();
       if (table) await this.close(table.id);
+      count--;
     }
   }
 
@@ -486,12 +510,32 @@ interface Preview {
 
 const ROW_COLUMN = "__vg_row";
 const POSITION_COLUMN = "__vg_position";
+/** The position of a row in the relation that shows written cells over the file's rows. */
+const ID_COLUMN = "__vg_id";
 /** Positions looked up per query when reading a view that holds only positions. */
 const LOOKUP_BATCH = 2048;
 /** Cells (rows × columns) one `rows` request may read: the answer is built in memory. */
 const MAX_CELLS = 1_000_000;
 /** Names the engine uses in its queries; a file's column with one of them gets another name in SQL. */
-const RESERVED_NAMES = new Set(["rowid", ROW_COLUMN, POSITION_COLUMN]);
+const RESERVED_NAMES = new Set(["rowid", ROW_COLUMN, POSITION_COLUMN, ID_COLUMN]);
+/** Cells written per statement. */
+const WRITE_BATCH = 500;
+
+/** Whether the engine writes a column: its type can be written and its DuckDB type is a plain name. */
+function writable(column: SqlColumn) {
+  return editableType(column.type) && /^[A-Za-z0-9_ (),]+$/.test(column.sqlType);
+}
+
+/** Whether a query depends on the values of any of these columns. */
+function usesColumns(query: ViewQuery, columns: Set<number>) {
+  if (query.search?.trim()) return true;
+  const used = [
+    ...(query.sort ?? []).map((key) => key.column),
+    ...(query.filters ?? []).map((filter) => filter.column),
+    ...filterLeaves(query.where).map((filter) => filter.column),
+  ];
+  return used.some((column) => columns.has(column));
+}
 
 /**
  * The columns under the names used in SQL: a column whose name the engine needs itself (compared
@@ -547,6 +591,17 @@ export class OpenTable {
   private disposed = false;
   /** Running exports, stopped when the table closes (for example because its file changed). */
   private readonly exports = new Set<AbortController>();
+  /** Tables of written cells by schema column: the value (`v`) of each written row (`__vg_row`). */
+  private readonly editTables = new Map<number, string>();
+  /** The view that shows the written cells over the file's rows, once cells were written. */
+  private overlay: string | null = null;
+  /** The relation and position of the file's rows, before cells were written. */
+  private base: { relation: string; position: string } | null = null;
+  private editVersion = 0;
+  /** Cells that hold a written value. */
+  editedCells = 0;
+  /** Writes run one at a time. */
+  private writes: Promise<unknown> = Promise.resolve();
   private ready: Promise<void> = Promise.resolve();
   private listed: () => void = () => undefined;
   private readonly sheetsKnown = new Promise<void>((resolve) => {
@@ -604,12 +659,14 @@ export class OpenTable {
 
   info(): TableInfo {
     const ready = this.status === "ready";
+    const editable = this.engine.options.editable;
     if (this.status === "error") this.failureReported = true;
     return {
       columns: this.columns.map((column) => ({
         name: column.label ?? column.name,
         type: column.type,
         sourceType: column.sqlType,
+        ...(editable && !writable(column) ? { readOnly: true } : {}),
       })),
       rowCount: ready ? this.rowCount : null,
       // The preview is served while loading only: a table that failed has no rows to read.
@@ -633,9 +690,188 @@ export class OpenTable {
         find: ready,
         export: ready,
         conditions: ready,
+        ...(editable ? { edit: ready } : {}),
       },
       ...(ready ? { exports: { formats: ["csv", "tsv", "parquet", "json", "xlsx"], delivery: "file" } } : {}),
+      ...(editable && ready ? { edits: this.edits() } : {}),
     };
+  }
+
+  edits(): TableEdits {
+    return { version: this.editVersion, cells: this.editedCells };
+  }
+
+  /**
+   * Writes cells (see `TableSource.updateCells`): every update, or none. Values are checked with
+   * `normalizeCellValue` and converted to the column's DuckDB type. They are kept in a table per column,
+   * which a view joins to the file's rows: once cells were written, every request reads that view.
+   * Views whose rows or order may depend on the written columns are dropped (clients create them again).
+   */
+  async updateCells(request: UpdateRequest, signal?: AbortSignal): Promise<UpdateResult> {
+    this.requireReady();
+    if (!this.engine.options.editable) throw new SourceError(ErrorCodes.readOnly, "Editing is not enabled.", 403);
+    if (request.updates.length > MAX_UPDATE_CELLS) {
+      throw new SourceError(ErrorCodes.invalidRequest, `Write at most ${MAX_UPDATE_CELLS} cells at a time.`, 400);
+    }
+    if (request.revision !== undefined && request.revision !== this.revision) {
+      throw new SourceError(
+        ErrorCodes.revisionChanged,
+        "The file was read again; its rows may be other records now.",
+        409,
+      );
+    }
+    const total = this.rowCount ?? 0;
+    /** By column, then by row; a later update of the same cell wins. */
+    const columns = new Map<number, Map<number, { value: CellValue; previous?: CellValue }>>();
+    for (const update of request.updates) {
+      const column = this.column(update.column);
+      if (update.row >= total)
+        throw new SourceError(ErrorCodes.invalidRequest, `Row ${update.row} does not exist.`, 400);
+      const label = column.label ?? column.name;
+      if (!writable(column)) throw new SourceError(ErrorCodes.readOnly, `The column ${label} is read-only.`, 403);
+      const normalized = normalizeCellValue(update.value, {
+        name: label,
+        type: column.type,
+        sourceType: column.sqlType,
+      });
+      if (!normalized.ok) {
+        throw new SourceError(
+          ErrorCodes.invalidValue,
+          `Row ${update.row + 1}: the value does not fit the column ${label} (${normalized.error}).`,
+          422,
+        );
+      }
+      let rows = columns.get(update.column);
+      if (!rows) {
+        rows = new Map();
+        columns.set(update.column, rows);
+      }
+      const earlier = rows.get(update.row);
+      rows.set(update.row, {
+        value: normalized.value,
+        ...(earlier?.previous !== undefined
+          ? { previous: earlier.previous }
+          : update.previous !== undefined
+            ? { previous: update.previous }
+            : {}),
+      });
+    }
+    const run = this.writes.then(() => this.write(columns, signal));
+    this.writes = run.catch(() => undefined);
+    const updated = await run;
+    return { updated, edits: this.edits() };
+  }
+
+  private async write(
+    columns: Map<number, Map<number, { value: CellValue; previous?: CellValue }>>,
+    signal: AbortSignal | undefined,
+  ) {
+    const engine = this.engine;
+    return engine.withConnection(signal, async (connection) => {
+      if (this.disposed) throw new SourceError(ErrorCodes.cancelled, "The table was closed.", 409);
+      // Cells changed since the client read them are not overwritten.
+      for (const [index, rows] of columns) {
+        const checked = [...rows].filter(([, update]) => update.previous !== undefined);
+        const column = this.column(index);
+        for (let from = 0; from < checked.length; from += LOOKUP_BATCH) {
+          const batch = checked.slice(from, from + LOOKUP_BATCH);
+          // The positions are validated integers, so listing them inline is safe.
+          const result = await connection.runAndReadAll(
+            `SELECT ${this.position}, ${selectExpression(column, MAX_TEXT_LIMIT)} FROM ${this.relation} WHERE ${this.position} IN (${batch.map(([row]) => row).join(", ")})`,
+          );
+          const current = new Map(result.getRowsJS().map((row) => [Number(row[0]), wireValue(row[1])]));
+          for (const [row, update] of batch) {
+            if (!sameCellValue(current.get(row) ?? null, update.previous)) {
+              throw new SourceError(
+                ErrorCodes.editConflict,
+                `Row ${row + 1} of ${column.label ?? column.name} was changed meanwhile.`,
+                409,
+              );
+            }
+          }
+        }
+      }
+      const created = new Map<number, string>();
+      let updated = 0;
+      await connection.run("BEGIN TRANSACTION");
+      try {
+        for (const [index, rows] of columns) {
+          const column = this.column(index);
+          let table = this.editTables.get(index);
+          if (!table) {
+            table = engine.createId("vg_e");
+            await connection.run(`CREATE TABLE ${quoteIdentifier(table)} (${ROW_COLUMN} BIGINT, v ${column.sqlType})`);
+            created.set(index, table);
+          }
+          const list = [...rows];
+          for (let from = 0; from < list.length; from += WRITE_BATCH) {
+            const batch = list.slice(from, from + WRITE_BATCH);
+            await connection.run(
+              `DELETE FROM ${quoteIdentifier(table)} WHERE ${ROW_COLUMN} IN (${batch.map(([row]) => row).join(", ")})`,
+            );
+            const params = new Parameters();
+            const values = batch.map(
+              ([row, update]) => `(${row}, CAST(${params.add(update.value)} AS ${column.sqlType}))`,
+            );
+            await connection.run(`INSERT INTO ${quoteIdentifier(table)} VALUES ${values.join(", ")}`, params.values);
+          }
+          updated += rows.size;
+        }
+        const overlay =
+          created.size > 0 ? await this.createOverlay(connection, new Map([...this.editTables, ...created])) : null;
+        await connection.run("COMMIT");
+        if (overlay) {
+          this.base ??= { relation: this.relation, position: this.position };
+          if (!this.overlay) this.objects.unshift(`VIEW ${quoteIdentifier(overlay)}`);
+          this.overlay = overlay;
+          this.relation = quoteIdentifier(overlay);
+          this.position = ID_COLUMN;
+        }
+      } catch (error) {
+        await connection.run("ROLLBACK").catch(() => undefined);
+        if (error instanceof SourceError) throw error;
+        // A value DuckDB cannot convert to the column's type (for example a date out of its range).
+        if (/^(Conversion|Invalid Input|Out of Range) Error/.test(errorMessage(error))) {
+          throw new SourceError(ErrorCodes.invalidValue, engine.clientMessage(error), 422);
+        }
+        throw error;
+      }
+      for (const [index, table] of created) {
+        this.editTables.set(index, table);
+        this.objects.push(`TABLE ${quoteIdentifier(table)}`);
+      }
+      const counts = [...this.editTables.values()].map((table) => `(SELECT count(*) FROM ${quoteIdentifier(table)})`);
+      this.editedCells = Number((await connection.runAndReadAll(`SELECT ${counts.join(" + ")}`)).getRowsJS()[0][0]);
+      this.editVersion++;
+      // Views copy the rows (kind `rows`), or hold an order and rows that may depend on the new values.
+      const touched = new Set(columns.keys());
+      for (const preview of this.previews.values()) preview.controller.abort();
+      await this.dropViews(
+        [...this.views.values()].filter(
+          (view) => view.kind === "rows" || view.status !== "ready" || usesColumns(view.query, touched),
+        ),
+      );
+      return updated;
+    });
+  }
+
+  /** Creates (or replaces) the view that reads the written cells over the file's rows. Returns its name. */
+  private async createOverlay(connection: DuckDBConnection, tables: Map<number, string>) {
+    const base = this.base ?? { relation: this.relation, position: this.position };
+    const name = this.overlay ?? this.engine.createId("vg_x");
+    const joins: string[] = [];
+    const selected = this.columns.map((column, index) => {
+      const id = quoteIdentifier(column.name);
+      const table = tables.get(index);
+      if (!table) return `b.${id}`;
+      const alias = `e${index}`;
+      joins.push(`LEFT JOIN ${quoteIdentifier(table)} ${alias} ON ${alias}.${ROW_COLUMN} = b.${base.position}`);
+      return `CASE WHEN ${alias}.${ROW_COLUMN} IS NULL THEN b.${id} ELSE ${alias}.v END AS ${id}`;
+    });
+    await connection.run(
+      `CREATE OR REPLACE VIEW ${quoteIdentifier(name)} AS SELECT b.${base.position} AS ${ID_COLUMN}, ${selected.join(", ")} FROM ${base.relation} b ${joins.join(" ")}`,
+    );
+    return name;
   }
 
   private async describe(connection: DuckDBConnection, sql: string, values: string[] = []) {

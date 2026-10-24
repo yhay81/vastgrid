@@ -957,3 +957,97 @@
     --vg-focus: Highlight;
   }
 }
+
+/* Cell editor: a text field over the cell being edited. While no cell is edited it stays in the page,
+   invisible, so that the first key typed (or an IME composition) can move into it. */
+.vg-editor-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.vg-editor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.vg-editor[data-open] {
+  z-index: 2;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.vg-editor-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: inherit;
+  max-width: min(640px, 80vw);
+  height: var(--vg-editor-height, var(--vg-row-height));
+  min-height: var(--vg-editor-height, var(--vg-row-height));
+  max-height: 240px;
+  margin: 0;
+  padding: 3px 7px;
+  color: var(--vg-fg);
+  font: inherit;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  resize: none;
+  background: var(--vg-surface);
+  border: 2px solid var(--vg-active-border);
+  border-radius: 0;
+  outline: none;
+  box-shadow: var(--vg-shadow);
+}
+
+.vg-editor[data-invalid] .vg-editor-input {
+  border-color: var(--vg-error-fg);
+}
+
+.vg-editor-note {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: min(420px, 80vw);
+  padding: 4px 8px;
+  color: var(--vg-muted);
+  font-size: 0.88em;
+  background: var(--vg-surface);
+  border: 1px solid var(--vg-border);
+  border-top: none;
+  box-shadow: var(--vg-shadow);
+}
+
+.vg-editor-error {
+  color: var(--vg-error-fg);
+}
+
+.vg-editbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  color: var(--vg-muted);
+  font-size: 0.92em;
+  background: var(--vg-surface-muted);
+  border-top: 1px solid var(--vg-line-strong);
+}
+
+.vg-editbar[data-failed] {
+  color: var(--vg-error-fg);
+}
+
+.vg-editbar > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}

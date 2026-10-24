@@ -32,6 +32,7 @@ clients and files; create one per process.
 | `abandonedViewTimeout` | `3000` | A background build stops when another view of the table waits and nobody asked for this one for this many milliseconds. |
 | `previewRows` | `1000` | Rows readable while a delimited or JSON file is still loading. |
 | `textLimit` | `2000` | Longest text sent for a cell by default. |
+| `editable` | `false` | Lets clients write cells (`update`). Written values are kept in the engine, apart from the file, and every request reads them; a table with written cells stays open. See [Editing cells](/guides/editing/#writing-to-the-duckdb-server). |
 | `log` | | `(message, error?) => void`, for problems that are not caused by a request. |
 
 | Method | Description |

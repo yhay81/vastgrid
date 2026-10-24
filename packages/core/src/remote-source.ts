@@ -14,6 +14,8 @@ import type {
   RowRequest,
   SelectionSummary,
   TableInfo,
+  UpdateRequest,
+  UpdateResult,
   ViewInfo,
   ViewOptions,
   ViewQuery,
@@ -131,6 +133,9 @@ export class RemoteSource implements TableSource {
   /** The revision of the table as `info` read it last, and the last revision reported to subscribers. */
   private revision: string | null | undefined;
   private reported: string | null | undefined;
+  /** The `edits.version` read last (by `info` or a write), and the last one reported to subscribers. */
+  private editVersion: number | undefined;
+  private reportedEdits: number | undefined;
   private readonly listeners = new Set<TableChangeListener>();
   private stopWatching: (() => void) | null = null;
 
@@ -191,6 +196,7 @@ export class RemoteSource implements TableSource {
     }
     this.table = result.table;
     this.revision = result.revision;
+    this.editVersion = result.edits?.version;
     return result;
   }
 
@@ -317,6 +323,20 @@ export class RemoteSource implements TableSource {
   }
 
   /**
+   * Writes cells on the server (see `TableSource.updateCells`), which must report `capabilities.edit`.
+   * The source's own writes are not reported to its subscribers.
+   */
+  async updateCells(request: UpdateRequest, signal?: AbortSignal): Promise<UpdateResult> {
+    const fields: Operation<"update"> = {
+      updates: request.updates,
+      ...(request.revision === undefined ? {} : { revision: request.revision }),
+    };
+    const result = await this.call<UpdateResult>("update", fields, signal);
+    this.editVersion = result.edits.version;
+    return result;
+  }
+
+  /**
    * Calls `listener` when the table changed, as the `changes` transport learns it (by default by asking
    * the server every 2 seconds). Watching runs while there are listeners.
    */
@@ -343,11 +363,22 @@ export class RemoteSource implements TableSource {
 
   private async checkRevision(signal?: AbortSignal) {
     const known = this.revision;
+    const knownEdits = this.editVersion;
     const result = await this.call<RevisionResult>("revision", {} satisfies Operation<"revision">, signal);
     // Before the first `info` there is nothing to compare with. A table reopened by the request (the
     // server restarted) set `revision` anew: the comparison is with the revision from before.
-    if (known === undefined || result.revision === known || result.revision === this.reported) return false;
-    this.report(result.revision);
+    if (known === undefined) return false;
+    if (result.revision !== known && result.revision !== this.reported) {
+      this.report(result.revision);
+      return true;
+    }
+    // Cells written by another client of the same table.
+    const edits = result.edits;
+    if (edits === undefined || edits === knownEdits || edits === this.editVersion || edits === this.reportedEdits) {
+      return false;
+    }
+    this.reportedEdits = edits;
+    for (const listener of [...this.listeners]) listener({ edits });
     return true;
   }
 

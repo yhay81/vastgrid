@@ -36,7 +36,10 @@ import "vastgrid/styles.css";
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | 選択範囲かアクティブなセルが変わったときに呼ばれます。[イベント](#イベント)を参照してください。 |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | 列の幅・順序・表示・固定が変わったときに呼ばれます。 |
 | `onCellClick` | `(event: GridCellEvent) => void` | | セルをクリックしたとき、またはアクティブなセルで Space を押したときに呼ばれます。 |
-| `onCellDoubleClick` | `(event: GridCellEvent) => void` | | セルをダブルクリックしたとき、または F2 を押したときに呼ばれます。`event.preventDefault()` でセルの詳細を開かないようにできます。 |
+| `onCellDoubleClick` | `(event: GridCellEvent) => void` | | セルをダブルクリックしたとき、または F2 を押したときに呼ばれます。`event.preventDefault()` でセルの詳細（編集できるグリッドではセルのエディターも）を開かないようにできます。 |
+| `readOnly` | `boolean` | `false` | source がセルを書き込める（`capabilities.edit`）場合も、編集を提供しません。 |
+| `validateCell` | `(cell: GridCellValidation) => string \| null \| undefined \| Promise<…>` | | 書き込む前に値を検証します。拒否するときはメッセージを返します。[セルの編集](/ja/guides/editing/)を参照してください。 |
+| `onCellsChange` | `(event: GridCellsChangeEvent) => void` | | 編集したセルの保存が済んだとき、または失敗したときに呼ばれます。 |
 | `initialState` | `GridState` | | グリッドを作るときに、表の列がわかった時点で適用する設定。[設定の保存](#設定の保存)を参照してください。 |
 | `onStateChange` | `(state: GridState) => void` | | クエリーか列の設定が変わったときに、その設定を渡して呼ばれます。 |
 | `checkboxSelection` | `boolean` | `false` | 行ごとのチェックボックスと、左上にすべての行のチェックボックスを表示します。[行の選択](#行の選択チェックボックス)を参照してください。 |

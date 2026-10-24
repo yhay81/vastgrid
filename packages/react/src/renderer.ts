@@ -271,6 +271,8 @@ export class CanvasRenderer {
     const { drawCell, cellAction } = c.options;
     const textWidth = width - PADDING * 2;
     const find = c.findText ? (c.findCaseSensitive ? c.findText : c.findText.toLowerCase()) : "";
+    // Cells of writes that are saving or failed get a mark.
+    const marks = c.edits.batches.length > 0;
     ctx.save();
     ctx.beginPath();
     ctx.rect(x, c.options.headerHeight, width, c.height);
@@ -306,6 +308,7 @@ export class CanvasRenderer {
       }
       if (!drawCell && !cellAction) {
         this.paintCell(x, y, width, rowHeight, text, value, style, align, matched, null);
+        if (marks) this.editMark(x, y, width, c.edits.stateOf(c.rowId(row), state.index));
         continue;
       }
       const content: GridCellContent = {
@@ -321,8 +324,23 @@ export class CanvasRenderer {
       const action = cellAction?.(content) ?? null;
       if (drawCell) this.customCell(drawCell, content, x, y, width, rowHeight, style, align, matched, action);
       else this.paintCell(x, y, width, rowHeight, text, value, style, align, matched, action);
+      if (marks) this.editMark(x, y, width, c.edits.stateOf(content.rowId, state.index));
     }
     ctx.restore();
+  }
+
+  /** A triangle in the top right corner of a cell whose write is saving (accent) or failed (error color). */
+  private editMark(x: number, y: number, width: number, state: "saving" | "failed" | null) {
+    if (!state) return;
+    const ctx = this.context;
+    const size = 6;
+    ctx.fillStyle = state === "failed" ? this.theme.error : this.theme.accent;
+    ctx.beginPath();
+    ctx.moveTo(x + width - size - 1, y + 1);
+    ctx.lineTo(x + width - 1, y + 1);
+    ctx.lineTo(x + width - 1, y + size + 1);
+    ctx.closePath();
+    ctx.fill();
   }
 
   /**

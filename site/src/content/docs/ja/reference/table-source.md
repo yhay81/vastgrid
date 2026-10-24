@@ -26,6 +26,8 @@ interface TableSource {
   aggregate?(request: AggregateRequest, signal?: AbortSignal): Promise<SelectionSummary>;
   find?(request: FindRequest, signal?: AbortSignal): Promise<FindResult | null>;
   exportView?(request: ExportRequest, signal?: AbortSignal): Promise<ExportResult>;
+  /** capabilities.edit を報告する source で、セルをすべて書き込むか、何も書き込まない（下記）。 */
+  updateCells?(request: UpdateRequest, signal?: AbortSignal): Promise<UpdateResult>;
   /** 表を解放する。以後、そのソースは使えない。 */
   /** 表全体が変わったときに `listener` を呼びます。返す関数を呼ぶまで続きます。 */
   subscribe?(listener: (change: { revision?: string | null }) => void): () => void;
@@ -42,6 +44,7 @@ new ArraySource({
   columns: (string | ColumnSchema)[]; // 列名（型は推測する）かスキーマ
   rows?: CellValue[][];               // 行ごとのデータ、または
   columnData?: CellValue[][];         // 列ごとのデータ。1 列に 1 つの配列
+  editable?: boolean;                 // updateCells でセルを書き込む（既定は false）
 });
 ```
 
@@ -271,6 +274,25 @@ interface ExportResult { target: string; rows: number; data?: Blob }
 ```
 
 `xlsx` が数値・日付・文字（数式にはしない）・`null` をどう書くか、Excel のシートに収まらない行・列を `export_too_large` で断ることは、[プロトコル](/ja/reference/protocol/#excel-export-rules)と[書き出し](/ja/guides/export/#excel-ファイル)にあります。
+
+## セルの書き込み
+
+```ts
+interface UpdateRequest {
+  updates: { row: number; column: number; value: CellValue; previous?: CellValue }[]; // MAX_UPDATE_CELLS（100,000）まで
+  revision?: string; // 行を読んだときの TableInfo.revision
+}
+interface UpdateResult {
+  updated: number;
+  edits: { version: number; cells: number }; // 書き込み後の TableInfo.edits
+}
+```
+
+`capabilities.edit` を報告する source は、`updateCells` でセルを書き込みます。`row` は表の中の行の位置（`RowBlock.rowIds`）、`column` はスキーマの列番号です。要求は不可分で、すべてを書き込むか、何も書き込まずに `SourceError` で reject します。コードは `read_only`（source か列が書き込めない）、`invalid_value`（値が列に合わない）、`edit_conflict`（セルが `previous` の値ではなくなっている）、`revision_changed`（表の `revision` が違う）、`invalid_request` です。
+
+書き込みは行の位置と `revision` を変えず、代わりに `TableInfo.edits.version` を増やします。変更を通知する source は、`subscribe` のリスナーを `{ edits }` で呼びます。以降の要求はすべて新しい値を読みますが、それ以前に作ったビューは古い行と順序のままのことがあるため、グリッドはクエリが書き込んだ列を使うときにビューを作り直します。source が書き込まない列は、スキーマで `readOnly: true` になります。
+
+`parseCellInput(text, column)` は入力した文字列を列の型として読み、`normalizeCellValue(value, column)` はプログラムが書き込む値を同じ規則で確かめます。どちらも 64 ビット整数と decimal を文字列のまま保ちます。`editableType(type)`・`editableColumn(schema)`・`editText(value)`・`sameCellValue(a, b)` も source とエディターで使えます。[セルの編集](/ja/guides/editing/)を参照してください。
 
 ## エラー
 

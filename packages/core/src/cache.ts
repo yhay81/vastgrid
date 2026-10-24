@@ -59,6 +59,8 @@ export class RowCache {
   private readonly concurrency: number;
   private readonly retryDelay: number;
   private readonly blocks = new Map<string, CacheBlock>();
+  /** Blocks read before `invalidate()`, shown until their rows are read again. */
+  private readonly stale = new Map<string, CacheBlock>();
   private readonly rowIdsByBlock = new Map<number, number[]>();
   private readonly listeners = new Set<() => void>();
   private readonly errorListeners = new Set<(error: unknown) => void>();
@@ -133,8 +135,48 @@ export class RowCache {
     clearTimeout(this.retryTimer);
     for (const block of this.blocks.values()) block.controller?.abort();
     this.blocks.clear();
+    this.stale.clear();
     this.rowIdsByBlock.clear();
     this.queue = [];
+  }
+
+  /**
+   * Reads the rows of the same view again (for example after cells were written), showing the values
+   * read before until the new ones arrive, so that the grid does not blink. Row positions are kept.
+   */
+  invalidate() {
+    this.generation++;
+    clearTimeout(this.retryTimer);
+    for (const block of this.blocks.values()) {
+      block.controller?.abort();
+      if (block.state === "ready") this.stale.set(block.key, block);
+    }
+    this.blocks.clear();
+    this.queue = [];
+    this.notify();
+  }
+
+  /**
+   * Sets the value of a loaded cell, for example to show a value being written before the source has
+   * it. Returns whether the cell was loaded. The next read of its rows replaces it.
+   */
+  patch(row: number, column: number, value: CellValue) {
+    let patched = false;
+    const key = this.keyOf(Math.floor(row / this.blockRows), Math.floor(column / this.blockColumns));
+    for (const block of [this.blocks.get(key), this.stale.get(key)]) {
+      if (block?.state !== "ready" || !block.values || row >= block.end) continue;
+      const list = block.values[column - block.firstColumn];
+      if (!list) continue;
+      const offset = row - block.start;
+      list[offset] = value;
+      const text = block.text?.[column - block.firstColumn];
+      if (text) text[offset] = undefined;
+      const styles = block.styles?.[column - block.firstColumn];
+      if (styles) styles[offset] = undefined;
+      patched = true;
+    }
+    if (patched) this.notify();
+    return patched;
   }
 
   onChange(listener: () => void) {
@@ -165,9 +207,14 @@ export class RowCache {
     return `${rowBlock}:${colBlock}`;
   }
 
-  /** The block holding the cell, if it has been requested. */
+  /**
+   * The block holding the cell, if it has been requested; until it is read again after `invalidate()`,
+   * the block read before.
+   */
   blockAt(row: number, column: number): CacheBlock | undefined {
-    return this.blocks.get(this.keyOf(Math.floor(row / this.blockRows), Math.floor(column / this.blockColumns)));
+    const key = this.keyOf(Math.floor(row / this.blockRows), Math.floor(column / this.blockColumns));
+    const block = this.blocks.get(key);
+    return block?.state === "ready" ? block : (this.stale.get(key) ?? block);
   }
 
   /** The value of a loaded cell, or `undefined` while it is not loaded. */
@@ -248,6 +295,7 @@ export class RowCache {
         wanted.add(block.key);
       }
     }
+    for (const key of this.stale.keys()) if (!wanted.has(key)) this.stale.delete(key);
     // Requests for blocks that are no longer near the screen only delay the visible ones.
     for (const block of [...this.blocks.values()]) {
       if (wanted.has(block.key)) continue;
@@ -299,6 +347,7 @@ export class RowCache {
         block.values = result.columns;
         block.rowIds = result.rowIds ?? null;
         block.state = "ready";
+        this.stale.delete(block.key);
         if (block.rowIds) this.rowIdsByBlock.set(block.rowBlock, block.rowIds);
         this.notify();
       })

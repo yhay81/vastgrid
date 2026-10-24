@@ -18,6 +18,7 @@ import {
   type CellValue,
   type ColumnFormat,
   type CopyValues,
+  editText,
   filterLeaves,
   type GridState,
   type RowSelection,
@@ -26,6 +27,7 @@ import {
 } from "vastgrid-core";
 import type { CellActionHook, DrawCell } from "./cell-render.js";
 import { StatusBar, Toolbar } from "./components/bars.js";
+import { CellEditor } from "./components/cell-editor.js";
 import { CellInspector } from "./components/cell-inspector.js";
 import { ColumnsPanel } from "./components/columns-panel.js";
 import { DetailFields, DetailPanel, type DetailPanelProps } from "./components/detail-panel.js";
@@ -37,6 +39,14 @@ import { type Anchor, type MenuItem, MenuList, Popover } from "./components/popo
 import { StatsPanel } from "./components/stats-panel.js";
 import { CopyRangesError, CopyTooLargeError, GridController, type Hit, ViewBuildingError } from "./controller.js";
 import { DetailTracker, detailKeyAction } from "./detail.js";
+import {
+  type CellProblem,
+  EditTooLargeError,
+  type GridCellsChangeEvent,
+  type GridEditReason,
+  type TargetCell,
+  type ValidateCell,
+} from "./editing.js";
 import type { GridCellEvent, GridColumnsEvent, GridRowSelectionEvent, GridSelectionEvent } from "./events.js";
 import { exportSupport, type GridExportOptions, offeredFormats } from "./export.js";
 import { countFormat, numberFormat } from "./labels.js";
@@ -120,9 +130,22 @@ export interface DataGridProps {
   onCellClick?: (event: GridCellEvent) => void;
   /**
    * Called when a cell is double-clicked, or F2 is pressed on the active cell. `event.preventDefault()`
-   * keeps the cell inspector closed.
+   * keeps the cell inspector closed and, in a grid that edits, the cell editor.
    */
   onCellDoubleClick?: (event: GridCellEvent) => void;
+  /**
+   * Offers no editing, also when the source can write cells. Grids edit only sources that report
+   * `capabilities.edit` (for example `ArraySource` with `editable`); columns marked `readOnly` stay
+   * read-only. Defaults to `false`.
+   */
+  readOnly?: boolean;
+  /**
+   * Checks a value before it is written, after the grid checked its type: return a message to refuse
+   * it. It may return a promise. Keep the function stable.
+   */
+  validateCell?: ValidateCell;
+  /** Called when edited cells were saved by the source, or failed to save (see the event's `status`). */
+  onCellsChange?: (event: GridCellsChangeEvent) => void;
   /**
    * Settings applied when a grid starts (for each new `source`), for example from `getState()` saved
    * earlier. They apply once the table's columns are known.
@@ -226,6 +249,79 @@ async function writeClipboard(text: Promise<string>, html: Promise<string | null
   await clipboard.writeText(await text);
 }
 
+/** The cell being edited, named by its row's position in the table so that it survives a new view. */
+interface EditorState {
+  row: number;
+  col: number;
+  rowId: number;
+  column: number;
+  /** The value when editing started (cut text is read whole). */
+  previous: CellValue | undefined;
+  error: string | null;
+  /** `validateCell` is checking the value. */
+  checking: boolean;
+}
+
+/** Whether a key types text (a character, or the start of an IME composition), which starts editing. */
+function startsTyping(event: KeyboardEvent<HTMLElement>) {
+  if (event.key === "Process" || event.keyCode === 229) return true;
+  // AltGr gives Ctrl+Alt on Windows; Option gives characters on a Mac.
+  const shortcut = event.metaKey || (event.ctrlKey && !event.altKey);
+  return event.key.length === 1 && event.key !== " " && !shortcut;
+}
+
+/** Shows writes that take a moment to save, and a write that failed, with what can be done about it. */
+function EditBar({
+  controller,
+  messages,
+  count,
+}: {
+  controller: GridController;
+  messages: Messages;
+  count: (value: number) => string;
+}) {
+  const saving = controller.edits.saving;
+  const failed = controller.edits.failed;
+  // Saving is shown only when it takes a moment, so that quick saves do not blink.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (saving === 0) {
+      setSlow(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlow(true), 400);
+    return () => clearTimeout(timer);
+  }, [saving]);
+  if (!failed && !(slow && saving > 0)) return null;
+  if (!failed) {
+    return (
+      <div className="vg-editbar" role="status">
+        <span>{messages.editSaving(count(saving))}</span>
+      </div>
+    );
+  }
+  const conflict = failed.error?.code === "edit_conflict";
+  const retryable = controller.edits.retryable(failed);
+  const text = !retryable
+    ? messages.editRevisionChanged
+    : conflict
+      ? messages.editConflict
+      : messages.editFailed(failed.error?.message ?? "");
+  return (
+    <div className="vg-editbar" role="alert" data-failed="true">
+      <span>{text}</span>
+      {retryable && (
+        <button type="button" className="vg-button" onClick={() => void controller.edits.retry(conflict)}>
+          {conflict ? messages.editOverwrite : messages.retry}
+        </button>
+      )}
+      <button type="button" className="vg-button" onClick={() => controller.edits.discard()}>
+        {messages.editDiscard}
+      </button>
+    </div>
+  );
+}
+
 /**
  * A data grid for very large tables. Draws on a canvas, reads rows through a `TableSource` as you
  * scroll, and offers spreadsheet selection and keyboard navigation, copying, sorting, filters,
@@ -292,6 +388,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       checkboxSelection,
       rowKey,
       followTail,
+      readOnly: props.readOnly,
+      validateCell: props.validateCell,
     });
     if (props.initialState) grid.applyState(props.initialState);
     if (rowSelection) grid.setRowSelection(rowSelection);
@@ -336,6 +434,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   useEffect(() => {
     controller.options.followTail = followTail;
   }, [controller, followTail]);
+
+  useEffect(() => {
+    controller.options.readOnly = props.readOnly;
+    controller.options.validateCell = props.validateCell;
+    controller.emit();
+  }, [controller, props.readOnly, props.validateCell]);
 
   useEffect(() => {
     controller.options.drawCell = props.drawCell;
@@ -431,6 +535,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       controller.onColumnsChange((event) => handlers.current.onColumnsChange?.(event)),
       controller.onStateChange((state) => handlers.current.onStateChange?.(state)),
       controller.onRowSelectionChange((event) => handlers.current.onRowSelectionChange?.(event)),
+      controller.edits.onChange((event) => handlers.current.onCellsChange?.(event)),
     ];
     return () => {
       for (const stop of stops) stop();
@@ -602,6 +707,165 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   /** Options of a copy started from the keyboard, answered by the browser's own copy event. */
   const pendingCopy = useRef<{ headers?: boolean } | null>(null);
   const copyHandler = useRef<(event: ClipboardEvent) => void>(() => undefined);
+
+  // ----- editing -----
+
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const editorBoxRef = useRef<HTMLDivElement>(null);
+  const [editing, setEditingState] = useState<EditorState | null>(null);
+  const editingRef = useRef<EditorState | null>(null);
+  const setEditing = useCallback((state: EditorState | null) => {
+    editingRef.current = state;
+    setEditingState(state);
+  }, []);
+
+  /** The text of a problem with a value, for the editor or a notice. */
+  function problemText(problem: CellProblem) {
+    if (problem.kind === "readOnly") return messages.editReadOnly;
+    if (problem.kind === "input") return messages.editInvalid[problem.error];
+    return problem.message;
+  }
+
+  /**
+   * Opens the editor on the active cell. `replace` starts empty, for the key being typed (the key's own
+   * text, also an IME's, goes into the editor); `edit` starts with the cell's value. Returns false when
+   * the cell cannot be edited.
+   */
+  function startEdit(mode: "replace" | "edit") {
+    const c = controller;
+    const textarea = editorRef.current;
+    const { row, col } = c.selection.active;
+    if (!textarea || !c.edits.cellEditable(row, col)) return false;
+    const value = c.value(row, col);
+    const rowId = c.rowId(row);
+    const column = c.visible[col]?.index;
+    if (rowId === null || column === undefined || value === undefined) return false;
+    if (!c.selection.single) c.selection.select({ row, col });
+    c.ensureVisible(row, col);
+    textarea.value = mode === "replace" ? "" : editText(value);
+    textarea.style.height = "";
+    placeEditor({ row, col });
+    textarea.focus({ preventScroll: true });
+    if (mode === "edit") textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    const state: EditorState = { row, col, rowId, column, previous: value, error: null, checking: false };
+    setEditing(state);
+    // Text cut for display is read whole before it is edited.
+    if (mode === "edit" && typeof value === "string" && value.endsWith("…")) {
+      void c.fullValue(row, col).then(
+        (full) => {
+          if (editingRef.current !== state || textarea.value !== editText(value)) return;
+          textarea.value = editText(full);
+          setEditing({ ...state, previous: full });
+        },
+        () => undefined,
+      );
+    }
+    return true;
+  }
+
+  /** Places the editor over its cell (or hides it while the cell is scrolled away). */
+  function placeEditor(cell: { row: number; col: number } | null = editingRef.current) {
+    const box = editorBoxRef.current?.firstElementChild as HTMLElement | null | undefined;
+    const c = controller;
+    if (!box || !cell) return;
+    const x = c.columnX(cell.col);
+    const y = c.rowY(cell.row);
+    const width = c.layout.width(cell.col);
+    const left = cell.col < c.frozen ? c.gutterWidth : c.gutterWidth + c.frozenWidth;
+    const shown = x + width > left && x < c.width && y + c.rowHeight > c.options.headerHeight && y < c.height;
+    box.style.left = `${Math.max(x, left)}px`;
+    box.style.top = `${y}px`;
+    box.style.minWidth = `${Math.max(width - Math.max(0, left - x), 60)}px`;
+    box.style.setProperty("--vg-editor-height", `${c.rowHeight}px`);
+    box.style.visibility = shown ? "" : "hidden";
+  }
+
+  useEffect(() => {
+    if (!editing) return;
+    placeEditor();
+    return controller.onRender(() => requestAnimationFrame(() => placeEditor()));
+  });
+
+  /** Closes the editor; the focus returns to the grid unless it moved elsewhere. */
+  function closeEditor() {
+    const focused = document.activeElement;
+    setEditing(null);
+    if (!focused || focused === editorRef.current || focused === document.body) focusGrid();
+  }
+
+  /** Checks and writes the editor's text, then moves the active cell by `move`. */
+  async function commitEdit(move: [number, number] | null) {
+    const state = editingRef.current;
+    const textarea = editorRef.current;
+    if (!state || state.checking || !textarea) return;
+    const c = controller;
+    const text = textarea.value;
+    const previous = typeof state.previous === "string" && state.previous.endsWith("…") ? undefined : state.previous;
+    const checking: EditorState = { ...state, checking: true, error: null };
+    if (c.options.validateCell) setEditing(checking);
+    else editingRef.current = checking;
+    const prepared = await c.edits.prepare(
+      [{ row: state.row, col: state.col, rowId: state.rowId, column: state.column, text, previous }],
+      "edit",
+    );
+    if (editingRef.current !== checking) return;
+    if (!prepared.ok) {
+      setEditing({ ...state, checking: false, error: problemText(prepared.problems[0].problem) });
+      if (move) textarea.focus({ preventScroll: true });
+      return;
+    }
+    closeEditor();
+    if (move) {
+      const target = c.selection.advance(move[0], move[1]);
+      c.selectionChanged(target);
+    }
+    void c.edits.write(prepared.changes, "edit");
+  }
+
+  function cancelEdit() {
+    if (!editingRef.current) return;
+    closeEditor();
+  }
+
+  /** Writes blanks into the cells of the selection that can be written (Delete, Backspace). */
+  async function clearSelection() {
+    const c = controller;
+    try {
+      const cells: TargetCell[] = [];
+      for (const range of c.selection.ranges) {
+        const cols: number[] = [];
+        for (let col = range.left; col <= range.right; col++) cols.push(col);
+        cells.push(...(await c.edits.targetCells(range.top, range.bottom + 1, cols)));
+      }
+      if (cells.length === 0) {
+        announce(messages.editReadOnly);
+        return;
+      }
+      await writeCells(
+        cells.map((cell) => ({ ...cell, text: "" })),
+        "clear",
+      );
+    } catch (error) {
+      announce(
+        error instanceof EditTooLargeError
+          ? messages.editTooLarge(count(error.limit))
+          : messages.editFailed(String(error)),
+      );
+    }
+  }
+
+  /** Checks and writes cells as one write, telling the user what failed. Resolves whether it was written. */
+  async function writeCells(inputs: (TargetCell & { text: string })[], reason: GridEditReason) {
+    const c = controller;
+    const prepared = await c.edits.prepare(inputs, reason);
+    if (!prepared.ok) {
+      announce(messages.editProblems(count(prepared.problems.length), problemText(prepared.problems[0].problem)));
+      return false;
+    }
+    const saved = await c.edits.write(prepared.changes, reason);
+    if (saved && prepared.changes.length > 1) announce(messages.editSaved(count(prepared.changes.length)));
+    return saved;
+  }
 
   // ----- pointer -----
 
@@ -818,7 +1082,13 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     } else if (hit.zone === "cell") {
       const cellEvent = controller.cellEvent(hit.row, hit.col, "pointer", event);
       props.onCellDoubleClick?.(cellEvent);
-      if (!cellEvent.defaultPrevented) {
+      if (cellEvent.defaultPrevented) return;
+      // A grid that edits opens the editor; the inspector stays in the context menu.
+      if (controller.edits.cellEditable(hit.row, hit.col)) {
+        controller.selection.select({ row: hit.row, col: hit.col });
+        controller.selectionChanged();
+        startEdit("edit");
+      } else {
         setOverlay({ kind: "inspector", row: hit.row, col: hit.col, anchor: cellAnchor(hit.row, hit.col) });
       }
     }
@@ -933,6 +1203,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           const cellEvent = c.cellEvent(c.selection.active.row, c.selection.active.col, "keyboard", event);
           props.onCellDoubleClick?.(cellEvent);
           if (cellEvent.defaultPrevented) break;
+          if (startEdit("edit")) break;
         }
         setOverlay({
           kind: "inspector",
@@ -980,6 +1251,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
             ...c.selection.active,
             anchor: cellAnchor(c.selection.active.row, c.selection.active.col),
           });
+        } else if ((event.key === "Delete" || event.key === "Backspace") && !primary && c.edits.enabled) {
+          void clearSelection();
+        } else if (startsTyping(event) && c.edits.enabled) {
+          // The key's text (or the IME's) goes into the editor, which takes the focus now.
+          if (startEdit("replace")) return;
+          announce(messages.editReadOnly);
         } else {
           return;
         }
@@ -1135,10 +1412,31 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         disabled: !ready || !capabilities?.sort,
         onSelect: () => c.sortBy(col, "desc"),
       },
+      ...(c.edits.enabled
+        ? [
+            {
+              label: messages.editCell,
+              separator: true,
+              shortcut: "F2",
+              disabled: !c.edits.cellEditable(row, col),
+              onSelect: () => {
+                c.selection.select({ row, col });
+                c.selectionChanged();
+                // After the menu returned the focus to the grid.
+                setTimeout(() => startEdit("edit"), 0);
+              },
+            },
+            {
+              label: messages.clearCells,
+              shortcut: isMac ? "⌫" : "Delete",
+              onSelect: () => void clearSelection(),
+            },
+          ]
+        : []),
       {
         label: messages.inspectCell,
-        separator: true,
-        shortcut: "F2",
+        separator: !c.edits.enabled,
+        shortcut: c.edits.enabled ? undefined : "F2",
         onSelect: () => setOverlay({ kind: "inspector", row, col, anchor: cellAnchor(row, col) }),
       },
       {
@@ -1347,7 +1645,13 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                 )}
                 {/* biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas. */}
                 {/* biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant). */}
-                <div role="gridcell" id={cellId} aria-colindex={active.col + 2} aria-selected="true">
+                <div
+                  role="gridcell"
+                  id={cellId}
+                  aria-colindex={active.col + 2}
+                  aria-selected="true"
+                  aria-readonly={c.edits.enabled ? !c.edits.cellEditable(active.row, active.col) : undefined}
+                >
                   {/* Focus stays on the grid, and Space activates the cell (see cell-render.ts). */}
                   {activeAction?.kind === "link" ? (
                     // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
@@ -1409,6 +1713,24 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
             {notice}
           </div>
         )}
+        {c.edits.enabled && (
+          <div ref={editorBoxRef} className="vg-editor-layer">
+            <CellEditor
+              ref={editorRef}
+              open={editing !== null}
+              label={editing ? messages.editorLabel(messages.cell(count(editing.row + 1), labelOf(editing.col))) : ""}
+              error={editing?.error ?? null}
+              checking={editing?.checking ?? false}
+              messages={messages}
+              onCommit={(move) => void commitEdit(move)}
+              onCancel={cancelEdit}
+              onBlur={() => {
+                // Clicking elsewhere saves; a refused value keeps the editor open with its message.
+                if (editingRef.current && !editingRef.current.checking) void commitEdit(null);
+              }}
+            />
+          </div>
+        )}
         {detailOpen && (
           <DetailPanel
             ref={detailRef}
@@ -1437,6 +1759,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           />
         )}
       </div>
+      <EditBar controller={c} messages={messages} count={count} />
       {statusBar && <StatusBar controller={c} messages={messages} />}
       {overlay?.kind === "columnMenu" && (
         <Popover

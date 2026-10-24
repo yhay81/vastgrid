@@ -39,6 +39,10 @@ request answers `invalid_request`, and `RemoteSource` stops asking. After failed
 unreachable or restarted), the first answer is compared with the revision read last, so changes made
 meanwhile are reported once.
 
+Servers that write cells also answer `edits`, the table's `edits.version`: it changes with every
+`update`, while the revision stays the same, and `RemoteSource` then reports `{ edits }` so that grids
+read the rows again (but not for its own writes).
+
 `vastgrid-duckdb` builds the revision of a file from its size, its modification time and a hash of its
 first 64 KiB, so that appended rows and a rewrite within the resolution of the modification time are both
 seen. It answers `null` when the file is gone.
@@ -56,7 +60,8 @@ seen. It answers `null` when the file is gone.
 | `aggregate` | `table`, `view`, `ranges: { start, end, columns }[]` | `{ count, numericCount, sum, min, max, average }` |
 | `find` | `table`, `view`, `text`, `columns`, `row`, `column`, `direction` (`1` or `-1`), optional `caseSensitive` | `{ row, column }` or `null` |
 | `export` | `table`, `view`, `format` (`csv`, `tsv`, `parquet`, `json`, `xlsx`), optional `columns`, `headers`, `numberFormats`, `target` | `{ target, rows }` |
-| `revision` | `table` | `{ revision: string \| null }`, the data's current revision (see [Watching for changes](#watching-for-changes)) |
+| `update` | `table`, `updates: { row, column, value, previous? }[]`, optional `revision` | `{ updated, edits: { version, cells } }` (see [Writing cells](#writing-cells)) |
+| `revision` | `table` | `{ revision: string \| null, edits?: number }`, the data's current revision (see [Watching for changes](#watching-for-changes)) |
 | `close` | `table` | `null` |
 
 `rowIds` are the rows' positions in the table (0-based) for a view, and `null` without one (the
@@ -80,11 +85,32 @@ export leaves nothing behind. An export holds one revision of the file: when the
 deletes the partial file and answers `cancelled`. `xlsx` refuses more than 1,048,575 rows (one sheet with a header row) or
 16,384 columns with `export_too_large`; see [Excel export rules](#excel-export-rules).
 
+### Writing cells
+
+Servers that report `capabilities.edit` accept `update`. `row` is the row's position in the table (as
+in `rowIds`), `column` a schema index, and `value` a cell value in the same form as values are sent (see
+[Values](#values)): 64-bit integers and decimals as strings, dates and times as ISO-like text; strings
+are at most 1,000,000 characters, and a request holds at most 100,000 updates. The request is atomic:
+the server writes every update, or none and answers an error:
+
+- `read_only` (403): editing is not enabled, or a column cannot be written (its schema has `readOnly`).
+- `invalid_value` (422): a value does not fit its column; `vastgrid-core`'s `normalizeCellValue` decides,
+  so that clients can check values the same way before they send them.
+- `edit_conflict` (409): an update has `previous`, and the cell holds another value now.
+- `revision_changed` (409): `revision` is given and differs from the table's: row positions may name other
+  records now.
+- `invalid_request` (400): a row or column does not exist.
+
+Writes keep row positions and the `revision`; they increment `edits.version`, which `info` and `revision`
+report. Later requests of every client read the written values; views created before may be forgotten
+(`view_not_found`) and are created again. `vastgrid-duckdb` keeps written values in the engine, apart
+from the file, until the table is closed.
+
 ### `TableInfo`
 
 ```ts
 {
-  columns: { name: string; type: ColumnType; sourceType?: string }[];
+  columns: { name: string; type: ColumnType; sourceType?: string; readOnly?: boolean }[];
   rowCount: number | null;     // null while loading
   readableRows: number;        // rows readable now (a preview of the beginning while loading)
   status: "loading" | "ready" | "error";
@@ -96,7 +122,8 @@ deletes the partial file and answers `cancelled`. `xlsx` refuses more than 1,048
   notes?: string[];            // encoding:shift_jis, all_varchar, invalid_utf8_replaced, merged_cells, formulas_without_values
   sheets?: { name: string; hidden?: boolean }[]; // workbooks: the sheets, in workbook order
   sheet?: string;              // workbooks: the sheet that was read
-  capabilities: { sort, filter, search, stats, distinct, aggregate, find, export: boolean; conditions?: boolean };
+  capabilities: { sort, filter, search, stats, distinct, aggregate, find, export: boolean; conditions?, edit?: boolean };
+  edits?: { version: number; cells: number }; // written cells, with capabilities.edit
   exports?: { formats: ExportFormat[]; delivery: "file" | "data" }; // what export can write, when it can
 }
 ```
@@ -238,6 +265,10 @@ whole query, `where` included.
 | `export_disabled` | 403 | The host did not enable exports. |
 | `export_too_large` | 413 | The rows or columns do not fit in the format (an Excel sheet), or the workbook would pass 4 GB. |
 | `disposed` | 503 | The server closed its table engine (for example while it shuts down). |
+| `read_only` | 403 | Editing is not enabled, or the column cannot be written. |
+| `invalid_value` | 422 | A written value does not fit its column. Nothing was written. |
+| `edit_conflict` | 409 | A cell no longer holds the `previous` value of its update. Nothing was written. |
+| `revision_changed` | 409 | The table has another revision than the `update`'s. Nothing was written. |
 | `internal_error` | 500 | Anything else. |
 
 ## Excel export rules

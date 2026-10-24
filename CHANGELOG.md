@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- `vastgrid`: cells can be edited in grids whose source can write them (`capabilities.edit`). Typing
+  replaces the active cell's value (also with an IME: the editor is a text field over the cell), F2 or a
+  double click edits it, Enter and Tab save and move, Alt+Enter starts a new line, Esc cancels, and Delete
+  clears the selected cells. Values are checked against the column's type and by `validateCell` (also
+  asynchronous); writes show while they save, and failed writes and conflicts with changes made meanwhile
+  offer Retry, Overwrite or Discard. After a write the grid reads the rows again without blinking and,
+  when its sort, filters or search use the written column, creates its view again in place. `readOnly`
+  keeps a grid read-only, and `onCellsChange` reports saved and failed writes. In a grid that edits, F2
+  and a double click open the editor instead of the cell inspector (which stays in the context menu);
+  `onCellDoubleClick` can prevent both. Read-only sources work as before.
+- `vastgrid-core`: `TableSource.updateCells` writes cells of sources that report `capabilities.edit`, all
+  or none, by the row's position in the table (`rowIds`) and its `revision`, refusing values that do not
+  fit (`invalid_value`), cells changed meanwhile (`edit_conflict`), other revisions (`revision_changed`)
+  and read-only columns (`ColumnSchema.readOnly`). Writes change `TableInfo.edits` instead of the
+  revision, so checked rows stay checked. `ArraySource` writes with `editable: true`; `RemoteSource` and
+  the protocol carry the `update` request and report other clients' writes. `parseCellInput` and
+  `normalizeCellValue` check values without losing digits (64-bit integers and decimals stay text).
+  `RowCache.invalidate()` reads rows again while showing the old ones, and `RowCache.patch()` sets a
+  loaded cell.
+- `vastgrid-duckdb`: `TableEngine` writes cells with `editable: true`. Written values are kept in the
+  engine, apart from the file, and every request (rows, views, statistics, summaries, find, exports)
+  reads them; reading rows of a 5M-row table stays at 3–4 ms per block. Views that depend on a written
+  column are dropped. A table with written cells is not closed to keep `maxTables`, nor opened again when
+  its file changes.
+
 - `vastgrid`: `checkboxSelection` adds row checkboxes, separate from the cell selection. Checked rows
   are kept by key — the row's position in the file for one `revision`, or the values of a `rowKey`
   column — so the same records stay checked when the view is sorted or filtered. The corner checkbox

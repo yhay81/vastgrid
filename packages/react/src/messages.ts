@@ -1,3 +1,5 @@
+import type { CellInputError } from "vastgrid-core";
+
 /** Every text the grid shows. Pass a partial object to `messages` to change some of them. */
 export interface Messages {
   gridLabel: string;
@@ -186,6 +188,29 @@ export interface Messages {
   exported: (rows: string, target: string) => string;
   exportXlsxRows: (rows: string) => string;
   exportXlsxColumns: (columns: string) => string;
+  /** Context menu items, and the label of the cell editor. */
+  editCell: string;
+  clearCells: string;
+  editorLabel: (cell: string) => string;
+  /** Under the editor: how to save, cancel and start a new line. */
+  editHint: string;
+  /** While `validateCell` checks a value. */
+  editChecking: string;
+  /** Why a value does not fit its column, by `CellInputError`. */
+  editInvalid: Record<CellInputError, string>;
+  editReadOnly: string;
+  /** Some cells cannot take their values: how many, and the first problem. */
+  editProblems: (cells: string, first: string) => string;
+  editTooLarge: (limit: string) => string;
+  editSaving: (cells: string) => string;
+  editSaved: (cells: string) => string;
+  editFailed: (message: string) => string;
+  /** Another change of the same cells was saved first. */
+  editConflict: string;
+  /** The table was read again (another revision): the write cannot be sent again. */
+  editRevisionChanged: string;
+  editOverwrite: string;
+  editDiscard: string;
 }
 
 export const en: Messages = {
@@ -382,6 +407,36 @@ export const en: Messages = {
   exportXlsxRows: (rows) => `An Excel sheet holds at most ${rows} rows. Filter the rows or choose another format.`,
   exportXlsxColumns: (columns) =>
     `An Excel sheet holds at most ${columns} columns. Hide columns or choose another format.`,
+  editCell: "Edit cell",
+  clearCells: "Clear contents",
+  editorLabel: (cell) => `Edit ${cell}`,
+  editHint: "Enter to save · Esc to cancel · Alt+Enter for a new line",
+  editChecking: "Checking…",
+  editInvalid: {
+    integer: "Enter a whole number.",
+    range: "The number is outside the range of this column.",
+    number: "Enter a number.",
+    decimal: "Enter a decimal number without an exponent.",
+    scale: "Too many digits after the decimal point for this column.",
+    precision: "Too many digits for this column.",
+    boolean: "Enter true or false.",
+    date: "Enter a date as yyyy-mm-dd.",
+    time: "Enter a time as hh:mm or hh:mm:ss.",
+    timestamp: "Enter a date and time as yyyy-mm-dd hh:mm:ss.",
+    uuid: "Enter a UUID.",
+    json: "Enter valid JSON.",
+    type: "Values of this type cannot be edited.",
+  },
+  editReadOnly: "This column is read-only.",
+  editProblems: (cells, first) => `${cells} cells cannot take their values. ${first}`,
+  editTooLarge: (limit) => `Change at most ${limit} cells at once.`,
+  editSaving: (cells) => `Saving ${cells} cells…`,
+  editSaved: (cells) => `Saved ${cells} cells.`,
+  editFailed: (message) => `Not saved: ${message}`,
+  editConflict: "Not saved: the cells were changed meanwhile. Their current values are shown.",
+  editRevisionChanged: "Not saved: the table was read again, so its rows may be other records now.",
+  editOverwrite: "Overwrite",
+  editDiscard: "Discard",
 };
 
 const number = (value: string) => value;
@@ -579,6 +634,36 @@ export const ja: Messages = {
   exported: (rows, target) => `${rows} 行を ${target} に書き出しました。`,
   exportXlsxRows: (rows) => `Excel のシートは ${rows} 行までです。行を絞り込むか、別の形式を選んでください。`,
   exportXlsxColumns: (columns) => `Excel のシートは ${columns} 列までです。列を隠すか、別の形式を選んでください。`,
+  editCell: "セルを編集",
+  clearCells: "内容を消去",
+  editorLabel: (cell) => `${cell} を編集`,
+  editHint: "Enter で確定・Esc で取消・Alt+Enter で改行",
+  editChecking: "確認しています…",
+  editInvalid: {
+    integer: "整数を入力してください。",
+    range: "この列の範囲を超える数値です。",
+    number: "数値を入力してください。",
+    decimal: "指数を使わない小数で入力してください。",
+    scale: "この列で使える小数点以下の桁数を超えています。",
+    precision: "この列で使える桁数を超えています。",
+    boolean: "true か false を入力してください。",
+    date: "日付を yyyy-mm-dd の形で入力してください。",
+    time: "時刻を hh:mm か hh:mm:ss の形で入力してください。",
+    timestamp: "日時を yyyy-mm-dd hh:mm:ss の形で入力してください。",
+    uuid: "UUID を入力してください。",
+    json: "正しい JSON を入力してください。",
+    type: "この型の値は編集できません。",
+  },
+  editReadOnly: "この列は読み取り専用です。",
+  editProblems: (cells, first) => `${cells} 個のセルに値を入れられません。${first}`,
+  editTooLarge: (limit) => `一度に変更できるのは ${limit} セルまでです。`,
+  editSaving: (cells) => `${cells} セルを保存しています…`,
+  editSaved: (cells) => `${cells} セルを保存しました。`,
+  editFailed: (message) => `保存できませんでした：${message}`,
+  editConflict: "保存できませんでした：その間にセルが変更されました。現在の値を表示しています。",
+  editRevisionChanged: "保存できませんでした：表が読み直され、行が別のレコードを指している可能性があります。",
+  editOverwrite: "上書き",
+  editDiscard: "破棄",
 };
 
 /** Picks the built-in messages for a locale ("ja…" → Japanese, otherwise English). */

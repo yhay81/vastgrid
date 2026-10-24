@@ -36,7 +36,10 @@ import "vastgrid/styles.css";
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | Called when the selection or the active cell changes. See [Events](#events). |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | Called when the columns' width, order, visibility or freezing change. |
 | `onCellClick` | `(event: GridCellEvent) => void` | | Called when a cell is clicked, or Space is pressed on the active cell. |
-| `onCellDoubleClick` | `(event: GridCellEvent) => void` | | Called when a cell is double-clicked, or F2 is pressed. `event.preventDefault()` keeps the cell inspector closed. |
+| `onCellDoubleClick` | `(event: GridCellEvent) => void` | | Called when a cell is double-clicked, or F2 is pressed. `event.preventDefault()` keeps the cell inspector (and, in a grid that edits, the cell editor) closed. |
+| `readOnly` | `boolean` | `false` | Offers no editing, also when the source can write cells (`capabilities.edit`). |
+| `validateCell` | `(cell: GridCellValidation) => string \| null \| undefined \| Promise<…>` | | Checks a value before it is written; return a message to refuse it. See [Editing cells](/guides/editing/). |
+| `onCellsChange` | `(event: GridCellsChangeEvent) => void` | | Called when edited cells were saved, or failed to save. |
 | `initialState` | `GridState` | | Settings applied when a grid starts, once the table's columns are known. See [Saving the settings](#saving-the-settings). |
 | `onStateChange` | `(state: GridState) => void` | | Called with the settings when the query or the column settings change. |
 | `checkboxSelection` | `boolean` | `false` | Shows a checkbox for each row, and one for every row in the corner. See [Checked rows](#checked-rows). |

@@ -106,7 +106,8 @@ export class DetailTracker {
     if (c.info?.status !== "ready" && c.readableRows === 0) return "";
     if (c.rowCount === 0 || c.schema.length === 0) return "";
     const row = Math.min(c.selection.active.row, c.rowCount - 1);
-    return `${c.view.id}|${c.info?.revision ?? ""}|${c.info?.status}|${c.schema.length}|${row}`;
+    // Written cells (`edits`) change the record's values.
+    return `${c.view.id}|${c.info?.revision ?? ""}|${c.info?.edits?.version ?? ""}|${c.info?.status}|${c.schema.length}|${row}`;
   }
 
   private update() {

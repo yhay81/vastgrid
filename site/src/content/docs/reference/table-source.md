@@ -28,8 +28,10 @@ interface TableSource {
   aggregate?(request: AggregateRequest, signal?: AbortSignal): Promise<SelectionSummary>;
   find?(request: FindRequest, signal?: AbortSignal): Promise<FindResult | null>;
   exportView?(request: ExportRequest, signal?: AbortSignal): Promise<ExportResult>;
+  /** Writes cells, all or none, for sources that report `capabilities.edit` (see below). */
+  updateCells?(request: UpdateRequest, signal?: AbortSignal): Promise<UpdateResult>;
   /** Calls `listener` when the whole table changed, until the returned function is called. */
-  subscribe?(listener: (change: { revision?: string | null }) => void): () => void;
+  subscribe?(listener: (change: { revision?: string | null; edits?: number }) => void): () => void;
   /** Releases the table. The source must not be used afterwards. */
   close?(): void | Promise<void>;
 }
@@ -44,6 +46,7 @@ new ArraySource({
   columns: (string | ColumnSchema)[]; // names (types inferred) or schemas
   rows?: CellValue[][];               // row-major data, or
   columnData?: CellValue[][];         // column-major data, one array per column
+  editable?: boolean;                 // write cells with updateCells (default false)
 });
 ```
 
@@ -299,6 +302,35 @@ interface ExportResult { target: string; rows: number; data?: Blob }
 The [protocol](/reference/protocol/#excel-export-rules) defines how `xlsx` writes numbers, dates, text
 (never formulas) and `null`, and refuses more rows or columns than an Excel sheet holds with
 `export_too_large`.
+
+## Writing cells
+
+```ts
+interface UpdateRequest {
+  updates: { row: number; column: number; value: CellValue; previous?: CellValue }[]; // at most MAX_UPDATE_CELLS (100,000)
+  revision?: string; // the TableInfo.revision the rows were read with
+}
+interface UpdateResult {
+  updated: number;
+  edits: { version: number; cells: number }; // TableInfo.edits after the write
+}
+```
+
+Sources that report `capabilities.edit` write cells with `updateCells`. `row` is the row's position in
+the table (`RowBlock.rowIds`), `column` the schema index. The request is atomic: every update is written,
+or none is and it rejects with a `SourceError` — `read_only` (the source or a column is not written),
+`invalid_value` (a value does not fit its column), `edit_conflict` (a cell no longer holds its
+`previous` value), `revision_changed` (the table has another `revision`) or `invalid_request`.
+
+Writes keep row positions and the `revision`; they change `TableInfo.edits.version` instead, and sources
+that report changes call their `subscribe` listeners with `{ edits }`. Every later request reads the new
+values; views made before may keep their old rows and order, so the grid creates its view again when its
+query uses a written column. Columns the source does not write have `readOnly: true` in their schema.
+
+`parseCellInput(text, column)` reads typed text as a column's type, and `normalizeCellValue(value,
+column)` checks a value written by a program the same way; both keep 64-bit integers and decimals as
+text. `editableType(type)`, `editableColumn(schema)`, `editText(value)` and `sameCellValue(a, b)` help
+sources and editors. See [Editing cells](/guides/editing/).
 
 ## Errors
 

@@ -38,6 +38,11 @@ export interface ColumnSchema {
   type: ColumnType;
   /** The engine's own type name, for example `DECIMAL(10,2)`. */
   sourceType?: string;
+  /**
+   * The source does not write this column, also when it can write cells (`capabilities.edit`), for
+   * example a computed column or a type it cannot write (lists, structs, binary values).
+   */
+  readOnly?: boolean;
 }
 
 export interface TableCapabilities {
@@ -54,6 +59,11 @@ export interface TableCapabilities {
    * trees existed ignore them, so the grid sends them only to sources that report this.
    */
   conditions?: boolean;
+  /**
+   * Writes cells (`TableSource.updateCells`). Absent means false: the table is read-only, and the grid
+   * offers no editing.
+   */
+  edit?: boolean;
 }
 
 export type TableStatus = "loading" | "ready" | "error";
@@ -88,11 +98,62 @@ export interface TableInfo {
   notes?: string[];
   /** What `exportView` can write, when `capabilities.export` is true (see `ExportSupport`). */
   exports?: ExportSupport;
+  /** The cells written with `updateCells`, from sources that can write them (`capabilities.edit`). */
+  edits?: TableEdits;
   /** Workbooks: the sheets that can be read, in workbook order. */
   sheets?: SheetInfo[];
   /** Workbooks: the name of the sheet that was read. */
   sheet?: string;
   capabilities: TableCapabilities;
+}
+
+/**
+ * Cells written to a table (`TableSource.updateCells`). Writes keep row positions (`RowBlock.rowIds`)
+ * and the `revision`: they change `version` instead, so that grids read the new values again without
+ * losing their checked rows.
+ */
+export interface TableEdits {
+  /** Increments with every write (and when written cells are saved or discarded). */
+  version: number;
+  /** Cells that hold a written value, for sources that keep them apart from the file (until it is saved). */
+  cells: number;
+}
+
+/**
+ * A new value for one cell. `row` is the row's position in the table (`RowBlock.rowIds`, or the view
+ * position of the table itself), which names the same record for one `TableInfo.revision`.
+ */
+export interface CellUpdate {
+  row: number;
+  /** Schema column index. */
+  column: number;
+  /**
+   * The new value, as values arrive: 64-bit integers and decimals as strings (exact digits), dates and
+   * times as ISO-like text (see `parseCellInput`).
+   */
+  value: CellValue;
+  /**
+   * The value the change was made from. When it is given and the cell holds another value now, the
+   * whole request is refused with `edit_conflict`, so that a change made meanwhile is not overwritten.
+   */
+  previous?: CellValue;
+}
+
+/** Writes cells at once: every update is written, or none of them (see `TableSource.updateCells`). */
+export interface UpdateRequest {
+  updates: CellUpdate[];
+  /**
+   * The `TableInfo.revision` the rows were read with. The request is refused with `revision_changed`
+   * when the table has another revision now, since row positions then name other records.
+   */
+  revision?: string;
+}
+
+export interface UpdateResult {
+  /** Cells written. */
+  updated: number;
+  /** The table's edits after the write. */
+  edits: TableEdits;
 }
 
 export interface SheetInfo {

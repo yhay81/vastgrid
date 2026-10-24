@@ -1,5 +1,15 @@
 export { ArraySource, type ArraySourceOptions } from "./array-source.js";
 export { type BlockState, CacheBlock, RowCache, type RowCacheOptions } from "./cache.js";
+export {
+  type CellInputError,
+  type CellInputResult,
+  editableColumn,
+  editableType,
+  editText,
+  normalizeCellValue,
+  parseCellInput,
+  sameCellValue,
+} from "./cell-input.js";
 export { toHtmlTable, toMarkdownTable, toTsv } from "./clipboard.js";
 export { isNumericType, isTemporalType } from "./column-type.js";
 export {
@@ -77,6 +87,7 @@ export {
   isAbortError,
   isEmptyQuery,
   MAX_TEXT_LIMIT,
+  MAX_UPDATE_CELLS,
   SourceError,
   type TableChange,
   type TableChangeListener,

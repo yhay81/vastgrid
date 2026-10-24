@@ -27,6 +27,20 @@ export {
   DetailTracker,
   detailKeyAction,
 } from "./detail.js";
+export {
+  type CellInput,
+  type CellProblem,
+  type EditBatch,
+  EditTooLargeError,
+  type GridCellChange,
+  type GridCellsChangeEvent,
+  type GridCellValidation,
+  type GridEditReason,
+  GridEdits,
+  type Prepared,
+  type TargetCell,
+  type ValidateCell,
+} from "./editing.js";
 export type {
   GridCell,
   GridCellEvent,

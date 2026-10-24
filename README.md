@@ -166,7 +166,10 @@ rows.
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | Called when the selection or the active cell changes. |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | Called when the columns' width, order, visibility or freezing change. |
-| `onCellClick`, `onCellDoubleClick` | `(event: GridCellEvent) => void` | | Called for a click (or Space) and a double click (or F2) on a cell. `preventDefault()` on a double click keeps the cell inspector closed. |
+| `onCellClick`, `onCellDoubleClick` | `(event: GridCellEvent) => void` | | Called for a click (or Space) and a double click (or F2) on a cell. `preventDefault()` on a double click keeps the cell inspector (or the cell editor) closed. |
+| `readOnly` | `boolean` | `false` | Offers no editing, also when the source can write cells. |
+| `validateCell` | `(cell: GridCellValidation) => string \| null \| undefined \| Promise<…>` | | Checks a value before it is written; return a message to refuse it. |
+| `onCellsChange` | `(event: GridCellsChangeEvent) => void` | | Called when edited cells were saved, or failed to save. |
 | `initialState` | `GridState` | | Settings applied when a grid starts, once the table's columns are known. |
 | `onStateChange` | `(state: GridState) => void` | | Called with the settings when the query or the column settings change. |
 | `checkboxSelection` | `boolean` | `false` | Shows a checkbox for each row, and one for every row in the corner. |
@@ -377,6 +380,24 @@ date formats; text is never written as a formula, and more than 1,048,575 rows a
 
 See [Exporting](https://vastgrid.yhay81.com/guides/export/).
 
+### Editing cells
+
+The grid edits sources that can write cells (`capabilities.edit`): `ArraySource` with `editable: true`,
+and the DuckDB server when its engine is created with `editable: true`; other sources stay read-only.
+Typing replaces the active cell (IMEs work: the editor is a text field over the cell), F2 or a double
+click edits it, Enter or Tab saves and moves, Esc cancels, and Delete clears the selected cells. Values
+are checked against the column's type without losing digits (64-bit integers and decimals stay text) and
+by `validateCell`, which may be asynchronous. Writes show while they save, and failures and conflicts with
+other users' changes offer Retry, Overwrite or Discard. After a write the grid reads the rows again and,
+when the sort or filters use the written column, sorts and filters again; statistics, summaries and
+exports read the new values. The DuckDB engine keeps written values apart from the file.
+
+```tsx
+<DataGrid source={new ArraySource({ columns, rows, editable: true })} onCellsChange={(event) => save(event)} />
+```
+
+See [Editing cells](https://vastgrid.yhay81.com/guides/editing/).
+
 ## Performance
 
 `npm run bench -- --csv-rows=10000000 --parquet-rows=100000000` on an Apple M2 Pro (12 threads, 32 GB),
@@ -448,7 +469,8 @@ flowchart LR
 | ⌘/Ctrl + C · ⌘/Ctrl + Shift + C | Copy · copy with headers |
 | ⌘/Ctrl + F | Find |
 | Alt + ↓ | Column menu (sort, filter, statistics, freeze, hide) |
-| F2 · double click | Show the full value of the cell |
+| F2 · double click | Show the full value of the cell (edit it, in a grid that edits) |
+| Typing · Delete (in a grid that edits) | Replace the active cell's value · clear the selected cells |
 | Alt + Enter (again: into the panel) · Esc | Open the detail panel of the active row · close it |
 | Shift + F10 · context menu key · right click | Cell menu (copy, filter to value, sort) |
 
@@ -484,7 +506,7 @@ npm run bench
 
 ## Roadmap
 
-- Editing cells, with CSV write-back that keeps untouched rows byte for byte.
+- CSV write-back of edited cells that keeps untouched rows byte for byte.
 - Formula columns.
 
 See [docs/research.ja.md](docs/research.ja.md) (Japanese) for the survey of existing viewers and grids

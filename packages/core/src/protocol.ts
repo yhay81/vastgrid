@@ -1,6 +1,8 @@
 import { MAX_FILTER_DEPTH, MAX_FILTER_NODES, MAX_FILTER_TREE_VALUES, pruneFilterNode } from "./filter-tree.js";
+import { MAX_TEXT_LIMIT, MAX_UPDATE_CELLS } from "./source.js";
 import type {
   AggregateRange,
+  CellUpdate,
   CellValue,
   ExportFormat,
   Filter,
@@ -60,6 +62,8 @@ export type ProtocolRequest =
       numberFormats?: (string | null)[];
       target: string;
     }
+  /** Writes cells (see `TableSource.updateCells`): all of them, or none. */
+  | { op: "update"; table: string; updates: CellUpdate[]; revision?: string }
   /** The current revision of the table's data, for watching it for changes without reading it again. */
   | { op: "revision"; table: string }
   | { op: "close"; table: string };
@@ -76,6 +80,8 @@ export interface InfoResult extends TableInfo {
  */
 export interface RevisionResult {
   revision: string | null;
+  /** The `edits.version` of the open table, for servers that write cells: it changes with every write. */
+  edits?: number;
 }
 
 export interface ProtocolError {
@@ -118,6 +124,14 @@ export const ErrorCodes = {
   exportTooLarge: "export_too_large",
   /** The server closed its table engine (for example while it shuts down). */
   disposed: "disposed",
+  /** The table, or one of the columns, is not written (the host did not enable editing, or the type cannot be). */
+  readOnly: "read_only",
+  /** A written value does not fit its column (for example text in a number column, or too many decimals). */
+  invalidValue: "invalid_value",
+  /** A cell no longer holds the `previous` value of its update: it was changed meanwhile. Nothing was written. */
+  editConflict: "edit_conflict",
+  /** The table has another revision than the request's: its rows may be other records now. Nothing was written. */
+  revisionChanged: "revision_changed",
   /** Anything else. */
   internalError: "internal_error",
 } as const;
@@ -132,6 +146,7 @@ const operations = new Set<ProtocolOperation>([
   "aggregate",
   "find",
   "export",
+  "update",
   "revision",
   "close",
 ]);
@@ -174,13 +189,31 @@ function indexes(value: unknown, name: string, maxLength = 100_000): number[] {
   return result;
 }
 
-function cellValue(value: unknown, name: string): CellValue {
+function cellValue(value: unknown, name: string, max = 65_536): CellValue {
   if (value === null || typeof value === "boolean") return value;
   if (typeof value === "number") {
     if (!Number.isFinite(value)) fail(`${name} must be finite`);
     return value;
   }
-  return string(value, name, 65_536);
+  return string(value, name, max);
+}
+
+function updates(value: unknown): CellUpdate[] {
+  if (!Array.isArray(value) || value.length > MAX_UPDATE_CELLS) {
+    fail(`updates must be an array of at most ${MAX_UPDATE_CELLS} items`);
+  }
+  return value.map((item, position) => {
+    const name = `updates[${position}]`;
+    if (!isRecord(item)) fail(`${name} must be an object`);
+    if (!("value" in item)) fail(`${name}.value is missing`);
+    const update: CellUpdate = {
+      row: index(item.row, `${name}.row`),
+      column: index(item.column, `${name}.column`),
+      value: cellValue(item.value, `${name}.value`, MAX_TEXT_LIMIT),
+    };
+    if (item.previous !== undefined) update.previous = cellValue(item.previous, `${name}.previous`, MAX_TEXT_LIMIT);
+    return update;
+  });
 }
 
 function comparable(value: unknown, name: string): string | number | boolean {
@@ -420,6 +453,10 @@ export function parseProtocolRequest(body: unknown): ProtocolRequest {
         ...(numberFormats === undefined ? {} : { numberFormats }),
         target: string(body.target, "target"),
       };
+    }
+    case "update": {
+      const revision = optionalString(body.revision, "revision", 1024);
+      return { op: "update", table, updates: updates(body.updates), ...(revision === undefined ? {} : { revision }) };
     }
     case "revision":
       return { op: "revision", table };
