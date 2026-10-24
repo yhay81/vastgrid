@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, open as openFile, readdir, realpath, rename, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -1582,22 +1582,33 @@ export class OpenTable {
             if (request.format === "xlsx") {
               await this.writeWorkbook(connection, from, position, columns, headers, request, temporary, stop.signal);
             } else {
+              // DuckDB renames repeated names in a header ("x", "x_1"); a CSV or TSV file with repeated
+              // headers gets its header line written here instead, as ArraySource and xlsx write it.
+              const delimited = request.format === "csv" || request.format === "tsv";
+              const ownHeader = delimited && new Set(headers).size !== headers.length;
               const selected = columns
                 .map((column, index) =>
-                  headers[index] === column.name
+                  ownHeader || headers[index] === column.name
                     ? quoteIdentifier(column.name)
                     : `${quoteIdentifier(column.name)} AS ${quoteIdentifier(headers[index])}`,
                 )
                 .join(", ");
+              const header = ownHeader ? "false" : "true";
               const options = {
-                csv: "FORMAT csv, HEADER true",
-                tsv: "FORMAT csv, HEADER true, DELIMITER '\\t'",
+                csv: `FORMAT csv, HEADER ${header}`,
+                tsv: `FORMAT csv, HEADER ${header}, DELIMITER '\\t'`,
                 parquet: "FORMAT parquet, COMPRESSION zstd",
                 json: "FORMAT json, ARRAY true",
               }[request.format];
-              await connection.run(
-                `COPY (SELECT ${selected || "*"} FROM ${from} ORDER BY ${position}) TO ${quoteLiteral(temporary)} (${options})`,
-              );
+              const body = ownHeader ? `${temporary}.body` : temporary;
+              try {
+                await connection.run(
+                  `COPY (SELECT ${selected || "*"} FROM ${from} ORDER BY ${position}) TO ${quoteLiteral(body)} (${options})`,
+                );
+                if (ownHeader) await writeWithHeader(body, temporary, headers, request.format === "tsv" ? "\t" : ",");
+              } finally {
+                if (ownHeader) await rm(body, { force: true });
+              }
             }
             if (this.disposed || (await this.currentRevision()) !== this.revision) throw changed();
             await rename(temporary, destination);
@@ -1711,4 +1722,15 @@ function wireNumber(value: unknown): CellValue {
     return Number.isSafeInteger(number) || !Number.isInteger(number) ? number : wire;
   }
   return wire;
+}
+
+/** Writes a header line, quoted as DuckDB quotes CSV fields, followed by the rows of `body`. */
+async function writeWithHeader(body: string, target: string, headers: string[], delimiter: string) {
+  const quote = (text: string) =>
+    text === "" || /["\r\n]/.test(text) || text.includes(delimiter) ? `"${text.replaceAll('"', '""')}"` : text;
+  const output = createWriteStream(target, { flags: "wx" });
+  await pipelinePromise(async function* () {
+    yield `${headers.map(quote).join(delimiter)}\n`;
+    yield* createReadStream(body);
+  }, output);
 }

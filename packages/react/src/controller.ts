@@ -312,6 +312,8 @@ export class GridController {
   /** Stops listening to the source's changes (`TableSource.subscribe`). */
   private unsubscribe: (() => void) | null = null;
   private changeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The source reported a change; applied to the next table info (see `applyInfo`). */
+  private changeReported = false;
   /** Where the grid was when it started reading the table again, to return there once it is read. */
   private restore: { top: number; left: number; active: CellPosition; tail: boolean; lastRow: boolean } | null = null;
   /** Lines of text in each row: `maxLines` while a visible column wraps, otherwise 1. */
@@ -566,7 +568,9 @@ export class GridController {
     if (this.disposed || this.changeTimer !== undefined) return;
     this.changeTimer = setTimeout(() => {
       this.changeTimer = undefined;
-      if (!this.disposed) this.reload();
+      if (this.disposed) return;
+      this.changeReported = true;
+      this.reload();
     }, this.options.changeDelay ?? 300);
   }
 
@@ -628,7 +632,14 @@ export class GridController {
   }
 
   private applyInfo(info: TableInfo) {
-    const previous = this.info;
+    const shown = this.info;
+    // A source that reported a change but has no revision cannot tell the new data from the old: read it
+    // as a new revision, so that cached rows and checked rows keyed by position are not kept.
+    const previous =
+      shown && this.changeReported && shown.revision === undefined && info.revision === undefined
+        ? { ...shown, revision: "\u0000changed" }
+        : shown;
+    this.changeReported = false;
     const names = (table: TableInfo | null) => table?.columns.map((column) => column.name).join("\u0000");
     const types = (table: TableInfo | null) => table?.columns.map((column) => column.type).join("\u0000");
     // A reopened file may not have its preview schema yet. Keep the old names until new names arrive.

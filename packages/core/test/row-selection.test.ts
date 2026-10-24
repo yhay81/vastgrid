@@ -97,3 +97,21 @@ test("equal selections are told apart from changed ones", () => {
   assert.equal(selection.equals({ type: "exclude", keys: [], query: { filters: [london] } }), true);
   assert.equal(selection.equals({ type: "exclude", keys: [] }), false);
 });
+
+test("a condition tree limits checking every row to the rows it keeps", () => {
+  const where = { type: "or" as const, filters: [london, old] };
+  const selection = new RowSelectionModel();
+  selection.selectAll({ where });
+  assert.deepEqual(selection.value(), { type: "exclude", keys: [], query: { where } });
+  // Views without the tree, or with another one, cannot tell whether a row is checked.
+  assert.equal(selection.has(3, { where }), true);
+  assert.equal(selection.has(3, {}), null);
+  assert.equal(selection.has(3, { where: { type: "and", filters: [london, old] } }), null);
+  // A view that keeps to the tree and adds a filter does.
+  assert.equal(impliesRowQuery({ where, filters: [london] }, { where }), true);
+  assert.equal(sameRowQuery({ where }, rowSelectionQuery({ where: { type: "or", filters: [london, old] } })), true);
+  assert.equal(sameRowQuery({ where }, { filters: [london, old] }), false);
+  // A selection from outside keeps its tree (with the filters' default options filled in).
+  const parsed = parseRowSelection({ type: "exclude", keys: [1], query: { where } });
+  assert.ok(parsed?.type === "exclude" && sameRowQuery(parsed.query, { where }));
+});

@@ -237,9 +237,11 @@ export class HttpBytes implements ByteSource {
     if (head.status === 404 || head.status === 410) return true;
     if (!head.ok) return null;
     const validator = validatorOf(head);
-    if (validator && this.revision) return validator !== this.revision;
     const size = head.headers.get("content-encoding") ? null : lengthOf(head.headers.get("content-length"));
-    return size === null ? null : size !== this.size;
+    // A file rewritten within the same second keeps its Last-Modified; its size may still tell.
+    if (size !== null && size !== this.size) return true;
+    if (validator && this.revision) return validator !== this.revision;
+    return size === null ? null : false;
   }
 
   /** Whether the server ignored `Range` and the whole file was downloaded. */

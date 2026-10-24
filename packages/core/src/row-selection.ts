@@ -12,15 +12,17 @@
  * either of the whole table or of the rows matching a filter (`query`).
  */
 
+import { isFilterGroup, pruneFilterNode } from "./filter-tree.js";
 import { parseViewQuery } from "./protocol.js";
-import type { CellValue, Filter, ViewQuery } from "./types.js";
+import type { CellValue, Filter, FilterNode, ViewQuery } from "./types.js";
 
 /** Identifies a record: its position in the table, or its value in the key column. */
 export type RowKey = string | number;
 
-/** The filters and search that limit an `exclude` selection. Column indexes are schema indexes. */
+/** The filters, condition tree and search that limit an `exclude` selection. Column indexes are schema indexes. */
 export interface RowSelectionQuery {
   filters?: Filter[];
+  where?: FilterNode;
   search?: string;
 }
 
@@ -33,12 +35,26 @@ export type RowSelection =
    */
   | { type: "exclude"; keys: RowKey[]; query?: RowSelectionQuery };
 
-/** The parts of a view query that choose rows (filters and search), or undefined when it keeps every row. */
+/**
+ * The parts of a view query that choose rows (filters, condition tree and search), or undefined when it
+ * keeps every row.
+ */
 export function rowSelectionQuery(query: ViewQuery): RowSelectionQuery | undefined {
   const filters = query.filters ?? [];
+  const where = pruneFilterNode(query.where);
   const search = query.search?.trim() ?? "";
-  if (filters.length === 0 && !search) return undefined;
-  return { ...(filters.length > 0 ? { filters } : {}), ...(search ? { search } : {}) };
+  if (filters.length === 0 && !where && !search) return undefined;
+  return {
+    ...(filters.length > 0 ? { filters } : {}),
+    ...(where ? { where } : {}),
+    ...(search ? { search } : {}),
+  };
+}
+
+/** A condition tree as text that is the same for the same conditions in the same order. */
+function treeKey(node: FilterNode | undefined): string {
+  if (!node) return "";
+  return isFilterGroup(node) ? JSON.stringify([node.type, node.filters.map(treeKey)]) : filterKey(node);
 }
 
 /** A filter as text that is the same for the same condition: keys sorted, options left at their default left out. */
@@ -53,16 +69,23 @@ function filterKey(filter: Filter) {
 /** Whether two selection queries choose the same rows by the same conditions. */
 export function sameRowQuery(a: RowSelectionQuery | undefined, b: RowSelectionQuery | undefined) {
   const key = (query: RowSelectionQuery | undefined) =>
-    JSON.stringify([(query?.filters ?? []).map(filterKey), query?.search?.trim() ?? ""]);
+    JSON.stringify([
+      (query?.filters ?? []).map(filterKey),
+      treeKey(pruneFilterNode(query?.where)),
+      query?.search?.trim() ?? "",
+    ]);
   return key(a) === key(b);
 }
 
 /**
  * Whether every row of a view with `view`'s query matches `query`: the view has every filter of it,
- * and its search contains its search (a column containing "abc" also contains "ab").
+ * the same condition tree when it has one, and its search contains its search (a column containing
+ * "abc" also contains "ab").
  */
 export function impliesRowQuery(view: ViewQuery, query: RowSelectionQuery | undefined) {
   if (!query) return true;
+  const where = pruneFilterNode(query.where);
+  if (where && treeKey(where) !== treeKey(pruneFilterNode(view.where))) return false;
   const filters = new Set((view.filters ?? []).map(filterKey));
   if (!(query.filters ?? []).every((filter) => filters.has(filterKey(filter)))) return false;
   const search = query.search?.trim().toLowerCase() ?? "";

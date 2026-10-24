@@ -139,8 +139,20 @@ test("writes the requested headers to CSV and keeps the names in Parquet", async
     { view: null, format: "csv", columns: [1, 0], headers: ["Fruit", "Fruit"], target: "named.csv" },
     target,
   );
-  // Duplicate headers get a suffix from DuckDB.
-  assert.equal((await readFile(target, "utf8")).split("\n")[0], "Fruit,Fruit_1");
+  // Repeated headers stay as they are, as ArraySource and xlsx write them, and the rows follow.
+  const lines = (await readFile(target, "utf8")).split("\n");
+  assert.equal(lines[0], "Fruit,Fruit");
+  assert.equal(lines.length > 2 && !lines[1].startsWith("Fruit"), true);
+  const tsv = path.join(workspace, "out", "named.tsv");
+  await table.exportView(
+    { view: null, format: "tsv", columns: [1, 0], headers: ["A, b", "A, b"], target: "named.tsv" },
+    tsv,
+  );
+  assert.equal((await readFile(tsv, "utf8")).split("\n")[0], "A, b\tA, b");
+  assert.deepEqual(
+    (await readdir(path.join(workspace, "out"))).filter((name) => name.includes(".tmp")),
+    [],
+  );
   const parquet = path.join(workspace, "out", "named.parquet");
   await table.exportView({ view: null, format: "parquet", columns: [1], headers: ["Fruit"], target: "x" }, parquet);
   assert.equal((await open(parquet)).info().columns[0].name, "name");

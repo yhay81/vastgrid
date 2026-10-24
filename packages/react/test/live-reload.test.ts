@@ -126,3 +126,33 @@ test("stopping or disposing the grid ends its subscription and a pending reload"
   await new Promise((resolve) => setTimeout(resolve, 60));
   assert.equal(state.infos, infos, "the merged reload does not run after dispose");
 });
+
+test("a reported change of a source without revisions does not keep the old rows or checked rows", async () => {
+  let rows: CellValue[][] = [[1], [2], [3]];
+  const listeners = new Set<TableChangeListener>();
+  const source: TableSource = {
+    info: async () => {
+      const { revision: _, ...info } = await new ArraySource({ columns: ["n"], rows }).info();
+      return info;
+    },
+    createView: (query, signal) => new ArraySource({ columns: ["n"], rows }).createView(query, signal),
+    readRows: (request) => new ArraySource({ columns: ["n"], rows }).readRows(request),
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+  const grid = await mounted(source);
+  grid.cache.want(0, 3, [0]);
+  await until(() => grid.value(0, 0) === 1);
+  grid.setRowSelection({ type: "include", keys: [0] });
+  rows = [[9], [8], [7]];
+  for (const listener of listeners) listener({});
+  await until(
+    () => grid.value(0, 0) === 9 || (grid.value(0, 0) === undefined && grid.getRowSelection().keys.length === 0),
+  );
+  grid.cache.want(0, 3, [0]);
+  await until(() => grid.value(0, 0) === 9);
+  assert.deepEqual(grid.getRowSelection(), { type: "include", keys: [] });
+  grid.dispose();
+});
