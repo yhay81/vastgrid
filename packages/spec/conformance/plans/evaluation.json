@@ -1,5 +1,5 @@
 {
-  "$schema": "../schema/conformance.schema.json",
+  "$schema": "../../schema/conformance.schema.json",
   "description": "Evaluation (§3.6) and numeric types (§3.7): errors and numbers that are not finite give null, exact arithmetic, and the functions of §4.4.",
   "tables": {
     "nums": {

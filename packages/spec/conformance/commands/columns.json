@@ -1,0 +1,2187 @@
+{
+  "$schema": "../../schema/commands.schema.json",
+  "description": "Column commands (§6.3), displayed columns (§5.1.1) and the order of column settings (§6.1).",
+  "contexts": {
+    "orders": {
+      "table": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "qty",
+          "type": "integer"
+        },
+        {
+          "name": "price",
+          "type": "decimal",
+          "precision": 10,
+          "scale": 2
+        },
+        {
+          "name": "shipped",
+          "type": "date"
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "readOnly": true
+        }
+      ],
+      "revision": "r1",
+      "view": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "region",
+            "type": "string"
+          },
+          {
+            "name": "qty",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "precision": 10,
+            "scale": 2
+          },
+          {
+            "name": "shipped",
+            "type": "date"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "readOnly": true
+          }
+        ],
+        "rowCount": 6,
+        "rowIds": true
+      },
+      "rows": [
+        {
+          "start": 0,
+          "keys": [
+            {
+              "rowId": 0
+            },
+            {
+              "rowId": 1
+            },
+            {
+              "rowId": 2
+            },
+            {
+              "rowId": 3
+            },
+            {
+              "rowId": 4
+            },
+            {
+              "rowId": 5
+            }
+          ],
+          "values": [
+            [
+              1,
+              "Tokyo",
+              3,
+              "12.50",
+              "2024-01-31",
+              "a"
+            ],
+            [
+              2,
+              "Osaka",
+              1,
+              "8.00",
+              "2024-02-01",
+              null
+            ],
+            [
+              3,
+              "Tokyo",
+              null,
+              null,
+              null,
+              "c"
+            ],
+            [
+              4,
+              "",
+              5,
+              "100.00",
+              "2024-03-15",
+              ""
+            ],
+            [
+              5,
+              "Nagoya",
+              2,
+              "3.25",
+              "2024-04-01",
+              "e"
+            ],
+            [
+              6,
+              "Osaka",
+              7,
+              "0.10",
+              "2024-05-20",
+              "f"
+            ]
+          ]
+        }
+      ],
+      "page": 3
+    },
+    "orders-unloaded": {
+      "extends": "orders",
+      "rows": []
+    },
+    "orders-big": {
+      "extends": "orders",
+      "view": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "region",
+            "type": "string"
+          },
+          {
+            "name": "qty",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "precision": 10,
+            "scale": 2
+          },
+          {
+            "name": "shipped",
+            "type": "date"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "readOnly": true
+          }
+        ],
+        "rowCount": 1000,
+        "rowIds": true
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "columns.resize",
+      "section": "6.3",
+      "description": "Commands that change columns write a setting for every column of the view, in display order.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.resize",
+          "name": "price",
+          "width": 120
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "price",
+              "width": 120
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.resize-fit",
+      "section": "6.3",
+      "description": "Listed columns come before the others (§5.1.1), so price stays first.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "price",
+              "width": 120
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.resize",
+          "name": "price",
+          "width": null
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "price"
+            },
+            {
+              "name": "id"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.resize-hidden",
+      "section": "6.3",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "qty",
+              "hidden": true
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.resize",
+          "name": "qty",
+          "width": 50
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "qty",
+              "hidden": true,
+              "width": 50
+            },
+            {
+              "name": "id"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "price"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.resize-syntax",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.resize",
+          "name": "price",
+          "width": 0
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/width"
+        }
+      }
+    },
+    {
+      "id": "columns.resize-missing-width",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.resize",
+          "name": "price"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/width"
+        }
+      }
+    },
+    {
+      "id": "columns.resize-unknown",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.resize",
+          "name": "zzz",
+          "width": 10
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_column",
+          "path": "/name"
+        }
+      }
+    },
+    {
+      "id": "columns.keeps-other-names",
+      "section": "6.1",
+      "description": "Settings of names that the view does not have keep their place.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "gone",
+              "width": 40
+            },
+            {
+              "name": "price",
+              "pin": "right"
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.resize",
+          "name": "id",
+          "width": 70
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "gone",
+              "width": 40
+            },
+            {
+              "name": "id",
+              "width": 70
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            },
+            {
+              "name": "price",
+              "pin": "right"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.move-before",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.move",
+          "names": [
+            "price"
+          ],
+          "before": "region"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id"
+            },
+            {
+              "name": "price"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.move-several",
+      "section": "6.3",
+      "description": "Moved columns keep their display order.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.move",
+          "names": [
+            "note",
+            "qty"
+          ],
+          "before": "id"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "qty"
+            },
+            {
+              "name": "note"
+            },
+            {
+              "name": "id"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "price"
+            },
+            {
+              "name": "shipped"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.move-to-end",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.move",
+          "names": [
+            "id"
+          ],
+          "before": null
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "price"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            },
+            {
+              "name": "id"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.move-takes-pin",
+      "section": "6.3",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id",
+              "pin": "left"
+            },
+            {
+              "name": "region",
+              "pin": "left"
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.move",
+          "names": [
+            "price"
+          ],
+          "before": "region"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id",
+              "pin": "left"
+            },
+            {
+              "name": "price",
+              "pin": "left"
+            },
+            {
+              "name": "region",
+              "pin": "left"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.move-before-right-pins",
+      "section": "6.3",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "note",
+              "pin": "right"
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.move",
+          "names": [
+            "id"
+          ],
+          "before": null
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "price"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "id"
+            },
+            {
+              "name": "note",
+              "pin": "right"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.move-unpins",
+      "section": "6.3",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id",
+              "pin": "left"
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.move",
+          "names": [
+            "id"
+          ],
+          "before": null
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "price"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            },
+            {
+              "name": "id"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.move-before-moved",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.move",
+          "names": [
+            "id",
+            "region"
+          ],
+          "before": "region"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/before"
+        }
+      }
+    },
+    {
+      "id": "columns.move-twice",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.move",
+          "names": [
+            "id",
+            "id"
+          ],
+          "before": null
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/names"
+        }
+      }
+    },
+    {
+      "id": "columns.move-hidden",
+      "section": "6.3",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "qty",
+              "hidden": true
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.move",
+          "names": [
+            "qty"
+          ],
+          "before": "id"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_column",
+          "path": "/names/0"
+        }
+      }
+    },
+    {
+      "id": "columns.move-keeps-selection",
+      "section": "6.3",
+      "description": "Ranges keep their columns, now in the new display order.",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "region",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 2,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                3
+              ],
+              "columns": [
+                "region",
+                "qty",
+                "price"
+              ]
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.move",
+          "names": [
+            "price"
+          ],
+          "before": "region"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "region",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 2,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                3
+              ],
+              "columns": [
+                "price",
+                "region",
+                "qty"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.hide",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.hide",
+          "names": [
+            "qty",
+            "price"
+          ]
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty",
+              "hidden": true
+            },
+            {
+              "name": "price",
+              "hidden": true
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.hide-removes-pin",
+      "section": "6.3",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id",
+              "pin": "left"
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.hide",
+          "names": [
+            "id"
+          ]
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id",
+              "hidden": true
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "price"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.hide-last",
+      "section": "6.3",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "region",
+              "hidden": true
+            },
+            {
+              "name": "qty",
+              "hidden": true
+            },
+            {
+              "name": "price",
+              "hidden": true
+            },
+            {
+              "name": "shipped",
+              "hidden": true
+            },
+            {
+              "name": "note",
+              "hidden": true
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.hide",
+          "names": [
+            "id"
+          ]
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "last_column",
+          "path": "/names"
+        }
+      }
+    },
+    {
+      "id": "columns.hide-unknown",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.hide",
+          "names": [
+            "qty",
+            "zzz"
+          ]
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_column",
+          "path": "/names/1"
+        }
+      }
+    },
+    {
+      "id": "columns.hide-fits-session",
+      "section": "6.3",
+      "description": "The session is fitted to the displayed columns (§5.4, step 3).",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "qty",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 2,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                3
+              ],
+              "columns": [
+                "qty",
+                "price"
+              ]
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.hide",
+          "names": [
+            "qty"
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "id",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "focus": {
+            "row": 2,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                3
+              ],
+              "columns": [
+                "price"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.show",
+      "section": "6.3",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "qty",
+              "hidden": true
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.show",
+          "names": [
+            "qty"
+          ]
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "qty"
+            },
+            {
+              "name": "id"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "price"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.show-keeps-place",
+      "section": "6.3",
+      "description": "A hidden column keeps its place for when it is shown again.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.hide",
+          "names": [
+            "qty"
+          ]
+        },
+        {
+          "command": "column.show",
+          "names": [
+            "qty"
+          ]
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "price"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.show-all",
+      "section": "6.3",
+      "description": "all shows the columns of the view.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "qty",
+              "hidden": true
+            },
+            {
+              "name": "note",
+              "hidden": true
+            },
+            {
+              "name": "gone",
+              "hidden": true
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.show",
+          "all": true
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "qty"
+            },
+            {
+              "name": "note"
+            },
+            {
+              "name": "gone",
+              "hidden": true
+            },
+            {
+              "name": "id"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "price"
+            },
+            {
+              "name": "shipped"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.show-syntax",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.show"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "columns.show-both",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.show",
+          "names": [
+            "qty"
+          ],
+          "all": true
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "columns.pin-left",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.pin",
+          "name": "price",
+          "side": "left"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "price",
+              "pin": "left"
+            },
+            {
+              "name": "id"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.pin-left-inner-end",
+      "section": "6.3",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id",
+              "pin": "left"
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.pin",
+          "name": "price",
+          "side": "left"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id",
+              "pin": "left"
+            },
+            {
+              "name": "price",
+              "pin": "left"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.pin-right-inner-end",
+      "section": "6.3",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "note",
+              "pin": "right"
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.pin",
+          "name": "id",
+          "side": "right"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "price"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "id",
+              "pin": "right"
+            },
+            {
+              "name": "note",
+              "pin": "right"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.unpin-left",
+      "section": "6.3",
+      "description": "It becomes the first column without pin.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id",
+              "pin": "left"
+            },
+            {
+              "name": "region",
+              "pin": "left"
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.pin",
+          "name": "id",
+          "side": null
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "region",
+              "pin": "left"
+            },
+            {
+              "name": "id"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "price"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.unpin-right",
+      "section": "6.3",
+      "description": "It becomes the last column without pin.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "shipped",
+              "pin": "right"
+            },
+            {
+              "name": "note",
+              "pin": "right"
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.pin",
+          "name": "note",
+          "side": null
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "price"
+            },
+            {
+              "name": "note"
+            },
+            {
+              "name": "shipped",
+              "pin": "right"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.pin-left-to-right",
+      "section": "6.3",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id",
+              "pin": "left"
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.pin",
+          "name": "id",
+          "side": "right"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "price"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            },
+            {
+              "name": "id",
+              "pin": "right"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.pin-same-side",
+      "section": "6.3",
+      "description": "A column already at that side does not move.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "qty",
+              "pin": "left"
+            },
+            {
+              "name": "price",
+              "pin": "left"
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.pin",
+          "name": "price",
+          "side": "left"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "qty",
+              "pin": "left"
+            },
+            {
+              "name": "price",
+              "pin": "left"
+            },
+            {
+              "name": "id"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.pin-hidden",
+      "section": "6.3",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "qty",
+              "hidden": true
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.pin",
+          "name": "qty",
+          "side": "left"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_column",
+          "path": "/name"
+        }
+      }
+    },
+    {
+      "id": "columns.pin-syntax",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.pin",
+          "name": "qty",
+          "side": "top"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/side"
+        }
+      }
+    },
+    {
+      "id": "columns.format",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.format",
+          "name": "price",
+          "format": {
+            "label": "Price",
+            "align": "right"
+          }
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "price",
+              "format": {
+                "label": "Price",
+                "align": "right"
+              }
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.format-remove",
+      "section": "6.3",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "price",
+              "format": {
+                "label": "Price"
+              }
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.format",
+          "name": "price",
+          "format": null
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "price"
+            },
+            {
+              "name": "id"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.format-syntax",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.format",
+          "name": "price",
+          "format": {
+            "color": "red"
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/format/color"
+        }
+      }
+    },
+    {
+      "id": "columns.total",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.total",
+          "name": "qty",
+          "total": {
+            "fn": "sum"
+          }
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty",
+              "total": {
+                "fn": "sum"
+              }
+            },
+            {
+              "name": "price"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.total-quantile",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.total",
+          "name": "price",
+          "total": {
+            "fn": "quantile",
+            "p": 0.5
+          }
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "price",
+              "total": {
+                "fn": "quantile",
+                "p": 0.5
+              }
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.total-count-string",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.total",
+          "name": "region",
+          "total": {
+            "fn": "count"
+          }
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id"
+            },
+            {
+              "name": "region",
+              "total": {
+                "fn": "count"
+              }
+            },
+            {
+              "name": "qty"
+            },
+            {
+              "name": "price"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.total-type",
+      "section": "6.3",
+      "description": "sum does not take strings (§4.5).",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.total",
+          "name": "region",
+          "total": {
+            "fn": "sum"
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "type",
+          "path": "/total/fn"
+        }
+      }
+    },
+    {
+      "id": "columns.total-syntax",
+      "section": "6.3",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.total",
+          "name": "qty",
+          "total": {
+            "fn": "quantile"
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/total/p"
+        }
+      }
+    },
+    {
+      "id": "columns.total-remove",
+      "section": "6.3",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "qty",
+              "total": {
+                "fn": "sum"
+              }
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "column.total",
+          "name": "qty",
+          "total": null
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "qty"
+            },
+            {
+              "name": "id"
+            },
+            {
+              "name": "region"
+            },
+            {
+              "name": "price"
+            },
+            {
+              "name": "shipped"
+            },
+            {
+              "name": "note"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "columns.all-hidden-shows-first",
+      "section": "5.1.1",
+      "description": "When every column is hidden, the first column of the view is displayed.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "id",
+              "hidden": true
+            },
+            {
+              "name": "region",
+              "hidden": true
+            },
+            {
+              "name": "qty",
+              "hidden": true
+            },
+            {
+              "name": "price",
+              "hidden": true
+            },
+            {
+              "name": "shipped",
+              "hidden": true
+            },
+            {
+              "name": "note",
+              "hidden": true
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "id"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "id",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "id"
+          },
+          "focus": {
+            "row": 0,
+            "column": "id"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "id"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

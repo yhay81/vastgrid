@@ -1,5 +1,5 @@
 {
-  "$schema": "../schema/conformance.schema.json",
+  "$schema": "../../schema/conformance.schema.json",
   "description": "Plans (§4.1, §4.2), reading positions of a view (§8.4), and validation (§4.7).",
   "tables": {
     "items": {

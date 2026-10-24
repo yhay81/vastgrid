@@ -1,0 +1,3550 @@
+{
+  "$schema": "../../schema/commands.schema.json",
+  "description": "Editing commands (§6.5), pasting (§6.5.1), writable cells (§7.1) and reading typed text (§7.3).",
+  "contexts": {
+    "orders": {
+      "table": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "qty",
+          "type": "integer"
+        },
+        {
+          "name": "price",
+          "type": "decimal",
+          "precision": 10,
+          "scale": 2
+        },
+        {
+          "name": "shipped",
+          "type": "date"
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "readOnly": true
+        }
+      ],
+      "revision": "r1",
+      "view": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "region",
+            "type": "string"
+          },
+          {
+            "name": "qty",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "precision": 10,
+            "scale": 2
+          },
+          {
+            "name": "shipped",
+            "type": "date"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "readOnly": true
+          }
+        ],
+        "rowCount": 6,
+        "rowIds": true
+      },
+      "rows": [
+        {
+          "start": 0,
+          "keys": [
+            {
+              "rowId": 0
+            },
+            {
+              "rowId": 1
+            },
+            {
+              "rowId": 2
+            },
+            {
+              "rowId": 3
+            },
+            {
+              "rowId": 4
+            },
+            {
+              "rowId": 5
+            }
+          ],
+          "values": [
+            [
+              1,
+              "Tokyo",
+              3,
+              "12.50",
+              "2024-01-31",
+              "a"
+            ],
+            [
+              2,
+              "Osaka",
+              1,
+              "8.00",
+              "2024-02-01",
+              null
+            ],
+            [
+              3,
+              "Tokyo",
+              null,
+              null,
+              null,
+              "c"
+            ],
+            [
+              4,
+              "",
+              5,
+              "100.00",
+              "2024-03-15",
+              ""
+            ],
+            [
+              5,
+              "Nagoya",
+              2,
+              "3.25",
+              "2024-04-01",
+              "e"
+            ],
+            [
+              6,
+              "Osaka",
+              7,
+              "0.10",
+              "2024-05-20",
+              "f"
+            ]
+          ]
+        }
+      ],
+      "page": 3
+    },
+    "orders-unloaded": {
+      "extends": "orders",
+      "rows": []
+    },
+    "orders-big": {
+      "extends": "orders",
+      "view": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "region",
+            "type": "string"
+          },
+          {
+            "name": "qty",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "precision": 10,
+            "scale": 2
+          },
+          {
+            "name": "shipped",
+            "type": "date"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "readOnly": true
+          }
+        ],
+        "rowCount": 1000,
+        "rowIds": true
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "editing.begin",
+      "section": "6.5",
+      "description": "The editor starts with the cell's text form (§7.3) and keeps the cell's value.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "price"
+        },
+        {
+          "command": "edit.begin"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "price",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "price"
+          },
+          "focus": {
+            "row": 0,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "price"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 0,
+            "column": "price",
+            "key": {
+              "rowId": 0
+            },
+            "text": "12.50",
+            "value": "12.50"
+          }
+        },
+        "requests": []
+      }
+    },
+    {
+      "id": "editing.begin-with-text",
+      "section": "6.5",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 1,
+          "column": "qty"
+        },
+        {
+          "command": "edit.begin",
+          "text": "7"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "qty",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 1,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                2
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 1,
+            "column": "qty",
+            "key": {
+              "rowId": 1
+            },
+            "text": "7",
+            "value": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.begin-null",
+      "section": "7.3",
+      "description": "Null starts as the empty string.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty"
+        },
+        {
+          "command": "edit.begin"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "anchor": {
+            "row": 2,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 2,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                2,
+                3
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            },
+            "text": "",
+            "value": null
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.begin-read-only",
+      "section": "7.1",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "note"
+        },
+        {
+          "command": "edit.begin"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "read_only",
+          "path": "",
+          "details": {
+            "column": "note"
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.begin-derived",
+      "section": "7.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "total",
+                "expr": {
+                  "fn": "mul",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "col": "price"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "total"
+          }
+        }
+      },
+      "context": {
+        "extends": "orders",
+        "view": {
+          "columns": [
+            {
+              "name": "id",
+              "type": "integer"
+            },
+            {
+              "name": "region",
+              "type": "string"
+            },
+            {
+              "name": "qty",
+              "type": "integer"
+            },
+            {
+              "name": "price",
+              "type": "decimal",
+              "precision": 10,
+              "scale": 2
+            },
+            {
+              "name": "shipped",
+              "type": "date"
+            },
+            {
+              "name": "note",
+              "type": "string",
+              "readOnly": true
+            },
+            {
+              "name": "total",
+              "type": "decimal",
+              "precision": 20,
+              "scale": 2
+            }
+          ],
+          "rowCount": 6,
+          "rowIds": true
+        },
+        "rows": [
+          {
+            "start": 0,
+            "keys": [
+              {
+                "rowId": 0
+              },
+              {
+                "rowId": 1
+              },
+              {
+                "rowId": 2
+              },
+              {
+                "rowId": 3
+              },
+              {
+                "rowId": 4
+              },
+              {
+                "rowId": 5
+              }
+            ],
+            "values": [
+              [
+                1,
+                "Tokyo",
+                3,
+                "12.50",
+                "2024-01-31",
+                "a",
+                null
+              ],
+              [
+                2,
+                "Osaka",
+                1,
+                "8.00",
+                "2024-02-01",
+                null,
+                null
+              ],
+              [
+                3,
+                "Tokyo",
+                null,
+                null,
+                null,
+                "c",
+                null
+              ],
+              [
+                4,
+                "",
+                5,
+                "100.00",
+                "2024-03-15",
+                "",
+                null
+              ],
+              [
+                5,
+                "Nagoya",
+                2,
+                "3.25",
+                "2024-04-01",
+                "e",
+                null
+              ],
+              [
+                6,
+                "Osaka",
+                7,
+                "0.10",
+                "2024-05-20",
+                "f",
+                null
+              ]
+            ]
+          }
+        ]
+      },
+      "commands": [
+        {
+          "command": "edit.begin"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "read_only",
+          "path": "",
+          "details": {
+            "column": "total"
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.begin-aggregated",
+      "section": "7.1",
+      "description": "Cells of a view with aggregate are not written.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "aggregate": {
+              "keys": [
+                "region"
+              ],
+              "measures": [
+                {
+                  "name": "n",
+                  "fn": "count"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": {
+        "extends": "orders",
+        "view": {
+          "columns": [
+            {
+              "name": "region",
+              "type": "string"
+            },
+            {
+              "name": "n",
+              "type": "bigint"
+            }
+          ],
+          "rowCount": 4,
+          "rowIds": false
+        },
+        "rows": [
+          {
+            "start": 0,
+            "values": [
+              [
+                "Tokyo",
+                2
+              ],
+              [
+                "Osaka",
+                2
+              ],
+              [
+                "",
+                1
+              ],
+              [
+                "Nagoya",
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      "commands": [
+        {
+          "command": "edit.begin"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "read_only",
+          "path": "",
+          "details": {
+            "column": "region"
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.begin-no-write",
+      "section": "7.1",
+      "description": "Capabilities without write offer no writes.",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "capabilities": {}
+      },
+      "commands": [
+        {
+          "command": "edit.begin"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "read_only",
+          "path": "",
+          "details": {
+            "column": "id"
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.begin-not-loaded",
+      "section": "6.5",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 500,
+            "column": "qty"
+          }
+        }
+      },
+      "context": "orders-big",
+      "commands": [
+        {
+          "command": "edit.begin"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "not_loaded",
+          "path": "",
+          "details": {
+            "rows": [
+              [
+                500,
+                501
+              ]
+            ],
+            "columns": [
+              "qty"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.change",
+      "section": "6.5",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "region",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 1,
+            "column": "region"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                2
+              ],
+              "columns": [
+                "region"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 1,
+            "column": "region",
+            "key": {
+              "rowId": 1
+            },
+            "text": "Osa",
+            "value": "Osaka"
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.change",
+          "text": "abc"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "region",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 1,
+            "column": "region"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                2
+              ],
+              "columns": [
+                "region"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 1,
+            "column": "region",
+            "key": {
+              "rowId": 1
+            },
+            "text": "abc",
+            "value": "Osaka"
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.cancel",
+      "section": "6.5",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "region",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 1,
+            "column": "region"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                2
+              ],
+              "columns": [
+                "region"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 1,
+            "column": "region",
+            "key": {
+              "rowId": 1
+            },
+            "text": "abc",
+            "value": "Osaka"
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.cancel"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "region",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 1,
+            "column": "region"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                2
+              ],
+              "columns": [
+                "region"
+              ]
+            }
+          ]
+        },
+        "requests": []
+      }
+    },
+    {
+      "id": "editing.commit",
+      "section": "6.5",
+      "description": "The write carries the context's revision, and previous is the editor's value.",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 0,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "rowId": 0
+            },
+            "text": "4",
+            "value": 3
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.commit"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 0,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ]
+        },
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "qty",
+                "value": 4,
+                "previous": 3
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.commit-unchanged",
+      "section": "6.5",
+      "description": "A value that does not change is not written.",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 0,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "rowId": 0
+            },
+            "text": " 3 ",
+            "value": 3
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.commit"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 0,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ]
+        },
+        "requests": []
+      }
+    },
+    {
+      "id": "editing.commit-same-decimal",
+      "section": "6.5",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "price",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "price"
+          },
+          "focus": {
+            "row": 0,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "price"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 0,
+            "column": "price",
+            "key": {
+              "rowId": 0
+            },
+            "text": "12.5",
+            "value": "12.50"
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.commit"
+        }
+      ],
+      "expect": {
+        "requests": []
+      }
+    },
+    {
+      "id": "editing.commit-null",
+      "section": "7.3",
+      "description": "A string of only white space is null.",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "region",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "region"
+          },
+          "focus": {
+            "row": 0,
+            "column": "region"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "region"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 0,
+            "column": "region",
+            "key": {
+              "rowId": 0
+            },
+            "text": "  ",
+            "value": "Tokyo"
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.commit"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "region",
+                "value": null,
+                "previous": "Tokyo"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.commit-string-spaces",
+      "section": "7.3",
+      "description": "Strings keep the white space around them.",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "region",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "region"
+          },
+          "focus": {
+            "row": 0,
+            "column": "region"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "region"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 0,
+            "column": "region",
+            "key": {
+              "rowId": 0
+            },
+            "text": " Kyoto ",
+            "value": "Tokyo"
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.commit"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "region",
+                "value": " Kyoto ",
+                "previous": "Tokyo"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.commit-invalid",
+      "section": "7.3",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 0,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "rowId": 0
+            },
+            "text": "1.5",
+            "value": 3
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.commit"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "invalid_value",
+          "path": "",
+          "details": {
+            "row": 0,
+            "column": "qty",
+            "error": "integer"
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.commit-scale",
+      "section": "7.3",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "price",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "price"
+          },
+          "focus": {
+            "row": 0,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "price"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 0,
+            "column": "price",
+            "key": {
+              "rowId": 0
+            },
+            "text": "1.005",
+            "value": "12.50"
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.commit"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "invalid_value",
+          "path": "",
+          "details": {
+            "row": 0,
+            "column": "price",
+            "error": "scale"
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.commit-date",
+      "section": "7.3",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "shipped",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "shipped"
+          },
+          "focus": {
+            "row": 0,
+            "column": "shipped"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "shipped"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 0,
+            "column": "shipped",
+            "key": {
+              "rowId": 0
+            },
+            "text": "2024/2/29",
+            "value": "2024-01-31"
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.commit"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "shipped",
+                "value": "2024-02-29",
+                "previous": "2024-01-31"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.commit-moves-down",
+      "section": "6.5",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "region",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 1,
+            "column": "region"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                2
+              ],
+              "columns": [
+                "region"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 1,
+            "column": "region",
+            "key": {
+              "rowId": 1
+            },
+            "text": "Kobe",
+            "value": "Osaka"
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.commit",
+          "move": "down"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 2,
+            "column": "region",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "anchor": {
+            "row": 2,
+            "column": "region"
+          },
+          "focus": {
+            "row": 2,
+            "column": "region"
+          },
+          "selection": [
+            {
+              "rows": [
+                2,
+                3
+              ],
+              "columns": [
+                "region"
+              ]
+            }
+          ]
+        },
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 1
+                },
+                "column": "region",
+                "value": "Kobe",
+                "previous": "Osaka"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.commit-moves-in-selection",
+      "section": "6.5",
+      "description": "The active cell moves as advance moves it: Tab in a range walks through it.",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "region",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "region"
+          },
+          "focus": {
+            "row": 1,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                2
+              ],
+              "columns": [
+                "region",
+                "qty"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 0,
+            "column": "region",
+            "key": {
+              "rowId": 0
+            },
+            "text": "Kyoto",
+            "value": "Tokyo"
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.commit",
+          "move": "right"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "region"
+          },
+          "focus": {
+            "row": 1,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                2
+              ],
+              "columns": [
+                "region",
+                "qty"
+              ]
+            }
+          ]
+        },
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "region",
+                "value": "Kyoto",
+                "previous": "Tokyo"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.commit-row-key",
+      "section": "6.5",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "rowKey": "id"
+        },
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 0,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "value": 1
+            },
+            "text": "4",
+            "value": 3
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.commit"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "value": 1
+                },
+                "column": "qty",
+                "value": 4,
+                "previous": 3
+              }
+            ],
+            "rowKey": "id"
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.commit-read-only",
+      "section": "7.1",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "note",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "note"
+          },
+          "focus": {
+            "row": 0,
+            "column": "note"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "note"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 0,
+            "column": "note",
+            "key": {
+              "rowId": 0
+            },
+            "text": "x",
+            "value": "a"
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.commit"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "read_only",
+          "path": "",
+          "details": {
+            "column": "note"
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.commit-move-syntax",
+      "section": "6.5",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 0,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "rowId": 0
+            },
+            "text": "4",
+            "value": 3
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.commit",
+          "move": "next"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/move"
+        }
+      }
+    },
+    {
+      "id": "editing.commit-no-editor",
+      "section": "6.5",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.commit"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "no_editor",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "editing.change-no-editor",
+      "section": "6.5",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.change",
+          "text": "x"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "no_editor",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "editing.cancel-no-editor",
+      "section": "6.5",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "edit.cancel"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "no_editor",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "editing.clear",
+      "section": "6.5",
+      "description": "Cells are written row by row; blank cells are left out.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "region"
+        },
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty",
+          "mode": "extend"
+        },
+        {
+          "command": "edit.clear"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "region",
+                "value": null,
+                "previous": "Tokyo"
+              },
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "qty",
+                "value": null,
+                "previous": 3
+              },
+              {
+                "key": {
+                  "rowId": 1
+                },
+                "column": "region",
+                "value": null,
+                "previous": "Osaka"
+              },
+              {
+                "key": {
+                  "rowId": 1
+                },
+                "column": "qty",
+                "value": null,
+                "previous": 1
+              },
+              {
+                "key": {
+                  "rowId": 2
+                },
+                "column": "region",
+                "value": null,
+                "previous": "Tokyo"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.clear-skips-read-only",
+      "section": "6.5",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "price"
+        },
+        {
+          "command": "select",
+          "row": 1,
+          "column": "note",
+          "mode": "extend"
+        },
+        {
+          "command": "edit.clear"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "price",
+                "value": null,
+                "previous": "12.50"
+              },
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "shipped",
+                "value": null,
+                "previous": "2024-01-31"
+              },
+              {
+                "key": {
+                  "rowId": 1
+                },
+                "column": "price",
+                "value": null,
+                "previous": "8.00"
+              },
+              {
+                "key": {
+                  "rowId": 1
+                },
+                "column": "shipped",
+                "value": null,
+                "previous": "2024-02-01"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.clear-read-only",
+      "section": "6.5",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "note"
+        },
+        {
+          "command": "edit.clear"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "read_only",
+          "path": "",
+          "details": {
+            "column": "note"
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.clear-blank",
+      "section": "3.2",
+      "description": "The empty string is blank in a string column.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 3,
+          "column": "region"
+        },
+        {
+          "command": "edit.clear"
+        }
+      ],
+      "expect": {
+        "requests": []
+      }
+    },
+    {
+      "id": "editing.clear-not-loaded",
+      "section": "6.5",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "selection": [
+            {
+              "rows": [
+                4,
+                8
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ]
+        }
+      },
+      "context": "orders-big",
+      "commands": [
+        {
+          "command": "edit.clear"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "not_loaded",
+          "path": "",
+          "details": {
+            "rows": [
+              [
+                6,
+                8
+              ]
+            ],
+            "columns": [
+              "qty"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.clear-whole-column",
+      "section": "6.5",
+      "state": {},
+      "context": "orders-big",
+      "commands": [
+        {
+          "command": "select.columns",
+          "from": "qty",
+          "to": "qty"
+        },
+        {
+          "command": "edit.clear"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "not_loaded",
+          "path": "",
+          "details": {
+            "rows": [
+              [
+                6,
+                1000
+              ]
+            ],
+            "columns": [
+              "qty"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.clear-too-many",
+      "section": "7.2",
+      "description": "A write holds at most 100,000 cells.",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "view": {
+          "columns": [
+            {
+              "name": "id",
+              "type": "integer"
+            },
+            {
+              "name": "region",
+              "type": "string"
+            },
+            {
+              "name": "qty",
+              "type": "integer"
+            },
+            {
+              "name": "price",
+              "type": "decimal",
+              "precision": 10,
+              "scale": 2
+            },
+            {
+              "name": "shipped",
+              "type": "date"
+            },
+            {
+              "name": "note",
+              "type": "string",
+              "readOnly": true
+            }
+          ],
+          "rowCount": 200000,
+          "rowIds": true
+        },
+        "rows": []
+      },
+      "commands": [
+        {
+          "command": "select.columns",
+          "from": "qty",
+          "to": "qty"
+        },
+        {
+          "command": "edit.clear"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "too_many_cells",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "editing.paste",
+      "section": "6.5.1",
+      "description": "Values go from the top-left cell; the line break after the last row ends the text.",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "clipboard": {
+          "text": "Kobe\t9\nNara\t4\n"
+        }
+      },
+      "commands": [
+        {
+          "command": "select",
+          "row": 1,
+          "column": "region"
+        },
+        {
+          "command": "edit.paste"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 1
+                },
+                "column": "region",
+                "value": "Kobe",
+                "previous": "Osaka"
+              },
+              {
+                "key": {
+                  "rowId": 1
+                },
+                "column": "qty",
+                "value": 9,
+                "previous": 1
+              },
+              {
+                "key": {
+                  "rowId": 2
+                },
+                "column": "region",
+                "value": "Nara",
+                "previous": "Tokyo"
+              },
+              {
+                "key": {
+                  "rowId": 2
+                },
+                "column": "qty",
+                "value": 4,
+                "previous": null
+              }
+            ]
+          }
+        ],
+        "output": {
+          "cutRows": 0,
+          "cutColumns": 0
+        }
+      }
+    },
+    {
+      "id": "editing.paste-repeats",
+      "section": "6.5.1",
+      "description": "A range that holds the values a whole number of times is filled with them.",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "clipboard": {
+          "text": "1\n2"
+        }
+      },
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "qty"
+        },
+        {
+          "command": "select",
+          "row": 3,
+          "column": "qty",
+          "mode": "extend"
+        },
+        {
+          "command": "edit.paste"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "qty",
+                "value": 1,
+                "previous": 3
+              },
+              {
+                "key": {
+                  "rowId": 1
+                },
+                "column": "qty",
+                "value": 2,
+                "previous": 1
+              },
+              {
+                "key": {
+                  "rowId": 2
+                },
+                "column": "qty",
+                "value": 1,
+                "previous": null
+              },
+              {
+                "key": {
+                  "rowId": 3
+                },
+                "column": "qty",
+                "value": 2,
+                "previous": 5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.paste-once",
+      "section": "6.5.1",
+      "description": "Three rows do not hold two values a whole number of times: they are pasted once.",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "clipboard": {
+          "text": "1\n2"
+        }
+      },
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "qty"
+        },
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty",
+          "mode": "extend"
+        },
+        {
+          "command": "edit.paste"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "qty",
+                "value": 1,
+                "previous": 3
+              },
+              {
+                "key": {
+                  "rowId": 1
+                },
+                "column": "qty",
+                "value": 2,
+                "previous": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.paste-single-value",
+      "section": "6.5.1",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "clipboard": {
+          "text": "0"
+        }
+      },
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "qty"
+        },
+        {
+          "command": "select",
+          "row": 4,
+          "column": "qty",
+          "mode": "add"
+        },
+        {
+          "command": "select",
+          "row": 5,
+          "column": "qty",
+          "mode": "extend"
+        },
+        {
+          "command": "edit.paste"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "qty",
+                "value": 0,
+                "previous": 3
+              },
+              {
+                "key": {
+                  "rowId": 4
+                },
+                "column": "qty",
+                "value": 0,
+                "previous": 2
+              },
+              {
+                "key": {
+                  "rowId": 5
+                },
+                "column": "qty",
+                "value": 0,
+                "previous": 7
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.paste-ranges",
+      "section": "6.5.1",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "clipboard": {
+          "text": "1\t2"
+        }
+      },
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "qty"
+        },
+        {
+          "command": "select",
+          "row": 4,
+          "column": "qty",
+          "mode": "add"
+        },
+        {
+          "command": "edit.paste"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "paste_ranges",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "editing.paste-cut-rows",
+      "section": "6.5.1",
+      "description": "Rows are never added.",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "clipboard": {
+          "text": "1\t2025-01-01\n2\t2025-02-01\n3\t2025-03-01"
+        }
+      },
+      "commands": [
+        {
+          "command": "select",
+          "row": 4,
+          "column": "price"
+        },
+        {
+          "command": "edit.paste"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 4
+                },
+                "column": "price",
+                "value": "1.00",
+                "previous": "3.25"
+              },
+              {
+                "key": {
+                  "rowId": 4
+                },
+                "column": "shipped",
+                "value": "2025-01-01",
+                "previous": "2024-04-01"
+              },
+              {
+                "key": {
+                  "rowId": 5
+                },
+                "column": "price",
+                "value": "2.00",
+                "previous": "0.10"
+              },
+              {
+                "key": {
+                  "rowId": 5
+                },
+                "column": "shipped",
+                "value": "2025-02-01",
+                "previous": "2024-05-20"
+              }
+            ]
+          }
+        ],
+        "output": {
+          "cutRows": 1,
+          "cutColumns": 0
+        }
+      }
+    },
+    {
+      "id": "editing.paste-cut-columns",
+      "section": "6.5.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "note",
+              "hidden": true
+            }
+          ]
+        }
+      },
+      "context": {
+        "extends": "orders",
+        "clipboard": {
+          "text": "2025-01-01\tz"
+        }
+      },
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "shipped"
+        },
+        {
+          "command": "edit.paste"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "shipped",
+                "value": "2025-01-01",
+                "previous": "2024-01-31"
+              }
+            ]
+          }
+        ],
+        "output": {
+          "cutRows": 0,
+          "cutColumns": 1
+        }
+      }
+    },
+    {
+      "id": "editing.paste-grouping",
+      "section": "7.3",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "clipboard": {
+          "text": "1,234.5"
+        }
+      },
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "price"
+        },
+        {
+          "command": "edit.paste"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "price",
+                "value": "1234.50",
+                "previous": "12.50"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.paste-invalid",
+      "section": "7.3",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "clipboard": {
+          "text": "x"
+        }
+      },
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "qty"
+        },
+        {
+          "command": "edit.paste"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "invalid_value",
+          "path": "",
+          "details": {
+            "row": 0,
+            "column": "qty",
+            "error": "number"
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.paste-read-only",
+      "section": "6.5",
+      "description": "Read-only cells are not skipped: they refuse the paste.",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "clipboard": {
+          "text": "a\t1\t2\t2025-01-01\te"
+        }
+      },
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "region"
+        },
+        {
+          "command": "edit.paste"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "read_only",
+          "path": "",
+          "details": {
+            "column": "note"
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.paste-html",
+      "section": "6.6",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "clipboard": {
+          "html": "<html><body><table><tr><td>Sendai</td><td>8</td></tr></table></body></html>"
+        }
+      },
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "region"
+        },
+        {
+          "command": "edit.paste"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "region",
+                "value": "Sendai",
+                "previous": "Tokyo"
+              },
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "qty",
+                "value": 8,
+                "previous": 3
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.paste-text-first",
+      "section": "6.5.1",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "clipboard": {
+          "text": "A",
+          "html": "<table><tr><td>B</td></tr></table>"
+        }
+      },
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "region"
+        },
+        {
+          "command": "edit.paste"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "region",
+                "value": "A",
+                "previous": "Tokyo"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.paste-quoted",
+      "section": "6.6",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "clipboard": {
+          "text": "\"a\tb\"\n\"say \"\"hi\"\"\""
+        }
+      },
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "region"
+        },
+        {
+          "command": "edit.paste"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "region",
+                "value": "a\tb",
+                "previous": "Tokyo"
+              },
+              {
+                "key": {
+                  "rowId": 1
+                },
+                "column": "region",
+                "value": "say \"hi\"",
+                "previous": "Osaka"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.paste-nothing",
+      "section": "6.5.1",
+      "description": "Without values, paste does nothing.",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "clipboard": {}
+      },
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "region"
+        },
+        {
+          "command": "edit.paste"
+        }
+      ],
+      "expect": {
+        "requests": [],
+        "output": null
+      }
+    },
+    {
+      "id": "editing.fill-down",
+      "section": "6.5",
+      "description": "The first row goes into the others; (2, region) already holds Tokyo.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "region"
+        },
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty",
+          "mode": "extend"
+        },
+        {
+          "command": "edit.fill",
+          "direction": "down"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 1
+                },
+                "column": "region",
+                "value": "Tokyo",
+                "previous": "Osaka"
+              },
+              {
+                "key": {
+                  "rowId": 1
+                },
+                "column": "qty",
+                "value": 3,
+                "previous": 1
+              },
+              {
+                "key": {
+                  "rowId": 2
+                },
+                "column": "qty",
+                "value": 3,
+                "previous": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.fill-down-one-row",
+      "section": "6.5",
+      "description": "A range of one row takes the row above it.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 1,
+          "column": "qty"
+        },
+        {
+          "command": "edit.fill",
+          "direction": "down"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 1
+                },
+                "column": "qty",
+                "value": 3,
+                "previous": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.fill-down-first-row",
+      "section": "6.5",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "qty"
+        },
+        {
+          "command": "edit.fill",
+          "direction": "down"
+        }
+      ],
+      "expect": {
+        "requests": []
+      }
+    },
+    {
+      "id": "editing.fill-right",
+      "section": "6.5",
+      "description": "A value goes into a column of another type through its text form.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "qty"
+        },
+        {
+          "command": "select",
+          "row": 1,
+          "column": "price",
+          "mode": "extend"
+        },
+        {
+          "command": "edit.fill",
+          "direction": "right"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "price",
+                "value": "3.00",
+                "previous": "12.50"
+              },
+              {
+                "key": {
+                  "rowId": 1
+                },
+                "column": "price",
+                "value": "1.00",
+                "previous": "8.00"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.fill-right-one-column",
+      "section": "6.5",
+      "description": "A range of one column takes the column left of it.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 2,
+          "column": "region"
+        },
+        {
+          "command": "edit.fill",
+          "direction": "right"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 2
+                },
+                "column": "region",
+                "value": "3",
+                "previous": "Tokyo"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.fill-right-invalid",
+      "section": "6.5",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "qty"
+        },
+        {
+          "command": "edit.fill",
+          "direction": "right"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "invalid_value",
+          "path": "",
+          "details": {
+            "row": 0,
+            "column": "qty",
+            "error": "number"
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.fill-read-only",
+      "section": "6.5",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "note"
+        },
+        {
+          "command": "select",
+          "row": 1,
+          "column": "note",
+          "mode": "extend"
+        },
+        {
+          "command": "edit.fill",
+          "direction": "down"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "read_only",
+          "path": "",
+          "details": {
+            "column": "note"
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.fill-not-loaded",
+      "section": "6.5",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "selection": [
+            {
+              "rows": [
+                5,
+                7
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ]
+        }
+      },
+      "context": "orders-big",
+      "commands": [
+        {
+          "command": "edit.fill",
+          "direction": "down"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "not_loaded",
+          "path": "",
+          "details": {
+            "rows": [
+              [
+                6,
+                7
+              ]
+            ],
+            "columns": [
+              "qty"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.undo",
+      "section": "7.4",
+      "description": "undo writes the values before, each with previous set to the values after.",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "history.undo"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        },
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "qty",
+                "value": 3,
+                "previous": 4
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.redo",
+      "section": "7.4",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [],
+            "redo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "history.redo"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "qty",
+                "value": 4,
+                "previous": 3
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.undo-nothing",
+      "section": "7.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "history.undo"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "nothing",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "editing.redo-nothing",
+      "section": "7.4",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "history.redo"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "nothing",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "editing.undo-read-only",
+      "section": "7.4",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "note",
+                    "before": "a",
+                    "after": "b"
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "history.undo"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "read_only",
+          "path": "",
+          "details": {
+            "column": "note"
+          }
+        }
+      }
+    },
+    {
+      "id": "editing.undo-aggregated",
+      "section": "7.1",
+      "description": "Steps name cells by key, so they are written whatever the view.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "aggregate": {
+              "keys": [
+                "region"
+              ],
+              "measures": [
+                {
+                  "name": "n",
+                  "fn": "count"
+                }
+              ]
+            }
+          }
+        },
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      },
+      "context": {
+        "extends": "orders",
+        "view": {
+          "columns": [
+            {
+              "name": "region",
+              "type": "string"
+            },
+            {
+              "name": "n",
+              "type": "bigint"
+            }
+          ],
+          "rowCount": 4,
+          "rowIds": false
+        },
+        "rows": [
+          {
+            "start": 0,
+            "values": [
+              [
+                "Tokyo",
+                2
+              ],
+              [
+                "Osaka",
+                2
+              ],
+              [
+                "",
+                1
+              ],
+              [
+                "Nagoya",
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      "commands": [
+        {
+          "command": "history.undo"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "qty",
+                "value": 3,
+                "previous": 4
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

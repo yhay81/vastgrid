@@ -1,10 +1,10 @@
 # vastgrid v2 specification
 
-Status: **2.0-draft.1** (2026-10-24). This document is normative for the engines, the grid core and the
+Status: **2.0-draft.2** (2026-10-24). This document is normative for the engines, the grid core and the
 surfaces of vastgrid v2. Why v2 is built this way is in
 [the reconsideration of the rebuild](rebuild-decision.ja.md) (Japanese); v1's protocol is
 [protocol.md](protocol.md). The conformance corpus in [`packages/spec/conformance`](../packages/spec/conformance)
-turns the rules of sections 2–4 into cases that every engine runs.
+turns the rules of sections 2–8 into cases that every engine and every core runs.
 
 The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 
@@ -95,6 +95,9 @@ type of their column or literal:
 | `uuid` | lowercase hex, `8-4-4-4-12` | |
 | `binary` | base64 (RFC 4648, with padding) | |
 | null | `null` | |
+
+Dates and timestamps are written for the years 0001 to 9999, which `YYYY` holds; how values outside them are
+written is an open question (§12).
 
 ### 2.3 Values in blocks
 
@@ -471,6 +474,7 @@ Engines report what they evaluate (in `TableInfo`, §8.2):
   "measures": ["count", "sum", "…"],
   "summarize": true,
   "find": true,
+  "locate": true,
   "write": true,
   "save": true,
   "export": { "formats": ["csv", "tsv", "parquet", "json", "xlsx"], "delivery": "file" },
@@ -487,8 +491,10 @@ The core offers only what the engine reports, and a plan that uses anything else
 
 The state is JSON in two parts with their own versions: the **document** (what a person saves, shares or
 gives an agent: the view and its columns) and the **session** (where the person is: the selection, the
-scroll position, the checked rows, an editor being typed in). Both are plain data. Commands (§6) change
-them, and the core reads the data they need.
+scroll position, the checked rows, an editor, the undo history). Both are plain data. Commands (§6) change
+them; the core reads the data that they need and tells the commands what it knows (§6.1).
+
+[`state.schema.json`](../packages/spec/schema/state.schema.json) gives the form of both.
 
 ### 5.1 Document
 
@@ -497,12 +503,13 @@ them, and the core reads the data they need.
   "kind": "vastgrid/document",
   "version": 2,
   "schema": ["id", "region", "qty", "price"],
-  "plan": {},
+  "rowKey": "id",
+  "plan": { "sort": [{ "column": "price", "direction": "desc" }] },
   "columns": [
+    { "name": "id", "pin": "left" },
     {
       "name": "price",
       "width": 120,
-      "pin": "left",
       "format": {
         "label": "Price",
         "number": { "style": "currency", "currency": "JPY" },
@@ -521,17 +528,48 @@ them, and the core reads the data they need.
 }
 ```
 
-- `schema`: the table's column names when the document was saved, so that the core can tell what changed.
-- `plan`: §4.
-- `columns`: settings of the view's columns, by name, in display order. Columns of the view that are not
-  listed come after the listed ones, in view order, with default settings. Listed names that the view does
-  not have are kept, for when they come back, but not shown. `pin` is `left`, `right` or absent. `total`
-  is a measure (`fn`, and `p` for `quantile`) of the column over the whole view, shown in the totals row.
-- `format`: `label`; `number` and `date` (v1's `NumberFormat` and `DateFormat`); `align`; `wrap`; `copy`
-  (`raw` or `formatted`); and `styles`, rules tried in order, the first whose `when` (an expression over
-  the row, §4.3, without `search`) is true giving `color`, `background` and `description`. Functions (v1's
-  `format` and `style` callbacks) are not state: they stay props of the React component, and they win
-  over `styles`.
+| Member | Value | Absent | Meaning |
+| --- | --- | --- | --- |
+| `kind` | `"vastgrid/document"` | required | |
+| `version` | `2` | required | §5.6 |
+| `schema` | the table's column names, in order | unknown | the names when the document was saved, to tell what changed (§5.5) |
+| `rowKey` | a column name | rows are keyed by row ID | a table column whose values identify records (§5.3) |
+| `plan` | a plan (§4) | `{}` | the view |
+| `columns` | column settings, at most 100,000 | none | settings by column name, in display order (§5.1.1) |
+
+A column setting is `{ "name" }` with any of:
+
+| Member | Value | Absent | Meaning |
+| --- | --- | --- | --- |
+| `width` | a number of CSS pixels, from 1 to 100,000 | the core fits the column to its values | |
+| `hidden` | `true` | shown | |
+| `pin` | `"left"` or `"right"` | scrolls | the column stays at that side while the others scroll |
+| `format` | below | the defaults | how values are shown |
+| `total` | `{ "fn", "p"? }`, a measure of §4.5 without `name` and `column` | no total | the column's value in the totals row: the measure of the column over the whole view |
+
+`format` has `label` (shown instead of the name), `number` and `date` (v1's `NumberFormat` and
+`DateFormat`), `align` (`left`, `center` or `right`), `wrap` (`true` to wrap text), `copy` (`raw` or
+`formatted`, §6.6), and `styles`: rules tried in order, the first whose `when` is true giving `color`,
+`background` and `description` (what the colors mean, read by screen readers). `when` is an expression
+over the row (§4.3) without `search`; a rule whose `when` does not validate against the view is skipped.
+Functions (v1's `format` and `style` callbacks) are not state: they stay props of the React component and
+win over `styles`.
+
+Two settings MUST NOT have the same name. Settings of names that the view does not have are kept, for when
+the names come back, and do nothing meanwhile.
+
+#### 5.1.1 Displayed columns
+
+The **displayed columns** of a document for a view are found as follows.
+
+1. Each column of the view takes its setting, or the default setting when `columns` has none for it.
+2. The columns that are not hidden are displayed in this order: those with `pin: "left"` in the order of
+   `columns`; then those without `pin`, first the ones in `columns` in their order, then the others in view
+   order; then those with `pin: "right"` in the order of `columns`.
+3. When every column of the view is hidden, the first column of the view is displayed.
+
+Selections, scroll positions and editors (§5.2) name displayed columns. Display positions count from 0, from
+the left.
 
 ### 5.2 Session
 
@@ -540,189 +578,594 @@ them, and the core reads the data they need.
   "kind": "vastgrid/session",
   "version": 2,
   "view": "sha256:…",
-  "active": { "row": 120, "key": { "rowId": 5012 }, "column": "price" },
-  "selection": [{ "rows": [100, 140], "columns": ["region", "price"] }],
+  "revision": "1730000000-74512",
+  "active": { "row": 120, "column": "price", "key": { "rowId": 5012 } },
+  "anchor": { "row": 100, "column": "region" },
+  "focus": { "row": 140, "column": "price" },
+  "selection": [{ "rows": [100, 141], "columns": ["region", "qty", "price"] }],
   "scroll": { "row": 95, "column": "id" },
   "checked": { "mode": "include", "keys": [{ "rowId": 3 }, { "rowId": 9 }] },
   "detail": { "open": true },
-  "editor": { "row": 120, "column": "price", "text": "12" }
+  "editor": { "row": 120, "column": "price", "key": { "rowId": 5012 }, "text": "12", "value": "11.50" },
+  "history": { "undo": [], "redo": [] }
 }
 ```
 
-- `view`: the hash of the plan that the positions refer to. When the plan changes, the core keeps `active`
-  by its `key` when it can, and clears `selection`.
-- `active`: the active cell, by view position, row key (§5.3) and column name.
-- `selection`: ranges of view positions (`[start, end)`) and the columns they span, in display order.
-- `scroll`: the view position and the column at the top left; the core restores the same place, not the
-  same pixels.
-- `checked`: rows checked with the checkboxes, by key. `mode: "exclude"` checks every row except `keys`, and
-  may carry `where`, the condition of the view whose rows it checks (v1's `{ type: "exclude", query }`).
-- `detail` and `editor`: the detail panel, and a cell editor being typed in.
+| Member | Value | Absent | Meaning |
+| --- | --- | --- | --- |
+| `kind`, `version` | `"vastgrid/session"`, `2` | required | |
+| `view` | a plan hash (§4.8) | the current view | the view whose positions the session holds |
+| `revision` | a table revision | unknown | the revision that row IDs in keys belong to |
+| `active` | `{ "row", "column", "key"? }` | the first row and the first displayed column | the active cell: its view position, its column, and its row's key (§5.3) when known |
+| `anchor`, `focus` | `{ "row", "column" }` | the active cell | the corners of the last range: Shift moves `focus` and keeps `anchor` |
+| `selection` | 1 to 1,000 ranges | the active cell | the selected cells; the last range is the one Shift and the keyboard extend |
+| `scroll` | `{ "row", "column"? }` | the start | the view position and the column at the top left; the core restores the place, not the pixels |
+| `checked` | `{ "mode", "keys", "where"? }` | no checked rows | §5.2.1 |
+| `detail` | `{ "open" }` | closed | the detail panel of the active row |
+| `editor` | `{ "row", "column", "key", "text", "value" }` | no editor | a cell being typed in: the text so far, and the value the cell had when the editor opened |
+| `history` | `{ "undo": [steps], "redo": [steps] }` | empty | §7.4 |
+
+A **range** is `{ "rows", "columns" }`: `rows` is `[start, end)` of view positions or `"all"` (whole
+columns), and `columns` is a list of displayed columns in display order, or `"all"` (whole rows). A range of
+one cell is `{ "rows": [5, 6], "columns": ["price"] }`. The columns of a range are those between its corners
+when it was selected; columns moved since may leave gaps between them, and the range then holds the listed
+columns only.
+
+#### 5.2.1 Checked rows
+
+Checked rows are kept by key, so that the same records stay checked when the view is sorted or filtered.
+`mode: "include"` checks the rows of `keys`. `mode: "exclude"` checks every row except those of `keys`:
+every row of the table, or, with `where`, every row for which `where` (an expression of §4.3 over the
+table's columns and the derived columns) is true.
+
+`where` goes only with `exclude`. A row of a view is checked, not checked, or **unknown**:
+
+- with `include`: checked when its key is in `keys`;
+- with `exclude` and no `where`: checked unless its key is in `keys`;
+- with `exclude` and `where`: when the view's `where` **implies** it, checked unless its key is in `keys`;
+  otherwise unknown, since the view may hold rows for which `where` is not true. The view's `where` implies
+  it when every part (§6.2.1) of `where` is a part of the view's `where` (the same canonical JSON, §4.8), or
+  is a search whose text is contained in the text of the view's search (a row with a value that contains
+  `"abc"` also has one that contains `"ab"`, since `lower` maps code points one by one, §3.4).
+
+`check.all` (§6.4) makes `{ "mode": "exclude", "keys": [] }` with the view's `where` when it has one.
 
 ### 5.3 Row keys
 
-A row key is `{ "rowId": n }` (the row ID, valid for one revision) or, when the grid names a key column
-(`rowKey`), `{ "value": v }` with the typed JSON value of that column. Selection, checked rows, edits and
-the detail panel use the same keys.
+A **row key** names a record. Without `rowKey`, it is `{ "rowId": n }`, the row ID (§1), valid for one
+revision. With `rowKey`, it is `{ "value": v }`, the typed JSON value (§2.2) of that column, valid across
+revisions; a row whose value is null is keyed by `{ "rowId": n }`. Two keys are the same when their JSON is
+the same once bigint values are written as numbers when they are safe (§2.2). Selections keep positions;
+the active cell, checked rows, editors, writes and history keep keys.
 
-### 5.4 Versions
+### 5.4 When the view or the revision changes
 
-Readers MUST accept the versions they know and refuse the others. The core migrates v1's `GridState`
-(version 1) into a v2 document: `query` becomes `plan` (Appendix A), `columns[]` keep `name`, `width`,
-`hidden` and `total`, `frozenColumns` and `frozenRightColumns` become `pin`, `formulas` become
-`plan.derive` (compiled from the formula language), and `group` becomes `plan.aggregate`.
+The core applies `view.update` (§6.7) when it reads a view whose hash or table revision differs from the
+session's. Its arguments are the new hash and the positions in the new view of the keys that the session
+holds (from `locate`, §8.2); its context (§6.1) is that of the new view, with the table's revision.
+
+1. When the session's `revision` is present and differs from the context's, row-ID keys name other records:
+   they are removed from `checked.keys` and from `active`, the history is emptied (§7.4), and the editor is
+   closed. `revision` becomes the context's.
+2. When the session's `view` is present and differs from the hash, positions name other rows: the active
+   row moves to the position of its key in the new view, or to 0 when it has no key or its key is not
+   there (the active cell then takes the key of row 0 when `context.rows` holds it, and has no key
+   otherwise); `selection`, `anchor` and `focus` are removed, so that they are the active cell; the editor
+   is closed; and `scroll.row` becomes the active row when the active row moved. `view` becomes the hash.
+3. Then the session is **fitted** to the view: rows of the active cell, `anchor`, `focus`, `scroll` and
+   ranges are clamped to the rows (to 0 in a view without rows; a range keeps at least one row); an active
+   column that is no longer displayed becomes the first displayed column; `anchor` and `focus` in a column
+   that is no longer displayed are removed; ranges lose the columns that are no longer displayed, and a
+   range left without columns is removed (`selection` itself, when none is left); `scroll.column` is
+   removed when it is no longer displayed; and an editor in a column that is no longer displayed, or in a
+   row beyond the rows, is closed.
+
+`checked` and `detail` stay as they are.
+
+### 5.5 Repairing a document for a table
+
+A document saved for a table may meet a table whose columns differ (renamed, removed, retyped). The core
+repairs its plan before using it, removing what does not validate (§4.7) against the table, or that the
+engine does not evaluate (§4.10). Each item is tried with the plan kept so far and the items kept before it,
+in this order:
+
+1. `derive`: each derived column whose expression does not validate is removed.
+2. `where`: when it does not validate, the arguments of an `and` that do not validate are removed, or, when
+   it is not an `and`, it is removed. An `and` left with one argument becomes that argument, and one left
+   with none is removed.
+3. `aggregate`: keys, then measures, that do not validate are removed, and so is `pivot` when the aggregate
+   does not validate with it. An aggregate left without keys and measures is removed.
+4. `having`: as `where`, against the aggregated view; it is removed with `aggregate`.
+5. `sort`: keys that do not validate are removed.
+
+Totals of column settings that do not fit their column's type (`sum` of a string column) are removed. The
+repair reports the JSON Pointers (into the document) of what it removed, in this order, so that the grid can
+tell the person.
+
+### 5.6 Versions and migration
+
+Readers MUST accept the versions they know and refuse the others (`invalid_state`, `reason: "version"`).
+
+v1's `GridState` (version 1) migrates into a document by these rules; Appendix A gives the expressions:
+
+| v1 | v2 |
+| --- | --- |
+| `schema` | `schema` |
+| `query.sort` (indexes into `schema`) | `plan.sort` (names) |
+| `query.search`, `query.filters`, `query.where` | `plan.where`: an `and` of the search, the filters and the parts of the tree (§6.2.1), in that order |
+| `formulas` | not migrated: the formula language does not have its v2 form yet (§12); they and what uses them are reported as dropped |
+| `columns[].{name, width, hidden, total}` | `columns[].{name, width, hidden, total: { fn }}` |
+| `frozenColumns`, `frozenRightColumns` | `pin: "left"` on the first n shown columns, `pin: "right"` on the last n |
+| `group.keys`, `group.aggregates`, `group.pivot` | `plan.aggregate`: measures named as v1 named their columns (`count(*)`, `sum(amount)`, then ` (2)`, …) |
+| `group.state.query.sort`; its filters and tree | `plan.sort` (`query.sort` is then not migrated); `plan.having` |
+| `group.state.query.search` | not migrated (a search applies to the table's rows, not to groups) |
+| `group.state.columns` | appended to `columns` for names not listed yet; its frozen columns are not migrated |
+
+A v1 query saved without a state (an object of `sort`, `filters`, `where` and `search` only) migrates as a
+state with that query. Indexes into `schema` name its columns; without `schema`, they are positions of the
+table's columns. The migration reports the JSON Pointers (into the v1 state) of what it could not migrate,
+and the document is then repaired for the table (§5.5).
 
 ## 6. Commands
 
-Commands are named operations with JSON arguments that change the state. They are the same for keys, menus,
-panels, the host app (through the component's handle) and agents (for example as MCP tools). A command
-returns the new state; the core then reads what the new state needs. Commands do not wait for data, except
-that `copy` and `export` produce output.
+### 6.1 Applying a command
+
+A command is a JSON object `{ "command": name, …arguments }`. Applying it to a state with a context gives a
+new state, the requests (§8.2) that the core then sends, and for some commands an output:
+
+```
+apply({ document, session }, command, context) → { document, session, requests, output? }
+```
+
+[`commands.schema.json`](../packages/spec/schema/commands.schema.json) gives the form of every command in
+`$defs/command`, for hosts and agents that send them.
+
+The **context** is what the core knows when it applies the command:
+
+| Member | Value | Meaning |
+| --- | --- | --- |
+| `table` | columns (§2.1) | the table's columns |
+| `revision` | a revision, or null | the table's revision |
+| `view` | `{ "columns", "rowCount", "rowIds" }` | the current view of the document's plan: its columns (§4.2, with the generated columns of a pivot), its row count, and whether it has row IDs |
+| `rows` | blocks `{ "start", "keys"?, "columns"?, "values" }`, optional | rows of the view that the core has read: from position `start`, their keys (§5.3; absent for views without row IDs) and their values, one array per row with the values of `columns` (all the view's columns, in view order, when absent) |
+| `page` | a positive integer | rows on a page, for Page Up and Page Down |
+| `capabilities` | §4.10, optional | what the engine offers; everything when absent |
+| `clipboard` | `{ "text"?, "html"? }`, optional | what `edit.paste` pastes |
+
+In `capabilities`, absent `functions` and `measures` are all of them and an absent member of `plan` is
+true; the other members are false when they are absent.
+
+Commands are deterministic: the same state, command and context give the same result. Requests are given
+without `v`, `id` and `table`, which the core adds. A command that fails changes nothing and gives an error
+`{ "code": "invalid_command", "path", "reason", "message", "details"? }`, where `path` is a JSON Pointer into
+the command (`""` for the command as a whole). When several reasons apply, the command fails with the first of
+this table:
+
+| `reason` | When |
+| --- | --- |
+| `unknown_command` | there is no such command |
+| `syntax` | an argument of the wrong form, a missing argument, or a member the command does not take |
+| `unknown_column` | a column that the view does not have, or that is not displayed where a displayed one is needed |
+| `no_editor` | an editor command without an editor |
+| `nothing` | `history.undo`, `history.redo`, `history.undone` or `history.redone` with nothing to undo or redo |
+| `unsupported` | the engine does not offer it |
+| `unknown_state` | checking or unchecking rows whose state is unknown (§5.2.1) |
+| `last_column` | hiding every column of the view |
+| `type` | a total that does not fit the column's type |
+| `copy_layout` | ranges that cannot be copied together (§6.6) |
+| `paste_ranges` | several values pasted into several ranges |
+| `read_only` | writing a cell that is not written (§7.1); `details` has the `column` |
+| `too_many_cells` | a write of more than 100,000 cells, or a copy of more than 1,000,000 |
+| `not_loaded` | rows that the command needs are not in `context.rows`; `details` has `rows`, the spans `[start, end)` to read, and `columns`, the columns whose values are missing (in view order; empty when only keys are) |
+| `invalid_value` | text that does not read as its column's type (§7.3); `details` has `row`, `column` and `error`, for the first such cell |
+| `invalid_plan` | the plan the command would make does not validate; `details` has the plan error's `path` and `reason` |
+
+Commands give sessions in one form, so that every core gives the same JSON:
+
+- Commands that set the active cell (§6.4, `edit.commit` with `move`) write `active`, `anchor`, `focus` and
+  `selection`, with the last 1,000 ranges. The active cell has the key of its row when `context.rows` holds
+  it, keeps its key when its row does not change, and has no key otherwise.
+- `checked` is left out when it is `include` without keys, `detail` when the panel is closed, and `history`
+  when both lists are empty.
+
+Commands that change columns (§6.3) write a setting for every column of the view, in this order: the
+columns pinned left, then the other settings (columns without pin, hidden columns and the settings of names
+that the view does not have), then the columns pinned right, each group in the order it had, with the columns
+that had no setting after the others of the middle group, in view order. This keeps the display order of
+§5.1.1, and a hidden column keeps its place for when it is shown again. These commands then fit the session
+to the displayed columns (§5.4, step 3).
+
+### 6.2 The plan
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
-| `sort.set` | `keys` | sets the plan's `sort` |
-| `sort.toggle` | `column`, `add` | ascending, descending, none for that column; `add` keeps the other keys |
-| `filter.set` | `where` | sets the plan's `where` |
-| `filter.column` | `column`, `where` | replaces the conditions of one column |
-| `filter.clear` | | removes `where` |
-| `search.set` | `text` | sets the search of `where` |
-| `derive.add`, `derive.update` | `name`, and `expr` or `formula` | adds or changes a derived column |
-| `derive.remove` | `name` | |
-| `group.set` | `aggregate` | |
-| `group.clear` | | removes `aggregate` and `having` |
-| `having.set` | `having` | |
-| `column.resize` | `name`, `width` | |
-| `column.move` | `names`, `before` | |
-| `column.hide`, `column.show` | `names` | |
-| `column.pin` | `name`, `side` (`left`, `right` or null) | |
-| `column.format` | `name`, `format` | |
-| `column.total` | `name`, a measure or null | |
-| `select` | `ranges`, `active` | |
-| `select.all`, `select.row`, `select.column` | | |
-| `move` | `direction`, `extend`, `jump` | moves the active cell (arrow keys, Home, End, Page Up, Page Down, with Shift and ⌘/Ctrl) |
-| `scroll.to` | `row`, `column` | |
-| `check`, `uncheck` | `keys` | |
-| `check.all`, `check.clear` | | |
-| `detail.open`, `detail.close` | | |
-| `edit.begin`, `edit.change`, `edit.commit`, `edit.cancel` | | the cell editor; `edit.commit` writes (§7) |
-| `edit.clear`, `edit.paste`, `edit.fill` | | deletes, pastes (TSV and HTML tables) and fills down or right |
-| `history.undo`, `history.redo` | | |
-| `copy` | `headers`, `values` (`raw` or `formatted`) | produces TSV, HTML and Markdown |
-| `export` | `format`, `columns`, `target` | produces a file (§8.2) |
+| `sort.set` | `keys`: sort keys | `plan.sort` becomes `keys` (no keys remove it) |
+| `sort.toggle` | `column`: a column of the view; `add`: boolean (default false) | Without `add`, by the column's key: none gives `[asc]`, `asc` gives `[desc]`, and `desc` removes `sort`, replacing the other keys. With `add`: an `asc` key becomes `desc` in its place, a `desc` key is removed, and a column without a key is added `asc` at the end |
+| `sort.clear` | | removes `plan.sort` |
+| `filter.set` | `where`: an expression or null | the conditions (§6.2.1) become the parts of `where`, after the search |
+| `filter.column` | `column`: a column of the rows (the table's or a derived one); `where`: an expression or null | the conditions of the column become the parts of `where` |
+| `filter.clear` | | removes the conditions, keeping the search |
+| `search.set` | `text` | the search becomes `{ "search": text }`, first; a text that `trim` leaves empty (§4.4) removes it |
+| `derive.add` | `name`, `expr`; `before`: a derived column | adds a derived column at the end, or before `before` |
+| `derive.update` | `name`: a derived column; `expr`; `rename`: a new name | changes the expression, and gives the column a new name (§6.2.2) |
+| `derive.remove` | `name`: a derived column | removes the column and what uses it (§6.2.2) |
+| `group.set` | `aggregate` | sets `plan.aggregate`, then removes the parts of `having` and the sort keys that do not validate against the groups |
+| `group.clear` | | removes `aggregate` and `having`, and the sort keys that do not validate against the rows |
+| `having.set` | `having`: an expression or null | sets or removes `plan.having` |
 
-Key bindings and menus are data that map input to commands, and hosts can replace them.
+Commands check the columns their arguments name (`unknown_column`); the plan they make is then checked as
+a whole against the table, with the engine's capabilities (§4.7, §4.10), and one that does not validate
+fails the command with `invalid_plan` and the path `""`. Removing parts of `having` and sort keys, as
+`group.set`, `group.clear` and `derive.remove` do, tries each with the plan and the items kept before it.
+Plan commands write `plan` even when it becomes `{}`, without empty `derive` and `sort`; they give no
+requests (the core reads the new view and applies `view.update`) and do not change the session, except
+`derive.update` with `rename`.
+
+#### 6.2.1 Conditions and the search
+
+Commands treat `where` as its **parts**: the arguments of an `and`, or `where` itself; there are none
+without `where`. The parts that are `{ "search" }` are the search, and the others are **conditions**. The
+**conditions of a column** are those that refer to that column and to no other. Parts become `where` again as
+their only part, or as an `and` of them; with no parts, `where` is removed.
+
+- `filter.set` keeps the search parts, then puts the parts of its `where`.
+- `filter.column` removes the conditions of its column and puts the parts of its `where` in the place of the
+  first one it removed, or at the end. Every part of its `where` refers to the column and to no other
+  (`syntax` otherwise).
+- The `where` of `filter.set` and `filter.column` holds no search part (`syntax`); `search.set` sets it.
+
+#### 6.2.2 Removing and renaming derived columns
+
+`derive.remove` removes the derived column, the derived columns that use it (and those that use them), and
+what uses any of them: the parts of `where` that do, aggregate keys, measures of their columns, and the
+pivot when one of its columns is removed (an aggregate left without keys and measures is removed, with
+`having`); then the parts of `having` and the sort keys that no longer validate; and the settings of the
+removed columns, unless the new view has a column of that name.
+
+`derive.update` with `rename` gives the new name to the derived column and to every `{ "col" }` of the old
+name in `derive` and `where`, to aggregate keys, measure columns and pivot columns, and to `checked.where`.
+When the column is a column of the view (there is no `aggregate`, or it is one of its keys), it also gives
+it to the `{ "col" }` of `having`, to sort keys, to the `when` of every style, to its cells in the session
+(`active`, `anchor`, `focus`, `selection`, `scroll`, `editor`), and to its setting, which replaces a setting
+of the new name. Otherwise, in `having`, sort keys and styles the old name names a column of the aggregated
+view, which keeps it; the setting is renamed when the view has no column of the old name.
+
+### 6.3 Columns
+
+| Command | Arguments | Effect |
+| --- | --- | --- |
+| `column.resize` | `name`: a column of the view; `width`: a width or null | sets the width, or fits the column to its values again |
+| `column.move` | `names`: displayed columns, each once; `before`: a displayed column that is not moved, or null | moves the columns, in display order, before `before` and gives them its pin; with null, after the last displayed column without pin (before the first one pinned right), without pin |
+| `column.hide` | `names`: columns of the view | hides the columns and removes their pins; fails with `last_column` when every column of the view would be hidden |
+| `column.show` | `names`: columns of the view, or `all: true` | shows the columns, or every column of the view |
+| `column.pin` | `name`: a displayed column; `side`: `"left"`, `"right"` or null | pins the column at that side, at the inner end of the columns pinned there (before the first displayed column not pinned left, or before the first one pinned right); with null, the column becomes the first column without pin (from the left side) or the last one (from the right side); a column already at that side does not move |
+| `column.format` | `name`: a column of the view; `format`: a format or null | sets or removes the format |
+| `column.total` | `name`: a column of the view; `total`: `{ "fn", "p"? }` or null | sets or removes the total; a measure that does not take the column's type (§4.5) fails with `type` |
+
+### 6.4 Selection, scrolling and checked rows
+
+In this section, positions are clamped to the view's rows (0 in a view without rows) and to the displayed
+columns, `extend` moves `focus` and keeps the active cell and `anchor`, and a range **from `anchor` to a
+cell** spans the rows and the displayed columns between them. Extending keeps what the last range selects as
+a whole: whole rows (`columns: "all"`), whole columns (`rows: "all"`) or every cell. Without displayed
+columns, these commands change nothing.
+
+| Command | Arguments | Effect |
+| --- | --- | --- |
+| `select` | `row`, `column`: a displayed column; `mode`: `replace` (default), `extend` or `add` | `replace`: the cell becomes the active cell, `anchor`, `focus` and the only range; `extend`: the cell becomes `focus` and the last range spans from `anchor` to it; `add`: as `replace`, but the range is added after the others |
+| `select.rows` | `from`, `to`; `mode` | `replace` and `add`: whole rows from `from` to `to`, with the active cell and `anchor` in row `from` and `focus` in row `to`, in the active column; `extend`: `focus` moves to row `to` and the last range becomes the whole rows from `anchor` to it |
+| `select.columns` | `from`, `to`: displayed columns; `mode` | the same with whole columns, in the active row |
+| `select.all` | | every cell: one range `{ "rows": "all", "columns": "all" }`, with `anchor` and `focus` at the active cell |
+| `move` | `direction`: `up`, `down`, `left` or `right`; `extend`, `jump`, `page`: booleans | moves from the active cell (from `focus` with `extend`) by one, by `context.page` rows with `page` (`up` and `down` only, `syntax` otherwise), or to the first or last row or column with `jump` (which wins over `page`) |
+| `move.home`, `move.end` | `extend`, `jump`: booleans | to the first or last displayed column of the row of the active cell (of `focus` with `extend`); with `jump`, also to the first or last row |
+| `advance` | `axis`: `row` or `column`; `back`: boolean | Enter (`row`) and Tab (`column`), with Shift as `back`: in a selection of one range of several cells that holds the active cell, the active cell walks through the range along the axis, wrapping to the next column (or row) at the end and to the start at the last cell, and the selection stays; otherwise it moves like `move` down, up, right or left |
+| `scroll.to` | `row`; `column`: a displayed column | sets `scroll` |
+| `check`, `uncheck` | `keys`: row keys | checks or unchecks rows by key (§5.2.1): with `include`, keys are added at the end (once) or removed; with `exclude`, the other way; fails with `unknown_state` while the rows' state is unknown |
+| `check.all` | | checks every row of the view (§5.2.1) |
+| `check.clear` | | checks no row |
+| `detail.open`, `detail.close` | | opens or closes the detail panel |
+
+Moving without `extend` makes the active cell `anchor`, `focus` and the only range.
+
+### 6.5 Editing
+
+| Command | Arguments | Effect |
+| --- | --- | --- |
+| `edit.begin` | `text` | opens an editor on the active cell with `text`, or with the cell's value as text (§7.3); `value` is the cell's value |
+| `edit.change` | `text` | changes the editor's text |
+| `edit.cancel` | | closes the editor |
+| `edit.commit` | `move`: `up`, `down`, `left`, `right` or null | reads the text as the column's type (§7.3) and writes it into the editor's cell, with `previous` the editor's `value`; the editor closes, and the active cell moves as `advance` moves it (`down` and `up` along rows, `right` and `left` along columns) |
+| `edit.clear` | | writes null into the selected cells that are writable and not blank (§3.2); fails with `read_only` when no selected cell is writable |
+| `edit.paste` | | pastes `context.clipboard` into the selection (§6.5.1); `output` is `{ "cutRows", "cutColumns" }` |
+| `edit.fill` | `direction`: `down` or `right` | copies the first row (or column) of each range into its other rows (or columns); a range of one row (or column) takes the row above it (or the displayed column left of it), and a range without one is left as it is |
+| `history.undo`, `history.redo` | | writes the values before (or after) the last step (§7.4) |
+
+A command that writes gives one `write` request (§8.2) with the context's revision and, when the document
+has one, its `rowKey`. Its updates are the cells in the order of the ranges, row by row and column by
+column, each cell once, with `previous`, the value the cell had (§7.2); cells whose value would not change
+are left out, and a command left without updates gives no request. The cells a command writes MUST be
+writable (§7.1, `read_only`), and their keys and values, and those of the cells it copies from, MUST be in
+`context.rows` (`not_loaded`). `edit.commit` writes by the editor's key and value, and `history.undo` and
+`history.redo` by the step's keys, without `context.rows`; they only need writable columns. Filled values
+keep their value when the two columns have the same type, and are otherwise read from their text form
+(§2.4) as the target column's type (§7.3).
+
+#### 6.5.1 Pasting
+
+`edit.paste` reads `context.clipboard.text` as TSV (§6.6), or, when it has no text, the first table of
+`context.clipboard.html`; with no values, it does nothing. The values go from the top-left cell of each
+range:
+
+- They are repeated over a range whose rows and columns are whole multiples of theirs, and pasted once
+  otherwise, into as many rows and displayed columns from that cell as they have.
+- A single value goes into every selected cell, also of several ranges; several values cannot go into
+  several ranges (`paste_ranges`).
+- Rows and columns beyond the view are left out, and `output` counts them; rows are never added.
+- Values are read as their column's type with digit grouping allowed (§7.3).
+
+### 6.6 Copying and exporting
+
+| Command | Arguments | Effect |
+| --- | --- | --- |
+| `copy` | `headers`: boolean; `values`: `raw` (default) or `formatted` | `output` is `{ "tsv", "html", "markdown" }` of the selected cells |
+| `export` | `format`; `columns`: `displayed` (default) or `all`; `target` | an `export` request (§8.2) of the view: the displayed columns in display order (with `all`, then the other columns of the view in view order) and their labels (`format.label`, or the name) as `headers`; `unsupported` when the engine does not export the format |
+| `save` | | a `save` request; `unsupported` when the engine does not save |
+
+`copy` places the ranges as spreadsheets do: ranges with the same rows side by side, ranges with the same
+columns one below the other (their rows merged where they overlap or touch), in display order and without
+the cells between them; other combinations fail with `copy_layout`. The values of the cells MUST be in
+`context.rows`. `raw` copies text forms (§2.4) and column names; `formatted` copies the text and the labels
+the grid shows, which only the screen's formatting knows, so the reference implementation answers it with
+`unsupported`. Null is the empty string.
+
+- **TSV**: fields joined by tabs and rows by line feeds; a field with a tab, a line break or a quote is quoted
+  with `"`, and its quotes are doubled.
+- **HTML**: `<meta charset="utf-8"><table>`, one `<tr>` per row, `<th>` cells for the header and `<td>`
+  cells otherwise; `&`, `<`, `>` and `"` are escaped and line breaks become `<br>`.
+- **Markdown**: a header row (the column names, or empty cells without `headers`), a row of `---`, then the
+  rows; `|` is escaped as `\|` and line breaks become `<br>`.
+
+Pasting reads TSV the same way, with rows ending at `\r\n`, `\n` or `\r`, a field that starts with a quote
+read as quoted until a quote followed by a tab, a line break or the end, and the line break after the last row
+ending the text. It reads the first table of HTML: one row per `<tr>`, one cell per `<td>` or `<th>`, with
+`colspan` and `rowspan` filled with empty cells, tags removed, `<br>` as a line break, entities decoded
+(`&nbsp;` as a space) and runs of white space collapsed.
+
+### 6.7 Commands of the core
+
+The core applies these commands when data arrives; hosts and agents do not need them.
+
+| Command | Arguments | Effect |
+| --- | --- | --- |
+| `view.update` | `hash`; `located`: `[{ "key", "row" }]`, with `row` null for keys not in the view | §5.4 |
+| `history.push` | `updates`: `[{ "key", "column", "before", "after" }]` | records a write that succeeded (§7.4) |
+| `history.undone`, `history.redone` | | moves the last step of `undo` onto `redo` (or back) after its write succeeded |
+| `history.clear` | | empties the history |
 
 ## 7. Editing
 
-- **Writes** name cells by row key and column name, with typed values (§2.2). A write is atomic: every
-  update is applied, or none is and the request fails. An update may carry `previous`, the value it was
-  made from; when the cell holds another value now, the write fails with `edit_conflict`. A write carries
-  the revision its rows were read at; when the table has another revision, it fails with
-  `revision_changed`. A write holds at most 100,000 updates.
-- Values are checked as their column's type without losing digits, and a value that does not fit fails the
-  write with `invalid_value`. Derived columns, aggregated views and columns with `readOnly` are not written
-  (`read_only`).
-- Engines keep written values apart from the source until they are saved, and every later request of every
-  client (rows, plans, summaries, find, export) sees them. Writes keep row IDs and the revision, and
-  increment the edits version.
-- **Save** writes the written cells into the file the table was read from. For CSV and TSV files,
-  `vastgrid-duckdb` writes anew only the edited fields of the edited records and keeps every other byte
-  (byte order mark, header, other records and fields, quoting, delimiters, line breaks, encoding), in a
-  temporary file next to the original that it then renames over it. It refuses files that someone else
-  changed since they were read (`file_changed`) and files it cannot write back (`save_unsupported`); the
-  file is then as it was.
-- **Undo and redo** belong to the core. Each write (a typed value, a paste, a fill, a deletion) is one
-  step, and undoing writes the previous values, with their types and digits, as a new write.
+### 7.1 Writable cells
+
+A column is **writable** when the engine reports `write` and the column is a column of the table (not a
+derived one) without `readOnly`, whose type is not `interval` or `binary`. A cell of a view is writable when
+its column is and the view has no `aggregate`. Writes name cells by key (§7.2), so `history.undo` and
+`history.redo` need writable columns only.
+
+### 7.2 Writes
+
+A `write` request (§8.2) names cells by row key and column name, with typed values (§2.2):
+
+- A write is atomic: every update is applied, or none is and the request fails.
+- An update may carry `previous`, the value it was made from; when the cell holds another value now, the
+  write fails with `edit_conflict`.
+- A write carries the revision its rows were read at; when the table has another revision, it fails with
+  `revision_changed`.
+- A write holds at most 100,000 updates.
+- Values are checked as their column's type without losing digits; one that does not fit fails the write
+  with `invalid_value`. Cells that are not writable fail it with `read_only`.
+
+Engines keep written values apart from the source until they are saved, and every later request of every
+client (rows, plans, summaries, find, export) sees them. Writes keep row IDs and the revision, and increment
+the edits version.
+
+### 7.3 Reading typed text
+
+Typed text becomes a value of the column's type by these rules. White space (Unicode `White_Space`) around
+the text is removed first, except for strings. An empty text is null for every type.
+
+| Type | Accepted | Value | Errors |
+| --- | --- | --- | --- |
+| `string` | anything | the text as typed; a text of only white space is null | |
+| `integer`, `bigint` | `[+-]?[0-9]+` | the number, within the type's range | `integer` (a number with a fraction or an exponent), `range`, `number` |
+| `decimal` | `[+-]?([0-9]+(\.[0-9]*)?\|\.[0-9]+)` | the value with exactly `scale` fraction digits | `scale` (more fraction digits than the scale, not counting trailing zeros), `precision` (more whole digits than `precision − scale`), `decimal` (an exponent), `number` |
+| `float` | a number as above with an optional exponent; `inf` or `infinity` with an optional sign, or `nan`, in any letter case | the float, with −0 read as 0 | `range` (beyond the largest float), `number` |
+| `boolean` | `true`, `false`, `1`, `0`, in any letter case | | `boolean` |
+| `date` | year, month and day separated by `-`, `/` or `.`, naming a real day | `YYYY-MM-DD` | `date` |
+| `time` | `H:MM`, `H:MM:SS` or `H:MM:SS.f` with 1 to 6 fraction digits | `HH:MM:SS`, with the fraction without trailing zeros | `time` |
+| `timestamp` | a date, then optionally a space or `T` and a time with as many fraction digits as the unit keeps | §2.2; midnight without a time | `timestamp` |
+| `timestamptz` | a timestamp, then optionally `Z` or an offset `±HH`, `±HHMM` or `±HH:MM` | the instant in UTC (§2.2); without an offset, the time is UTC | `timestamp` |
+| `uuid` | 32 hex digits, with or without the dashes of `8-4-4-4-12`, in any letter case | lowercase with dashes | `uuid` |
+| `interval`, `binary` | nothing | | `type` |
+
+With **digit grouping** (pasting), numbers whose whole digits are grouped by commas in threes (`1,234.5`) are
+also read, without the commas. The text that an editor starts with for a value is its text form (§2.4), and
+the empty string for null.
+
+### 7.4 Undo and redo
+
+The history is the session's (§5.2). A **step** is one write that succeeded (a typed value, a clear, a paste
+or a fill): `{ "updates": [{ "key", "column", "before", "after" }] }`.
+
+- After the write of `edit.commit`, `edit.clear`, `edit.paste` or `edit.fill` succeeds, the core applies
+  `history.push` with its updates (`before` is `previous`, `after` is `value`): the step goes onto `undo`,
+  and `redo` is emptied.
+- `history.undo` writes the `before` values of the last step of `undo`, each with `previous` set to `after`;
+  after the write succeeds, the core applies `history.undone`, which moves the step onto `redo`.
+  `history.redo` and `history.redone` do the same the other way.
+- The history keeps at most 100 steps and 1,000,000 updates over both lists; the oldest steps of `undo` go
+  first. A step larger than that on its own empties the history.
+- Row-ID keys belong to one revision: when the revision changes, the history is emptied (§5.4).
+
+### 7.5 Saving
+
+`save` (§8.2) writes the written cells into the file the table was read from. For CSV and TSV files,
+`vastgrid-duckdb` writes anew only the edited fields of the edited records and keeps every other byte (byte
+order mark, header, other records and fields, quoting, delimiters, line breaks, encoding), in a temporary
+file next to the original that it then renames over it. It refuses files that someone else changed since
+they were read (`file_changed`) and files it cannot write back (`save_unsupported`); the file is then as it
+was.
 
 ## 8. Messages
 
+[`messages.schema.json`](../packages/spec/schema/messages.schema.json) gives the form of every message.
+
 ### 8.1 Envelope
 
-Requests are JSON objects `{ "v": 2, "id": n, "op": name, …arguments }`, and responses are
-`{ "v": 2, "id": n, "result": … }` or `{ "v": 2, "id": n, "error": { "code", "message", "path"?, "reason"? } }`.
-The client chooses `id`, unique among its requests in flight. Engines MAY send events
-`{ "v": 2, "event": name, … }` on transports that can carry them (§8.8). Messages hold no SQL, no server
-paths and no code.
+| Message | Form |
+| --- | --- |
+| Request | `{ "v": 2, "id": n, "op": name, …arguments }` |
+| Response | `{ "v": 2, "id": n, "result": … }` |
+| Error | `{ "v": 2, "id": n, "error": { "code", "message", "path"?, "reason"?, "details"? } }` |
+| Event | `{ "v": 2, "event": name, … }` |
+
+`id` is an integer from 0 to 2^53 − 1 that the client chooses, unique among its requests in flight; the
+response carries it back. Messages hold no SQL, no paths of the server and no code. Names and strings in
+messages are at most 1,000,000 code points.
+
+A request that does not follow §8 is answered with `invalid_request`, with `path` (a JSON Pointer into the
+request) and `reason`: `version` for a message whose `v` is not 2, `unknown_op` for an `op` that §8.2 does not
+have, `limit` for one beyond a limit of §8, and `syntax` for anything else, members that the request does not
+take included. Clients check responses and events in the same way; one that does not follow §8 is
+`invalid_response` for the client, which treats it as an `internal` error.
 
 ### 8.2 Operations
 
 | `op` | Arguments | Result |
 | --- | --- | --- |
-| `open` | `ref` (the host's name for what to open), optionally `read` (v1's `ReadOptions`, such as `sheet` and `headerRow`) | `TableInfo` |
-| `info` | `table` | `TableInfo`, to follow a table that is loading |
-| `rows` | `table`, `revision`, `plan`, `start`, `end`, `columns` (names), optionally `textLimit` and `preview` | `{ view, start, end, rowIds?, block, truncated? }` |
-| `summarize` | `table`, `revision`, `plan`, `ranges` (`[start, end)` pairs), `columns` | `{ count, numericCount, sum, min, max, average }` over those cells |
-| `find` | `table`, `revision`, `plan`, `text`, `columns` (in display order), `from` (`{ row, column }`), `direction` (1 or −1), optionally `caseSensitive` | `{ row, column }`, where `column` is an index into `columns`, or null |
-| `write` | `table`, `revision`, `updates` (`{ key, column, value, previous? }`) | `{ updated, edits }` |
-| `save` | `table` | `{ records, edits }` |
-| `export` | `table`, `revision`, `plan`, `format`, optionally `columns`, `headers` and `numberFormats`, and `target` | `{ target, rows, data? }` |
-| `changes` | `table` | `{ revision, edits }`, for polling |
-| `cancel` | `request` (an `id`) | no response; the request it names fails with `cancelled` |
-| `close` | `table` | null |
+| `open` | `ref`: the host's name for what to open; `read`: `{ "sheet"?, "headerRow"?, "keepEmptyRows"?, "keepEmptyColumns"? }` | `TableInfo` |
+| `info` | `table` | `TableInfo` |
+| `rows` | `table`, `revision`, `plan`, `start`, `end`, `columns`; `textLimit`; `preview` | `{ "view", "start", "end", "rowIds", "block", "truncated"? }` |
+| `summarize` | `table`, `revision`, `plan`, `ranges`: `[start, end)` pairs, `columns` | `{ "count", "numericCount", "sum", "min", "max", "average" }` |
+| `find` | `table`, `revision`, `plan`, `text`, `columns`, `from`: `{ "row", "column" }`, `direction`: 1 or −1; `caseSensitive` | `{ "row", "column" }` or null |
+| `locate` | `table`, `revision`, `plan`, `keys`: row keys; `rowKey`: a column name | `{ "rows": [position or null] }` |
+| `write` | `table`, `revision`, `updates`: `[{ "key", "column", "value", "previous"? }]`; `rowKey` | `{ "updated", "edits" }` |
+| `save` | `table` | `{ "records", "edits" }` |
+| `export` | `table`, `revision`, `plan`, `format`; `target`, `columns`, `headers`, `numberFormats` | `{ "target", "rows", "data"? }` |
+| `changes` | `table` | `{ "revision", "edits" }` |
+| `cancel` | `request`: an `id` | no response |
+| `close` | `table` | `null` |
 
-`TableInfo` is `{ table, revision, edits, status, progress, rowCount, readableRows, columns, format,
-byteSize, notes, sheets, sheet, capabilities, error? }`: `table` is an opaque id for the later requests,
-`status` is `loading`, `ready` or `error`, and `rowCount` is null while the table loads.
-
-The `view` of `rows` is `{ hash, status, rowCount, rowCountExact, readableRows, columns, edits }`: `status`
-is `building` or `ready` (§9), `columns` is the view's schema (§4.2), and `edits` is the edits version the
-rows were read at.
+- `TableInfo` is `{ "table", "revision", "edits", "status", "progress", "rowCount", "readableRows",
+  "columns", "capabilities", "format"?, "byteSize"?, "notes"?, "sheets"?, "sheet"?, "error"? }`: `table` is an
+  opaque id for later requests; `revision` a string or null; `edits` `{ "version", "cells" }`; `status`
+  `loading`, `ready` or `error`; `progress` from 0 to 1 or null; `rowCount` null while the table loads;
+  `readableRows` the rows that can be read now; `columns` §2.1; `capabilities` §4.10; `sheets`
+  `[{ "name", "hidden"? }]` for workbooks.
+- `rows` reads positions `[start, end)` of the plan's view: `columns` are names of the view's columns (at
+  least one), at most 1,000,000 rows and 1,000,000 cells. `view` is `{ "hash", "status", "rowCount", "rowCountExact",
+  "readableRows", "columns", "edits", "partial"? }` (§9); `rowIds` lists the rows' row IDs, or is null for
+  views without them; `block` holds the values (§8.4); `textLimit` is 1 to 1,000,000 (default 2,000).
+- `summarize` counts the cells of `ranges` × `columns` that are not blank (`count`), and the numbers among
+  them that are finite (`numericCount`), with their `sum`, `min`, `max` and `average` as floats (§2.2; a sum
+  beyond the largest float is `"Infinity"`), null without numbers. At most 1,000 ranges.
+- `find` searches the cells of the view row by row and, in a row, in the order of `columns` (at least one),
+  from the cell after `from` (before it with −1), wrapping around at the ends and ending with `from` itself,
+  for a value whose text form contains `text` (by `lower` unless `caseSensitive`, §3.4); null matches nothing,
+  and an empty `text` finds nothing. `from.column` and the result's `column` are indexes into `columns`.
+- `locate` gives the positions in the plan's view of rows by key (`rowId`, or values of `rowKey`), null for
+  keys that the view does not have. At most 10,000 keys.
+- `write` follows §7.2; `edits` is the table's new `{ "version", "cells" }`.
+- `export` writes the view (§4.2) in `format` (`csv`, `tsv`, `parquet`, `json`, `xlsx`): `columns` are names
+  (default all), `headers` replace their names in the header of CSV, TSV and xlsx, and `numberFormats` (one
+  Excel format code or null per column) apply to xlsx; both have one item per column. An engine whose
+  `capabilities.export.delivery` is `file` writes the file at `target` as the host resolves it and answers
+  that `target`; one whose delivery is `data` answers `data`, the file's bytes, as a block is carried (§8.8),
+  and `target` null.
 
 ### 8.3 Identity
 
 Views have no handles. A request names the table, its revision and the plan. Engines MAY keep the views they
-made, by table, revision, edits version and plan hash, and forget them at any time: a forgotten view is
-made again from the same request. When the table's revision is not the request's, the request fails with
+made, by table, revision, edits version and plan hash, and forget them at any time: a forgotten view is made
+again from the same request. When the table's revision is not the request's, the request fails with
 `revision_changed`, and the client reads `info` again.
 
 ### 8.4 Blocks
 
-`block` is an Arrow IPC stream with one record batch holding the requested `columns` in order (§2.3), for the
-positions `start` to `end`. `end` is smaller than requested at the end of the view, and while a preview can
-read only `readableRows` (§9). `rowIds` lists the row IDs of the rows of views without `aggregate`. Strings
-longer than `textLimit` code points (2,000 by default, at most 1,000,000) are cut to that length, and
-`truncated` maps a column's name to the offsets, from `start`, of its cut values; the core shows that they
-go on. A request reads at most 1,000,000 rows and 1,000,000 cells.
+A block is an Apache Arrow IPC stream with one schema and one record batch, without compression:
 
-### 8.5 Progress and changes
+- one field per requested column, in order, named by the column, nullable, of the Arrow type of §2.1:
+  `boolean` Bool; `integer` Int32; `bigint` Int64; `decimal` Decimal128(precision, scale); `float` Float32
+  or Float64 by `bits`; `string` Utf8; `date` Date32; `time` Time64 in microseconds; `timestamp` Timestamp in
+  its unit without a time zone; `timestamptz` Timestamp in microseconds with the time zone `UTC`; `interval`
+  Interval MonthDayNano; `uuid` FixedSizeBinary(16), with the field metadata `ARROW:extension:name` set to
+  `arrow.uuid`; `binary` Binary;
+- the rows `start` to `end`, in order.
 
-`info` reports a table that is loading (`status`, `progress`, `readableRows`). Engines that can push send
-`{ "event": "changed", "table", "revision", "edits" }` when the table's data changes, and
-`{ "event": "progress", "table", … }` while it loads; otherwise clients poll `info` and `changes`.
+Readers MUST accept Utf8, LargeUtf8 and Utf8View for strings, and MUST keep a U+FEFF that starts a string
+(Appendix B). Strings longer than `textLimit` code points are cut to that length, and `truncated` maps the
+column's name to the offsets, from `start`, of its cut values; the core shows that they go on.
+
+### 8.5 Events
+
+| `event` | Members | When |
+| --- | --- | --- |
+| `changed` | `table`, `revision`, `edits` | the table's data changed (§7.2 writes included) |
+| `progress` | `table`, `status`, `progress`, `readableRows`, `rowCount` | while a table loads |
+| `view` | `table`, `hash`, `status`, `readableRows`, `rowCount`, `rowCountExact` | while a view builds (§9) |
+
+Transports that cannot carry events poll `info`, `changes` and `rows` instead.
 
 ### 8.6 Cancellation
 
 A client cancels a request in flight with `cancel`, or by the transport's own means (aborting an HTTP
-request). An engine that stops the work answers `cancelled`; it MAY also finish the work and answer it.
+request). An engine that stops the work answers the request with `cancelled`; it MAY also finish the work and
+answer it. `cancel` itself has no response.
 
 ### 8.7 Errors
 
-| `code` | When |
-| --- | --- |
-| `invalid_request` | a message that does not follow §8 |
-| `invalid_plan` | §4.7, with `path` and `reason` |
-| `table_not_found` | the table is closed or unknown |
-| `not_ready` | the table is still loading and the request needs all of it |
-| `revision_changed` | §7, §8.3 |
-| `cancelled` | §8.6 |
-| `too_many_columns` | §4.6 |
-| `read_only`, `invalid_value`, `edit_conflict` | §7 |
-| `file_changed`, `save_unsupported` | §7 |
-| `not_allowed` | a `ref` or `target` outside what the host allows |
-| `export_too_large` | a result that does not fit the export format (xlsx: 1,048,575 rows and 16,384 columns) |
-| `load_failed` | the table could not be read |
-| `internal` | anything else |
+| `code` | When | HTTP |
+| --- | --- | ---: |
+| `invalid_request` | a message that does not follow §8, with `path` and `reason` (`syntax`, `unknown_op`, `version`, `limit`) | 400 |
+| `invalid_plan` | §4.7, with `path` and `reason` | 400 |
+| `table_not_found` | the table is closed or unknown | 404 |
+| `not_ready` | the table is still loading and the request needs all of it | 409 |
+| `revision_changed` | §7.2, §8.3 | 409 |
+| `edit_conflict` | §7.2 | 409 |
+| `file_changed` | §7.5 | 409 |
+| `read_only` | §7.2 | 403 |
+| `not_allowed` | a `ref` or `target` outside what the host allows | 403 |
+| `invalid_value` | §7.2 | 422 |
+| `too_many_columns` | §4.6 | 422 |
+| `save_unsupported` | §7.5 | 422 |
+| `load_failed` | the table could not be read | 422 |
+| `export_too_large` | a result that does not fit the export format (xlsx: 1,048,575 rows and 16,384 columns) | 413 |
+| `cancelled` | §8.6 | 499 |
+| `internal` | anything else | 500 |
+
+Errors MAY carry `details`, an object; `invalid_request` and `invalid_plan` carry `path` and `reason`.
 
 ### 8.8 Transports
 
-| Transport | Requests and responses | Blocks | Events |
-| --- | --- | --- | --- |
-| Function call (same thread) | objects | Arrow record batches | callbacks |
-| Web Worker | `postMessage` | the IPC bytes, transferred (`ArrayBuffer`) | messages |
-| HTTP | `POST` of the request as JSON | a `rows` response is `application/vnd.vastgrid.v2+arrow`: the length n of the JSON response in 4 bytes (little-endian), the n bytes of the JSON response, then the IPC stream. Other responses are `application/json` | Server-Sent Events |
-| MCP App | a tool call with the request as its arguments; the result's `structuredContent` is the response | base64 in `block` | polling |
-| VS Code webview, notebook comm | messages | binary buffers where the channel carries them, otherwise base64 | messages |
+A message is the same on every transport; only blocks (and `export`'s `data`) differ:
+
+| Encoding | A block is | Used by |
+| --- | --- | --- |
+| text | `{ "base64": "…" }`, the bytes in base64 (RFC 4648, with padding) | MCP App tool calls, text channels |
+| structured | `{ "bytes": Uint8Array }` | function calls, Web Workers (the buffer transferred), VS Code webviews and notebook comms that carry buffers |
+| attached | `{ "attached": m }`, the m bytes following the JSON | HTTP |
+
+Over **HTTP**, a request is a `POST` with `content-type: application/json` and the request as its body. The
+response is `application/json` with the text encoding, except that a client that sends
+`accept: application/vnd.vastgrid.v2+arrow` MAY receive the response of `rows` and `export` as that type:
+4 bytes with the length n of the JSON response (little-endian), the n bytes of the JSON response in UTF-8
+with its block attached, then the block's bytes. Errors are `application/json`, with the HTTP status of
+§8.7. Events go out as Server-Sent Events at a URL the host chooses.
+
+An **MCP App** calls a tool of its server with the request as the tool's arguments; the tool result's
+`structuredContent` is the response, with the text encoding.
+
+`vastgrid-spec` gives the three encodings (`toTextEncoding`, `toStructuredEncoding`, `frameAttached` and
+`readAttached`) and the checks of §8 (`checkRequest`, `checkResponse` and `checkEvent`).
 
 ## 9. Progressive views
 
@@ -731,11 +1174,11 @@ A `rows` request with `preview: true` MAY be answered before the whole view is m
 - `view.status` is `building`. `readableRows` positions from the start of the view can be read, in their
   final order. `rowCount` is the number of rows when `rowCountExact` is true, and otherwise the number known
   so far (a lower bound).
-- The answer holds positions up to `readableRows`. The client asks again, or follows `progress` events, for
-  the rest, and reads its cached blocks again when the view becomes `ready`.
-- Engines choose how to get there: the first rows of a sort by a top-N query, then the full order, then
-  (for large views) a sorted copy for faster reads. Clients see only `status`, `readableRows`, `rowCount`
-  and the speed.
+- The answer holds positions up to `readableRows`. The client asks again, or follows `view` events (§8.5),
+  for the rest, and reads its cached blocks again when the view becomes `ready`.
+- Engines choose how to get there: the first rows of a sort by a top-N query, then the full order, then (for
+  large views) a sorted copy for faster reads. Clients see only `status`, `readableRows`, `rowCount` and the
+  speed.
 
 A table that is loading (`status: "loading"`) answers `rows` with the plan `{}` for its readable rows.
 Engines that report `partialViews` MAY also answer other plans over the readable rows, with
@@ -743,8 +1186,16 @@ Engines that report `partialViews` MAY also answer other plans over the readable
 
 ## 10. Conformance
 
-The corpus in [`packages/spec/conformance`](../packages/spec/conformance) holds cases written as JSON, following
-[`packages/spec/schema/conformance.schema.json`](../packages/spec/schema/conformance.schema.json):
+The corpus in [`packages/spec/conformance`](../packages/spec/conformance) has three parts, each a folder of JSON
+files:
+
+| Folder | Schema | A case gives | Runs on |
+| --- | --- | --- | --- |
+| `plans` | [`conformance.schema.json`](../packages/spec/schema/conformance.schema.json) | a table, a plan and what to read; the rows or the error expected | every engine |
+| `commands` | [`commands.schema.json`](../packages/spec/schema/commands.schema.json) | a state, a context and commands; the state, requests and output expected, or the error | every core |
+| `messages` | [`messages-corpus.schema.json`](../packages/spec/schema/messages-corpus.schema.json) | messages, and whether each follows §8 or the error it gets | every engine and client |
+
+A plan case:
 
 ```json
 {
@@ -763,20 +1214,30 @@ The corpus in [`packages/spec/conformance`](../packages/spec/conformance) holds 
 }
 ```
 
-- A case runs one plan on one table and reads `read` (`start`, `end` and `columns`; by default the whole view
-  and all its columns). `expect` gives `rowCount` and `rows` (typed JSON, §2.2), and optionally `columns`
-  (names and types) and `rowIds`; or an `error` (`code`, and `reason` for `invalid_plan`). `tolerance`
-  allows a relative difference for floats (§3.8).
-- The row IDs of a case table are its row positions.
-- Expected results are written from this document and checked against DuckDB 1.5 through `vastgrid-sql`. A
-  case on which DuckDB and this document disagree is a mistake in one of them, settled before the case is
-  added.
-- Every engine runs the whole corpus. Beyond it, engines are compared with each other on generated tables
-  and plans.
+- A plan case runs one plan on one table and reads `read` (`start`, `end` and `columns`; by default the
+  whole view and all its columns). `expect` gives `rowCount` and `rows` (typed JSON, §2.2), and optionally
+  `columns` (names and types) and `rowIds`; or an `error` (`code`, and `reason` for `invalid_plan`).
+  `tolerance` allows a relative difference for floats (§3.8). The row IDs of a case table are its row
+  positions.
+- A command case applies its `commands` in order, each to the state the one before gave, and compares the
+  result of the last one: each of `document`, `session`, `requests` and `output` that `expect` gives is
+  compared as JSON, or `expect` gives the `error` (`code`, `reason` and `path`, and `details` when it is
+  given) that the last command fails with; every command before it succeeds. `state` and `context` are
+  objects or the names of `states` and `contexts` of the file, and an object may name one to `extends`,
+  taking the members it does not give from it. An item `{ "context": … }` among the commands changes the
+  context of the commands after it (as when the core has read another view).
+- A message case checks a request with `checkRequest`, a response to an operation with `checkResponse`, or
+  an event with `checkEvent`, and `expect` gives `{ "valid": true }` or the `error` (`code`, `reason` and
+  `path`).
+- Expected results are written from this document. Plan cases are checked against DuckDB 1.5 through
+  `vastgrid-sql`; a case on which DuckDB and this document disagree is a mistake in one of them, settled
+  before the case is added.
+- Every engine runs the plan cases, and every core runs the command cases. Beyond them, engines are compared
+  with each other on generated tables and plans.
 
 ## 11. Versions and changes
 
-This document is `2.0-draft.1`. Until 2.0, drafts may change anything. After 2.0, minor versions add
+This document is `2.0-draft.2`. Until 2.0, drafts may change anything. After 2.0, minor versions add
 functions, measures, members and capabilities without changing the meaning of plans that were valid before,
 and changes of meaning need a major version. A change to sections 2–4 comes with conformance cases checked
 against DuckDB, and the JS engine follows in the same change.
@@ -787,9 +1248,17 @@ against DuckDB, and the JS engine follows in the same change.
 - Collations and folding (reading order of Japanese, full-width and half-width forms) as capabilities.
 - `quantile` and `count_distinct` over dates and times; a `histogram` measure instead of `derive` then
   `aggregate`.
-- The table that maps v1's formula language (`ROUND`, `MID`, `WEEKDAY`, `DAYS`, …) onto §4.4.
+- The formula language in v2: the table that maps v1's formula language (`ROUND`, `MID`, `WEEKDAY`, `DAYS`,
+  …) onto §4.4, a front end that compiles it to expressions, and with it the migration of v1's formulas
+  (§5.6).
 - Plans over a table that is still loading (`partialViews`): what `rowCount` and `where` mean there.
 - Whether the key of the group of −0.0 and 0.0 reads as 0.0.
+- `copy` with `values: "formatted"` (§6.6): the display formatting of `number` and `date` formats, so that
+  every core copies the same text.
+- Typed text in time zones other than UTC for `timestamptz` (§7.3).
+- Dates and timestamps outside the years 0001 to 9999 (DuckDB has dates from 5877642 BC), and the forms
+  that would write them (§2.2).
+- Blocks without a record batch for requests of no columns, which `rows` does not allow now (§8.2).
 
 ## Appendix A. From v1
 
@@ -813,7 +1282,24 @@ against DuckDB, and the JS engine follows in the same change.
 | view handles, `viewInfo` | the plan hash (§8.3), `view` in `rows` |
 | `CellValue` (JSON, exact numbers as strings) | typed values: Arrow blocks and typed JSON |
 | `RowBlock.rowIds` (positions) | `rowIds`, and row keys `{ rowId }` |
+| `RowSelection` (`include`, `exclude` with `query`) | `checked` (`include`, `exclude` with `where`) |
 | `GridState` (version 1) | the document (version 2) and the session |
+
+v1's filters migrate into expressions as follows (§5.6), where `c` is `{ "col": name }` and a literal takes
+the column's type: digits of an exact column as a `bigint` or `decimal` literal, text of a date or time
+column as a literal of that type.
+
+| v1 filter | v2 expression |
+| --- | --- |
+| `{ type: "values", values }` | `in(c, values…)` for the values that are not null, `or`-ed with `is_blank(c)` when `values` holds null |
+| `{ type: "values", values, exclude: true }` | `not(coalesce(e, false))`, where `e` is the expression above |
+| `{ type: "compare", op, value }` | `op(c, value)` (`eq`, `ne`, `lt`, `le`, `gt`, `ge`) |
+| `{ type: "between", min, max }` | `and(ge(c, min), le(c, max))`, or the one side that is given |
+| `{ type: "text", op: "contains", value }` | `contains(lower(text(c)), lower(value))`; with `caseSensitive`, without `lower` |
+| `{ type: "text", op: "startsWith" / "endsWith" / "equals" }` | `starts_with`, `ends_with` and `eq` in the same way |
+| `{ type: "text", op: "notContains" / "notEquals" }` | `not(coalesce(e, false))` of `contains` or `eq` |
+| `{ type: "blank", blank }` | `is_blank(c)`, or `not(is_blank(c))` |
+| `{ type: "and" / "or", filters }` | `and` / `or` of the migrated filters; a group of one filter is that filter |
 
 ## Appendix B. DuckDB behavior this draft was checked against
 
@@ -854,3 +1340,7 @@ Two behaviors of `@duckdb/node-api` 1.5.6-r.1 matter to engines built on it:
   of `vastgrid-sql` read strings with a character in front).
 - It binds JavaScript numbers without a fraction as `BIGINT`, so binding `1e20` fails with
   `bigint out of int64 range`. `vastgrid-sql` binds floats as text (`floatParam`) and casts them.
+
+`@uwdata/flechette` 2.6.0 decodes Utf8 values with a `TextDecoder` that drops a U+FEFF at the start of a
+value in the same way. `vastgrid-spec`'s block reader decodes Utf8 and LargeUtf8 values from their bytes
+with `ignoreBOM: true` instead (§8.4).

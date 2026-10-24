@@ -1,5 +1,5 @@
 {
-  "$schema": "../schema/conformance.schema.json",
+  "$schema": "../../schema/conformance.schema.json",
   "description": "Order (§3.3): blanks last in both directions, ties broken by the next key and then by row ID, NaN as the greatest number, strings by code point.",
   "tables": {
     "letters": { "columns": [{ "name": "s", "type": "string" }], "rows": [["b"], [""], [null], ["a"], [""]] },

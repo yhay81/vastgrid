@@ -1,0 +1,1094 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vastgrid.yhay81.com/schema/v2/commands.schema.json",
+  "title": "vastgrid v2 command cases",
+  "description": "A file of the command corpus (docs/v2-spec.md §10): states, contexts, and cases that apply commands. Commands in cases are not checked by this schema, so that cases can test commands that fail; $defs/command gives the form of every command of §6.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cases"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "states": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/state"
+      }
+    },
+    "contexts": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/context"
+      }
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/case"
+      }
+    }
+  },
+  "$defs": {
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "extends": {
+          "type": "string"
+        },
+        "document": {
+          "$ref": "state.schema.json#/$defs/document"
+        },
+        "session": {
+          "$ref": "state.schema.json#/$defs/session"
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "extends": {
+          "type": "string"
+        },
+        "table": {
+          "type": "array",
+          "items": {
+            "$ref": "conformance.schema.json#/$defs/column"
+          }
+        },
+        "revision": {
+          "type": ["string", "null"]
+        },
+        "view": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "rowCount", "rowIds"],
+          "properties": {
+            "columns": {
+              "type": "array",
+              "items": {
+                "$ref": "conformance.schema.json#/$defs/column"
+              }
+            },
+            "rowCount": {
+              "$ref": "state.schema.json#/$defs/position"
+            },
+            "rowIds": {
+              "type": "boolean"
+            }
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["start", "values"],
+            "properties": {
+              "start": {
+                "$ref": "state.schema.json#/$defs/position"
+              },
+              "keys": {
+                "type": "array",
+                "items": {
+                  "$ref": "state.schema.json#/$defs/rowKey"
+                }
+              },
+              "columns": {
+                "type": "array",
+                "items": {
+                  "$ref": "state.schema.json#/$defs/name"
+                }
+              },
+              "values": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "state.schema.json#/$defs/value"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "capabilities": {
+          "type": "object"
+        },
+        "clipboard": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "html": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "section", "state", "context", "commands", "expect"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(\\.[a-z0-9-]+)+$"
+        },
+        "section": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)*$"
+        },
+        "description": {
+          "type": "string"
+        },
+        "state": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/state"
+            }
+          ]
+        },
+        "context": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/context"
+            }
+          ]
+        },
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["command"]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["context"],
+                "properties": {
+                  "context": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "$ref": "#/$defs/context"
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "expect": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "document": {
+                  "$ref": "state.schema.json#/$defs/document"
+                },
+                "session": {
+                  "$ref": "state.schema.json#/$defs/session"
+                },
+                "requests": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["op"]
+                  }
+                },
+                "output": {}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["error"],
+              "properties": {
+                "error": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["code", "reason", "path"],
+                  "properties": {
+                    "code": {
+                      "const": "invalid_command"
+                    },
+                    "reason": {
+                      "enum": [
+                        "unknown_command",
+                        "syntax",
+                        "unknown_column",
+                        "no_editor",
+                        "nothing",
+                        "unsupported",
+                        "unknown_state",
+                        "last_column",
+                        "type",
+                        "copy_layout",
+                        "paste_ranges",
+                        "read_only",
+                        "too_many_cells",
+                        "not_loaded",
+                        "invalid_value",
+                        "invalid_plan"
+                      ]
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "command": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "keys"],
+          "properties": {
+            "command": {
+              "const": "sort.set"
+            },
+            "keys": {
+              "type": "array",
+              "items": {
+                "$ref": "plan.schema.json#/$defs/sortKey"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "column"],
+          "properties": {
+            "command": {
+              "const": "sort.toggle"
+            },
+            "column": {
+              "$ref": "state.schema.json#/$defs/name"
+            },
+            "add": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "sort.clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "where"],
+          "properties": {
+            "command": {
+              "const": "filter.set"
+            },
+            "where": {
+              "oneOf": [
+                {
+                  "$ref": "plan.schema.json#/$defs/expression"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "column", "where"],
+          "properties": {
+            "command": {
+              "const": "filter.column"
+            },
+            "column": {
+              "$ref": "state.schema.json#/$defs/name"
+            },
+            "where": {
+              "oneOf": [
+                {
+                  "$ref": "plan.schema.json#/$defs/expression"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "filter.clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "text"],
+          "properties": {
+            "command": {
+              "const": "search.set"
+            },
+            "text": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "name", "expr"],
+          "properties": {
+            "command": {
+              "const": "derive.add"
+            },
+            "name": {
+              "$ref": "state.schema.json#/$defs/name"
+            },
+            "expr": {
+              "$ref": "plan.schema.json#/$defs/expression"
+            },
+            "before": {
+              "$ref": "state.schema.json#/$defs/name"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "name"],
+          "properties": {
+            "command": {
+              "const": "derive.update"
+            },
+            "name": {
+              "$ref": "state.schema.json#/$defs/name"
+            },
+            "expr": {
+              "$ref": "plan.schema.json#/$defs/expression"
+            },
+            "rename": {
+              "$ref": "state.schema.json#/$defs/name"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "name"],
+          "properties": {
+            "command": {
+              "const": "derive.remove"
+            },
+            "name": {
+              "$ref": "state.schema.json#/$defs/name"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "aggregate"],
+          "properties": {
+            "command": {
+              "const": "group.set"
+            },
+            "aggregate": {
+              "$ref": "plan.schema.json#/$defs/aggregate"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "group.clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "having"],
+          "properties": {
+            "command": {
+              "const": "having.set"
+            },
+            "having": {
+              "oneOf": [
+                {
+                  "$ref": "plan.schema.json#/$defs/expression"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "name", "width"],
+          "properties": {
+            "command": {
+              "const": "column.resize"
+            },
+            "name": {
+              "$ref": "state.schema.json#/$defs/name"
+            },
+            "width": {
+              "oneOf": [
+                {
+                  "type": "number",
+                  "minimum": 1,
+                  "maximum": 100000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "names", "before"],
+          "properties": {
+            "command": {
+              "const": "column.move"
+            },
+            "names": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "state.schema.json#/$defs/name"
+              }
+            },
+            "before": {
+              "oneOf": [
+                {
+                  "$ref": "state.schema.json#/$defs/name"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "names"],
+          "properties": {
+            "command": {
+              "const": "column.hide"
+            },
+            "names": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "state.schema.json#/$defs/name"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "column.show"
+            },
+            "names": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "state.schema.json#/$defs/name"
+              }
+            },
+            "all": {
+              "const": true
+            }
+          },
+          "oneOf": [
+            {
+              "required": ["names"]
+            },
+            {
+              "required": ["all"]
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "name", "side"],
+          "properties": {
+            "command": {
+              "const": "column.pin"
+            },
+            "name": {
+              "$ref": "state.schema.json#/$defs/name"
+            },
+            "side": {
+              "enum": ["left", "right", null]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "name", "format"],
+          "properties": {
+            "command": {
+              "const": "column.format"
+            },
+            "name": {
+              "$ref": "state.schema.json#/$defs/name"
+            },
+            "format": {
+              "oneOf": [
+                {
+                  "$ref": "state.schema.json#/$defs/format"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "name", "total"],
+          "properties": {
+            "command": {
+              "const": "column.total"
+            },
+            "name": {
+              "$ref": "state.schema.json#/$defs/name"
+            },
+            "total": {
+              "oneOf": [
+                {
+                  "$ref": "state.schema.json#/$defs/columnSetting/properties/total"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "row", "column"],
+          "properties": {
+            "command": {
+              "const": "select"
+            },
+            "row": {
+              "$ref": "state.schema.json#/$defs/position"
+            },
+            "column": {
+              "$ref": "state.schema.json#/$defs/name"
+            },
+            "mode": {
+              "enum": ["replace", "extend", "add"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "from", "to"],
+          "properties": {
+            "command": {
+              "const": "select.rows"
+            },
+            "from": {
+              "$ref": "state.schema.json#/$defs/position"
+            },
+            "to": {
+              "$ref": "state.schema.json#/$defs/position"
+            },
+            "mode": {
+              "enum": ["replace", "extend", "add"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "from", "to"],
+          "properties": {
+            "command": {
+              "const": "select.columns"
+            },
+            "from": {
+              "$ref": "state.schema.json#/$defs/name"
+            },
+            "to": {
+              "$ref": "state.schema.json#/$defs/name"
+            },
+            "mode": {
+              "enum": ["replace", "extend", "add"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "select.all"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "direction"],
+          "properties": {
+            "command": {
+              "const": "move"
+            },
+            "direction": {
+              "enum": ["up", "down", "left", "right"]
+            },
+            "extend": {
+              "type": "boolean"
+            },
+            "jump": {
+              "type": "boolean"
+            },
+            "page": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "move.home"
+            },
+            "extend": {
+              "type": "boolean"
+            },
+            "jump": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "move.end"
+            },
+            "extend": {
+              "type": "boolean"
+            },
+            "jump": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "axis"],
+          "properties": {
+            "command": {
+              "const": "advance"
+            },
+            "axis": {
+              "enum": ["row", "column"]
+            },
+            "back": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "row"],
+          "properties": {
+            "command": {
+              "const": "scroll.to"
+            },
+            "row": {
+              "$ref": "state.schema.json#/$defs/position"
+            },
+            "column": {
+              "$ref": "state.schema.json#/$defs/name"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "keys"],
+          "properties": {
+            "command": {
+              "const": "check"
+            },
+            "keys": {
+              "type": "array",
+              "items": {
+                "$ref": "state.schema.json#/$defs/rowKey"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "keys"],
+          "properties": {
+            "command": {
+              "const": "uncheck"
+            },
+            "keys": {
+              "type": "array",
+              "items": {
+                "$ref": "state.schema.json#/$defs/rowKey"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "check.all"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "check.clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "detail.open"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "detail.close"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "edit.begin"
+            },
+            "text": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "text"],
+          "properties": {
+            "command": {
+              "const": "edit.change"
+            },
+            "text": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "edit.cancel"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "edit.commit"
+            },
+            "move": {
+              "enum": ["up", "down", "left", "right", null]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "edit.clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "edit.paste"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "direction"],
+          "properties": {
+            "command": {
+              "const": "edit.fill"
+            },
+            "direction": {
+              "enum": ["down", "right"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "history.undo"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "history.redo"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "copy"
+            },
+            "headers": {
+              "type": "boolean"
+            },
+            "values": {
+              "enum": ["raw", "formatted"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "format"],
+          "properties": {
+            "command": {
+              "const": "export"
+            },
+            "format": {
+              "type": "string"
+            },
+            "columns": {
+              "enum": ["displayed", "all"]
+            },
+            "target": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "save"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "hash"],
+          "properties": {
+            "command": {
+              "const": "view.update"
+            },
+            "hash": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "located": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["key", "row"],
+                "properties": {
+                  "key": {
+                    "$ref": "state.schema.json#/$defs/rowKey"
+                  },
+                  "row": {
+                    "oneOf": [
+                      {
+                        "$ref": "state.schema.json#/$defs/position"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command", "updates"],
+          "properties": {
+            "command": {
+              "const": "history.push"
+            },
+            "updates": {
+              "$ref": "state.schema.json#/$defs/step/properties/updates"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "history.undone"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "history.redone"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "const": "history.clear"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

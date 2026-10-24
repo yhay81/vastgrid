@@ -1,5 +1,5 @@
 {
-  "$schema": "../schema/conformance.schema.json",
+  "$schema": "../../schema/conformance.schema.json",
   "description": "Comparison (§3.1) and blanks (§3.2): exact numbers, floats, NaN, strings, dates, nulls, in.",
   "tables": {
     "exact": {

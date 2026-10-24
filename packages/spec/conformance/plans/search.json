@@ -1,5 +1,5 @@
 {
-  "$schema": "../schema/conformance.schema.json",
+  "$schema": "../../schema/conformance.schema.json",
   "description": "Search (§3.5): any of the table's own columns whose text form contains the text, ignoring letter case.",
   "tables": {
     "people": {

@@ -1,5 +1,5 @@
 {
-  "$schema": "../schema/conformance.schema.json",
+  "$schema": "../../schema/conformance.schema.json",
   "description": "Text (§3.4, §4.4) and text forms (§2.4): case mappings by code point, lengths in code points, trim of space separators, and the text of every type.",
   "tables": {
     "words": {

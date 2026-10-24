@@ -1,0 +1,1340 @@
+{
+  "$schema": "../../schema/messages-corpus.schema.json",
+  "description": "Responses and errors (§8.1, §8.2, §8.7, §8.8), as a client checks them.",
+  "cases": [
+    {
+      "id": "response.open",
+      "section": "8.2",
+      "kind": "response",
+      "op": "open",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "table": "t1",
+          "revision": "r1",
+          "edits": {
+            "version": 3,
+            "cells": 1
+          },
+          "status": "ready",
+          "progress": 1,
+          "rowCount": 6,
+          "readableRows": 6,
+          "columns": [
+            {
+              "name": "id",
+              "type": "bigint",
+              "sourceType": "BIGINT"
+            },
+            {
+              "name": "price",
+              "type": "decimal",
+              "precision": 10,
+              "scale": 2
+            },
+            {
+              "name": "at",
+              "type": "timestamp",
+              "unit": "ns"
+            },
+            {
+              "name": "x",
+              "type": "float",
+              "bits": 32,
+              "readOnly": true
+            }
+          ],
+          "capabilities": {
+            "plan": {
+              "derive": true,
+              "where": true,
+              "aggregate": true,
+              "pivot": true,
+              "having": true,
+              "sort": true,
+              "search": true
+            },
+            "functions": [
+              "and",
+              "or",
+              "eq"
+            ],
+            "measures": [
+              "count",
+              "sum"
+            ],
+            "summarize": true,
+            "find": true,
+            "locate": true,
+            "write": true,
+            "save": true,
+            "export": {
+              "formats": [
+                "csv",
+                "parquet"
+              ],
+              "delivery": "file"
+            },
+            "preview": true,
+            "partialViews": false,
+            "changes": "push"
+          },
+          "format": "csv",
+          "byteSize": 2048,
+          "notes": [
+            "Read as UTF-8."
+          ]
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.info-loading",
+      "section": "8.2",
+      "kind": "response",
+      "op": "info",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "table": "t1",
+          "revision": "r1",
+          "edits": {
+            "version": 3,
+            "cells": 1
+          },
+          "status": "loading",
+          "progress": null,
+          "rowCount": null,
+          "readableRows": 1000,
+          "columns": [
+            {
+              "name": "id",
+              "type": "bigint",
+              "sourceType": "BIGINT"
+            },
+            {
+              "name": "price",
+              "type": "decimal",
+              "precision": 10,
+              "scale": 2
+            },
+            {
+              "name": "at",
+              "type": "timestamp",
+              "unit": "ns"
+            },
+            {
+              "name": "x",
+              "type": "float",
+              "bits": 32,
+              "readOnly": true
+            }
+          ],
+          "capabilities": {
+            "plan": {
+              "derive": true,
+              "where": true,
+              "aggregate": true,
+              "pivot": true,
+              "having": true,
+              "sort": true,
+              "search": true
+            },
+            "functions": [
+              "and",
+              "or",
+              "eq"
+            ],
+            "measures": [
+              "count",
+              "sum"
+            ],
+            "summarize": true,
+            "find": true,
+            "locate": true,
+            "write": true,
+            "save": true,
+            "export": {
+              "formats": [
+                "csv",
+                "parquet"
+              ],
+              "delivery": "file"
+            },
+            "preview": true,
+            "partialViews": false,
+            "changes": "push"
+          },
+          "format": "csv",
+          "byteSize": 2048,
+          "notes": [
+            "Read as UTF-8."
+          ],
+          "sheets": [
+            {
+              "name": "Q1"
+            },
+            {
+              "name": "Old",
+              "hidden": true
+            }
+          ],
+          "sheet": "Q1"
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.rows",
+      "section": "8.2",
+      "kind": "response",
+      "op": "rows",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "view": {
+            "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "ready",
+            "rowCount": 6,
+            "rowCountExact": true,
+            "readableRows": 6,
+            "columns": [
+              {
+                "name": "id",
+                "type": "bigint",
+                "sourceType": "BIGINT"
+              },
+              {
+                "name": "price",
+                "type": "decimal",
+                "precision": 10,
+                "scale": 2
+              }
+            ],
+            "edits": {
+              "version": 3,
+              "cells": 1
+            }
+          },
+          "start": 0,
+          "end": 2,
+          "rowIds": [
+            4,
+            1
+          ],
+          "block": {
+            "base64": "QUJD"
+          },
+          "truncated": {
+            "price": [
+              1
+            ]
+          }
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.rows-attached",
+      "section": "8.8",
+      "kind": "response",
+      "op": "rows",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "view": {
+            "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "ready",
+            "rowCount": 6,
+            "rowCountExact": true,
+            "readableRows": 6,
+            "columns": [
+              {
+                "name": "id",
+                "type": "bigint",
+                "sourceType": "BIGINT"
+              },
+              {
+                "name": "price",
+                "type": "decimal",
+                "precision": 10,
+                "scale": 2
+              }
+            ],
+            "edits": {
+              "version": 3,
+              "cells": 1
+            }
+          },
+          "start": 0,
+          "end": 2,
+          "rowIds": [
+            4,
+            1
+          ],
+          "block": {
+            "attached": 1024
+          },
+          "truncated": {
+            "price": [
+              1
+            ]
+          }
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.rows-groups",
+      "section": "8.2",
+      "kind": "response",
+      "op": "rows",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "view": {
+            "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "building",
+            "rowCount": 6,
+            "rowCountExact": false,
+            "readableRows": 6,
+            "columns": [
+              {
+                "name": "id",
+                "type": "bigint",
+                "sourceType": "BIGINT"
+              },
+              {
+                "name": "price",
+                "type": "decimal",
+                "precision": 10,
+                "scale": 2
+              }
+            ],
+            "edits": {
+              "version": 3,
+              "cells": 1
+            },
+            "partial": true
+          },
+          "start": 0,
+          "end": 2,
+          "rowIds": null,
+          "block": {
+            "base64": "QUJD"
+          },
+          "truncated": {
+            "price": [
+              1
+            ]
+          }
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.summarize",
+      "section": "8.2",
+      "kind": "response",
+      "op": "summarize",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "count": 3,
+          "numericCount": 0,
+          "sum": null,
+          "min": null,
+          "max": null,
+          "average": null
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.summarize-infinite",
+      "section": "8.2",
+      "kind": "response",
+      "op": "summarize",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "count": 2,
+          "numericCount": 2,
+          "sum": "Infinity",
+          "min": 1e+308,
+          "max": 1.7e+308,
+          "average": "Infinity"
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.find",
+      "section": "8.2",
+      "kind": "response",
+      "op": "find",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "row": 120,
+          "column": 1
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.find-none",
+      "section": "8.2",
+      "kind": "response",
+      "op": "find",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": null
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.locate",
+      "section": "8.2",
+      "kind": "response",
+      "op": "locate",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "rows": [
+            5,
+            null
+          ]
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.write",
+      "section": "8.2",
+      "kind": "response",
+      "op": "write",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "updated": 2,
+          "edits": {
+            "version": 3,
+            "cells": 1
+          }
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.save",
+      "section": "8.2",
+      "kind": "response",
+      "op": "save",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "records": 1,
+          "edits": {
+            "version": 3,
+            "cells": 0
+          }
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.export",
+      "section": "8.2",
+      "kind": "response",
+      "op": "export",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "target": "/exports/out.csv",
+          "rows": 6
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.export-data",
+      "section": "8.2",
+      "kind": "response",
+      "op": "export",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "target": null,
+          "rows": 6,
+          "data": {
+            "base64": "UEsDBA=="
+          }
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.changes",
+      "section": "8.2",
+      "kind": "response",
+      "op": "changes",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "revision": "r2",
+          "edits": {
+            "version": 3,
+            "cells": 1
+          }
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.close",
+      "section": "8.2",
+      "kind": "response",
+      "op": "close",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": null
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.error",
+      "section": "8.7",
+      "kind": "response",
+      "op": "rows",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "error": {
+          "code": "revision_changed",
+          "message": "…"
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.error-plan",
+      "section": "8.7",
+      "kind": "response",
+      "op": "rows",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "error": {
+          "code": "invalid_plan",
+          "message": "…",
+          "path": "/sort/0/column",
+          "reason": "unknown_column",
+          "details": {
+            "column": "zzz"
+          }
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.error-code",
+      "section": "8.7",
+      "kind": "response",
+      "op": "rows",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "error": {
+          "code": "bad_luck",
+          "message": "…"
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/error/code"
+        }
+      }
+    },
+    {
+      "id": "response.error-and-result",
+      "section": "8.1",
+      "kind": "response",
+      "op": "close",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "error": {
+          "code": "internal",
+          "message": "…"
+        },
+        "result": null
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/result"
+        }
+      }
+    },
+    {
+      "id": "response.version",
+      "section": "8.1",
+      "kind": "response",
+      "op": "close",
+      "message": {
+        "v": 3,
+        "id": 1,
+        "result": null
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "version",
+          "path": "/v"
+        }
+      }
+    },
+    {
+      "id": "response.close-result",
+      "section": "8.2",
+      "kind": "response",
+      "op": "close",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {}
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/result"
+        }
+      }
+    },
+    {
+      "id": "response.cancel",
+      "section": "8.6",
+      "description": "cancel has no response.",
+      "kind": "response",
+      "op": "cancel",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": null
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "response.rows-ids",
+      "section": "8.2",
+      "description": "rowIds has one row ID per row.",
+      "kind": "response",
+      "op": "rows",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "view": {
+            "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "ready",
+            "rowCount": 6,
+            "rowCountExact": true,
+            "readableRows": 6,
+            "columns": [
+              {
+                "name": "id",
+                "type": "bigint",
+                "sourceType": "BIGINT"
+              },
+              {
+                "name": "price",
+                "type": "decimal",
+                "precision": 10,
+                "scale": 2
+              }
+            ],
+            "edits": {
+              "version": 3,
+              "cells": 1
+            }
+          },
+          "start": 0,
+          "end": 2,
+          "rowIds": [
+            4
+          ],
+          "block": {
+            "base64": "QUJD"
+          },
+          "truncated": {
+            "price": [
+              1
+            ]
+          }
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/result/rowIds"
+        }
+      }
+    },
+    {
+      "id": "response.rows-hash",
+      "section": "8.2",
+      "kind": "response",
+      "op": "rows",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "view": {
+            "hash": "abc",
+            "status": "ready",
+            "rowCount": 6,
+            "rowCountExact": true,
+            "readableRows": 6,
+            "columns": [
+              {
+                "name": "id",
+                "type": "bigint",
+                "sourceType": "BIGINT"
+              },
+              {
+                "name": "price",
+                "type": "decimal",
+                "precision": 10,
+                "scale": 2
+              }
+            ],
+            "edits": {
+              "version": 3,
+              "cells": 1
+            }
+          },
+          "start": 0,
+          "end": 2,
+          "rowIds": [
+            4,
+            1
+          ],
+          "block": {
+            "base64": "QUJD"
+          },
+          "truncated": {
+            "price": [
+              1
+            ]
+          }
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/result/view/hash"
+        }
+      }
+    },
+    {
+      "id": "response.rows-block",
+      "section": "8.8",
+      "kind": "response",
+      "op": "rows",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "view": {
+            "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "ready",
+            "rowCount": 6,
+            "rowCountExact": true,
+            "readableRows": 6,
+            "columns": [
+              {
+                "name": "id",
+                "type": "bigint",
+                "sourceType": "BIGINT"
+              },
+              {
+                "name": "price",
+                "type": "decimal",
+                "precision": 10,
+                "scale": 2
+              }
+            ],
+            "edits": {
+              "version": 3,
+              "cells": 1
+            }
+          },
+          "start": 0,
+          "end": 2,
+          "rowIds": [
+            4,
+            1
+          ],
+          "block": "QUJD",
+          "truncated": {
+            "price": [
+              1
+            ]
+          }
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/result/block"
+        }
+      }
+    },
+    {
+      "id": "response.rows-base64",
+      "section": "8.8",
+      "description": "base64 has its padding (RFC 4648).",
+      "kind": "response",
+      "op": "rows",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "view": {
+            "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "ready",
+            "rowCount": 6,
+            "rowCountExact": true,
+            "readableRows": 6,
+            "columns": [
+              {
+                "name": "id",
+                "type": "bigint",
+                "sourceType": "BIGINT"
+              },
+              {
+                "name": "price",
+                "type": "decimal",
+                "precision": 10,
+                "scale": 2
+              }
+            ],
+            "edits": {
+              "version": 3,
+              "cells": 1
+            }
+          },
+          "start": 0,
+          "end": 2,
+          "rowIds": [
+            4,
+            1
+          ],
+          "block": {
+            "base64": "QUJ"
+          },
+          "truncated": {
+            "price": [
+              1
+            ]
+          }
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/result/block/base64"
+        }
+      }
+    },
+    {
+      "id": "response.rows-truncated",
+      "section": "8.4",
+      "description": "Offsets of cut values count from start, within the rows read.",
+      "kind": "response",
+      "op": "rows",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "view": {
+            "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "ready",
+            "rowCount": 6,
+            "rowCountExact": true,
+            "readableRows": 6,
+            "columns": [
+              {
+                "name": "id",
+                "type": "bigint",
+                "sourceType": "BIGINT"
+              },
+              {
+                "name": "price",
+                "type": "decimal",
+                "precision": 10,
+                "scale": 2
+              }
+            ],
+            "edits": {
+              "version": 3,
+              "cells": 1
+            }
+          },
+          "start": 0,
+          "end": 2,
+          "rowIds": [
+            4,
+            1
+          ],
+          "block": {
+            "base64": "QUJD"
+          },
+          "truncated": {
+            "price": [
+              2
+            ]
+          }
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/result/truncated/price/0"
+        }
+      }
+    },
+    {
+      "id": "response.info-status",
+      "section": "8.2",
+      "kind": "response",
+      "op": "info",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "table": "t1",
+          "revision": "r1",
+          "edits": {
+            "version": 3,
+            "cells": 1
+          },
+          "status": "done",
+          "progress": 1,
+          "rowCount": 6,
+          "readableRows": 6,
+          "columns": [
+            {
+              "name": "id",
+              "type": "bigint",
+              "sourceType": "BIGINT"
+            },
+            {
+              "name": "price",
+              "type": "decimal",
+              "precision": 10,
+              "scale": 2
+            },
+            {
+              "name": "at",
+              "type": "timestamp",
+              "unit": "ns"
+            },
+            {
+              "name": "x",
+              "type": "float",
+              "bits": 32,
+              "readOnly": true
+            }
+          ],
+          "capabilities": {
+            "plan": {
+              "derive": true,
+              "where": true,
+              "aggregate": true,
+              "pivot": true,
+              "having": true,
+              "sort": true,
+              "search": true
+            },
+            "functions": [
+              "and",
+              "or",
+              "eq"
+            ],
+            "measures": [
+              "count",
+              "sum"
+            ],
+            "summarize": true,
+            "find": true,
+            "locate": true,
+            "write": true,
+            "save": true,
+            "export": {
+              "formats": [
+                "csv",
+                "parquet"
+              ],
+              "delivery": "file"
+            },
+            "preview": true,
+            "partialViews": false,
+            "changes": "push"
+          },
+          "format": "csv",
+          "byteSize": 2048,
+          "notes": [
+            "Read as UTF-8."
+          ]
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/result/status"
+        }
+      }
+    },
+    {
+      "id": "response.info-decimal",
+      "section": "2.1",
+      "kind": "response",
+      "op": "info",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "table": "t1",
+          "revision": "r1",
+          "edits": {
+            "version": 3,
+            "cells": 1
+          },
+          "status": "ready",
+          "progress": 1,
+          "rowCount": 6,
+          "readableRows": 6,
+          "columns": [
+            {
+              "name": "p",
+              "type": "decimal"
+            }
+          ],
+          "capabilities": {
+            "plan": {
+              "derive": true,
+              "where": true,
+              "aggregate": true,
+              "pivot": true,
+              "having": true,
+              "sort": true,
+              "search": true
+            },
+            "functions": [
+              "and",
+              "or",
+              "eq"
+            ],
+            "measures": [
+              "count",
+              "sum"
+            ],
+            "summarize": true,
+            "find": true,
+            "locate": true,
+            "write": true,
+            "save": true,
+            "export": {
+              "formats": [
+                "csv",
+                "parquet"
+              ],
+              "delivery": "file"
+            },
+            "preview": true,
+            "partialViews": false,
+            "changes": "push"
+          },
+          "format": "csv",
+          "byteSize": 2048,
+          "notes": [
+            "Read as UTF-8."
+          ]
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/result/columns/0/precision"
+        }
+      }
+    },
+    {
+      "id": "response.info-unit",
+      "section": "2.1",
+      "kind": "response",
+      "op": "info",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "table": "t1",
+          "revision": "r1",
+          "edits": {
+            "version": 3,
+            "cells": 1
+          },
+          "status": "ready",
+          "progress": 1,
+          "rowCount": 6,
+          "readableRows": 6,
+          "columns": [
+            {
+              "name": "t",
+              "type": "date",
+              "unit": "ms"
+            }
+          ],
+          "capabilities": {
+            "plan": {
+              "derive": true,
+              "where": true,
+              "aggregate": true,
+              "pivot": true,
+              "having": true,
+              "sort": true,
+              "search": true
+            },
+            "functions": [
+              "and",
+              "or",
+              "eq"
+            ],
+            "measures": [
+              "count",
+              "sum"
+            ],
+            "summarize": true,
+            "find": true,
+            "locate": true,
+            "write": true,
+            "save": true,
+            "export": {
+              "formats": [
+                "csv",
+                "parquet"
+              ],
+              "delivery": "file"
+            },
+            "preview": true,
+            "partialViews": false,
+            "changes": "push"
+          },
+          "format": "csv",
+          "byteSize": 2048,
+          "notes": [
+            "Read as UTF-8."
+          ]
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/result/columns/0/unit"
+        }
+      }
+    },
+    {
+      "id": "response.info-capability",
+      "section": "4.10",
+      "kind": "response",
+      "op": "info",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "table": "t1",
+          "revision": "r1",
+          "edits": {
+            "version": 3,
+            "cells": 1
+          },
+          "status": "ready",
+          "progress": 1,
+          "rowCount": 6,
+          "readableRows": 6,
+          "columns": [
+            {
+              "name": "id",
+              "type": "bigint",
+              "sourceType": "BIGINT"
+            },
+            {
+              "name": "price",
+              "type": "decimal",
+              "precision": 10,
+              "scale": 2
+            },
+            {
+              "name": "at",
+              "type": "timestamp",
+              "unit": "ns"
+            },
+            {
+              "name": "x",
+              "type": "float",
+              "bits": 32,
+              "readOnly": true
+            }
+          ],
+          "capabilities": {
+            "plan": {
+              "derive": true,
+              "where": true,
+              "aggregate": true,
+              "pivot": true,
+              "having": true,
+              "sort": true,
+              "search": true
+            },
+            "functions": [
+              "and",
+              "or",
+              "eq"
+            ],
+            "measures": [
+              "count",
+              "sum"
+            ],
+            "summarize": true,
+            "find": true,
+            "locate": true,
+            "write": true,
+            "save": true,
+            "export": {
+              "formats": [
+                "csv",
+                "parquet"
+              ],
+              "delivery": "file"
+            },
+            "preview": true,
+            "partialViews": false,
+            "changes": "push",
+            "sql": true
+          },
+          "format": "csv",
+          "byteSize": 2048,
+          "notes": [
+            "Read as UTF-8."
+          ]
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/result/capabilities/sql"
+        }
+      }
+    },
+    {
+      "id": "response.summarize-nan",
+      "section": "8.2",
+      "description": "Only finite numbers are summed, so a sum is never NaN.",
+      "kind": "response",
+      "op": "summarize",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "count": 1,
+          "numericCount": 1,
+          "sum": "NaN",
+          "min": 1,
+          "max": 1,
+          "average": 1
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/result/sum"
+        }
+      }
+    }
+  ]
+}

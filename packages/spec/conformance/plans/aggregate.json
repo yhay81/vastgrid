@@ -1,5 +1,5 @@
 {
-  "$schema": "../schema/conformance.schema.json",
+  "$schema": "../../schema/conformance.schema.json",
   "description": "Aggregates (§3.8), groups (§3.9), measures (§4.5) and pivots (§4.6).",
   "tables": {
     "sales": {

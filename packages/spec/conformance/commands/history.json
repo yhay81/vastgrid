@@ -1,0 +1,3206 @@
+{
+  "$schema": "../../schema/commands.schema.json",
+  "description": "Undo and redo (§7.4) and the history commands of the core (§6.7).",
+  "contexts": {
+    "orders": {
+      "table": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "qty",
+          "type": "integer"
+        },
+        {
+          "name": "price",
+          "type": "decimal",
+          "precision": 10,
+          "scale": 2
+        },
+        {
+          "name": "shipped",
+          "type": "date"
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "readOnly": true
+        }
+      ],
+      "revision": "r1",
+      "view": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "region",
+            "type": "string"
+          },
+          {
+            "name": "qty",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "precision": 10,
+            "scale": 2
+          },
+          {
+            "name": "shipped",
+            "type": "date"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "readOnly": true
+          }
+        ],
+        "rowCount": 6,
+        "rowIds": true
+      },
+      "rows": [
+        {
+          "start": 0,
+          "keys": [
+            {
+              "rowId": 0
+            },
+            {
+              "rowId": 1
+            },
+            {
+              "rowId": 2
+            },
+            {
+              "rowId": 3
+            },
+            {
+              "rowId": 4
+            },
+            {
+              "rowId": 5
+            }
+          ],
+          "values": [
+            [
+              1,
+              "Tokyo",
+              3,
+              "12.50",
+              "2024-01-31",
+              "a"
+            ],
+            [
+              2,
+              "Osaka",
+              1,
+              "8.00",
+              "2024-02-01",
+              null
+            ],
+            [
+              3,
+              "Tokyo",
+              null,
+              null,
+              null,
+              "c"
+            ],
+            [
+              4,
+              "",
+              5,
+              "100.00",
+              "2024-03-15",
+              ""
+            ],
+            [
+              5,
+              "Nagoya",
+              2,
+              "3.25",
+              "2024-04-01",
+              "e"
+            ],
+            [
+              6,
+              "Osaka",
+              7,
+              "0.10",
+              "2024-05-20",
+              "f"
+            ]
+          ]
+        }
+      ],
+      "page": 3
+    },
+    "orders-unloaded": {
+      "extends": "orders",
+      "rows": []
+    },
+    "orders-big": {
+      "extends": "orders",
+      "view": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "region",
+            "type": "string"
+          },
+          {
+            "name": "qty",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "precision": 10,
+            "scale": 2
+          },
+          {
+            "name": "shipped",
+            "type": "date"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "readOnly": true
+          }
+        ],
+        "rowCount": 1000,
+        "rowIds": true
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "history.push",
+      "section": "7.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "history.push",
+          "updates": [
+            {
+              "key": {
+                "rowId": 0
+              },
+              "column": "qty",
+              "before": 3,
+              "after": 4
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      }
+    },
+    {
+      "id": "history.push-empties-redo",
+      "section": "7.4",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              }
+            ],
+            "redo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 1
+                    },
+                    "column": "qty",
+                    "before": 1,
+                    "after": 2
+                  },
+                  {
+                    "key": {
+                      "rowId": 2
+                    },
+                    "column": "qty",
+                    "before": null,
+                    "after": 2
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "history.push",
+          "updates": [
+            {
+              "key": {
+                "rowId": 3
+              },
+              "column": "region",
+              "before": "",
+              "after": "Kyoto"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 3
+                    },
+                    "column": "region",
+                    "before": "",
+                    "after": "Kyoto"
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      }
+    },
+    {
+      "id": "history.undone",
+      "section": "7.4",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 1
+                    },
+                    "column": "qty",
+                    "before": 1,
+                    "after": 2
+                  },
+                  {
+                    "key": {
+                      "rowId": 2
+                    },
+                    "column": "qty",
+                    "before": null,
+                    "after": 2
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "history.undone"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              }
+            ],
+            "redo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 1
+                    },
+                    "column": "qty",
+                    "before": 1,
+                    "after": 2
+                  },
+                  {
+                    "key": {
+                      "rowId": 2
+                    },
+                    "column": "qty",
+                    "before": null,
+                    "after": 2
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "history.redone",
+      "section": "7.4",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              }
+            ],
+            "redo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 1
+                    },
+                    "column": "qty",
+                    "before": 1,
+                    "after": 2
+                  },
+                  {
+                    "key": {
+                      "rowId": 2
+                    },
+                    "column": "qty",
+                    "before": null,
+                    "after": 2
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "history.redone"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 1
+                    },
+                    "column": "qty",
+                    "before": 1,
+                    "after": 2
+                  },
+                  {
+                    "key": {
+                      "rowId": 2
+                    },
+                    "column": "qty",
+                    "before": null,
+                    "after": 2
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      }
+    },
+    {
+      "id": "history.undone-to-empty",
+      "section": "6.1",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "history.undone"
+        },
+        {
+          "command": "history.redone"
+        },
+        {
+          "command": "history.undone"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [],
+            "redo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "history.undone-nothing",
+      "section": "7.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "history.undone"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "nothing",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "history.redone-nothing",
+      "section": "7.4",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "history.redone"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "nothing",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "history.steps-limit",
+      "section": "7.4",
+      "description": "The history keeps at most 100 steps; the oldest steps of undo go first.",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "qty",
+                    "before": 0,
+                    "after": 1
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 1
+                    },
+                    "column": "qty",
+                    "before": 1,
+                    "after": 2
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 2
+                    },
+                    "column": "qty",
+                    "before": 2,
+                    "after": 3
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 3
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 4
+                    },
+                    "column": "qty",
+                    "before": 4,
+                    "after": 5
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 5
+                    },
+                    "column": "qty",
+                    "before": 5,
+                    "after": 6
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 6
+                    },
+                    "column": "qty",
+                    "before": 6,
+                    "after": 7
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 7
+                    },
+                    "column": "qty",
+                    "before": 7,
+                    "after": 8
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 8
+                    },
+                    "column": "qty",
+                    "before": 8,
+                    "after": 9
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 9
+                    },
+                    "column": "qty",
+                    "before": 9,
+                    "after": 10
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 10
+                    },
+                    "column": "qty",
+                    "before": 10,
+                    "after": 11
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 11
+                    },
+                    "column": "qty",
+                    "before": 11,
+                    "after": 12
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 12
+                    },
+                    "column": "qty",
+                    "before": 12,
+                    "after": 13
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 13
+                    },
+                    "column": "qty",
+                    "before": 13,
+                    "after": 14
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 14
+                    },
+                    "column": "qty",
+                    "before": 14,
+                    "after": 15
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 15
+                    },
+                    "column": "qty",
+                    "before": 15,
+                    "after": 16
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 16
+                    },
+                    "column": "qty",
+                    "before": 16,
+                    "after": 17
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 17
+                    },
+                    "column": "qty",
+                    "before": 17,
+                    "after": 18
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 18
+                    },
+                    "column": "qty",
+                    "before": 18,
+                    "after": 19
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 19
+                    },
+                    "column": "qty",
+                    "before": 19,
+                    "after": 20
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 20
+                    },
+                    "column": "qty",
+                    "before": 20,
+                    "after": 21
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 21
+                    },
+                    "column": "qty",
+                    "before": 21,
+                    "after": 22
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 22
+                    },
+                    "column": "qty",
+                    "before": 22,
+                    "after": 23
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 23
+                    },
+                    "column": "qty",
+                    "before": 23,
+                    "after": 24
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 24
+                    },
+                    "column": "qty",
+                    "before": 24,
+                    "after": 25
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 25
+                    },
+                    "column": "qty",
+                    "before": 25,
+                    "after": 26
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 26
+                    },
+                    "column": "qty",
+                    "before": 26,
+                    "after": 27
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 27
+                    },
+                    "column": "qty",
+                    "before": 27,
+                    "after": 28
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 28
+                    },
+                    "column": "qty",
+                    "before": 28,
+                    "after": 29
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 29
+                    },
+                    "column": "qty",
+                    "before": 29,
+                    "after": 30
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 30
+                    },
+                    "column": "qty",
+                    "before": 30,
+                    "after": 31
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 31
+                    },
+                    "column": "qty",
+                    "before": 31,
+                    "after": 32
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 32
+                    },
+                    "column": "qty",
+                    "before": 32,
+                    "after": 33
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 33
+                    },
+                    "column": "qty",
+                    "before": 33,
+                    "after": 34
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 34
+                    },
+                    "column": "qty",
+                    "before": 34,
+                    "after": 35
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 35
+                    },
+                    "column": "qty",
+                    "before": 35,
+                    "after": 36
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 36
+                    },
+                    "column": "qty",
+                    "before": 36,
+                    "after": 37
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 37
+                    },
+                    "column": "qty",
+                    "before": 37,
+                    "after": 38
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 38
+                    },
+                    "column": "qty",
+                    "before": 38,
+                    "after": 39
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 39
+                    },
+                    "column": "qty",
+                    "before": 39,
+                    "after": 40
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 40
+                    },
+                    "column": "qty",
+                    "before": 40,
+                    "after": 41
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 41
+                    },
+                    "column": "qty",
+                    "before": 41,
+                    "after": 42
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 42
+                    },
+                    "column": "qty",
+                    "before": 42,
+                    "after": 43
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 43
+                    },
+                    "column": "qty",
+                    "before": 43,
+                    "after": 44
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 44
+                    },
+                    "column": "qty",
+                    "before": 44,
+                    "after": 45
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 45
+                    },
+                    "column": "qty",
+                    "before": 45,
+                    "after": 46
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 46
+                    },
+                    "column": "qty",
+                    "before": 46,
+                    "after": 47
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 47
+                    },
+                    "column": "qty",
+                    "before": 47,
+                    "after": 48
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 48
+                    },
+                    "column": "qty",
+                    "before": 48,
+                    "after": 49
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 49
+                    },
+                    "column": "qty",
+                    "before": 49,
+                    "after": 50
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 50
+                    },
+                    "column": "qty",
+                    "before": 50,
+                    "after": 51
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 51
+                    },
+                    "column": "qty",
+                    "before": 51,
+                    "after": 52
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 52
+                    },
+                    "column": "qty",
+                    "before": 52,
+                    "after": 53
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 53
+                    },
+                    "column": "qty",
+                    "before": 53,
+                    "after": 54
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 54
+                    },
+                    "column": "qty",
+                    "before": 54,
+                    "after": 55
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 55
+                    },
+                    "column": "qty",
+                    "before": 55,
+                    "after": 56
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 56
+                    },
+                    "column": "qty",
+                    "before": 56,
+                    "after": 57
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 57
+                    },
+                    "column": "qty",
+                    "before": 57,
+                    "after": 58
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 58
+                    },
+                    "column": "qty",
+                    "before": 58,
+                    "after": 59
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 59
+                    },
+                    "column": "qty",
+                    "before": 59,
+                    "after": 60
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 60
+                    },
+                    "column": "qty",
+                    "before": 60,
+                    "after": 61
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 61
+                    },
+                    "column": "qty",
+                    "before": 61,
+                    "after": 62
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 62
+                    },
+                    "column": "qty",
+                    "before": 62,
+                    "after": 63
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 63
+                    },
+                    "column": "qty",
+                    "before": 63,
+                    "after": 64
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 64
+                    },
+                    "column": "qty",
+                    "before": 64,
+                    "after": 65
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 65
+                    },
+                    "column": "qty",
+                    "before": 65,
+                    "after": 66
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 66
+                    },
+                    "column": "qty",
+                    "before": 66,
+                    "after": 67
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 67
+                    },
+                    "column": "qty",
+                    "before": 67,
+                    "after": 68
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 68
+                    },
+                    "column": "qty",
+                    "before": 68,
+                    "after": 69
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 69
+                    },
+                    "column": "qty",
+                    "before": 69,
+                    "after": 70
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 70
+                    },
+                    "column": "qty",
+                    "before": 70,
+                    "after": 71
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 71
+                    },
+                    "column": "qty",
+                    "before": 71,
+                    "after": 72
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 72
+                    },
+                    "column": "qty",
+                    "before": 72,
+                    "after": 73
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 73
+                    },
+                    "column": "qty",
+                    "before": 73,
+                    "after": 74
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 74
+                    },
+                    "column": "qty",
+                    "before": 74,
+                    "after": 75
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 75
+                    },
+                    "column": "qty",
+                    "before": 75,
+                    "after": 76
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 76
+                    },
+                    "column": "qty",
+                    "before": 76,
+                    "after": 77
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 77
+                    },
+                    "column": "qty",
+                    "before": 77,
+                    "after": 78
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 78
+                    },
+                    "column": "qty",
+                    "before": 78,
+                    "after": 79
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 79
+                    },
+                    "column": "qty",
+                    "before": 79,
+                    "after": 80
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 80
+                    },
+                    "column": "qty",
+                    "before": 80,
+                    "after": 81
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 81
+                    },
+                    "column": "qty",
+                    "before": 81,
+                    "after": 82
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 82
+                    },
+                    "column": "qty",
+                    "before": 82,
+                    "after": 83
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 83
+                    },
+                    "column": "qty",
+                    "before": 83,
+                    "after": 84
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 84
+                    },
+                    "column": "qty",
+                    "before": 84,
+                    "after": 85
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 85
+                    },
+                    "column": "qty",
+                    "before": 85,
+                    "after": 86
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 86
+                    },
+                    "column": "qty",
+                    "before": 86,
+                    "after": 87
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 87
+                    },
+                    "column": "qty",
+                    "before": 87,
+                    "after": 88
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 88
+                    },
+                    "column": "qty",
+                    "before": 88,
+                    "after": 89
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 89
+                    },
+                    "column": "qty",
+                    "before": 89,
+                    "after": 90
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 90
+                    },
+                    "column": "qty",
+                    "before": 90,
+                    "after": 91
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 91
+                    },
+                    "column": "qty",
+                    "before": 91,
+                    "after": 92
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 92
+                    },
+                    "column": "qty",
+                    "before": 92,
+                    "after": 93
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 93
+                    },
+                    "column": "qty",
+                    "before": 93,
+                    "after": 94
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 94
+                    },
+                    "column": "qty",
+                    "before": 94,
+                    "after": 95
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 95
+                    },
+                    "column": "qty",
+                    "before": 95,
+                    "after": 96
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 96
+                    },
+                    "column": "qty",
+                    "before": 96,
+                    "after": 97
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 97
+                    },
+                    "column": "qty",
+                    "before": 97,
+                    "after": 98
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 98
+                    },
+                    "column": "qty",
+                    "before": 98,
+                    "after": 99
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 99
+                    },
+                    "column": "qty",
+                    "before": 99,
+                    "after": 100
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "history.push",
+          "updates": [
+            {
+              "key": {
+                "rowId": 3
+              },
+              "column": "region",
+              "before": "",
+              "after": "Kyoto"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 1
+                    },
+                    "column": "qty",
+                    "before": 1,
+                    "after": 2
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 2
+                    },
+                    "column": "qty",
+                    "before": 2,
+                    "after": 3
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 3
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 4
+                    },
+                    "column": "qty",
+                    "before": 4,
+                    "after": 5
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 5
+                    },
+                    "column": "qty",
+                    "before": 5,
+                    "after": 6
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 6
+                    },
+                    "column": "qty",
+                    "before": 6,
+                    "after": 7
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 7
+                    },
+                    "column": "qty",
+                    "before": 7,
+                    "after": 8
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 8
+                    },
+                    "column": "qty",
+                    "before": 8,
+                    "after": 9
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 9
+                    },
+                    "column": "qty",
+                    "before": 9,
+                    "after": 10
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 10
+                    },
+                    "column": "qty",
+                    "before": 10,
+                    "after": 11
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 11
+                    },
+                    "column": "qty",
+                    "before": 11,
+                    "after": 12
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 12
+                    },
+                    "column": "qty",
+                    "before": 12,
+                    "after": 13
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 13
+                    },
+                    "column": "qty",
+                    "before": 13,
+                    "after": 14
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 14
+                    },
+                    "column": "qty",
+                    "before": 14,
+                    "after": 15
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 15
+                    },
+                    "column": "qty",
+                    "before": 15,
+                    "after": 16
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 16
+                    },
+                    "column": "qty",
+                    "before": 16,
+                    "after": 17
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 17
+                    },
+                    "column": "qty",
+                    "before": 17,
+                    "after": 18
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 18
+                    },
+                    "column": "qty",
+                    "before": 18,
+                    "after": 19
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 19
+                    },
+                    "column": "qty",
+                    "before": 19,
+                    "after": 20
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 20
+                    },
+                    "column": "qty",
+                    "before": 20,
+                    "after": 21
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 21
+                    },
+                    "column": "qty",
+                    "before": 21,
+                    "after": 22
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 22
+                    },
+                    "column": "qty",
+                    "before": 22,
+                    "after": 23
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 23
+                    },
+                    "column": "qty",
+                    "before": 23,
+                    "after": 24
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 24
+                    },
+                    "column": "qty",
+                    "before": 24,
+                    "after": 25
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 25
+                    },
+                    "column": "qty",
+                    "before": 25,
+                    "after": 26
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 26
+                    },
+                    "column": "qty",
+                    "before": 26,
+                    "after": 27
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 27
+                    },
+                    "column": "qty",
+                    "before": 27,
+                    "after": 28
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 28
+                    },
+                    "column": "qty",
+                    "before": 28,
+                    "after": 29
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 29
+                    },
+                    "column": "qty",
+                    "before": 29,
+                    "after": 30
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 30
+                    },
+                    "column": "qty",
+                    "before": 30,
+                    "after": 31
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 31
+                    },
+                    "column": "qty",
+                    "before": 31,
+                    "after": 32
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 32
+                    },
+                    "column": "qty",
+                    "before": 32,
+                    "after": 33
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 33
+                    },
+                    "column": "qty",
+                    "before": 33,
+                    "after": 34
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 34
+                    },
+                    "column": "qty",
+                    "before": 34,
+                    "after": 35
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 35
+                    },
+                    "column": "qty",
+                    "before": 35,
+                    "after": 36
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 36
+                    },
+                    "column": "qty",
+                    "before": 36,
+                    "after": 37
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 37
+                    },
+                    "column": "qty",
+                    "before": 37,
+                    "after": 38
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 38
+                    },
+                    "column": "qty",
+                    "before": 38,
+                    "after": 39
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 39
+                    },
+                    "column": "qty",
+                    "before": 39,
+                    "after": 40
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 40
+                    },
+                    "column": "qty",
+                    "before": 40,
+                    "after": 41
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 41
+                    },
+                    "column": "qty",
+                    "before": 41,
+                    "after": 42
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 42
+                    },
+                    "column": "qty",
+                    "before": 42,
+                    "after": 43
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 43
+                    },
+                    "column": "qty",
+                    "before": 43,
+                    "after": 44
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 44
+                    },
+                    "column": "qty",
+                    "before": 44,
+                    "after": 45
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 45
+                    },
+                    "column": "qty",
+                    "before": 45,
+                    "after": 46
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 46
+                    },
+                    "column": "qty",
+                    "before": 46,
+                    "after": 47
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 47
+                    },
+                    "column": "qty",
+                    "before": 47,
+                    "after": 48
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 48
+                    },
+                    "column": "qty",
+                    "before": 48,
+                    "after": 49
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 49
+                    },
+                    "column": "qty",
+                    "before": 49,
+                    "after": 50
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 50
+                    },
+                    "column": "qty",
+                    "before": 50,
+                    "after": 51
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 51
+                    },
+                    "column": "qty",
+                    "before": 51,
+                    "after": 52
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 52
+                    },
+                    "column": "qty",
+                    "before": 52,
+                    "after": 53
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 53
+                    },
+                    "column": "qty",
+                    "before": 53,
+                    "after": 54
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 54
+                    },
+                    "column": "qty",
+                    "before": 54,
+                    "after": 55
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 55
+                    },
+                    "column": "qty",
+                    "before": 55,
+                    "after": 56
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 56
+                    },
+                    "column": "qty",
+                    "before": 56,
+                    "after": 57
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 57
+                    },
+                    "column": "qty",
+                    "before": 57,
+                    "after": 58
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 58
+                    },
+                    "column": "qty",
+                    "before": 58,
+                    "after": 59
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 59
+                    },
+                    "column": "qty",
+                    "before": 59,
+                    "after": 60
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 60
+                    },
+                    "column": "qty",
+                    "before": 60,
+                    "after": 61
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 61
+                    },
+                    "column": "qty",
+                    "before": 61,
+                    "after": 62
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 62
+                    },
+                    "column": "qty",
+                    "before": 62,
+                    "after": 63
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 63
+                    },
+                    "column": "qty",
+                    "before": 63,
+                    "after": 64
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 64
+                    },
+                    "column": "qty",
+                    "before": 64,
+                    "after": 65
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 65
+                    },
+                    "column": "qty",
+                    "before": 65,
+                    "after": 66
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 66
+                    },
+                    "column": "qty",
+                    "before": 66,
+                    "after": 67
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 67
+                    },
+                    "column": "qty",
+                    "before": 67,
+                    "after": 68
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 68
+                    },
+                    "column": "qty",
+                    "before": 68,
+                    "after": 69
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 69
+                    },
+                    "column": "qty",
+                    "before": 69,
+                    "after": 70
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 70
+                    },
+                    "column": "qty",
+                    "before": 70,
+                    "after": 71
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 71
+                    },
+                    "column": "qty",
+                    "before": 71,
+                    "after": 72
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 72
+                    },
+                    "column": "qty",
+                    "before": 72,
+                    "after": 73
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 73
+                    },
+                    "column": "qty",
+                    "before": 73,
+                    "after": 74
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 74
+                    },
+                    "column": "qty",
+                    "before": 74,
+                    "after": 75
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 75
+                    },
+                    "column": "qty",
+                    "before": 75,
+                    "after": 76
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 76
+                    },
+                    "column": "qty",
+                    "before": 76,
+                    "after": 77
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 77
+                    },
+                    "column": "qty",
+                    "before": 77,
+                    "after": 78
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 78
+                    },
+                    "column": "qty",
+                    "before": 78,
+                    "after": 79
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 79
+                    },
+                    "column": "qty",
+                    "before": 79,
+                    "after": 80
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 80
+                    },
+                    "column": "qty",
+                    "before": 80,
+                    "after": 81
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 81
+                    },
+                    "column": "qty",
+                    "before": 81,
+                    "after": 82
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 82
+                    },
+                    "column": "qty",
+                    "before": 82,
+                    "after": 83
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 83
+                    },
+                    "column": "qty",
+                    "before": 83,
+                    "after": 84
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 84
+                    },
+                    "column": "qty",
+                    "before": 84,
+                    "after": 85
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 85
+                    },
+                    "column": "qty",
+                    "before": 85,
+                    "after": 86
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 86
+                    },
+                    "column": "qty",
+                    "before": 86,
+                    "after": 87
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 87
+                    },
+                    "column": "qty",
+                    "before": 87,
+                    "after": 88
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 88
+                    },
+                    "column": "qty",
+                    "before": 88,
+                    "after": 89
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 89
+                    },
+                    "column": "qty",
+                    "before": 89,
+                    "after": 90
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 90
+                    },
+                    "column": "qty",
+                    "before": 90,
+                    "after": 91
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 91
+                    },
+                    "column": "qty",
+                    "before": 91,
+                    "after": 92
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 92
+                    },
+                    "column": "qty",
+                    "before": 92,
+                    "after": 93
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 93
+                    },
+                    "column": "qty",
+                    "before": 93,
+                    "after": 94
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 94
+                    },
+                    "column": "qty",
+                    "before": 94,
+                    "after": 95
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 95
+                    },
+                    "column": "qty",
+                    "before": 95,
+                    "after": 96
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 96
+                    },
+                    "column": "qty",
+                    "before": 96,
+                    "after": 97
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 97
+                    },
+                    "column": "qty",
+                    "before": 97,
+                    "after": 98
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 98
+                    },
+                    "column": "qty",
+                    "before": 98,
+                    "after": 99
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 99
+                    },
+                    "column": "qty",
+                    "before": 99,
+                    "after": 100
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 3
+                    },
+                    "column": "region",
+                    "before": "",
+                    "after": "Kyoto"
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      }
+    },
+    {
+      "id": "history.clear",
+      "section": "7.4",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 0
+                    },
+                    "column": "qty",
+                    "before": 3,
+                    "after": 4
+                  }
+                ]
+              }
+            ],
+            "redo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 1
+                    },
+                    "column": "qty",
+                    "before": 1,
+                    "after": 2
+                  },
+                  {
+                    "key": {
+                      "rowId": 2
+                    },
+                    "column": "qty",
+                    "before": null,
+                    "after": 2
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "history.clear"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2
+        }
+      }
+    },
+    {
+      "id": "history.push-syntax",
+      "section": "6.7",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "history.push",
+          "updates": [
+            {
+              "key": {
+                "rowId": 0
+              },
+              "column": "qty",
+              "before": 3
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/updates/0/after"
+        }
+      }
+    },
+    {
+      "id": "history.push-value-syntax",
+      "section": "6.7",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "history.push",
+          "updates": [
+            {
+              "key": {
+                "rowId": 0
+              },
+              "column": "qty",
+              "before": [
+                3
+              ],
+              "after": 4
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/updates/0/before"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,1220 @@
+{
+  "$schema": "../../schema/commands.schema.json",
+  "description": "When the view or the revision changes (§5.4): view.update (§6.7).",
+  "contexts": {
+    "orders": {
+      "table": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "qty",
+          "type": "integer"
+        },
+        {
+          "name": "price",
+          "type": "decimal",
+          "precision": 10,
+          "scale": 2
+        },
+        {
+          "name": "shipped",
+          "type": "date"
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "readOnly": true
+        }
+      ],
+      "revision": "r1",
+      "view": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "region",
+            "type": "string"
+          },
+          {
+            "name": "qty",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "precision": 10,
+            "scale": 2
+          },
+          {
+            "name": "shipped",
+            "type": "date"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "readOnly": true
+          }
+        ],
+        "rowCount": 6,
+        "rowIds": true
+      },
+      "rows": [
+        {
+          "start": 0,
+          "keys": [
+            {
+              "rowId": 0
+            },
+            {
+              "rowId": 1
+            },
+            {
+              "rowId": 2
+            },
+            {
+              "rowId": 3
+            },
+            {
+              "rowId": 4
+            },
+            {
+              "rowId": 5
+            }
+          ],
+          "values": [
+            [
+              1,
+              "Tokyo",
+              3,
+              "12.50",
+              "2024-01-31",
+              "a"
+            ],
+            [
+              2,
+              "Osaka",
+              1,
+              "8.00",
+              "2024-02-01",
+              null
+            ],
+            [
+              3,
+              "Tokyo",
+              null,
+              null,
+              null,
+              "c"
+            ],
+            [
+              4,
+              "",
+              5,
+              "100.00",
+              "2024-03-15",
+              ""
+            ],
+            [
+              5,
+              "Nagoya",
+              2,
+              "3.25",
+              "2024-04-01",
+              "e"
+            ],
+            [
+              6,
+              "Osaka",
+              7,
+              "0.10",
+              "2024-05-20",
+              "f"
+            ]
+          ]
+        }
+      ],
+      "page": 3
+    },
+    "orders-unloaded": {
+      "extends": "orders",
+      "rows": []
+    },
+    "orders-big": {
+      "extends": "orders",
+      "view": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "region",
+            "type": "string"
+          },
+          {
+            "name": "qty",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "precision": 10,
+            "scale": 2
+          },
+          {
+            "name": "shipped",
+            "type": "date"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "readOnly": true
+          }
+        ],
+        "rowCount": 1000,
+        "rowIds": true
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "view.first",
+      "section": "5.4",
+      "description": "A session without view and revision takes them.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "view.update",
+          "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "revision": "r1",
+          "view": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      }
+    },
+    {
+      "id": "view.same-view-fits",
+      "section": "5.4",
+      "description": "Positions are clamped to the rows and ranges lose the columns that are not displayed.",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "revision": "r1",
+          "active": {
+            "row": 9,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                8,
+                10
+              ],
+              "columns": [
+                "price",
+                "gone"
+              ]
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "view.update",
+          "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "revision": "r1",
+          "active": {
+            "row": 5,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                5,
+                6
+              ],
+              "columns": [
+                "price"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "view.hash-changes",
+      "section": "5.4",
+      "description": "The active row follows its key; the selection, anchor and focus become the active cell, and the editor closes.",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "revision": "r1",
+          "active": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 3,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                4
+              ],
+              "columns": [
+                "region",
+                "qty",
+                "price"
+              ]
+            }
+          ],
+          "scroll": {
+            "row": 0,
+            "column": "id"
+          },
+          "checked": {
+            "mode": "include",
+            "keys": [
+              {
+                "rowId": 1
+              },
+              {
+                "value": 7
+              }
+            ]
+          },
+          "detail": {
+            "open": true
+          },
+          "editor": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            },
+            "text": "9",
+            "value": null
+          },
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 2
+                    },
+                    "column": "qty",
+                    "before": null,
+                    "after": 1
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "view.update",
+          "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "located": [
+            {
+              "key": {
+                "rowId": 2
+              },
+              "row": 4
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "revision": "r1",
+          "active": {
+            "row": 4,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "scroll": {
+            "row": 4,
+            "column": "id"
+          },
+          "checked": {
+            "mode": "include",
+            "keys": [
+              {
+                "rowId": 1
+              },
+              {
+                "value": 7
+              }
+            ]
+          },
+          "detail": {
+            "open": true
+          },
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 2
+                    },
+                    "column": "qty",
+                    "before": null,
+                    "after": 1
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      }
+    },
+    {
+      "id": "view.key-not-in-view",
+      "section": "5.4",
+      "description": "The active cell goes to row 0, with the key of row 0 when it is loaded.",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "revision": "r1",
+          "active": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 3,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                4
+              ],
+              "columns": [
+                "region",
+                "qty",
+                "price"
+              ]
+            }
+          ],
+          "scroll": {
+            "row": 0,
+            "column": "id"
+          },
+          "checked": {
+            "mode": "include",
+            "keys": [
+              {
+                "rowId": 1
+              },
+              {
+                "value": 7
+              }
+            ]
+          },
+          "detail": {
+            "open": true
+          },
+          "editor": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            },
+            "text": "9",
+            "value": null
+          },
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 2
+                    },
+                    "column": "qty",
+                    "before": null,
+                    "after": 1
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "view.update",
+          "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "located": [
+            {
+              "key": {
+                "rowId": 2
+              },
+              "row": null
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "revision": "r1",
+          "active": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "scroll": {
+            "row": 0,
+            "column": "id"
+          },
+          "checked": {
+            "mode": "include",
+            "keys": [
+              {
+                "rowId": 1
+              },
+              {
+                "value": 7
+              }
+            ]
+          },
+          "detail": {
+            "open": true
+          },
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 2
+                    },
+                    "column": "qty",
+                    "before": null,
+                    "after": 1
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      }
+    },
+    {
+      "id": "view.no-key",
+      "section": "5.4",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "revision": "r1",
+          "active": {
+            "row": 3,
+            "column": "qty"
+          }
+        }
+      },
+      "context": "orders-unloaded",
+      "commands": [
+        {
+          "command": "view.update",
+          "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "located": []
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "revision": "r1",
+          "active": {
+            "row": 0,
+            "column": "qty"
+          },
+          "scroll": {
+            "row": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "view.same-row",
+      "section": "5.4",
+      "description": "scroll changes only when the active row moved.",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "revision": "r1",
+          "active": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                3
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "view.update",
+          "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "located": [
+            {
+              "key": {
+                "rowId": 0
+              },
+              "row": 0
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "revision": "r1",
+          "active": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "rowId": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "view.revision-changes",
+      "section": "5.4",
+      "description": "Row-ID keys name other records: they go from checked and active, the history empties and the editor closes.",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "revision": "r1",
+          "active": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 3,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                4
+              ],
+              "columns": [
+                "region",
+                "qty",
+                "price"
+              ]
+            }
+          ],
+          "scroll": {
+            "row": 0,
+            "column": "id"
+          },
+          "checked": {
+            "mode": "include",
+            "keys": [
+              {
+                "rowId": 1
+              },
+              {
+                "value": 7
+              }
+            ]
+          },
+          "detail": {
+            "open": true
+          },
+          "editor": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            },
+            "text": "9",
+            "value": null
+          },
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 2
+                    },
+                    "column": "qty",
+                    "before": null,
+                    "after": 1
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      },
+      "context": {
+        "extends": "orders",
+        "revision": "r2"
+      },
+      "commands": [
+        {
+          "command": "view.update",
+          "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "revision": "r2",
+          "active": {
+            "row": 2,
+            "column": "qty"
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 3,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                4
+              ],
+              "columns": [
+                "region",
+                "qty",
+                "price"
+              ]
+            }
+          ],
+          "scroll": {
+            "row": 0,
+            "column": "id"
+          },
+          "checked": {
+            "mode": "include",
+            "keys": [
+              {
+                "value": 7
+              }
+            ]
+          },
+          "detail": {
+            "open": true
+          }
+        }
+      }
+    },
+    {
+      "id": "view.revision-and-hash",
+      "section": "5.4",
+      "description": "Without its row-ID key, the active cell goes to row 0.",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "revision": "r1",
+          "active": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 3,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                4
+              ],
+              "columns": [
+                "region",
+                "qty",
+                "price"
+              ]
+            }
+          ],
+          "scroll": {
+            "row": 0,
+            "column": "id"
+          },
+          "checked": {
+            "mode": "include",
+            "keys": [
+              {
+                "rowId": 1
+              },
+              {
+                "value": 7
+              }
+            ]
+          },
+          "detail": {
+            "open": true
+          },
+          "editor": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            },
+            "text": "9",
+            "value": null
+          },
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 2
+                    },
+                    "column": "qty",
+                    "before": null,
+                    "after": 1
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      },
+      "context": {
+        "extends": "orders",
+        "revision": "r2"
+      },
+      "commands": [
+        {
+          "command": "view.update",
+          "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "located": [
+            {
+              "key": {
+                "rowId": 2
+              },
+              "row": 4
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "revision": "r2",
+          "active": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "scroll": {
+            "row": 0,
+            "column": "id"
+          },
+          "checked": {
+            "mode": "include",
+            "keys": [
+              {
+                "value": 7
+              }
+            ]
+          },
+          "detail": {
+            "open": true
+          }
+        }
+      }
+    },
+    {
+      "id": "view.unknown-revision-kept",
+      "section": "5.4",
+      "description": "An unknown revision is not a change.",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "active": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 2
+                    },
+                    "column": "qty",
+                    "before": null,
+                    "after": 1
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      },
+      "context": {
+        "extends": "orders",
+        "revision": "r2"
+      },
+      "commands": [
+        {
+          "command": "view.update",
+          "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "revision": "r2",
+          "active": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "history": {
+            "undo": [
+              {
+                "updates": [
+                  {
+                    "key": {
+                      "rowId": 2
+                    },
+                    "column": "qty",
+                    "before": null,
+                    "after": 1
+                  }
+                ]
+              }
+            ],
+            "redo": []
+          }
+        }
+      }
+    },
+    {
+      "id": "view.fits-columns",
+      "section": "5.4",
+      "description": "Cells, ranges, scroll and editor in a column that is not displayed are fitted.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "qty",
+              "hidden": true
+            }
+          ]
+        },
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "revision": "r1",
+          "active": {
+            "row": 1,
+            "column": "qty"
+          },
+          "anchor": {
+            "row": 1,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 2,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                2
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ],
+          "scroll": {
+            "row": 1,
+            "column": "qty"
+          },
+          "editor": {
+            "row": 1,
+            "column": "qty",
+            "key": {
+              "rowId": 1
+            },
+            "text": "1",
+            "value": 1
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "view.update",
+          "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "revision": "r1",
+          "active": {
+            "row": 1,
+            "column": "id"
+          },
+          "focus": {
+            "row": 2,
+            "column": "price"
+          },
+          "scroll": {
+            "row": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "view.checked-stays",
+      "section": "5.4",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "revision": "r1",
+          "checked": {
+            "mode": "exclude",
+            "keys": [
+              {
+                "rowId": 3
+              }
+            ],
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "view.update",
+          "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "located": []
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "view": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "revision": "r1",
+          "checked": {
+            "mode": "exclude",
+            "keys": [
+              {
+                "rowId": 3
+              }
+            ],
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "view.hash-syntax",
+      "section": "6.7",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "view.update",
+          "hash": "abc"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/hash"
+        }
+      }
+    },
+    {
+      "id": "view.located-syntax",
+      "section": "6.7",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "view.update",
+          "hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "located": [
+            {
+              "key": {
+                "rowId": 1
+              },
+              "row": -1
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/located/0/row"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,889 @@
+{
+  "$schema": "../../schema/commands.schema.json",
+  "description": "Copying, exporting and saving (§6.6), and text forms (§2.4).",
+  "contexts": {
+    "orders": {
+      "table": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "qty",
+          "type": "integer"
+        },
+        {
+          "name": "price",
+          "type": "decimal",
+          "precision": 10,
+          "scale": 2
+        },
+        {
+          "name": "shipped",
+          "type": "date"
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "readOnly": true
+        }
+      ],
+      "revision": "r1",
+      "view": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "region",
+            "type": "string"
+          },
+          {
+            "name": "qty",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "precision": 10,
+            "scale": 2
+          },
+          {
+            "name": "shipped",
+            "type": "date"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "readOnly": true
+          }
+        ],
+        "rowCount": 6,
+        "rowIds": true
+      },
+      "rows": [
+        {
+          "start": 0,
+          "keys": [
+            {
+              "rowId": 0
+            },
+            {
+              "rowId": 1
+            },
+            {
+              "rowId": 2
+            },
+            {
+              "rowId": 3
+            },
+            {
+              "rowId": 4
+            },
+            {
+              "rowId": 5
+            }
+          ],
+          "values": [
+            [
+              1,
+              "Tokyo",
+              3,
+              "12.50",
+              "2024-01-31",
+              "a"
+            ],
+            [
+              2,
+              "Osaka",
+              1,
+              "8.00",
+              "2024-02-01",
+              null
+            ],
+            [
+              3,
+              "Tokyo",
+              null,
+              null,
+              null,
+              "c"
+            ],
+            [
+              4,
+              "",
+              5,
+              "100.00",
+              "2024-03-15",
+              ""
+            ],
+            [
+              5,
+              "Nagoya",
+              2,
+              "3.25",
+              "2024-04-01",
+              "e"
+            ],
+            [
+              6,
+              "Osaka",
+              7,
+              "0.10",
+              "2024-05-20",
+              "f"
+            ]
+          ]
+        }
+      ],
+      "page": 3
+    },
+    "orders-unloaded": {
+      "extends": "orders",
+      "rows": []
+    },
+    "orders-big": {
+      "extends": "orders",
+      "view": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "region",
+            "type": "string"
+          },
+          {
+            "name": "qty",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "precision": 10,
+            "scale": 2
+          },
+          {
+            "name": "shipped",
+            "type": "date"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "readOnly": true
+          }
+        ],
+        "rowCount": 1000,
+        "rowIds": true
+      }
+    },
+    "texts": {
+      "table": [
+        {
+          "name": "s",
+          "type": "string"
+        }
+      ],
+      "revision": "r1",
+      "view": {
+        "columns": [
+          {
+            "name": "s",
+            "type": "string"
+          }
+        ],
+        "rowCount": 5,
+        "rowIds": true
+      },
+      "rows": [
+        {
+          "start": 0,
+          "keys": [
+            {
+              "rowId": 0
+            },
+            {
+              "rowId": 1
+            },
+            {
+              "rowId": 2
+            },
+            {
+              "rowId": 3
+            },
+            {
+              "rowId": 4
+            }
+          ],
+          "values": [
+            [
+              "a\tb"
+            ],
+            [
+              "say \"hi\""
+            ],
+            [
+              "line1\nline2"
+            ],
+            [
+              null
+            ],
+            [
+              "x|y & <z>"
+            ]
+          ]
+        }
+      ],
+      "page": 3
+    },
+    "floats": {
+      "table": [
+        {
+          "name": "f",
+          "type": "float"
+        },
+        {
+          "name": "f32",
+          "type": "float",
+          "bits": 32
+        }
+      ],
+      "revision": "r1",
+      "view": {
+        "columns": [
+          {
+            "name": "f",
+            "type": "float"
+          },
+          {
+            "name": "f32",
+            "type": "float",
+            "bits": 32
+          }
+        ],
+        "rowCount": 5,
+        "rowIds": true
+      },
+      "rows": [
+        {
+          "start": 0,
+          "keys": [
+            {
+              "rowId": 0
+            },
+            {
+              "rowId": 1
+            },
+            {
+              "rowId": 2
+            },
+            {
+              "rowId": 3
+            },
+            {
+              "rowId": 4
+            }
+          ],
+          "values": [
+            [
+              0.1,
+              0.10000000149011612
+            ],
+            [
+              "NaN",
+              16777216
+            ],
+            [
+              1e+20,
+              1
+            ],
+            [
+              1,
+              "Infinity"
+            ],
+            [
+              1e-05,
+              "-Infinity"
+            ]
+          ]
+        }
+      ],
+      "page": 3
+    }
+  },
+  "cases": [
+    {
+      "id": "copy.cells",
+      "section": "6.6",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "region"
+        },
+        {
+          "command": "select",
+          "row": 1,
+          "column": "qty",
+          "mode": "extend"
+        },
+        {
+          "command": "copy"
+        }
+      ],
+      "expect": {
+        "output": {
+          "tsv": "Tokyo\t3\nOsaka\t1",
+          "html": "<meta charset=\"utf-8\"><table><tr><td>Tokyo</td><td>3</td></tr><tr><td>Osaka</td><td>1</td></tr></table>",
+          "markdown": "|  |  |\n| --- | --- |\n| Tokyo | 3 |\n| Osaka | 1 |"
+        },
+        "requests": []
+      }
+    },
+    {
+      "id": "copy.headers",
+      "section": "6.6",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "region"
+        },
+        {
+          "command": "select",
+          "row": 1,
+          "column": "qty",
+          "mode": "extend"
+        },
+        {
+          "command": "copy",
+          "headers": true
+        }
+      ],
+      "expect": {
+        "output": {
+          "tsv": "region\tqty\nTokyo\t3\nOsaka\t1",
+          "html": "<meta charset=\"utf-8\"><table><tr><th>region</th><th>qty</th></tr><tr><td>Tokyo</td><td>3</td></tr><tr><td>Osaka</td><td>1</td></tr></table>",
+          "markdown": "| region | qty |\n| --- | --- |\n| Tokyo | 3 |\n| Osaka | 1 |"
+        }
+      }
+    },
+    {
+      "id": "copy.text-forms",
+      "section": "2.4",
+      "description": "Values are copied as their text forms, and null as the empty string.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "id"
+        },
+        {
+          "command": "select",
+          "row": 2,
+          "column": "note",
+          "mode": "extend"
+        },
+        {
+          "command": "copy"
+        }
+      ],
+      "expect": {
+        "output": {
+          "tsv": "1\tTokyo\t3\t12.50\t2024-01-31\ta\n2\tOsaka\t1\t8.00\t2024-02-01\t\n3\tTokyo\t\t\t\tc",
+          "html": "<meta charset=\"utf-8\"><table><tr><td>1</td><td>Tokyo</td><td>3</td><td>12.50</td><td>2024-01-31</td><td>a</td></tr><tr><td>2</td><td>Osaka</td><td>1</td><td>8.00</td><td>2024-02-01</td><td></td></tr><tr><td>3</td><td>Tokyo</td><td></td><td></td><td></td><td>c</td></tr></table>",
+          "markdown": "|  |  |  |  |  |  |\n| --- | --- | --- | --- | --- | --- |\n| 1 | Tokyo | 3 | 12.50 | 2024-01-31 | a |\n| 2 | Osaka | 1 | 8.00 | 2024-02-01 |  |\n| 3 | Tokyo |  |  |  | c |"
+        }
+      }
+    },
+    {
+      "id": "copy.escapes",
+      "section": "6.6",
+      "state": {},
+      "context": "texts",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "s"
+        },
+        {
+          "command": "select",
+          "row": 4,
+          "column": "s",
+          "mode": "extend"
+        },
+        {
+          "command": "copy"
+        }
+      ],
+      "expect": {
+        "output": {
+          "tsv": "\"a\tb\"\n\"say \"\"hi\"\"\"\n\"line1\nline2\"\n\nx|y & <z>",
+          "html": "<meta charset=\"utf-8\"><table><tr><td>a\tb</td></tr><tr><td>say &quot;hi&quot;</td></tr><tr><td>line1<br>line2</td></tr><tr><td></td></tr><tr><td>x|y &amp; &lt;z&gt;</td></tr></table>",
+          "markdown": "|  |\n| --- |\n| a\tb |\n| say \"hi\" |\n| line1<br>line2 |\n|  |\n| x\\|y & <z> |"
+        }
+      }
+    },
+    {
+      "id": "copy.floats",
+      "section": "2.4.1",
+      "description": "Floats are copied as their text form (§2.4.1), 32-bit floats with their own shortest digits.",
+      "state": {},
+      "context": "floats",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "f"
+        },
+        {
+          "command": "select",
+          "row": 4,
+          "column": "f32",
+          "mode": "extend"
+        },
+        {
+          "command": "copy"
+        }
+      ],
+      "expect": {
+        "output": {
+          "tsv": "0.1\t0.1\nnan\t16777216.0\n1e+20\t1.0\n1.0\tinf\n1e-05\t-inf",
+          "html": "<meta charset=\"utf-8\"><table><tr><td>0.1</td><td>0.1</td></tr><tr><td>nan</td><td>16777216.0</td></tr><tr><td>1e+20</td><td>1.0</td></tr><tr><td>1.0</td><td>inf</td></tr><tr><td>1e-05</td><td>-inf</td></tr></table>",
+          "markdown": "|  |  |\n| --- | --- |\n| 0.1 | 0.1 |\n| nan | 16777216.0 |\n| 1e+20 | 1.0 |\n| 1.0 | inf |\n| 1e-05 | -inf |"
+        }
+      }
+    },
+    {
+      "id": "copy.side-by-side",
+      "section": "6.6",
+      "description": "Ranges with the same rows go side by side, without the columns between them.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "id"
+        },
+        {
+          "command": "select",
+          "row": 1,
+          "column": "id",
+          "mode": "extend"
+        },
+        {
+          "command": "select",
+          "row": 0,
+          "column": "price",
+          "mode": "add"
+        },
+        {
+          "command": "select",
+          "row": 1,
+          "column": "price",
+          "mode": "extend"
+        },
+        {
+          "command": "copy"
+        }
+      ],
+      "expect": {
+        "output": {
+          "tsv": "1\t12.50\n2\t8.00",
+          "html": "<meta charset=\"utf-8\"><table><tr><td>1</td><td>12.50</td></tr><tr><td>2</td><td>8.00</td></tr></table>",
+          "markdown": "|  |  |\n| --- | --- |\n| 1 | 12.50 |\n| 2 | 8.00 |"
+        }
+      }
+    },
+    {
+      "id": "copy.one-below",
+      "section": "6.6",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "region"
+        },
+        {
+          "command": "select",
+          "row": 3,
+          "column": "region",
+          "mode": "add"
+        },
+        {
+          "command": "copy"
+        }
+      ],
+      "expect": {
+        "output": {
+          "tsv": "Tokyo\n",
+          "html": "<meta charset=\"utf-8\"><table><tr><td>Tokyo</td></tr><tr><td></td></tr></table>",
+          "markdown": "|  |\n| --- |\n| Tokyo |\n|  |"
+        }
+      }
+    },
+    {
+      "id": "copy.overlap",
+      "section": "6.6",
+      "description": "Overlapping cells are copied once.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "qty"
+        },
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty",
+          "mode": "extend"
+        },
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty",
+          "mode": "add"
+        },
+        {
+          "command": "select",
+          "row": 4,
+          "column": "qty",
+          "mode": "extend"
+        },
+        {
+          "command": "copy"
+        }
+      ],
+      "expect": {
+        "output": {
+          "tsv": "3\n1\n\n5\n2",
+          "html": "<meta charset=\"utf-8\"><table><tr><td>3</td></tr><tr><td>1</td></tr><tr><td></td></tr><tr><td>5</td></tr><tr><td>2</td></tr></table>",
+          "markdown": "|  |\n| --- |\n| 3 |\n| 1 |\n|  |\n| 5 |\n| 2 |"
+        }
+      }
+    },
+    {
+      "id": "copy.whole-rows",
+      "section": "6.6",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select.rows",
+          "from": 1,
+          "to": 1
+        },
+        {
+          "command": "copy"
+        }
+      ],
+      "expect": {
+        "output": {
+          "tsv": "2\tOsaka\t1\t8.00\t2024-02-01\t",
+          "html": "<meta charset=\"utf-8\"><table><tr><td>2</td><td>Osaka</td><td>1</td><td>8.00</td><td>2024-02-01</td><td></td></tr></table>",
+          "markdown": "|  |  |  |  |  |  |\n| --- | --- | --- | --- | --- | --- |\n| 2 | Osaka | 1 | 8.00 | 2024-02-01 |  |"
+        }
+      }
+    },
+    {
+      "id": "copy.layout",
+      "section": "6.6",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "id"
+        },
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty",
+          "mode": "add"
+        },
+        {
+          "command": "copy"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "copy_layout",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "copy.formatted",
+      "section": "6.6",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "copy",
+          "values": "formatted"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unsupported",
+          "path": "/values"
+        }
+      }
+    },
+    {
+      "id": "copy.not-loaded",
+      "section": "6.6",
+      "state": {},
+      "context": "orders-big",
+      "commands": [
+        {
+          "command": "select.all"
+        },
+        {
+          "command": "copy"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "not_loaded",
+          "path": "",
+          "details": {
+            "rows": [
+              [
+                6,
+                1000
+              ]
+            ],
+            "columns": [
+              "id",
+              "region",
+              "qty",
+              "price",
+              "shipped",
+              "note"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "copy.export",
+      "section": "6.6",
+      "description": "The displayed columns in display order, with their labels as headers.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "sort": [
+              {
+                "column": "id",
+                "direction": "desc"
+              }
+            ]
+          },
+          "columns": [
+            {
+              "name": "price",
+              "format": {
+                "label": "Price"
+              }
+            },
+            {
+              "name": "note",
+              "hidden": true
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "export",
+          "format": "csv",
+          "target": "out.csv"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "export",
+            "revision": "r1",
+            "plan": {
+              "sort": [
+                {
+                  "column": "id",
+                  "direction": "desc"
+                }
+              ]
+            },
+            "format": "csv",
+            "target": "out.csv",
+            "columns": [
+              "price",
+              "id",
+              "region",
+              "qty",
+              "shipped"
+            ],
+            "headers": [
+              "Price",
+              "id",
+              "region",
+              "qty",
+              "shipped"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "copy.export-all",
+      "section": "6.6",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "price",
+              "format": {
+                "label": "Price"
+              }
+            },
+            {
+              "name": "note",
+              "hidden": true
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "export",
+          "format": "xlsx",
+          "columns": "all"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "export",
+            "revision": "r1",
+            "plan": {},
+            "format": "xlsx",
+            "columns": [
+              "price",
+              "id",
+              "region",
+              "qty",
+              "shipped",
+              "note"
+            ],
+            "headers": [
+              "Price",
+              "id",
+              "region",
+              "qty",
+              "shipped",
+              "note"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "copy.export-unsupported",
+      "section": "6.6",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "capabilities": {
+          "export": {
+            "formats": [
+              "csv"
+            ],
+            "delivery": "file"
+          }
+        }
+      },
+      "commands": [
+        {
+          "command": "export",
+          "format": "xlsx"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unsupported",
+          "path": "/format"
+        }
+      }
+    },
+    {
+      "id": "copy.save",
+      "section": "6.6",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "save"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "save"
+          }
+        ]
+      }
+    },
+    {
+      "id": "copy.save-unsupported",
+      "section": "6.6",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "capabilities": {
+          "write": true
+        }
+      },
+      "commands": [
+        {
+          "command": "save"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unsupported",
+          "path": ""
+        }
+      }
+    }
+  ]
+}

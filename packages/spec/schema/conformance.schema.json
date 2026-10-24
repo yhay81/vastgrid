@@ -7,31 +7,77 @@
   "additionalProperties": false,
   "required": ["tables", "cases"],
   "properties": {
-    "$schema": { "type": "string" },
-    "description": { "type": "string" },
-    "tables": { "type": "object", "additionalProperties": { "$ref": "#/$defs/table" } },
-    "cases": { "type": "array", "items": { "$ref": "#/$defs/case" } }
+    "$schema": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "tables": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/table"
+      }
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/case"
+      }
+    }
   },
   "$defs": {
-    "value": { "type": ["string", "number", "boolean", "null"] },
+    "value": {
+      "type": ["string", "number", "boolean", "null"]
+    },
     "column": {
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "type"],
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "type": { "$ref": "plan.schema.json#/$defs/type" },
-        "precision": { "type": "integer", "minimum": 1, "maximum": 38 },
-        "scale": { "type": "integer", "minimum": 0, "maximum": 38 },
-        "bits": { "enum": [32, 64] },
-        "unit": { "enum": ["s", "ms", "us", "ns"] },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "$ref": "plan.schema.json#/$defs/type"
+        },
+        "precision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 38
+        },
+        "scale": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 38
+        },
+        "bits": {
+          "enum": [32, 64]
+        },
+        "unit": {
+          "enum": ["s", "ms", "us", "ns"]
+        },
+        "sourceType": {
+          "type": "string"
+        },
+        "readOnly": {
+          "type": "boolean"
+        },
         "pivot": {
           "type": "object",
           "additionalProperties": false,
           "required": ["values", "measure"],
           "properties": {
-            "values": { "type": "array", "items": { "$ref": "#/$defs/value" } },
-            "measure": { "type": "string" }
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/value"
+              }
+            },
+            "measure": {
+              "type": "string"
+            }
           }
         }
       }
@@ -41,8 +87,22 @@
       "additionalProperties": false,
       "required": ["columns", "rows"],
       "properties": {
-        "columns": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/column" } },
-        "rows": { "type": "array", "items": { "type": "array", "items": { "$ref": "#/$defs/value" } } }
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/column"
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/value"
+            }
+          }
+        }
       }
     },
     "case": {
@@ -50,21 +110,51 @@
       "additionalProperties": false,
       "required": ["id", "section", "table", "plan", "expect"],
       "properties": {
-        "id": { "type": "string", "pattern": "^[a-z0-9]+(\\.[a-z0-9-]+)+$" },
-        "section": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)*$" },
-        "description": { "type": "string" },
-        "table": { "type": "string" },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(\\.[a-z0-9-]+)+$"
+        },
+        "section": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)*$"
+        },
+        "description": {
+          "type": "string"
+        },
+        "table": {
+          "type": "string"
+        },
         "plan": {},
         "read": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "start": { "type": "integer", "minimum": 0 },
-            "end": { "type": "integer", "minimum": 0 },
-            "columns": { "type": "array", "items": { "type": "string" } }
+            "start": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "end": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "columns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           }
         },
-        "expect": { "oneOf": [{ "$ref": "#/$defs/result" }, { "$ref": "#/$defs/failure" }] }
+        "expect": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/result"
+            },
+            {
+              "$ref": "#/$defs/failure"
+            }
+          ]
+        }
       }
     },
     "result": {
@@ -72,11 +162,36 @@
       "additionalProperties": false,
       "required": ["rowCount", "rows"],
       "properties": {
-        "columns": { "type": "array", "items": { "$ref": "#/$defs/column" } },
-        "rowCount": { "type": "integer", "minimum": 0 },
-        "rows": { "type": "array", "items": { "type": "array", "items": { "$ref": "#/$defs/value" } } },
-        "rowIds": { "type": ["array", "null"], "items": { "type": "integer", "minimum": 0 } },
-        "tolerance": { "type": "number", "exclusiveMinimum": 0 }
+        "columns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/column"
+          }
+        },
+        "rowCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/value"
+            }
+          }
+        },
+        "rowIds": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "tolerance": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
       }
     },
     "failure": {
@@ -89,9 +204,15 @@
           "additionalProperties": false,
           "required": ["code"],
           "properties": {
-            "code": { "type": "string" },
-            "reason": { "type": "string" },
-            "path": { "type": "string" }
+            "code": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
           }
         }
       }

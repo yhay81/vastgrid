@@ -1,0 +1,3607 @@
+{
+  "$schema": "../../schema/commands.schema.json",
+  "description": "Commands that change the plan (§6.2), its conditions and search (§6.2.1), and derived columns (§6.2.2).",
+  "contexts": {
+    "orders": {
+      "table": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "qty",
+          "type": "integer"
+        },
+        {
+          "name": "price",
+          "type": "decimal",
+          "precision": 10,
+          "scale": 2
+        },
+        {
+          "name": "shipped",
+          "type": "date"
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "readOnly": true
+        }
+      ],
+      "revision": "r1",
+      "view": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "region",
+            "type": "string"
+          },
+          {
+            "name": "qty",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "precision": 10,
+            "scale": 2
+          },
+          {
+            "name": "shipped",
+            "type": "date"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "readOnly": true
+          }
+        ],
+        "rowCount": 6,
+        "rowIds": true
+      },
+      "rows": [
+        {
+          "start": 0,
+          "keys": [
+            {
+              "rowId": 0
+            },
+            {
+              "rowId": 1
+            },
+            {
+              "rowId": 2
+            },
+            {
+              "rowId": 3
+            },
+            {
+              "rowId": 4
+            },
+            {
+              "rowId": 5
+            }
+          ],
+          "values": [
+            [
+              1,
+              "Tokyo",
+              3,
+              "12.50",
+              "2024-01-31",
+              "a"
+            ],
+            [
+              2,
+              "Osaka",
+              1,
+              "8.00",
+              "2024-02-01",
+              null
+            ],
+            [
+              3,
+              "Tokyo",
+              null,
+              null,
+              null,
+              "c"
+            ],
+            [
+              4,
+              "",
+              5,
+              "100.00",
+              "2024-03-15",
+              ""
+            ],
+            [
+              5,
+              "Nagoya",
+              2,
+              "3.25",
+              "2024-04-01",
+              "e"
+            ],
+            [
+              6,
+              "Osaka",
+              7,
+              "0.10",
+              "2024-05-20",
+              "f"
+            ]
+          ]
+        }
+      ],
+      "page": 3
+    },
+    "orders-unloaded": {
+      "extends": "orders",
+      "rows": []
+    },
+    "orders-big": {
+      "extends": "orders",
+      "view": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "region",
+            "type": "string"
+          },
+          {
+            "name": "qty",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "precision": 10,
+            "scale": 2
+          },
+          {
+            "name": "shipped",
+            "type": "date"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "readOnly": true
+          }
+        ],
+        "rowCount": 1000,
+        "rowIds": true
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "plan.sort-set",
+      "section": "6.2",
+      "description": "Plan commands give no requests and leave the session as it is.",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "qty",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 1,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                2
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "sort.set",
+          "keys": [
+            {
+              "column": "price",
+              "direction": "desc"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "sort": [
+              {
+                "column": "price",
+                "direction": "desc"
+              }
+            ]
+          }
+        },
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "qty",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 1,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                2
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ]
+        },
+        "requests": []
+      }
+    },
+    {
+      "id": "plan.sort-set-empty",
+      "section": "6.2",
+      "description": "Plan commands write plan even when it becomes {}.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "sort": [
+              {
+                "column": "price",
+                "direction": "asc"
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "sort.set",
+          "keys": []
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {}
+        }
+      }
+    },
+    {
+      "id": "plan.sort-set-invalid",
+      "section": "6.2",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "sort.set",
+          "keys": [
+            {
+              "column": "zzz",
+              "direction": "asc"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "invalid_plan",
+          "path": "",
+          "details": {
+            "path": "/sort/0/column",
+            "reason": "unknown_column"
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.sort-set-syntax",
+      "section": "6.2",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "sort.set",
+          "keys": "price"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/keys"
+        }
+      }
+    },
+    {
+      "id": "plan.sort-toggle-ascending",
+      "section": "6.2",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "sort.toggle",
+          "column": "price"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "sort": [
+              {
+                "column": "price",
+                "direction": "asc"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.sort-toggle-descending",
+      "section": "6.2",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "sort.toggle",
+          "column": "price"
+        },
+        {
+          "command": "sort.toggle",
+          "column": "price"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "sort": [
+              {
+                "column": "price",
+                "direction": "desc"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.sort-toggle-off",
+      "section": "6.2",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "sort.toggle",
+          "column": "price"
+        },
+        {
+          "command": "sort.toggle",
+          "column": "price"
+        },
+        {
+          "command": "sort.toggle",
+          "column": "price"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {}
+        }
+      }
+    },
+    {
+      "id": "plan.sort-toggle-replaces",
+      "section": "6.2",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "sort": [
+              {
+                "column": "region",
+                "direction": "asc"
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "sort.toggle",
+          "column": "price"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "sort": [
+              {
+                "column": "price",
+                "direction": "asc"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.sort-toggle-off-replaces",
+      "section": "6.2",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "sort": [
+              {
+                "column": "region",
+                "direction": "asc"
+              },
+              {
+                "column": "price",
+                "direction": "desc"
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "sort.toggle",
+          "column": "price"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {}
+        }
+      }
+    },
+    {
+      "id": "plan.sort-toggle-add",
+      "section": "6.2",
+      "description": "With add, an ascending key turns descending in its place.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "sort": [
+              {
+                "column": "region",
+                "direction": "asc"
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "sort.toggle",
+          "column": "price",
+          "add": true
+        },
+        {
+          "command": "sort.toggle",
+          "column": "price",
+          "add": true
+        },
+        {
+          "command": "sort.toggle",
+          "column": "region",
+          "add": true
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "sort": [
+              {
+                "column": "region",
+                "direction": "desc"
+              },
+              {
+                "column": "price",
+                "direction": "desc"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.sort-toggle-add-removes",
+      "section": "6.2",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "sort": [
+              {
+                "column": "region",
+                "direction": "desc"
+              },
+              {
+                "column": "price",
+                "direction": "asc"
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "sort.toggle",
+          "column": "region",
+          "add": true
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "sort": [
+              {
+                "column": "price",
+                "direction": "asc"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.sort-toggle-unknown",
+      "section": "6.2",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "sort.toggle",
+          "column": "zzz"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_column",
+          "path": "/column"
+        }
+      }
+    },
+    {
+      "id": "plan.sort-clear",
+      "section": "6.2",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            },
+            "sort": [
+              {
+                "column": "id",
+                "direction": "asc"
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "sort.clear"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.filter-set-keeps-search",
+      "section": "6.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "to"
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "filter.set",
+          "where": {
+            "fn": "eq",
+            "args": [
+              {
+                "col": "region"
+              },
+              {
+                "lit": "Tokyo"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "to"
+                },
+                {
+                  "fn": "eq",
+                  "args": [
+                    {
+                      "col": "region"
+                    },
+                    {
+                      "lit": "Tokyo"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.filter-set-null",
+      "section": "6.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "to"
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "filter.set",
+          "where": null
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "search": "to"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.filter-set-parts",
+      "section": "6.2.1",
+      "description": "The parts of the new where follow the search, in one and.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "search": "to"
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "filter.set",
+          "where": {
+            "fn": "and",
+            "args": [
+              {
+                "fn": "gt",
+                "args": [
+                  {
+                    "col": "qty"
+                  },
+                  {
+                    "lit": 1
+                  }
+                ]
+              },
+              {
+                "fn": "lt",
+                "args": [
+                  {
+                    "col": "qty"
+                  },
+                  {
+                    "lit": 9
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "to"
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                },
+                {
+                  "fn": "lt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 9
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.filter-set-one-part",
+      "section": "6.2.1",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "filter.set",
+          "where": {
+            "fn": "eq",
+            "args": [
+              {
+                "col": "region"
+              },
+              {
+                "lit": "Tokyo"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "eq",
+              "args": [
+                {
+                  "col": "region"
+                },
+                {
+                  "lit": "Tokyo"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.filter-set-no-search",
+      "section": "6.2.1",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "filter.set",
+          "where": {
+            "search": "x"
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/where"
+        }
+      }
+    },
+    {
+      "id": "plan.filter-set-invalid",
+      "section": "6.2",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "filter.set",
+          "where": {
+            "fn": "gt",
+            "args": [
+              {
+                "col": "region"
+              },
+              {
+                "lit": 1
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "invalid_plan",
+          "path": "",
+          "details": {
+            "path": "/where",
+            "reason": "type"
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.filter-column-in-place",
+      "section": "6.2.1",
+      "description": "The conditions of the column are replaced in the place of the first one.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "to"
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                },
+                {
+                  "fn": "eq",
+                  "args": [
+                    {
+                      "col": "region"
+                    },
+                    {
+                      "lit": "Tokyo"
+                    }
+                  ]
+                },
+                {
+                  "fn": "lt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 9
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "filter.column",
+          "column": "qty",
+          "where": {
+            "fn": "ge",
+            "args": [
+              {
+                "col": "qty"
+              },
+              {
+                "lit": 2
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "to"
+                },
+                {
+                  "fn": "ge",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 2
+                    }
+                  ]
+                },
+                {
+                  "fn": "eq",
+                  "args": [
+                    {
+                      "col": "region"
+                    },
+                    {
+                      "lit": "Tokyo"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.filter-column-appends",
+      "section": "6.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "eq",
+              "args": [
+                {
+                  "col": "region"
+                },
+                {
+                  "lit": "Tokyo"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "filter.column",
+          "column": "qty",
+          "where": {
+            "fn": "gt",
+            "args": [
+              {
+                "col": "qty"
+              },
+              {
+                "lit": 1
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "fn": "eq",
+                  "args": [
+                    {
+                      "col": "region"
+                    },
+                    {
+                      "lit": "Tokyo"
+                    }
+                  ]
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.filter-column-null",
+      "section": "6.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "fn": "eq",
+                  "args": [
+                    {
+                      "col": "region"
+                    },
+                    {
+                      "lit": "Tokyo"
+                    }
+                  ]
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "filter.column",
+          "column": "qty",
+          "where": null
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "eq",
+              "args": [
+                {
+                  "col": "region"
+                },
+                {
+                  "lit": "Tokyo"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.filter-column-keeps-others",
+      "section": "6.2.1",
+      "description": "A condition that also refers to another column is not a condition of the column.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "col": "id"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "filter.column",
+          "column": "qty",
+          "where": null
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "col": "id"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.filter-column-other-column",
+      "section": "6.2.1",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "filter.column",
+          "column": "qty",
+          "where": {
+            "fn": "eq",
+            "args": [
+              {
+                "col": "region"
+              },
+              {
+                "lit": "Tokyo"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/where"
+        }
+      }
+    },
+    {
+      "id": "plan.filter-column-derived",
+      "section": "6.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "total",
+                "expr": {
+                  "fn": "mul",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "col": "price"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "filter.column",
+          "column": "total",
+          "where": {
+            "fn": "gt",
+            "args": [
+              {
+                "col": "total"
+              },
+              {
+                "lit": "10",
+                "type": "decimal"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "total",
+                "expr": {
+                  "fn": "mul",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "col": "price"
+                    }
+                  ]
+                }
+              }
+            ],
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "total"
+                },
+                {
+                  "lit": "10",
+                  "type": "decimal"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.filter-column-unknown",
+      "section": "6.2",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "filter.column",
+          "column": "zzz",
+          "where": null
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_column",
+          "path": "/column"
+        }
+      }
+    },
+    {
+      "id": "plan.filter-clear",
+      "section": "6.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "to"
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                },
+                {
+                  "fn": "eq",
+                  "args": [
+                    {
+                      "col": "region"
+                    },
+                    {
+                      "lit": "Tokyo"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "filter.clear"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "search": "to"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.filter-clear-all",
+      "section": "6.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "filter.clear"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {}
+        }
+      }
+    },
+    {
+      "id": "plan.search-set",
+      "section": "6.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "search.set",
+          "text": "Tok"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "Tok"
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.search-set-replaces",
+      "section": "6.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "a"
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "search.set",
+          "text": "b"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "b"
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.search-set-keeps-text",
+      "section": "6.2",
+      "description": "The search keeps its text as it is given.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "search.set",
+          "text": " tok "
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "search": " tok "
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.search-set-spaces",
+      "section": "6.2",
+      "description": "A text that trim leaves empty removes the search.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "a"
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "search.set",
+          "text": "　 "
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.search-unsupported",
+      "section": "4.10",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "capabilities": {
+          "plan": {
+            "search": false
+          }
+        }
+      },
+      "commands": [
+        {
+          "command": "search.set",
+          "text": "x"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "invalid_plan",
+          "path": "",
+          "details": {
+            "path": "/where",
+            "reason": "unsupported"
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.derive-add",
+      "section": "6.2",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "derive.add",
+          "name": "total",
+          "expr": {
+            "fn": "mul",
+            "args": [
+              {
+                "col": "qty"
+              },
+              {
+                "col": "price"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "total",
+                "expr": {
+                  "fn": "mul",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "col": "price"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.derive-add-before",
+      "section": "6.2",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "a",
+                "expr": {
+                  "fn": "add",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "derive.add",
+          "name": "b",
+          "expr": {
+            "fn": "mul",
+            "args": [
+              {
+                "col": "qty"
+              },
+              {
+                "lit": 2
+              }
+            ]
+          },
+          "before": "a"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "b",
+                "expr": {
+                  "fn": "mul",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 2
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "a",
+                "expr": {
+                  "fn": "add",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.derive-add-duplicate",
+      "section": "6.2",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "derive.add",
+          "name": "qty",
+          "expr": {
+            "lit": 1
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "invalid_plan",
+          "path": "",
+          "details": {
+            "path": "/derive/0/name",
+            "reason": "duplicate_name"
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.derive-add-before-unknown",
+      "section": "6.2",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "derive.add",
+          "name": "b",
+          "expr": {
+            "lit": 1
+          },
+          "before": "zzz"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_column",
+          "path": "/before"
+        }
+      }
+    },
+    {
+      "id": "plan.derive-add-uses-later",
+      "section": "6.2",
+      "description": "A derived column sees only the derived columns before it.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "a",
+                "expr": {
+                  "fn": "add",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "derive.add",
+          "name": "b",
+          "expr": {
+            "fn": "mul",
+            "args": [
+              {
+                "col": "a"
+              },
+              {
+                "lit": 2
+              }
+            ]
+          },
+          "before": "a"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "invalid_plan",
+          "path": "",
+          "details": {
+            "path": "/derive/0/expr/args/0",
+            "reason": "unknown_column"
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.derive-update-expr",
+      "section": "6.2",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "a",
+                "expr": {
+                  "fn": "add",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "derive.update",
+          "name": "a",
+          "expr": {
+            "fn": "mul",
+            "args": [
+              {
+                "col": "qty"
+              },
+              {
+                "lit": 2
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "a",
+                "expr": {
+                  "fn": "mul",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 2
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.derive-update-unknown",
+      "section": "6.2",
+      "description": "Only derived columns are updated.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "derive.update",
+          "name": "qty",
+          "rename": "q"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_column",
+          "path": "/name"
+        }
+      }
+    },
+    {
+      "id": "plan.derive-rename",
+      "section": "6.2.2",
+      "description": "The new name goes to the plan, styles, the setting, the session's cells and checked.where.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "a",
+                "expr": {
+                  "fn": "add",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "b",
+                "expr": {
+                  "fn": "mul",
+                  "args": [
+                    {
+                      "col": "a"
+                    },
+                    {
+                      "lit": 2
+                    }
+                  ]
+                }
+              }
+            ],
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "a"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            },
+            "sort": [
+              {
+                "column": "a",
+                "direction": "asc"
+              }
+            ]
+          },
+          "columns": [
+            {
+              "name": "a",
+              "width": 80,
+              "format": {
+                "styles": [
+                  {
+                    "when": {
+                      "fn": "gt",
+                      "args": [
+                        {
+                          "col": "a"
+                        },
+                        {
+                          "lit": 5
+                        }
+                      ]
+                    },
+                    "color": "red"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "id"
+            }
+          ]
+        },
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "a"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                2
+              ],
+              "columns": [
+                "region",
+                "a"
+              ]
+            }
+          ],
+          "checked": {
+            "mode": "exclude",
+            "keys": [],
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "a"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "derive.update",
+          "name": "a",
+          "rename": "c"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "c",
+                "expr": {
+                  "fn": "add",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "b",
+                "expr": {
+                  "fn": "mul",
+                  "args": [
+                    {
+                      "col": "c"
+                    },
+                    {
+                      "lit": 2
+                    }
+                  ]
+                }
+              }
+            ],
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "c"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            },
+            "sort": [
+              {
+                "column": "c",
+                "direction": "asc"
+              }
+            ]
+          },
+          "columns": [
+            {
+              "name": "c",
+              "width": 80,
+              "format": {
+                "styles": [
+                  {
+                    "when": {
+                      "fn": "gt",
+                      "args": [
+                        {
+                          "col": "c"
+                        },
+                        {
+                          "lit": 5
+                        }
+                      ]
+                    },
+                    "color": "red"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "id"
+            }
+          ]
+        },
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "c"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                2
+              ],
+              "columns": [
+                "region",
+                "c"
+              ]
+            }
+          ],
+          "checked": {
+            "mode": "exclude",
+            "keys": [],
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "c"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.derive-rename-replaces-setting",
+      "section": "6.2.2",
+      "description": "The renamed setting replaces a setting of the new name.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "a",
+                "expr": {
+                  "fn": "add",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "columns": [
+            {
+              "name": "old",
+              "hidden": true
+            },
+            {
+              "name": "a",
+              "width": 80
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "derive.update",
+          "name": "a",
+          "rename": "old"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "old",
+                "expr": {
+                  "fn": "add",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "columns": [
+            {
+              "name": "old",
+              "width": 80
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "plan.derive-rename-measure-scope",
+      "section": "6.2.2",
+      "description": "In an aggregated view, d in sort and the setting names the measure d, which keeps its name.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "d",
+                "expr": {
+                  "fn": "mul",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 2
+                    }
+                  ]
+                }
+              }
+            ],
+            "aggregate": {
+              "keys": [
+                "region"
+              ],
+              "measures": [
+                {
+                  "name": "d",
+                  "fn": "sum",
+                  "column": "d"
+                }
+              ]
+            },
+            "sort": [
+              {
+                "column": "d",
+                "direction": "desc"
+              }
+            ]
+          },
+          "columns": [
+            {
+              "name": "d",
+              "width": 90
+            }
+          ]
+        }
+      },
+      "context": {
+        "extends": "orders",
+        "view": {
+          "columns": [
+            {
+              "name": "region",
+              "type": "string"
+            },
+            {
+              "name": "d",
+              "type": "decimal",
+              "precision": 38,
+              "scale": 0
+            }
+          ],
+          "rowCount": 3,
+          "rowIds": false
+        },
+        "rows": []
+      },
+      "commands": [
+        {
+          "command": "derive.update",
+          "name": "d",
+          "rename": "e"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "e",
+                "expr": {
+                  "fn": "mul",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 2
+                    }
+                  ]
+                }
+              }
+            ],
+            "aggregate": {
+              "keys": [
+                "region"
+              ],
+              "measures": [
+                {
+                  "name": "d",
+                  "fn": "sum",
+                  "column": "e"
+                }
+              ]
+            },
+            "sort": [
+              {
+                "column": "d",
+                "direction": "desc"
+              }
+            ]
+          },
+          "columns": [
+            {
+              "name": "d",
+              "width": 90
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "plan.derive-rename-key-scope",
+      "section": "6.2.2",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "d",
+                "expr": {
+                  "fn": "mul",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 2
+                    }
+                  ]
+                }
+              }
+            ],
+            "aggregate": {
+              "keys": [
+                "d"
+              ],
+              "measures": [
+                {
+                  "name": "n",
+                  "fn": "count"
+                }
+              ]
+            },
+            "having": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "d"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            },
+            "sort": [
+              {
+                "column": "d",
+                "direction": "asc"
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "derive.update",
+          "name": "d",
+          "rename": "e"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "e",
+                "expr": {
+                  "fn": "mul",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 2
+                    }
+                  ]
+                }
+              }
+            ],
+            "aggregate": {
+              "keys": [
+                "e"
+              ],
+              "measures": [
+                {
+                  "name": "n",
+                  "fn": "count"
+                }
+              ]
+            },
+            "having": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "e"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            },
+            "sort": [
+              {
+                "column": "e",
+                "direction": "asc"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.derive-rename-taken",
+      "section": "6.2.2",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "a",
+                "expr": {
+                  "fn": "add",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "derive.update",
+          "name": "a",
+          "rename": "qty"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "invalid_plan",
+          "path": "",
+          "details": {
+            "path": "/derive/0/name",
+            "reason": "duplicate_name"
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.derive-remove-cascade",
+      "section": "6.2.2",
+      "description": "b uses a, so both go, with the parts of where, the sort keys and the settings that use them.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "a",
+                "expr": {
+                  "fn": "add",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "b",
+                "expr": {
+                  "fn": "mul",
+                  "args": [
+                    {
+                      "col": "a"
+                    },
+                    {
+                      "lit": 2
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "c",
+                "expr": {
+                  "fn": "add",
+                  "args": [
+                    {
+                      "col": "price"
+                    },
+                    {
+                      "lit": "1",
+                      "type": "decimal"
+                    }
+                  ]
+                }
+              }
+            ],
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "x"
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "b"
+                    },
+                    {
+                      "lit": 3
+                    }
+                  ]
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "c"
+                    },
+                    {
+                      "lit": "1",
+                      "type": "decimal"
+                    }
+                  ]
+                }
+              ]
+            },
+            "sort": [
+              {
+                "column": "b",
+                "direction": "desc"
+              },
+              {
+                "column": "c",
+                "direction": "asc"
+              }
+            ]
+          },
+          "columns": [
+            {
+              "name": "b",
+              "width": 50
+            },
+            {
+              "name": "region"
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "derive.remove",
+          "name": "a"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "c",
+                "expr": {
+                  "fn": "add",
+                  "args": [
+                    {
+                      "col": "price"
+                    },
+                    {
+                      "lit": "1",
+                      "type": "decimal"
+                    }
+                  ]
+                }
+              }
+            ],
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "x"
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "c"
+                    },
+                    {
+                      "lit": "1",
+                      "type": "decimal"
+                    }
+                  ]
+                }
+              ]
+            },
+            "sort": [
+              {
+                "column": "c",
+                "direction": "asc"
+              }
+            ]
+          },
+          "columns": [
+            {
+              "name": "region"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "plan.derive-remove-key",
+      "section": "6.2.2",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "a",
+                "expr": {
+                  "fn": "add",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              }
+            ],
+            "aggregate": {
+              "keys": [
+                "a"
+              ],
+              "measures": [
+                {
+                  "name": "n",
+                  "fn": "count"
+                }
+              ]
+            },
+            "having": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "n"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            },
+            "sort": [
+              {
+                "column": "a",
+                "direction": "asc"
+              },
+              {
+                "column": "n",
+                "direction": "desc"
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "derive.remove",
+          "name": "a"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "aggregate": {
+              "keys": [],
+              "measures": [
+                {
+                  "name": "n",
+                  "fn": "count"
+                }
+              ]
+            },
+            "having": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "n"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            },
+            "sort": [
+              {
+                "column": "n",
+                "direction": "desc"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.derive-remove-emptied-aggregate",
+      "section": "6.2.2",
+      "description": "An aggregate left without keys and measures goes, with having.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "a",
+                "expr": {
+                  "fn": "add",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              }
+            ],
+            "aggregate": {
+              "keys": [
+                "a"
+              ],
+              "measures": []
+            },
+            "having": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "a"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            },
+            "sort": [
+              {
+                "column": "a",
+                "direction": "asc"
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "derive.remove",
+          "name": "a"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {}
+        }
+      }
+    },
+    {
+      "id": "plan.derive-remove-pivot",
+      "section": "6.2.2",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "derive": [
+              {
+                "name": "a",
+                "expr": {
+                  "fn": "add",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              }
+            ],
+            "aggregate": {
+              "keys": [
+                "region"
+              ],
+              "measures": [
+                {
+                  "name": "n",
+                  "fn": "count"
+                }
+              ],
+              "pivot": {
+                "columns": [
+                  "a"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "derive.remove",
+          "name": "a"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "aggregate": {
+              "keys": [
+                "region"
+              ],
+              "measures": [
+                {
+                  "name": "n",
+                  "fn": "count"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.derive-remove-unknown",
+      "section": "6.2",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "derive.remove",
+          "name": "zzz"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_column",
+          "path": "/name"
+        }
+      }
+    },
+    {
+      "id": "plan.group-set",
+      "section": "6.2",
+      "description": "Sort keys that do not validate against the groups are removed.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            },
+            "sort": [
+              {
+                "column": "price",
+                "direction": "desc"
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "group.set",
+          "aggregate": {
+            "keys": [
+              "region"
+            ],
+            "measures": [
+              {
+                "name": "n",
+                "fn": "count"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            },
+            "aggregate": {
+              "keys": [
+                "region"
+              ],
+              "measures": [
+                {
+                  "name": "n",
+                  "fn": "count"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.group-set-keeps-valid",
+      "section": "6.2",
+      "description": "The parts of having and the sort keys that use the measure s go.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "aggregate": {
+              "keys": [
+                "region"
+              ],
+              "measures": [
+                {
+                  "name": "n",
+                  "fn": "count"
+                },
+                {
+                  "name": "s",
+                  "fn": "sum",
+                  "column": "qty"
+                }
+              ]
+            },
+            "having": {
+              "fn": "and",
+              "args": [
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "n"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "s"
+                    },
+                    {
+                      "lit": 5
+                    }
+                  ]
+                }
+              ]
+            },
+            "sort": [
+              {
+                "column": "s",
+                "direction": "desc"
+              },
+              {
+                "column": "region",
+                "direction": "asc"
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "group.set",
+          "aggregate": {
+            "keys": [
+              "region"
+            ],
+            "measures": [
+              {
+                "name": "n",
+                "fn": "count"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "aggregate": {
+              "keys": [
+                "region"
+              ],
+              "measures": [
+                {
+                  "name": "n",
+                  "fn": "count"
+                }
+              ]
+            },
+            "having": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "n"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            },
+            "sort": [
+              {
+                "column": "region",
+                "direction": "asc"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.group-set-invalid",
+      "section": "6.2",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "group.set",
+          "aggregate": {
+            "keys": [
+              "zzz"
+            ],
+            "measures": []
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "invalid_plan",
+          "path": "",
+          "details": {
+            "path": "/aggregate/keys/0",
+            "reason": "unknown_column"
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.group-set-syntax",
+      "section": "6.2",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "group.set",
+          "aggregate": []
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/aggregate"
+        }
+      }
+    },
+    {
+      "id": "plan.group-clear",
+      "section": "6.2",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "aggregate": {
+              "keys": [
+                "region"
+              ],
+              "measures": [
+                {
+                  "name": "n",
+                  "fn": "count"
+                }
+              ]
+            },
+            "having": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "n"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            },
+            "sort": [
+              {
+                "column": "n",
+                "direction": "desc"
+              },
+              {
+                "column": "region",
+                "direction": "asc"
+              }
+            ]
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "group.clear"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "sort": [
+              {
+                "column": "region",
+                "direction": "asc"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.having-set",
+      "section": "6.2",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "aggregate": {
+              "keys": [
+                "region"
+              ],
+              "measures": [
+                {
+                  "name": "n",
+                  "fn": "count"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "having.set",
+          "having": {
+            "fn": "gt",
+            "args": [
+              {
+                "col": "n"
+              },
+              {
+                "lit": 1
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "aggregate": {
+              "keys": [
+                "region"
+              ],
+              "measures": [
+                {
+                  "name": "n",
+                  "fn": "count"
+                }
+              ]
+            },
+            "having": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "n"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.having-remove",
+      "section": "6.2",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "aggregate": {
+              "keys": [
+                "region"
+              ],
+              "measures": [
+                {
+                  "name": "n",
+                  "fn": "count"
+                }
+              ]
+            },
+            "having": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "n"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "having.set",
+          "having": null
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "aggregate": {
+              "keys": [
+                "region"
+              ],
+              "measures": [
+                {
+                  "name": "n",
+                  "fn": "count"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "plan.having-without-aggregate",
+      "section": "6.2",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "having.set",
+          "having": {
+            "fn": "gt",
+            "args": [
+              {
+                "col": "qty"
+              },
+              {
+                "lit": 1
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "invalid_plan",
+          "path": "",
+          "details": {
+            "path": "/having",
+            "reason": "misplaced"
+          }
+        }
+      }
+    }
+  ]
+}

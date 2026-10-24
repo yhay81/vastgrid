@@ -194,7 +194,7 @@ flowchart TB
 8. **ノートブック・ブラウザーのアプリ・CLI。** React の部品の API を整える。
 9. **v1 を外す。**
 
-1 は 2026-10-24 に始めました。仕様の下書き [v2-spec.md](v2-spec.md)（2.0-draft.1）と、適合テスト集 106 件（[`packages/spec/conformance`](../packages/spec/conformance)）を置き、`vastgrid-sql` が DuckDB で全件を通します。状態・コマンド・電文の節はまだ概要です。v1 のテストのうちファイルの読み込みに関わるもの（文字コード、許可フォルダーなど）は、v2 の DuckDB のエンジンを作る 2 で移します。
+1 は 2026-10-24 に始めました。仕様の下書き [v2-spec.md](v2-spec.md)（2.0-draft.2）と、適合テスト集（[`packages/spec/conformance`](../packages/spec/conformance)）を置いています。テスト集はプラン 106 件・コマンド 277 件・電文 81 件の 3 部で、プランは `vastgrid-sql` が DuckDB で、コマンドと電文は `vastgrid-spec` の参照実装（`applyCommand`、`checkRequest` など、Arrow のブロック）が全件を通します。電文は DuckDB の上の参照のエンジンで端から端まで試します。v1 のテストのうちファイルの読み込みに関わるもの（文字コード、許可フォルダーなど）は、v2 の DuckDB のエンジンを作る 2 で移します。
 
 ## 移すもの・作り直すもの
 

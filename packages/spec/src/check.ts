@@ -3,6 +3,7 @@
  * expressions (§3.7, §4.4, §4.5) and its limits (§4.9). The checked plan is a typed tree that engines run.
  */
 import {
+  type Capabilities,
   FUNCTIONS,
   type FunctionName,
   LIMITS,
@@ -11,6 +12,7 @@ import {
   type Plan,
   PlanError,
   type PlanErrorReason,
+  type PlanMember,
   type SortDirection,
 } from "./plan.js";
 import { type Column, type JsonValue, LOGICAL_TYPES, type LogicalType, type ValueType } from "./types.js";
@@ -105,13 +107,17 @@ export interface CheckedPlan {
   rowIds: boolean;
 }
 
-export type PlanMember = "derive" | "where" | "aggregate" | "pivot" | "having" | "sort" | "search";
-
 /** What an engine evaluates (§4.10); everything by default. */
 export interface CheckOptions {
   functions?: readonly string[];
   measures?: readonly string[];
   plan?: Partial<Record<PlanMember, boolean>>;
+}
+
+/** The options of `checkPlan` for an engine's capabilities: everything without them. */
+export function planOptions(capabilities?: Capabilities): CheckOptions {
+  if (!capabilities) return {};
+  return { functions: capabilities.functions, measures: capabilities.measures, plan: capabilities.plan };
 }
 
 type Place = "derive" | "where" | "having";

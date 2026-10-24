@@ -143,6 +143,28 @@ export interface Plan {
   sort?: SortKey[];
 }
 
+/** The members of a plan that an engine may not evaluate (§4.10). */
+export type PlanMember = "derive" | "where" | "aggregate" | "pivot" | "having" | "sort" | "search";
+
+/**
+ * What an engine offers (§4.10). Absent `functions` and `measures` are all of them, and an absent member of
+ * `plan` is true; the other members are false when they are absent.
+ */
+export interface Capabilities {
+  plan?: Partial<Record<PlanMember, boolean>>;
+  functions?: string[];
+  measures?: string[];
+  summarize?: boolean;
+  find?: boolean;
+  locate?: boolean;
+  write?: boolean;
+  save?: boolean;
+  export?: { formats: string[]; delivery: "file" | "data" };
+  preview?: boolean;
+  partialViews?: boolean;
+  changes?: "push" | "poll";
+}
+
 /** The limits of §4.9. */
 export const LIMITS = {
   derive: 32,

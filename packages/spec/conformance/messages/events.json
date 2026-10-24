@@ -1,0 +1,115 @@
+{
+  "$schema": "../../schema/messages-corpus.schema.json",
+  "description": "Events (§8.5), as a client checks them.",
+  "cases": [
+    {
+      "id": "event.changed",
+      "section": "8.5",
+      "kind": "event",
+      "message": {
+        "v": 2,
+        "event": "changed",
+        "table": "t1",
+        "revision": "r2",
+        "edits": {
+          "version": 3,
+          "cells": 1
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "event.progress",
+      "section": "8.5",
+      "kind": "event",
+      "message": {
+        "v": 2,
+        "event": "progress",
+        "table": "t1",
+        "status": "loading",
+        "progress": 0.25,
+        "readableRows": 5000,
+        "rowCount": null
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "event.view",
+      "section": "8.5",
+      "kind": "event",
+      "message": {
+        "v": 2,
+        "event": "view",
+        "table": "t1",
+        "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "status": "building",
+        "readableRows": 100,
+        "rowCount": 250,
+        "rowCountExact": false
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "event.unknown",
+      "section": "8.5",
+      "kind": "event",
+      "message": {
+        "v": 2,
+        "event": "closed",
+        "table": "t1"
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/event"
+        }
+      }
+    },
+    {
+      "id": "event.missing-member",
+      "section": "8.5",
+      "kind": "event",
+      "message": {
+        "v": 2,
+        "event": "changed",
+        "table": "t1",
+        "revision": "r2"
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/edits"
+        }
+      }
+    },
+    {
+      "id": "event.progress-range",
+      "section": "8.5",
+      "kind": "event",
+      "message": {
+        "v": 2,
+        "event": "progress",
+        "table": "t1",
+        "status": "loading",
+        "progress": 2,
+        "readableRows": 0,
+        "rowCount": null
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/progress"
+        }
+      }
+    }
+  ]
+}

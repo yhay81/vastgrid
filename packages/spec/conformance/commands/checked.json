@@ -1,0 +1,946 @@
+{
+  "$schema": "../../schema/commands.schema.json",
+  "description": "Checked rows (§5.2.1, §6.4) and row keys (§5.3).",
+  "contexts": {
+    "orders": {
+      "table": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "qty",
+          "type": "integer"
+        },
+        {
+          "name": "price",
+          "type": "decimal",
+          "precision": 10,
+          "scale": 2
+        },
+        {
+          "name": "shipped",
+          "type": "date"
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "readOnly": true
+        }
+      ],
+      "revision": "r1",
+      "view": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "region",
+            "type": "string"
+          },
+          {
+            "name": "qty",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "precision": 10,
+            "scale": 2
+          },
+          {
+            "name": "shipped",
+            "type": "date"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "readOnly": true
+          }
+        ],
+        "rowCount": 6,
+        "rowIds": true
+      },
+      "rows": [
+        {
+          "start": 0,
+          "keys": [
+            {
+              "rowId": 0
+            },
+            {
+              "rowId": 1
+            },
+            {
+              "rowId": 2
+            },
+            {
+              "rowId": 3
+            },
+            {
+              "rowId": 4
+            },
+            {
+              "rowId": 5
+            }
+          ],
+          "values": [
+            [
+              1,
+              "Tokyo",
+              3,
+              "12.50",
+              "2024-01-31",
+              "a"
+            ],
+            [
+              2,
+              "Osaka",
+              1,
+              "8.00",
+              "2024-02-01",
+              null
+            ],
+            [
+              3,
+              "Tokyo",
+              null,
+              null,
+              null,
+              "c"
+            ],
+            [
+              4,
+              "",
+              5,
+              "100.00",
+              "2024-03-15",
+              ""
+            ],
+            [
+              5,
+              "Nagoya",
+              2,
+              "3.25",
+              "2024-04-01",
+              "e"
+            ],
+            [
+              6,
+              "Osaka",
+              7,
+              "0.10",
+              "2024-05-20",
+              "f"
+            ]
+          ]
+        }
+      ],
+      "page": 3
+    },
+    "orders-unloaded": {
+      "extends": "orders",
+      "rows": []
+    },
+    "orders-big": {
+      "extends": "orders",
+      "view": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "region",
+            "type": "string"
+          },
+          {
+            "name": "qty",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "precision": 10,
+            "scale": 2
+          },
+          {
+            "name": "shipped",
+            "type": "date"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "readOnly": true
+          }
+        ],
+        "rowCount": 1000,
+        "rowIds": true
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "checked.include",
+      "section": "5.2.1",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "check",
+          "keys": [
+            {
+              "rowId": 1
+            },
+            {
+              "rowId": 3
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "include",
+            "keys": [
+              {
+                "rowId": 1
+              },
+              {
+                "rowId": 3
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "checked.include-once",
+      "section": "6.4",
+      "description": "Keys are added at the end, once.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "check",
+          "keys": [
+            {
+              "rowId": 1
+            }
+          ]
+        },
+        {
+          "command": "check",
+          "keys": [
+            {
+              "rowId": 1
+            },
+            {
+              "rowId": 2
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "include",
+            "keys": [
+              {
+                "rowId": 1
+              },
+              {
+                "rowId": 2
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "checked.uncheck-include",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "check",
+          "keys": [
+            {
+              "rowId": 1
+            },
+            {
+              "rowId": 2
+            }
+          ]
+        },
+        {
+          "command": "uncheck",
+          "keys": [
+            {
+              "rowId": 1
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "include",
+            "keys": [
+              {
+                "rowId": 2
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "checked.uncheck-last-leaves-out",
+      "section": "6.1",
+      "description": "checked is left out when it checks no row.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "check",
+          "keys": [
+            {
+              "rowId": 1
+            }
+          ]
+        },
+        {
+          "command": "uncheck",
+          "keys": [
+            {
+              "rowId": 1
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2
+        }
+      }
+    },
+    {
+      "id": "checked.all",
+      "section": "5.2.1",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "check.all"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "exclude",
+            "keys": []
+          }
+        }
+      }
+    },
+    {
+      "id": "checked.all-with-where",
+      "section": "5.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "check.all"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "exclude",
+            "keys": [],
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "checked.exclude-uncheck",
+      "section": "6.4",
+      "description": "In the exclude mode, the listed keys are the rows that are not checked.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "check.all"
+        },
+        {
+          "command": "uncheck",
+          "keys": [
+            {
+              "rowId": 2
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "exclude",
+            "keys": [
+              {
+                "rowId": 2
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "checked.exclude-check",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "check.all"
+        },
+        {
+          "command": "uncheck",
+          "keys": [
+            {
+              "rowId": 2
+            }
+          ]
+        },
+        {
+          "command": "check",
+          "keys": [
+            {
+              "rowId": 2
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "exclude",
+            "keys": []
+          }
+        }
+      }
+    },
+    {
+      "id": "checked.implied-by-more-parts",
+      "section": "5.2.1",
+      "description": "A view whose where has every part of the checked where (and more) holds only rows for which it is true.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                },
+                {
+                  "fn": "eq",
+                  "args": [
+                    {
+                      "col": "region"
+                    },
+                    {
+                      "lit": "Tokyo"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "exclude",
+            "keys": [],
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "uncheck",
+          "keys": [
+            {
+              "rowId": 0
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "exclude",
+            "keys": [
+              {
+                "rowId": 0
+              }
+            ],
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "checked.unknown-state",
+      "section": "5.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "eq",
+              "args": [
+                {
+                  "col": "region"
+                },
+                {
+                  "lit": "Tokyo"
+                }
+              ]
+            }
+          }
+        },
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "exclude",
+            "keys": [],
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "uncheck",
+          "keys": [
+            {
+              "rowId": 0
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_state",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "checked.unknown-without-view-where",
+      "section": "5.2.1",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "exclude",
+            "keys": [],
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "check",
+          "keys": [
+            {
+              "rowId": 0
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_state",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "checked.narrower-search",
+      "section": "5.2.1",
+      "description": "Every row with a value that contains \"tokyo\" has one that contains \"ok\".",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "search": "tokyo"
+            }
+          }
+        },
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "exclude",
+            "keys": [],
+            "where": {
+              "search": "ok"
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "uncheck",
+          "keys": [
+            {
+              "rowId": 0
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "exclude",
+            "keys": [
+              {
+                "rowId": 0
+              }
+            ],
+            "where": {
+              "search": "ok"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "checked.wider-search",
+      "section": "5.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "search": "ok"
+            }
+          }
+        },
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "exclude",
+            "keys": [],
+            "where": {
+              "search": "tokyo"
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "uncheck",
+          "keys": [
+            {
+              "rowId": 0
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_state",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "checked.include-ignores-view",
+      "section": "5.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "eq",
+              "args": [
+                {
+                  "col": "region"
+                },
+                {
+                  "lit": "Tokyo"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "check",
+          "keys": [
+            {
+              "rowId": 4
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "include",
+            "keys": [
+              {
+                "rowId": 4
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "checked.same-key-values",
+      "section": "5.3",
+      "description": "Bigint values written as digits are the same key as the same number (§2.2).",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "rowKey": "id"
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "check",
+          "keys": [
+            {
+              "value": 2
+            }
+          ]
+        },
+        {
+          "command": "check",
+          "keys": [
+            {
+              "value": "2"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "include",
+            "keys": [
+              {
+                "value": 2
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "checked.clear",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "check",
+          "keys": [
+            {
+              "rowId": 1
+            }
+          ]
+        },
+        {
+          "command": "check.clear"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2
+        }
+      }
+    },
+    {
+      "id": "checked.keys-syntax",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "check",
+          "keys": [
+            {
+              "row": 1
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/keys/0/row"
+        }
+      }
+    },
+    {
+      "id": "checked.keys-null-value",
+      "section": "5.3",
+      "description": "A row whose key value is null is keyed by its row ID instead.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "check",
+          "keys": [
+            {
+              "value": null
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/keys/0/value"
+        }
+      }
+    }
+  ]
+}

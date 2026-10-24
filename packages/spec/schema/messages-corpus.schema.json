@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vastgrid.yhay81.com/schema/v2/messages-corpus.schema.json",
+  "title": "vastgrid v2 message cases",
+  "description": "A file of the message corpus (docs/v2-spec.md §10): messages and whether each follows §8, or the error it gets. Messages are not checked by this schema, so that cases can test messages that do not follow §8.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cases"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/case"
+      }
+    }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "section", "kind", "message", "expect"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(\\.[a-z0-9-]+)+$"
+        },
+        "section": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)*$"
+        },
+        "description": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": ["request", "response", "event"]
+        },
+        "op": {
+          "enum": [
+            "open",
+            "info",
+            "rows",
+            "summarize",
+            "find",
+            "locate",
+            "write",
+            "save",
+            "export",
+            "changes",
+            "cancel",
+            "close"
+          ]
+        },
+        "message": {},
+        "expect": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["valid"],
+              "properties": {
+                "valid": {
+                  "const": true
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["error"],
+              "properties": {
+                "error": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["code", "reason", "path"],
+                  "properties": {
+                    "code": {
+                      "enum": ["invalid_request", "invalid_response"]
+                    },
+                    "reason": {
+                      "enum": ["syntax", "unknown_op", "version", "limit"]
+                    },
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "response"
+          }
+        }
+      },
+      "then": {
+        "required": ["op"]
+      }
+    }
+  }
+}

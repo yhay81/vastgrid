@@ -195,3 +195,64 @@ export function valueOfText(text: string | null, type: ValueType): JsonValue {
       return text;
   }
 }
+
+/** The number of a float written as JSON (§2.2): a number, or one of `NaN`, `Infinity` and `-Infinity`. */
+export function floatOf(value: JsonValue): number {
+  if (typeof value === "number") return value;
+  if (value === "NaN") return Number.NaN;
+  if (value === "Infinity") return Number.POSITIVE_INFINITY;
+  if (value === "-Infinity") return Number.NEGATIVE_INFINITY;
+  throw new TypeError(`${JSON.stringify(value)} is not a float.`);
+}
+
+/** The JSON of a float (§2.2). */
+export function floatJson(value: number): JsonValue {
+  if (Number.isNaN(value)) return "NaN";
+  if (value === Number.POSITIVE_INFINITY) return "Infinity";
+  if (value === Number.NEGATIVE_INFINITY) return "-Infinity";
+  return value;
+}
+
+/** Bytes as base64 (RFC 4648, with padding). */
+export function toBase64(bytes: Uint8Array): string {
+  let text = "";
+  for (let start = 0; start < bytes.length; start += 0x8000) {
+    text += String.fromCharCode(...bytes.subarray(start, start + 0x8000));
+  }
+  return btoa(text);
+}
+
+/** The bytes of base64 text. */
+export function fromBase64(text: string): Uint8Array {
+  const binary = atob(text);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+/** DuckDB's text of bytes: printable ASCII as it is, and `\xHH` for a backslash and the other bytes. */
+function bytesText(bytes: Uint8Array): string {
+  let text = "";
+  for (const byte of bytes) {
+    text +=
+      byte >= 0x20 && byte <= 0x7e && byte !== 0x5c
+        ? String.fromCharCode(byte)
+        : `\\x${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+  }
+  return text;
+}
+
+/** The text form of a value (§2.4), or null for null. */
+export function textOf(value: JsonValue, type: ValueType): string | null {
+  if (value === null) return null;
+  switch (type.type) {
+    case "boolean":
+      return value === true ? "true" : "false";
+    case "float":
+      return floatText(floatOf(value), type.bits ?? 64);
+    case "binary":
+      return bytesText(fromBase64(String(value)));
+    default:
+      return String(value);
+  }
+}

@@ -1,0 +1,2578 @@
+{
+  "$schema": "../../schema/commands.schema.json",
+  "description": "Selection, movement and scrolling (§6.4), the defaults of the session (§5.2) and the form commands give it (§6.1).",
+  "contexts": {
+    "orders": {
+      "table": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "qty",
+          "type": "integer"
+        },
+        {
+          "name": "price",
+          "type": "decimal",
+          "precision": 10,
+          "scale": 2
+        },
+        {
+          "name": "shipped",
+          "type": "date"
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "readOnly": true
+        }
+      ],
+      "revision": "r1",
+      "view": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "region",
+            "type": "string"
+          },
+          {
+            "name": "qty",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "precision": 10,
+            "scale": 2
+          },
+          {
+            "name": "shipped",
+            "type": "date"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "readOnly": true
+          }
+        ],
+        "rowCount": 6,
+        "rowIds": true
+      },
+      "rows": [
+        {
+          "start": 0,
+          "keys": [
+            {
+              "rowId": 0
+            },
+            {
+              "rowId": 1
+            },
+            {
+              "rowId": 2
+            },
+            {
+              "rowId": 3
+            },
+            {
+              "rowId": 4
+            },
+            {
+              "rowId": 5
+            }
+          ],
+          "values": [
+            [
+              1,
+              "Tokyo",
+              3,
+              "12.50",
+              "2024-01-31",
+              "a"
+            ],
+            [
+              2,
+              "Osaka",
+              1,
+              "8.00",
+              "2024-02-01",
+              null
+            ],
+            [
+              3,
+              "Tokyo",
+              null,
+              null,
+              null,
+              "c"
+            ],
+            [
+              4,
+              "",
+              5,
+              "100.00",
+              "2024-03-15",
+              ""
+            ],
+            [
+              5,
+              "Nagoya",
+              2,
+              "3.25",
+              "2024-04-01",
+              "e"
+            ],
+            [
+              6,
+              "Osaka",
+              7,
+              "0.10",
+              "2024-05-20",
+              "f"
+            ]
+          ]
+        }
+      ],
+      "page": 3
+    },
+    "orders-unloaded": {
+      "extends": "orders",
+      "rows": []
+    },
+    "orders-big": {
+      "extends": "orders",
+      "view": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "region",
+            "type": "string"
+          },
+          {
+            "name": "qty",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "precision": 10,
+            "scale": 2
+          },
+          {
+            "name": "shipped",
+            "type": "date"
+          },
+          {
+            "name": "note",
+            "type": "string",
+            "readOnly": true
+          }
+        ],
+        "rowCount": 1000,
+        "rowIds": true
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "selection.select-replace",
+      "section": "6.4",
+      "description": "The cell becomes the active cell, anchor, focus and the only range; the active cell has the key of its loaded row.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "anchor": {
+            "row": 2,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 2,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                2,
+                3
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.select-clamps-row",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 99,
+          "column": "region"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 5,
+            "column": "region",
+            "key": {
+              "rowId": 5
+            }
+          },
+          "anchor": {
+            "row": 5,
+            "column": "region"
+          },
+          "focus": {
+            "row": 5,
+            "column": "region"
+          },
+          "selection": [
+            {
+              "rows": [
+                5,
+                6
+              ],
+              "columns": [
+                "region"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.select-unknown-column",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "nope"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_column",
+          "path": "/column"
+        }
+      }
+    },
+    {
+      "id": "selection.select-hidden-column",
+      "section": "6.4",
+      "description": "Selections name displayed columns (§5.1.1).",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "qty",
+              "hidden": true
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "qty"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_column",
+          "path": "/column"
+        }
+      }
+    },
+    {
+      "id": "selection.select-mode-syntax",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "id",
+          "mode": "toggle"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/mode"
+        }
+      }
+    },
+    {
+      "id": "selection.select-unknown-member",
+      "section": "6.1",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "id",
+          "extra": 1
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/extra"
+        }
+      }
+    },
+    {
+      "id": "selection.select-row-syntax",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": -1,
+          "column": "id"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/row"
+        }
+      }
+    },
+    {
+      "id": "selection.unknown-command",
+      "section": "6.1",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select.cell"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_command",
+          "path": "/command"
+        }
+      }
+    },
+    {
+      "id": "selection.extend-from-anchor",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 1,
+          "column": "region"
+        },
+        {
+          "command": "select",
+          "row": 3,
+          "column": "price",
+          "mode": "extend"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "region",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 3,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                4
+              ],
+              "columns": [
+                "region",
+                "qty",
+                "price"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.extend-backwards",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 3,
+          "column": "price"
+        },
+        {
+          "command": "select",
+          "row": 1,
+          "column": "region",
+          "mode": "extend"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 3,
+            "column": "price",
+            "key": {
+              "rowId": 3
+            }
+          },
+          "anchor": {
+            "row": 3,
+            "column": "price"
+          },
+          "focus": {
+            "row": 1,
+            "column": "region"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                4
+              ],
+              "columns": [
+                "region",
+                "qty",
+                "price"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.add-range",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "id"
+        },
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty",
+          "mode": "add"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "anchor": {
+            "row": 2,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 2,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "id"
+              ]
+            },
+            {
+              "rows": [
+                2,
+                3
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.extend-last-range",
+      "section": "6.4",
+      "description": "extend changes the last range only.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "id"
+        },
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty",
+          "mode": "add"
+        },
+        {
+          "command": "select",
+          "row": 3,
+          "column": "price",
+          "mode": "extend"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "anchor": {
+            "row": 2,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 3,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "id"
+              ]
+            },
+            {
+              "rows": [
+                2,
+                4
+              ],
+              "columns": [
+                "qty",
+                "price"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.extend-keeps-whole-rows",
+      "section": "6.4",
+      "description": "Extending a range of whole rows keeps whole rows.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select.rows",
+          "from": 1,
+          "to": 2
+        },
+        {
+          "command": "select",
+          "row": 4,
+          "column": "price",
+          "mode": "extend"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "id",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "id"
+          },
+          "focus": {
+            "row": 4,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                5
+              ],
+              "columns": "all"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.rows-add",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "price"
+        },
+        {
+          "command": "select.rows",
+          "from": 3,
+          "to": 2,
+          "mode": "add"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 3,
+            "column": "price",
+            "key": {
+              "rowId": 3
+            }
+          },
+          "anchor": {
+            "row": 3,
+            "column": "price"
+          },
+          "focus": {
+            "row": 2,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "price"
+              ]
+            },
+            {
+              "rows": [
+                2,
+                4
+              ],
+              "columns": "all"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.rows-extend",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 4,
+          "column": "qty"
+        },
+        {
+          "command": "select.rows",
+          "from": 0,
+          "to": 1,
+          "mode": "extend"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 4,
+            "column": "qty",
+            "key": {
+              "rowId": 4
+            }
+          },
+          "anchor": {
+            "row": 4,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 1,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                5
+              ],
+              "columns": "all"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.columns",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 4,
+          "column": "region"
+        },
+        {
+          "command": "select.columns",
+          "from": "qty",
+          "to": "region"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 4,
+            "column": "qty",
+            "key": {
+              "rowId": 4
+            }
+          },
+          "anchor": {
+            "row": 4,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 4,
+            "column": "region"
+          },
+          "selection": [
+            {
+              "rows": "all",
+              "columns": [
+                "region",
+                "qty"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.columns-extend",
+      "section": "6.4",
+      "description": "With extend, only `to` counts: focus moves to it, in the active row.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select.columns",
+          "from": "region",
+          "to": "region"
+        },
+        {
+          "command": "select.columns",
+          "from": "id",
+          "to": "price",
+          "mode": "extend"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "region",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "region"
+          },
+          "focus": {
+            "row": 0,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": "all",
+              "columns": [
+                "region",
+                "qty",
+                "price"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.columns-unknown",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select.columns",
+          "from": "qty",
+          "to": "zzz"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_column",
+          "path": "/to"
+        }
+      }
+    },
+    {
+      "id": "selection.all",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty"
+        },
+        {
+          "command": "select.all"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "anchor": {
+            "row": 2,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 2,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": "all",
+              "columns": "all"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.all-extend-keeps-all",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select.all"
+        },
+        {
+          "command": "select",
+          "row": 3,
+          "column": "qty",
+          "mode": "extend"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "id",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "id"
+          },
+          "focus": {
+            "row": 3,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": "all",
+              "columns": "all"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.move-down",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 1,
+          "column": "region"
+        },
+        {
+          "command": "move",
+          "direction": "down"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 2,
+            "column": "region",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "anchor": {
+            "row": 2,
+            "column": "region"
+          },
+          "focus": {
+            "row": 2,
+            "column": "region"
+          },
+          "selection": [
+            {
+              "rows": [
+                2,
+                3
+              ],
+              "columns": [
+                "region"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.move-clamps",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "id"
+        },
+        {
+          "command": "move",
+          "direction": "up"
+        },
+        {
+          "command": "move",
+          "direction": "left"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "id",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "id"
+          },
+          "focus": {
+            "row": 0,
+            "column": "id"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "id"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.move-collapses",
+      "section": "6.4",
+      "description": "Moving without extend moves from the active cell and makes it the only range.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 1,
+          "column": "region"
+        },
+        {
+          "command": "select",
+          "row": 3,
+          "column": "price",
+          "mode": "extend"
+        },
+        {
+          "command": "move",
+          "direction": "right"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "qty",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 1,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                2
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.move-extend",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 1,
+          "column": "region"
+        },
+        {
+          "command": "move",
+          "direction": "down",
+          "extend": true
+        },
+        {
+          "command": "move",
+          "direction": "right",
+          "extend": true
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "region",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 2,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                3
+              ],
+              "columns": [
+                "region",
+                "qty"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.move-extend-shrinks",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 1,
+          "column": "region"
+        },
+        {
+          "command": "select",
+          "row": 3,
+          "column": "price",
+          "mode": "extend"
+        },
+        {
+          "command": "move",
+          "direction": "up",
+          "extend": true
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "region",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 2,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                3
+              ],
+              "columns": [
+                "region",
+                "qty",
+                "price"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.move-jump",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty"
+        },
+        {
+          "command": "move",
+          "direction": "down",
+          "jump": true
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 5,
+            "column": "qty",
+            "key": {
+              "rowId": 5
+            }
+          },
+          "anchor": {
+            "row": 5,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 5,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                5,
+                6
+              ],
+              "columns": [
+                "qty"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.move-jump-right",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty"
+        },
+        {
+          "command": "move",
+          "direction": "right",
+          "jump": true
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 2,
+            "column": "note",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "anchor": {
+            "row": 2,
+            "column": "note"
+          },
+          "focus": {
+            "row": 2,
+            "column": "note"
+          },
+          "selection": [
+            {
+              "rows": [
+                2,
+                3
+              ],
+              "columns": [
+                "note"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.move-page",
+      "section": "6.4",
+      "description": "page moves by context.page rows (3 here).",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 1,
+          "column": "id"
+        },
+        {
+          "command": "move",
+          "direction": "down",
+          "page": true
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 4,
+            "column": "id",
+            "key": {
+              "rowId": 4
+            }
+          },
+          "anchor": {
+            "row": 4,
+            "column": "id"
+          },
+          "focus": {
+            "row": 4,
+            "column": "id"
+          },
+          "selection": [
+            {
+              "rows": [
+                4,
+                5
+              ],
+              "columns": [
+                "id"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.move-page-up-clamps",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 1,
+          "column": "id"
+        },
+        {
+          "command": "move",
+          "direction": "up",
+          "page": true
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "id",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "id"
+          },
+          "focus": {
+            "row": 0,
+            "column": "id"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "id"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.move-jump-wins",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "id"
+        },
+        {
+          "command": "move",
+          "direction": "down",
+          "page": true,
+          "jump": true
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 5,
+            "column": "id",
+            "key": {
+              "rowId": 5
+            }
+          },
+          "anchor": {
+            "row": 5,
+            "column": "id"
+          },
+          "focus": {
+            "row": 5,
+            "column": "id"
+          },
+          "selection": [
+            {
+              "rows": [
+                5,
+                6
+              ],
+              "columns": [
+                "id"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.move-page-sideways",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "move",
+          "direction": "left",
+          "page": true
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/page"
+        }
+      }
+    },
+    {
+      "id": "selection.move-direction-syntax",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "move"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/direction"
+        }
+      }
+    },
+    {
+      "id": "selection.home",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 3,
+          "column": "price"
+        },
+        {
+          "command": "move.home"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 3,
+            "column": "id",
+            "key": {
+              "rowId": 3
+            }
+          },
+          "anchor": {
+            "row": 3,
+            "column": "id"
+          },
+          "focus": {
+            "row": 3,
+            "column": "id"
+          },
+          "selection": [
+            {
+              "rows": [
+                3,
+                4
+              ],
+              "columns": [
+                "id"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.end-jump",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 3,
+          "column": "price"
+        },
+        {
+          "command": "move.end",
+          "jump": true
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 5,
+            "column": "note",
+            "key": {
+              "rowId": 5
+            }
+          },
+          "anchor": {
+            "row": 5,
+            "column": "note"
+          },
+          "focus": {
+            "row": 5,
+            "column": "note"
+          },
+          "selection": [
+            {
+              "rows": [
+                5,
+                6
+              ],
+              "columns": [
+                "note"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.home-extend",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty"
+        },
+        {
+          "command": "move.home",
+          "extend": true
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "anchor": {
+            "row": 2,
+            "column": "qty"
+          },
+          "focus": {
+            "row": 2,
+            "column": "id"
+          },
+          "selection": [
+            {
+              "rows": [
+                2,
+                3
+              ],
+              "columns": [
+                "id",
+                "region",
+                "qty"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.advance-walks-row",
+      "section": "6.4",
+      "description": "Tab walks through the range and the selection stays.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 1,
+          "column": "region"
+        },
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty",
+          "mode": "extend"
+        },
+        {
+          "command": "advance",
+          "axis": "column"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "qty",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 2,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                3
+              ],
+              "columns": [
+                "region",
+                "qty"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.advance-wraps-to-next-row",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 1,
+          "column": "region"
+        },
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty",
+          "mode": "extend"
+        },
+        {
+          "command": "advance",
+          "axis": "column"
+        },
+        {
+          "command": "advance",
+          "axis": "column"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 2,
+            "column": "region",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 2,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                3
+              ],
+              "columns": [
+                "region",
+                "qty"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.advance-wraps-to-start",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 1,
+          "column": "region"
+        },
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty",
+          "mode": "extend"
+        },
+        {
+          "command": "advance",
+          "axis": "column"
+        },
+        {
+          "command": "advance",
+          "axis": "column"
+        },
+        {
+          "command": "advance",
+          "axis": "column"
+        },
+        {
+          "command": "advance",
+          "axis": "column"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "region",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 2,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                3
+              ],
+              "columns": [
+                "region",
+                "qty"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.advance-row-axis",
+      "section": "6.4",
+      "description": "Enter walks down the column, then to the top of the next one.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 1,
+          "column": "region"
+        },
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty",
+          "mode": "extend"
+        },
+        {
+          "command": "advance",
+          "axis": "row"
+        },
+        {
+          "command": "advance",
+          "axis": "row"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 1,
+            "column": "qty",
+            "key": {
+              "rowId": 1
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 2,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                3
+              ],
+              "columns": [
+                "region",
+                "qty"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.advance-back",
+      "section": "6.4",
+      "description": "Shift+Tab from the first cell wraps to the last one.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 1,
+          "column": "region"
+        },
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty",
+          "mode": "extend"
+        },
+        {
+          "command": "advance",
+          "axis": "column",
+          "back": true
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 2,
+            "column": "qty",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "anchor": {
+            "row": 1,
+            "column": "region"
+          },
+          "focus": {
+            "row": 2,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": [
+                1,
+                3
+              ],
+              "columns": [
+                "region",
+                "qty"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.advance-single-cell-moves",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 1,
+          "column": "region"
+        },
+        {
+          "command": "advance",
+          "axis": "row"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 2,
+            "column": "region",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "anchor": {
+            "row": 2,
+            "column": "region"
+          },
+          "focus": {
+            "row": 2,
+            "column": "region"
+          },
+          "selection": [
+            {
+              "rows": [
+                2,
+                3
+              ],
+              "columns": [
+                "region"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.advance-several-ranges-moves",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "id"
+        },
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty",
+          "mode": "add"
+        },
+        {
+          "command": "advance",
+          "axis": "column"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 2,
+            "column": "price",
+            "key": {
+              "rowId": 2
+            }
+          },
+          "anchor": {
+            "row": 2,
+            "column": "price"
+          },
+          "focus": {
+            "row": 2,
+            "column": "price"
+          },
+          "selection": [
+            {
+              "rows": [
+                2,
+                3
+              ],
+              "columns": [
+                "price"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.advance-whole-columns",
+      "section": "6.4",
+      "description": "Enter at the last row of whole columns wraps to the first row of the next column.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 5,
+          "column": "region"
+        },
+        {
+          "command": "select.columns",
+          "from": "region",
+          "to": "qty",
+          "mode": "extend"
+        },
+        {
+          "command": "advance",
+          "axis": "row"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "qty",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 5,
+            "column": "region"
+          },
+          "focus": {
+            "row": 5,
+            "column": "qty"
+          },
+          "selection": [
+            {
+              "rows": "all",
+              "columns": [
+                "region",
+                "qty"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.scroll-to",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "scroll.to",
+          "row": 4,
+          "column": "price"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "scroll": {
+            "row": 4,
+            "column": "price"
+          }
+        }
+      }
+    },
+    {
+      "id": "selection.scroll-to-clamps",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "scroll.to",
+          "row": 50
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "scroll": {
+            "row": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "selection.scroll-to-unknown",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "scroll.to",
+          "row": 0,
+          "column": "zzz"
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_column",
+          "path": "/column"
+        }
+      }
+    },
+    {
+      "id": "selection.key-of-unloaded-row",
+      "section": "6.1",
+      "description": "A row the core has not read gives the active cell no key.",
+      "state": {},
+      "context": "orders-big",
+      "commands": [
+        {
+          "command": "select",
+          "row": 500,
+          "column": "id"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 500,
+            "column": "id"
+          },
+          "anchor": {
+            "row": 500,
+            "column": "id"
+          },
+          "focus": {
+            "row": 500,
+            "column": "id"
+          },
+          "selection": [
+            {
+              "rows": [
+                500,
+                501
+              ],
+              "columns": [
+                "id"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.key-kept-on-same-row",
+      "section": "6.1",
+      "state": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 500,
+            "column": "id",
+            "key": {
+              "rowId": 900
+            }
+          }
+        }
+      },
+      "context": "orders-big",
+      "commands": [
+        {
+          "command": "move",
+          "direction": "right"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 500,
+            "column": "region",
+            "key": {
+              "rowId": 900
+            }
+          },
+          "anchor": {
+            "row": 500,
+            "column": "region"
+          },
+          "focus": {
+            "row": 500,
+            "column": "region"
+          },
+          "selection": [
+            {
+              "rows": [
+                500,
+                501
+              ],
+              "columns": [
+                "region"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.empty-view",
+      "section": "6.4",
+      "description": "In a view without rows, positions are 0.",
+      "state": {},
+      "context": {
+        "extends": "orders",
+        "view": {
+          "columns": [
+            {
+              "name": "id",
+              "type": "integer"
+            },
+            {
+              "name": "region",
+              "type": "string"
+            },
+            {
+              "name": "qty",
+              "type": "integer"
+            },
+            {
+              "name": "price",
+              "type": "decimal",
+              "precision": 10,
+              "scale": 2
+            },
+            {
+              "name": "shipped",
+              "type": "date"
+            },
+            {
+              "name": "note",
+              "type": "string",
+              "readOnly": true
+            }
+          ],
+          "rowCount": 0,
+          "rowIds": true
+        },
+        "rows": []
+      },
+      "commands": [
+        {
+          "command": "select",
+          "row": 3,
+          "column": "id"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "id"
+          },
+          "anchor": {
+            "row": 0,
+            "column": "id"
+          },
+          "focus": {
+            "row": 0,
+            "column": "id"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "id"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.defaults",
+      "section": "5.2",
+      "description": "Absent members: the active cell is the first row and the first displayed column, and anchor, focus and the selection are the active cell.",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "move",
+          "direction": "down",
+          "extend": true
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "id",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "id"
+          },
+          "focus": {
+            "row": 1,
+            "column": "id"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                2
+              ],
+              "columns": [
+                "id"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.pinned-display-order",
+      "section": "5.1.1",
+      "description": "Columns pinned left come first, in the order of columns: note, qty, id, region, …",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "note",
+              "pin": "left"
+            },
+            {
+              "name": "qty",
+              "pin": "left"
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "id"
+        },
+        {
+          "command": "select",
+          "row": 0,
+          "column": "note",
+          "mode": "extend"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "id",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "id"
+          },
+          "focus": {
+            "row": 0,
+            "column": "note"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "note",
+                "qty",
+                "id"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "selection.detail-open",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "detail.open"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "detail": {
+            "open": true
+          }
+        }
+      }
+    },
+    {
+      "id": "selection.detail-close",
+      "section": "6.4",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "detail.open"
+        },
+        {
+          "command": "detail.close"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2
+        }
+      }
+    }
+  ]
+}

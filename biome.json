@@ -18,7 +18,7 @@
       "linter": { "rules": { "correctness": { "noUnusedImports": "off", "noUnusedVariables": "off" } } }
     },
     {
-      "includes": ["packages/spec/conformance/*.json"],
+      "includes": ["packages/spec/conformance/**/*.json"],
       "formatter": { "enabled": false }
     }
   ]

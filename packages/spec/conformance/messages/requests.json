@@ -1,0 +1,936 @@
+{
+  "$schema": "../../schema/messages-corpus.schema.json",
+  "description": "Requests (§8.1, §8.2): which follow §8, and the invalid_request error of those that do not.",
+  "cases": [
+    {
+      "id": "request.open",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "open",
+        "ref": "data/orders.csv"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "request.open-read",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "open",
+        "ref": "book.xlsx",
+        "read": {
+          "sheet": "Q1",
+          "headerRow": 2,
+          "keepEmptyRows": true,
+          "keepEmptyColumns": false
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "request.info",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "info",
+        "table": "t1"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "request.rows",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "rows",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "start": 0,
+        "end": 100,
+        "columns": [
+          "id",
+          "price"
+        ]
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "request.rows-options",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "rows",
+        "table": "t1",
+        "revision": null,
+        "plan": {},
+        "start": 0,
+        "end": 100,
+        "columns": [
+          "id",
+          "price"
+        ],
+        "textLimit": 500,
+        "preview": true
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "request.summarize",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "summarize",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "ranges": [
+          [
+            0,
+            10
+          ],
+          [
+            20,
+            20
+          ]
+        ],
+        "columns": [
+          "price"
+        ]
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "request.find",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "find",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "text": "tokyo",
+        "columns": [
+          "region",
+          "note"
+        ],
+        "from": {
+          "row": 0,
+          "column": 1
+        },
+        "direction": -1,
+        "caseSensitive": false
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "request.locate",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "locate",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "keys": [
+          {
+            "rowId": 3
+          },
+          {
+            "value": "A-7"
+          }
+        ],
+        "rowKey": "code"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "request.write",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "write",
+        "table": "t1",
+        "revision": "r1",
+        "updates": [
+          {
+            "key": {
+              "rowId": 0
+            },
+            "column": "qty",
+            "value": 4,
+            "previous": 3
+          },
+          {
+            "key": {
+              "rowId": 1
+            },
+            "column": "note",
+            "value": null
+          }
+        ]
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "request.save",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "save",
+        "table": "t1"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "request.export",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "export",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "format": "xlsx",
+        "target": "out.xlsx",
+        "columns": [
+          "id",
+          "price"
+        ],
+        "headers": [
+          "ID",
+          "Price"
+        ],
+        "numberFormats": [
+          null,
+          "#,##0.00"
+        ]
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "request.changes",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "changes",
+        "table": "t1"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "request.cancel",
+      "section": "8.6",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 2,
+        "op": "cancel",
+        "request": 1
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "request.close",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "close",
+        "table": "t1"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "request.id-max",
+      "section": "8.1",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 9007199254740991,
+        "op": "info",
+        "table": "t1"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "request.version",
+      "section": "8.1",
+      "kind": "request",
+      "message": {
+        "v": 1,
+        "id": 1,
+        "op": "info",
+        "table": "t1"
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "version",
+          "path": "/v"
+        }
+      }
+    },
+    {
+      "id": "request.version-missing",
+      "section": "8.1",
+      "kind": "request",
+      "message": {
+        "id": 1,
+        "op": "info",
+        "table": "t1"
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "version",
+          "path": "/v"
+        }
+      }
+    },
+    {
+      "id": "request.not-object",
+      "section": "8.1",
+      "kind": "request",
+      "message": [
+        2,
+        1,
+        "info"
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": ""
+        }
+      }
+    },
+    {
+      "id": "request.id-negative",
+      "section": "8.1",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": -1,
+        "op": "info",
+        "table": "t1"
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/id"
+        }
+      }
+    },
+    {
+      "id": "request.id-fraction",
+      "section": "8.1",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1.5,
+        "op": "info",
+        "table": "t1"
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/id"
+        }
+      }
+    },
+    {
+      "id": "request.id-too-large",
+      "section": "8.1",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 9007199254740992,
+        "op": "info",
+        "table": "t1"
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/id"
+        }
+      }
+    },
+    {
+      "id": "request.op-unknown",
+      "section": "8.1",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "query",
+        "table": "t1"
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "unknown_op",
+          "path": "/op"
+        }
+      }
+    },
+    {
+      "id": "request.op-missing",
+      "section": "8.1",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "table": "t1"
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/op"
+        }
+      }
+    },
+    {
+      "id": "request.unknown-member",
+      "section": "8.1",
+      "description": "Messages hold no SQL: members that the request does not take are refused.",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "info",
+        "table": "t1",
+        "sql": "SELECT 1"
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/sql"
+        }
+      }
+    },
+    {
+      "id": "request.missing-member",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "rows",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "start": 0,
+        "columns": [
+          "id",
+          "price"
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/end"
+        }
+      }
+    },
+    {
+      "id": "request.revision-type",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "rows",
+        "table": "t1",
+        "revision": 3,
+        "plan": {},
+        "start": 0,
+        "end": 100,
+        "columns": [
+          "id",
+          "price"
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/revision"
+        }
+      }
+    },
+    {
+      "id": "request.plan-type",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "rows",
+        "table": "t1",
+        "revision": "r1",
+        "plan": "sort by id",
+        "start": 0,
+        "end": 100,
+        "columns": [
+          "id",
+          "price"
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/plan"
+        }
+      }
+    },
+    {
+      "id": "request.rows-end-before-start",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "rows",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "start": 10,
+        "end": 5,
+        "columns": [
+          "id",
+          "price"
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/end"
+        }
+      }
+    },
+    {
+      "id": "request.rows-too-many",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "rows",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "start": 0,
+        "end": 1000001,
+        "columns": [
+          "id"
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "limit",
+          "path": "/end"
+        }
+      }
+    },
+    {
+      "id": "request.rows-too-many-cells",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "rows",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "start": 0,
+        "end": 600000,
+        "columns": [
+          "id",
+          "price"
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "limit",
+          "path": "/columns"
+        }
+      }
+    },
+    {
+      "id": "request.rows-no-columns",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "rows",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "start": 0,
+        "end": 100,
+        "columns": []
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/columns"
+        }
+      }
+    },
+    {
+      "id": "request.rows-text-limit",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "rows",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "start": 0,
+        "end": 100,
+        "columns": [
+          "id",
+          "price"
+        ],
+        "textLimit": 0
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/textLimit"
+        }
+      }
+    },
+    {
+      "id": "request.summarize-range",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "summarize",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "ranges": [
+          [
+            5,
+            3
+          ]
+        ],
+        "columns": [
+          "price"
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/ranges/0/1"
+        }
+      }
+    },
+    {
+      "id": "request.find-direction",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "find",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "text": "x",
+        "columns": [
+          "region"
+        ],
+        "from": {
+          "row": 0,
+          "column": 0
+        },
+        "direction": 0
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/direction"
+        }
+      }
+    },
+    {
+      "id": "request.find-from-column",
+      "section": "8.2",
+      "description": "from.column is an index into columns.",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "find",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "text": "x",
+        "columns": [
+          "region"
+        ],
+        "from": {
+          "row": 0,
+          "column": 1
+        },
+        "direction": 1
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/from/column"
+        }
+      }
+    },
+    {
+      "id": "request.locate-key",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "locate",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "keys": [
+          {
+            "rowId": -1
+          }
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/keys/0/rowId"
+        }
+      }
+    },
+    {
+      "id": "request.write-value",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "write",
+        "table": "t1",
+        "revision": "r1",
+        "updates": [
+          {
+            "key": {
+              "rowId": 0
+            },
+            "column": "qty",
+            "value": [
+              4
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/updates/0/value"
+        }
+      }
+    },
+    {
+      "id": "request.write-missing-value",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "write",
+        "table": "t1",
+        "revision": "r1",
+        "updates": [
+          {
+            "key": {
+              "rowId": 0
+            },
+            "column": "qty"
+          }
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/updates/0/value"
+        }
+      }
+    },
+    {
+      "id": "request.export-format",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "export",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "format": "pdf"
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/format"
+        }
+      }
+    },
+    {
+      "id": "request.export-headers",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "export",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "format": "csv",
+        "columns": [
+          "id",
+          "price"
+        ],
+        "headers": [
+          "ID"
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/headers"
+        }
+      }
+    },
+    {
+      "id": "request.cancel-request",
+      "section": "8.6",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 2,
+        "op": "cancel",
+        "request": "1"
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/request"
+        }
+      }
+    },
+    {
+      "id": "request.open-header-row",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "open",
+        "ref": "a.xlsx",
+        "read": {
+          "headerRow": -1
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/read/headerRow"
+        }
+      }
+    }
+  ]
+}
