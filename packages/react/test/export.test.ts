@@ -1,9 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ArraySource, type ExportRequest, type ExportResult, type TableInfo, type TableSource } from "vastgrid-core";
+import {
+  ArraySource,
+  ErrorCodes,
+  type ExportRequest,
+  type ExportResult,
+  SourceError,
+  type TableChangeListener,
+  type TableInfo,
+  type TableSource,
+} from "vastgrid-core";
 import { GridController } from "../src/controller.ts";
 import {
   type ExportChoice,
+  ExportInterruptedError,
   exportRequest,
   exportRowCount,
   exportSupport,
@@ -192,4 +202,63 @@ test("file names and Excel limits", () => {
   assert.equal(xlsxLimit(1_048_575, 16_384), null);
   assert.equal(xlsxLimit(1_048_576, 1), "rows");
   assert.equal(xlsxLimit(10, 16_385), "columns");
+});
+
+test("a change of the table during an export interrupts it", async () => {
+  const base = people();
+  const listeners = new Set<TableChangeListener>();
+  let finish: ((value: ExportResult) => void) | null = null;
+  let fail: ((error: unknown) => void) | null = null;
+  const source: TableSource = {
+    info: () => base.info(),
+    createView: (query, signal) => base.createView(query, signal),
+    readRows: (request) => base.readRows(request),
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    exportView: (request, signal) =>
+      new Promise((resolve, reject) => {
+        finish = resolve;
+        fail = reject;
+        signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        void request;
+      }),
+  };
+  const grid = new GridController(source, { ...options, changeDelay: 10_000 });
+  grid.start();
+  await until(() => grid.info?.status === "ready");
+  const subscribed = listeners.size;
+  // The source reports a change: the export stops.
+  const changed = runExport(grid, choice, {}, new AbortController().signal);
+  await until(() => finish !== null && listeners.size === subscribed + 1);
+  for (const listener of listeners) listener({ revision: "2" });
+  await assert.rejects(changed, ExportInterruptedError);
+  assert.equal(listeners.size, subscribed);
+  // The server closed the table (its file changed): the same error.
+  finish = null;
+  const closed = runExport(grid, choice, {}, new AbortController().signal);
+  await until(() => fail !== null && finish !== null);
+  (fail as unknown as (error: unknown) => void)(new SourceError(ErrorCodes.cancelled, "The file changed", 409));
+  await assert.rejects(closed, ExportInterruptedError);
+  // Cancelled by the user: an abort, not an interruption.
+  finish = null;
+  const user = new AbortController();
+  const aborted = runExport(grid, choice, {}, user.signal);
+  await until(() => finish !== null);
+  user.abort();
+  await assert.rejects(aborted, { name: "AbortError" });
+  grid.dispose();
+});
+
+test("wrap, style, align and format functions do not change exports", async () => {
+  const grid = await readyGrid(people(), {
+    name: { label: "Name", wrap: true, align: "center", style: () => ({ color: "red" }) },
+    score: { number: { fractionDigits: 2 }, style: (value: unknown) => (value ? { background: "#fee" } : null) },
+    born: { format: (value: unknown) => `b${value}` },
+  });
+  const request = exportRequest(grid, { ...choice, rows: "table" });
+  assert.deepEqual(request.headers, ["Name", "born", "score"]);
+  assert.deepEqual(request.numberFormats, [null, null, "#,##0.00"]);
+  grid.dispose();
 });

@@ -21,12 +21,20 @@ of `info().exports`:
 - **Column settings**: by default, the labels of `columnFormats` become the headers of CSV, TSV and Excel
   files, and Excel cells get the columns' number and date formats (`excelNumberFormat` maps them; a
   `format` function, compact notation and `Intl` date options fall back to the type's default). Parquet
-  and JSON keep the schema names. Values are never replaced by their shown text.
+  and JSON keep the schema names. Values are never replaced by their shown text. `wrap`, `style`,
+  `align` and `format` are not written: `style` and `format` are functions in the browser that a server
+  cannot run for every row, and wrapping and alignment follow the grid's layout, not Excel's.
 - **File name**: the user's, with the format's extension.
 
 The panel shows the progress, and **Cancel** (or closing the panel) stops the export: the server
 interrupts the query and deletes the partial file. Errors are shown in the panel; Excel's limits are
 checked before anything runs.
+
+A file holds one revision of the table. When the table changes while it is exported (the source reports
+a change through `subscribe`, or the server closes the table because its file changed and the grid
+reloads it), the export stops, its partial file is deleted, and the panel asks to export again
+(`ExportInterruptedError` from `runExport`). The DuckDB engine also checks the file's revision when the
+export ends and refuses the result if the file changed meanwhile.
 
 ## Where files go
 

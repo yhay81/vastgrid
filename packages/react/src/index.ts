@@ -1,4 +1,14 @@
 export * from "vastgrid-core";
+export type {
+  CellAction,
+  CellActionHook,
+  CellRect,
+  DrawCell,
+  DrawCellArgs,
+  DrawDefaultOptions,
+  GridCellContent,
+} from "./cell-render.js";
+export { type DetailField, DetailFields, type DetailPanelProps } from "./components/detail-panel.js";
 export {
   type ColumnState,
   CopyRangesError,
@@ -10,6 +20,13 @@ export {
   ViewBuildingError,
 } from "./controller.js";
 export { DataGrid, type DataGridHandle, type DataGridProps } from "./data-grid.js";
+export {
+  type DetailKeyAction,
+  type DetailRecord,
+  type DetailStatus,
+  DetailTracker,
+  detailKeyAction,
+} from "./detail.js";
 export type {
   GridCell,
   GridCellEvent,
@@ -23,6 +40,7 @@ export {
   downloadBlob,
   type ExportChoice,
   type ExportContext,
+  ExportInterruptedError,
   exportRequest,
   exportSupport,
   type GridExportOptions,

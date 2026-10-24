@@ -149,26 +149,33 @@ rows.
 | `messages` | `Partial<Messages>` | | Replaces some of the built-in texts (see `en` and `ja`). |
 | `rowHeight` | `number` | `--vg-row-height` or 24 | Row height in pixels. |
 | `headerHeight` | `number` | `--vg-header-height` or 32 | Header height in pixels. |
+| `maxLines` | `number` | `3` | Lines shown at most in cells of columns that wrap (`wrap` in `columnFormats`), 1 to 20. |
 | `nullText` | `string` | `""` | Text shown for null cells. |
 | `frozenColumns` | `number` | `0` | Columns frozen at the left when the table opens. |
 | `toolbar` | `boolean` | `true` | Shows the search box, active filters and row count. |
 | `statusBar` | `boolean` | `true` | Shows the active cell and the selection summary. |
-| `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. |
+| `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. Sources that report their changes are read again by themselves. |
+| `followTail` | `boolean` | `false` | After the table changed, show its end when the last row was shown (for appended rows, as `tail -f`). |
 | `copyLimit` | `number` | `1000000` | Cells that can be copied at once, over all selected ranges. |
-| `columnFormats` | `Record<string, ColumnFormat>` | | Display settings by schema column name: label, number and date formats, alignment, a format function. |
+| `columnFormats` | `Record<string, ColumnFormat>` | | Display settings by schema column name: label, number and date formats, alignment, a format function, wrapping. |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | Copy the values with the schema names, or the shown text with the labels. |
 | `exportOptions` | `GridExportOptions \| false` | `{}` | The export panel: where files go (`target`, `onExported`) and which formats to offer. `false` hides it. |
+| `drawCell` | `(args: DrawCellArgs) => void` | | Draws the visible loaded cells instead of the grid; `args.drawDefault()` draws the standard cell. |
+| `cellAction` | `(cell: GridCellContent) => CellAction \| null` | | Makes cells links or buttons: pointer, underline, screen reader role, `onCellClick` on click and Space. |
 | `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | Called when the selection or the active cell changes. |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | Called when the columns' width, order, visibility or freezing change. |
 | `onCellClick`, `onCellDoubleClick` | `(event: GridCellEvent) => void` | | Called for a click (or Space) and a double click (or F2) on a cell. `preventDefault()` on a double click keeps the cell inspector closed. |
 | `initialState` | `GridState` | | Settings applied when a grid starts, once the table's columns are known. |
 | `onStateChange` | `(state: GridState) => void` | | Called with the settings when the query or the column settings change. |
+| `detailOpen`, `defaultDetailOpen` | `boolean` | `false` | Shows the detail panel with every column of the active row (controlled, or initially). |
+| `onDetailOpenChange` | `(open: boolean) => void` | | Called when the detail panel is opened or closed by the user or the handle. |
+| `detailPanel` | `ComponentType<DetailPanelProps>` | `DetailFields` | Replaces the content of the detail panel. |
 | `className`, `style` | | | Added to the root element (`.vg-root`). |
 | `aria-label` | `string` | `messages.gridLabel` | The grid's name for screen readers. |
 
 A ref gives a `DataGridHandle`: `focus()`, `reload()`, `getQuery()`, `setQuery(query)`, `getState()`,
-`applyState(state)`, `goToRow(row)`, `openExport()`, the `controller` with the grid's state, and the canvas `renderer` (for
+`applyState(state)`, `goToRow(row)`, `openExport()`, `openDetail({ focus })`, `closeDetail()`, `detailOpen`, the `controller` with the grid's state, and the canvas `renderer` (for
 diagnostics such as `renderer.timings()`).
 
 Events give a cell's `row` in the view, its `rowId` in the original table, its visible column `col` and its
@@ -212,7 +219,88 @@ const formats: Record<string, ColumnFormat> = {
 ```
 
 Copies hold the values and the schema names unless `copyValues="formatted"` (or a column's `copy`
-setting) asks for the shown text and the labels. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#column-formats).
+setting) asks for the shown text and the labels.
+
+`wrap: true` shows a column's text on up to `maxLines` lines (3 by default), breaking at spaces and
+between Japanese, Chinese and Korean characters and at line breaks in the value; longer text ends with
+"…". All rows keep one height (`rowHeight` plus `--vg-line-height` per further line while a visible
+column wraps), so scrolling stays exact for any number of rows. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#column-formats).
+
+### Detail panel
+
+The detail panel shows every column of the active row, with the columns' labels and formatted values,
+beside the grid, or below it when the grid is narrower than 640px. Rows keep their height. It follows the
+active cell (the `active` of `onSelectionChange`); text that the table cuts is read in full for that row,
+after a short pause, and moving on cancels the read. After sorting or filtering, it shows the new active
+row, the first one; reading a changed table again keeps the active row and reads its record anew. Alt+Enter or the cell menu opens it, Alt+Enter again
+moves the focus into it, and Esc closes it. Pass a component to show the record your own way:
+
+```tsx
+function Customer({ values, schema, status, rowId }: DetailPanelProps) {
+  if (status === "loading") return <p>Loading…</p>;
+  const field = (name: string) => values[schema.findIndex((column) => column.name === name)];
+  return <CustomerCard id={rowId} name={String(field("name"))} notes={String(field("notes"))} />;
+}
+
+<DataGrid source={source} defaultDetailOpen detailPanel={Customer} />;
+```
+
+`--vg-detail-width` and `--vg-detail-height` set its size. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#detail-panel).
+
+### Files that change
+
+A grid reads its table again when the source reports that the table changed, and keeps the query, the
+column settings, the scroll position and the active cell. `RemoteSource` asks the server every 2 seconds
+while a grid shows the table; `vastgrid-duckdb` sees appended rows and rewrites by the file's size,
+modification time and a hash of its beginning. Changes reported close together are read once.
+
+```tsx
+const source = useMemo(
+  () => new RemoteSource({ endpoint: "/api/table", ref: "logs/app.csv", changes: pollChanges({ interval: 1000 }) }),
+  [],
+);
+
+<DataGrid source={source} followTail />; // stays at the end while rows are appended
+```
+
+Only the whole table is reported, never single rows: the grid reads it again, which for DuckDB means
+loading the file again. `changes: false` turns watching off, and another `ChangeTransport` (for example
+one that listens to server-sent events) can replace polling. `BrowserSource` watches files at a URL by
+their `ETag`, `Last-Modified` or size (`changeInterval`, 5 seconds by default); local files cannot be
+watched, since the browser refuses to read a `File` that changed on disk.
+
+### Cell colors and custom drawing
+
+A column's `style` colors cells by value and keeps the standard drawing. `drawCell` draws cells on the
+canvas itself, with the cell's rectangle, value, type, text, selection state and theme, and can call the
+standard drawing first. `cellAction` makes cells links or buttons: the pointer changes over them,
+links are underlined, the active cell gets the `link` or `button` role for screen readers, and a click
+or Space calls `onCellClick` (Enter and the arrows still move, as in spreadsheets). The hooks run only
+for the loaded cells on screen.
+
+```tsx
+const formats: Record<string, ColumnFormat> = {
+  balance: { style: (value) => (Number(value) < 0 ? { color: "#b42318", background: "#fdecea", description: "Overdrawn" } : null) },
+};
+const drawCell: DrawCell = (args) => {
+  args.drawDefault();
+  if (args.schema.name === "status" && args.value === "new") {
+    args.ctx.fillStyle = args.theme.accent;
+    args.ctx.fillRect(args.rect.x + 2, args.rect.y + 6, 3, args.rect.height - 12);
+  }
+};
+const cellAction: CellActionHook = (cell) => (cell.schema.name === "url" ? { kind: "link", label: `Open ${cell.text}` } : null);
+
+<DataGrid
+  source={source}
+  columnFormats={formats}
+  drawCell={drawCell}
+  cellAction={cellAction}
+  onCellClick={(event) => event.column === urlColumn && window.open(String(event.value))}
+/>;
+```
+
+See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#cell-colors-and-custom-drawing).
 
 ### Exporting
 
@@ -257,7 +345,9 @@ Node.js 24, DuckDB 1.5. Times include DuckDB but not HTTP.
 | Parquet sorted: 256 rows at a random position (median / 95th percentile) | 147 ms / 208 ms |
 
 Rendering a 2280 × 1371 px viewport (56 rows × 20 columns) takes 2.0 ms per frame at the median and
-3.0 ms at the 99th percentile, measured with the canvas flushed after every frame.
+3.0 ms at the 99th percentile, measured with the canvas flushed after every frame. Column styles,
+`cellAction` and a `drawCell` that adds a mark to the standard drawing keep a frame of 1,349 cells
+within the variation of the measurement (2.5–2.8 ms against 2.7–2.8 ms without them).
 
 ## How it works
 
@@ -306,6 +396,7 @@ flowchart LR
 | ⌘/Ctrl + F | Find |
 | Alt + ↓ | Column menu (sort, filter, statistics, freeze, hide) |
 | F2 · double click | Show the full value of the cell |
+| Alt + Enter (again: into the panel) · Esc | Open the detail panel of the active row · close it |
 | Shift + F10 · context menu key · right click | Cell menu (copy, filter to value, sort) |
 
 ## Theming

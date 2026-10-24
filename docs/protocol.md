@@ -28,6 +28,21 @@ forget both (restart, file changed, memory limits) and answer `table_not_found` 
 `RemoteSource` then reopens the table with `info` and recreates the view with the same query. A file
 that changed gets a new handle and a new `revision`.
 
+## Watching for changes
+
+`revision` answers the current revision of a table's data without reading it again. Once it differs from
+the `revision` that `info` answered, the data changed, and the next `info` with the same `ref` opens the
+new data (a new handle; views are created again). `RemoteSource` asks for it every 2 seconds while a grid
+subscribes (`TableSource.subscribe`), and the grid then reads the table again with its query and column
+settings. Only the whole table is reported, not which rows changed. A server that does not know the
+request answers `invalid_request`, and `RemoteSource` stops asking. After failed requests (the server was
+unreachable or restarted), the first answer is compared with the revision read last, so changes made
+meanwhile are reported once.
+
+`vastgrid-duckdb` builds the revision of a file from its size, its modification time and a hash of its
+first 64 KiB, so that appended rows and a rewrite within the resolution of the modification time are both
+seen. It answers `null` when the file is gone.
+
 ## Operations
 
 | `op` | Fields | Result |
@@ -41,6 +56,7 @@ that changed gets a new handle and a new `revision`.
 | `aggregate` | `table`, `view`, `ranges: { start, end, columns }[]` | `{ count, numericCount, sum, min, max, average }` |
 | `find` | `table`, `view`, `text`, `columns`, `row`, `column`, `direction` (`1` or `-1`), optional `caseSensitive` | `{ row, column }` or `null` |
 | `export` | `table`, `view`, `format` (`csv`, `tsv`, `parquet`, `json`, `xlsx`), optional `columns`, `headers`, `numberFormats`, `target` | `{ target, rows }` |
+| `revision` | `table` | `{ revision: string \| null }`, the data's current revision (see [Watching for changes](#watching-for-changes)) |
 | `close` | `table` | `null` |
 
 A `rows` request reads at most 1,000,000 rows and 1,000,000 cells (rows × columns); read more in parts.
@@ -54,7 +70,9 @@ order). `headers` (one string per written column) replaces the column names in t
 `tsv` and `xlsx`; `parquet` and `json` keep the schema names. `numberFormats` (one Excel number format
 code or `null` per column, at most 255 characters) applies to `xlsx` only. The server resolves `target`
 to a new file in its allowed folders and writes it under a temporary name first, so a cancelled or failed
-export leaves nothing behind. `xlsx` refuses more than 1,048,575 rows (one sheet with a header row) or
+export leaves nothing behind. An export holds one revision of the file: when the server closes the table
+(for example because the file changed and was opened again) or finds at the end that the file changed, it
+deletes the partial file and answers `cancelled`. `xlsx` refuses more than 1,048,575 rows (one sheet with a header row) or
 16,384 columns with `export_too_large`; see [Excel export rules](#excel-export-rules).
 
 ### `TableInfo`

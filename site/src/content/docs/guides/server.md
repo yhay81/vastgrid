@@ -140,8 +140,12 @@ The format is chosen by the file's extension:
   first. The table's `notes` then say `encoding:shift_jis`, and the grid's status bar shows it. Columns whose values do
   not fit one type are read as text (`all_varchar`), and invalid UTF-8 is replaced
   (`invalid_utf8_replaced`).
-- **When a file changes** on disk (its size or modification time), the next `info` opens it again with a
-  new `revision`. Change the grid's `reloadKey` to read it again, for example after your app saved it.
+- **When a file changes** on disk (its size, its modification time or its first 64 KiB), the next `info`
+  opens it again with a new `revision`. A grid on a `RemoteSource` notices it by itself: the `revision`
+  request, sent every 2 seconds while the grid shows the table, tells that the file changed, and the grid
+  reads it again with its query, column settings and scroll position (`followTail` keeps showing the end
+  while rows are appended). The whole file is loaded again, so files that change every second are best
+  watched less often (`pollChanges({ interval })`). `reloadKey` still reads the table again on demand.
 
 ### Excel workbooks
 

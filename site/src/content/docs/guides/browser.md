@@ -72,6 +72,7 @@ dates and times as their ISO text. Values arrive as DuckDB sends them: `DECIMAL`
 | `cacheBytes` | 32 MiB | Bytes of HTTP ranges kept for reading again. |
 | `textLimit` | 2000 | Longest text sent for a cell unless the grid asks for more. |
 | `worker` | the bundled worker | A function that creates the worker (see below). |
+| `changeInterval` | 5000 | URLs: how often (ms) a grid asks the server whether the file changed, by its `ETag`, `Last-Modified` or size (a `HEAD` request). At least 500; `0` turns it off. |
 
 `transfer()` resolves to the bytes and reads (HTTP requests) used so far, for showing or checking how
 little was read.
@@ -157,6 +158,9 @@ including hyparquet and the zstd, gzip, brotli, lz4 and snappy decoders; the pag
   millions of rows takes seconds. For that, serve the file with `vastgrid-duckdb`.
 - Sorting runs in the worker on the values of the sort columns; tens of millions of rows need hundreds of
   megabytes of memory in the worker.
+- Changes are seen for files at a URL only. A local `File` is a snapshot: once the file changes on disk the
+  browser refuses to read it, so open it again (for example from the file picker). For URLs, servers on
+  another origin must list `ETag` (or `Last-Modified`) in `Access-Control-Expose-Headers`.
 
 ## Why hyparquet, not DuckDB-WASM
 

@@ -44,7 +44,9 @@ clients and files; create one per process.
 
 An `OpenTable` has the methods of a `TableSource` (`info`, `createView`, `readRows`, `columnStats`,
 `distinctValues`, `aggregate`, `find`, and `exportView(request, target)`), its `id`, and `whenReady()`, a
-promise for the end of the load. The handlers below call them; use them directly to work with tables on
+promise for the end of the load. `currentRevision()` resolves to the file's revision now (null when it is
+gone), which differs from `info().revision` once the file changed: compare them to tell clients of a
+change by other means than polling. The handlers below call them; use them directly to work with tables on
 the server.
 
 `exportView` writes `csv`, `tsv`, `parquet`, `json` and `xlsx` (`info().exports`). Files are written
@@ -81,3 +83,4 @@ frameworks without Fetch API requests answer exactly as `createTableHandler` doe
 | `convertToUtf8(source, target, encoding, signal?)` | Converts a file to UTF-8, replacing invalid bytes. |
 | `columnTypeOf(sqlType)` | The `ColumnType` of a DuckDB type name. |
 | `quoteIdentifier(name)` | Quotes a name for DuckDB SQL. |
+| `fileRevision(path)` | The revision of a file as the engine sees it: its size, modification time and a hash of its first 64 KiB. |

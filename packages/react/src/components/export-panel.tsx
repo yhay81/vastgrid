@@ -3,6 +3,7 @@ import { type ExportFormat, isAbortError, XLSX_MAX_COLUMNS, XLSX_MAX_ROWS } from
 import type { GridController } from "../controller.js";
 import {
   type ExportChoice,
+  ExportInterruptedError,
   exportColumns,
   exportRowCount,
   exportSupport,
@@ -85,7 +86,8 @@ export function ExportPanel({
       setStatus({ kind: "done", text });
       onDone(text);
     } catch (error) {
-      if (task.signal.aborted || isAbortError(error)) setStatus({ kind: "cancelled" });
+      if (error instanceof ExportInterruptedError) setStatus({ kind: "error", text: messages.exportInterrupted });
+      else if (task.signal.aborted || isAbortError(error)) setStatus({ kind: "cancelled" });
       else
         setStatus({
           kind: "error",

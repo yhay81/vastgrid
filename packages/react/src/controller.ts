@@ -1,4 +1,6 @@
 import {
+  type CellPosition,
+  type CellStyle,
   type CellValue,
   type ColumnFormat,
   type ColumnFormatter,
@@ -33,6 +35,7 @@ import {
   type ViewInfo,
   type ViewQuery,
 } from "vastgrid-core";
+import type { CellAction, CellActionHook, DrawCell, GridCellContent } from "./cell-render.js";
 import type {
   GridCell,
   GridCellEvent,
@@ -42,7 +45,12 @@ import type {
 } from "./events.js";
 
 export interface GridOptions {
+  /** Height of rows with one line of text. */
   rowHeight: number;
+  /** Lines shown at most in cells of columns that wrap (`ColumnFormat.wrap`). Defaults to 3. */
+  maxLines?: number;
+  /** Height of each further line of wrapped text. Defaults to 18; the renderer sets it from the font. */
+  lineHeight?: number;
   headerHeight: number;
   locale?: string;
   nullText: string;
@@ -55,6 +63,14 @@ export interface GridOptions {
   columnFormats?: Record<string, ColumnFormat>;
   /** Text copied for cells: the values (`raw`, the default) or the shown text (`formatted`). */
   copyValues?: CopyValues;
+  /** After the table changed, show its end when the last row was shown before (for appended rows). */
+  followTail?: boolean;
+  /** Milliseconds to wait after a change of the table before reading it again, to merge changes (default 300). */
+  changeDelay?: number;
+  /** Draws loaded cells instead of the standard drawing (see `DrawCell`). */
+  drawCell?: DrawCell;
+  /** Tells which cells are links or buttons (see `CellActionHook`). */
+  cellAction?: CellActionHook;
 }
 
 export interface ColumnState {
@@ -157,7 +173,7 @@ function supportedQuery(query: ViewQuery, capabilities: TableCapabilities): View
 /** Whether two display settings are the same. Functions are compared by identity. */
 function sameFormat(a: ColumnFormat | undefined, b: ColumnFormat | undefined) {
   if (a === b) return true;
-  if (!a || !b || a.format !== b.format) return false;
+  if (!a || !b || a.format !== b.format || a.style !== b.style) return false;
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
@@ -240,6 +256,15 @@ export class GridController {
   private disposed = false;
   private polling = false;
   private activeValue: CellValue | undefined;
+  /** Stops listening to the source's changes (`TableSource.subscribe`). */
+  private unsubscribe: (() => void) | null = null;
+  private changeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Where the grid was when it started reading the table again, to return there once it is read. */
+  private restore: { top: number; left: number; active: CellPosition; tail: boolean; lastRow: boolean } | null = null;
+  /** Lines of text in each row: `maxLines` while a visible column wraps, otherwise 1. */
+  private wrapLines = 1;
+  /** The row height the vertical scroll was last sized with. */
+  private sizedRowHeight = 0;
 
   constructor(source: TableSource, options: GridOptions) {
     this.source = source;
@@ -294,6 +319,7 @@ export class GridController {
     this.formatters = [];
     this.formatVersion++;
     this.refit(columns);
+    this.syncSizer();
     this.emit();
     this.requestRender();
   }
@@ -421,6 +447,9 @@ export class GridController {
     if (this.polling && !this.lifecycle.signal.aborted) return;
     if (this.lifecycle.signal.aborted) this.lifecycle = new AbortController();
     this.polling = true;
+    if (!this.unsubscribe && this.source.subscribe) {
+      this.unsubscribe = this.source.subscribe(() => this.sourceChanged());
+    }
     if (this.viewBuilding) {
       // `stop()` ended the polling of the view.
       const controller = new AbortController();
@@ -433,18 +462,46 @@ export class GridController {
     });
   }
 
-  /** Reads the table again (for example after the file changed). */
+  /**
+   * Reads the table again (for example after the file changed), keeping the query, the column settings,
+   * the scroll position and the active cell. With `followTail`, a grid that showed the last row shows the
+   * new last row.
+   */
   reload() {
+    if (!this.restore && this.info) {
+      const [, last] = this.visibleRows();
+      const end = this.rowCount > 0 && last >= this.rowCount;
+      this.restore = {
+        top: this.scrollY.position,
+        left: this.scrollX.position,
+        active: this.selection.active,
+        tail: this.options.followTail === true && end,
+        lastRow: this.selection.active.row === this.rowCount - 1,
+      };
+    }
     this.lifecycle.abort();
     this.polling = false;
     this.loadError = null;
     this.start();
   }
 
+  /** Merges the changes reported within `changeDelay` into one reload. */
+  private sourceChanged() {
+    if (this.disposed || this.changeTimer !== undefined) return;
+    this.changeTimer = setTimeout(() => {
+      this.changeTimer = undefined;
+      if (!this.disposed) this.reload();
+    }, this.options.changeDelay ?? 300);
+  }
+
   /** Stops loading and cancels requests. `start()` resumes. */
   stop() {
     this.lifecycle.abort();
     this.polling = false;
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+    clearTimeout(this.changeTimer);
+    this.changeTimer = undefined;
     this.viewAbort?.abort();
     this.summaryAbort?.abort();
     clearTimeout(this.summaryTimer);
@@ -550,7 +607,8 @@ export class GridController {
       this.view = { id: null, rowCount: info.rowCount ?? info.readableRows, query: {} };
       this.viewPending = false;
       this.cache.clear();
-      this.selection.select({ row: 0, col: 0 });
+      // A reload returns to the active cell once the table is read (see `finishRestore`).
+      if (!this.restore) this.selection.select({ row: 0, col: 0 });
       // The summary of the previous selection no longer applies.
       this.scheduleSummary();
     } else if (previous.status !== info.status && types(previous) !== types(info)) {
@@ -562,7 +620,9 @@ export class GridController {
     }
     this.updateLayout();
     if (info.status === "ready" && (reset || previous?.status !== "ready") && !isEmptyQuery(this.query)) {
-      void this.setQuery(this.query);
+      void this.runQuery(this.query, true);
+    } else if (info.status === "ready" && this.restore && !this.viewPending) {
+      this.finishRestore();
     }
     this.emit();
     this.requestRender();
@@ -611,6 +671,36 @@ export class GridController {
     return state ? this.schema[state.index] : undefined;
   }
 
+  /**
+   * Height of every row: `rowHeight`, and `lineHeight` more for each further line while a visible column
+   * wraps. All rows have the same height, so that any row's position is known without reading the rows.
+   */
+  get rowHeight() {
+    return this.options.rowHeight + (this.wrapLines - 1) * (this.options.lineHeight ?? 18);
+  }
+
+  /** Lines shown at most in cells that wrap, between 1 and 20. */
+  get maxLines() {
+    const lines = Math.floor(this.options.maxLines ?? 3);
+    return Number.isFinite(lines) ? Math.min(20, Math.max(1, lines)) : 3;
+  }
+
+  /** Changes the lines shown at most in cells that wrap, keeping the first visible row in place. */
+  setMaxLines(maxLines: number | undefined) {
+    if (maxLines === this.options.maxLines) return;
+    this.options.maxLines = maxLines;
+    this.syncSizer();
+    this.requestRender();
+  }
+
+  /** Changes the height of further lines of wrapped text, keeping the first visible row in place. */
+  setLineHeight(lineHeight: number) {
+    if (lineHeight === this.options.lineHeight) return;
+    this.options.lineHeight = lineHeight;
+    this.syncSizer();
+    this.requestRender();
+  }
+
   get bodyHeight() {
     return Math.max(0, this.height - this.options.headerHeight);
   }
@@ -652,6 +742,33 @@ export class GridController {
         return prevented;
       },
     };
+  }
+
+  /** A loaded cell as the drawing and action hooks see it, or null while it is not loaded. */
+  cellContent(row: number, col: number): GridCellContent | null {
+    const state = this.visible[col];
+    const schema = state ? this.schema[state.index] : undefined;
+    if (!state || !schema) return null;
+    const value = this.cache.value(row, state.index);
+    if (value === undefined) return null;
+    const text = this.formatterOf(state.index).format(value);
+    return { ...this.cell(row, col), value, schema, type: schema.type, text };
+  }
+
+  /** The action of a loaded cell from the `cellAction` option, or null. */
+  cellActionAt(row: number, col: number): CellAction | null {
+    const hook = this.options.cellAction;
+    const content = hook ? this.cellContent(row, col) : null;
+    return content && hook ? (hook(content) ?? null) : null;
+  }
+
+  /** The colors of a loaded cell from its column's `style` setting, or null. */
+  cellStyleAt(row: number, col: number): CellStyle | null {
+    const state = this.visible[col];
+    if (!state) return null;
+    const formatter = this.formatterOf(state.index);
+    const value = formatter.styled ? this.cache.value(row, state.index) : undefined;
+    return value === undefined ? null : formatter.style(value);
   }
 
   selectionEvent(): GridSelectionEvent {
@@ -718,13 +835,19 @@ export class GridController {
     this.syncSizer();
   }
 
-  /** Sizes the native scroll content and applies the current positions. */
+  /**
+   * Sizes the native scroll content and applies the current positions. When the row height changed (a
+   * wrapping column was shown, hidden or set, or the lines changed), the first visible row stays in place.
+   */
   syncSizer() {
+    this.wrapLines = this.visible.some((column) => this.formatterOf(column.index).wrap) ? this.maxLines : 1;
+    const rowHeight = this.rowHeight;
+    const topRow =
+      this.sizedRowHeight > 0 && rowHeight !== this.sizedRowHeight ? this.scrollY.position / this.sizedRowHeight : null;
+    this.sizedRowHeight = rowHeight;
     const nativeWidth = this.scrollX.resize(this.gutterWidth + this.layout.total, this.width);
-    const nativeHeight = this.scrollY.resize(
-      this.options.headerHeight + this.rowCount * this.options.rowHeight,
-      this.height,
-    );
+    const nativeHeight = this.scrollY.resize(this.options.headerHeight + this.rowCount * rowHeight, this.height);
+    if (topRow !== null) this.scrollY.scrollTo(topRow * rowHeight);
     if (this.sizer) {
       this.sizer.style.width = `${Math.ceil(nativeWidth)}px`;
       this.sizer.style.height = `${Math.ceil(nativeHeight)}px`;
@@ -754,7 +877,7 @@ export class GridController {
 
   /** Visible rows `[first, last)`. */
   visibleRows(): [number, number] {
-    const rowHeight = this.options.rowHeight;
+    const rowHeight = this.rowHeight;
     const first = Math.max(0, Math.floor(this.scrollY.position / rowHeight));
     const last = Math.min(this.rowCount, Math.ceil((this.scrollY.position + this.bodyHeight) / rowHeight));
     return [first, Math.max(first, last)];
@@ -780,7 +903,7 @@ export class GridController {
   }
 
   rowY(row: number) {
-    return this.options.headerHeight + row * this.options.rowHeight - this.scrollY.position;
+    return this.options.headerHeight + row * this.rowHeight - this.scrollY.position;
   }
 
   /** The visible column at screen x, or -1. */
@@ -795,7 +918,7 @@ export class GridController {
 
   rowAt(y: number) {
     if (y < this.options.headerHeight) return -1;
-    const row = Math.floor((y - this.options.headerHeight + this.scrollY.position) / this.options.rowHeight);
+    const row = Math.floor((y - this.options.headerHeight + this.scrollY.position) / this.rowHeight);
     return row >= 0 && row < this.rowCount ? row : -1;
   }
 
@@ -834,7 +957,7 @@ export class GridController {
 
   /** Scrolls the least amount that shows the cell. */
   ensureVisible(row: number, col: number) {
-    const rowHeight = this.options.rowHeight;
+    const rowHeight = this.rowHeight;
     let top: number | null = null;
     if (row >= 0) {
       const y = row * rowHeight;
@@ -856,7 +979,7 @@ export class GridController {
 
   /** Rows a page key moves. */
   get pageRows() {
-    return Math.max(1, Math.floor(this.bodyHeight / this.options.rowHeight) - 1);
+    return Math.max(1, Math.floor(this.bodyHeight / this.rowHeight) - 1);
   }
 
   selectionChanged(scrollTo?: { row: number; col: number }) {
@@ -1026,7 +1149,28 @@ export class GridController {
 
   // ----- views -----
 
-  async setQuery(query: ViewQuery) {
+  setQuery(query: ViewQuery) {
+    // A query of the user's own starts at the top, also while a reload would return elsewhere.
+    this.restore = null;
+    return this.runQuery(query, false);
+  }
+
+  /** Returns to where the grid was before `reload()`, now that the table and its view are read. */
+  private finishRestore() {
+    const restore = this.restore;
+    if (!restore) return;
+    this.restore = null;
+    this.updateLayout();
+    const lastRow = Math.max(0, this.rowCount - 1);
+    const col = Math.min(restore.active.col, Math.max(0, this.visible.length - 1));
+    const row = restore.tail && restore.lastRow ? lastRow : Math.min(restore.active.row, lastRow);
+    this.selection.select({ row, col });
+    const top = restore.tail ? this.rowCount * this.options.rowHeight : restore.top;
+    this.scrollToVirtual(restore.left, top);
+    this.scheduleSummary();
+  }
+
+  private async runQuery(query: ViewQuery, restoring: boolean) {
     this.query = query;
     this.viewAbort?.abort();
     if (this.info?.status !== "ready") {
@@ -1049,9 +1193,16 @@ export class GridController {
       this.viewPending = false;
       this.cache.clear();
       this.updateLayout();
-      this.selection.select({ row: 0, col: Math.min(this.selection.active.col, Math.max(0, this.visible.length - 1)) });
-      this.scrollToVirtual(null, 0);
-      this.scheduleSummary();
+      if (restoring && this.restore) {
+        this.finishRestore();
+      } else {
+        this.selection.select({
+          row: 0,
+          col: Math.min(this.selection.active.col, Math.max(0, this.visible.length - 1)),
+        });
+        this.scrollToVirtual(null, 0);
+        this.scheduleSummary();
+      }
       if (this.viewBuilding) void this.followView(query, controller);
     } catch (error) {
       // Only this grid's own cancellation (a newer query replaced this one) is silent.
@@ -1061,6 +1212,7 @@ export class GridController {
       // The server is loading the table again (it closed it, for example because the file changed):
       // follow that load, which applies the query once the table is ready.
       if (codeOf(error) === ErrorCodes.notReady) this.reload();
+      else this.restore = null;
     }
     this.emit();
     this.requestRender();

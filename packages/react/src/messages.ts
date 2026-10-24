@@ -115,6 +115,15 @@ export interface Messages {
   cell: (row: string, column: string) => string;
   originalRow: (row: string) => string;
   textTruncated: string;
+  /** The detail panel, which shows every column of the active row. */
+  detailLabel: string;
+  detailTitle: (row: string) => string;
+  /** Context menu item that opens or closes the detail panel. */
+  showDetail: string;
+  detailFailed: string;
+  /** After the label of a column that is hidden in the grid. */
+  detailHidden: string;
+  detailEmpty: string;
   notes: Record<string, string>;
   export: string;
   exportFormat: string;
@@ -138,6 +147,8 @@ export interface Messages {
   exportDownloadHint: string;
   exporting: string;
   exportCancelled: string;
+  /** The table changed (for example its file was rewritten) while it was exported. */
+  exportInterrupted: string;
   exportFailed: (message: string) => string;
   exported: (rows: string, target: string) => string;
   exportXlsxRows: (rows: string) => string;
@@ -274,6 +285,12 @@ export const en: Messages = {
   cell: (row, column) => `Row ${row}, ${column}`,
   originalRow: (row) => `Row ${row} in the file`,
   textTruncated: "Long text is cut in the table. Show the full value to read all of it.",
+  detailLabel: "Row details",
+  detailTitle: (row) => `Row ${row}`,
+  showDetail: "Show row details",
+  detailFailed: "Could not read the row.",
+  detailHidden: "hidden",
+  detailEmpty: "No row to show.",
   notes: {
     all_varchar: "Some rows did not match the column types, so every column was read as text.",
     invalid_utf8_replaced: "Invalid characters were replaced with �.",
@@ -301,6 +318,7 @@ export const en: Messages = {
   exportDownloadHint: "The browser downloads the file.",
   exporting: "Exporting…",
   exportCancelled: "Export cancelled.",
+  exportInterrupted: "The table changed while it was exported. Export it again.",
   exportFailed: (message) => `Export failed: ${message}`,
   exported: (rows, target) => `Exported ${rows} rows to ${target}.`,
   exportXlsxRows: (rows) => `An Excel sheet holds at most ${rows} rows. Filter the rows or choose another format.`,
@@ -440,6 +458,12 @@ export const ja: Messages = {
   cell: (row, column) => `${row} 行目、${column}`,
   originalRow: (row) => `ファイルの ${row} 行目`,
   textTruncated: "長い文字列は表の中では途中まで表示します。全体は「値の全体を表示」で読めます。",
+  detailLabel: "行の詳細",
+  detailTitle: (row) => `${row} 行目`,
+  showDetail: "行の詳細を表示",
+  detailFailed: "行を読み込めませんでした。",
+  detailHidden: "非表示",
+  detailEmpty: "表示する行がありません。",
   notes: {
     all_varchar: "列の型に合わない行があったため、すべての列を文字列として読み込みました。",
     invalid_utf8_replaced: "読めない文字を � に置き換えました。",
@@ -467,6 +491,7 @@ export const ja: Messages = {
   exportDownloadHint: "ファイルはブラウザーでダウンロードします。",
   exporting: "書き出しています…",
   exportCancelled: "書き出しを取り消しました。",
+  exportInterrupted: "書き出し中に表が変わりました。もう一度書き出してください。",
   exportFailed: (message) => `書き出せませんでした：${message}`,
   exported: (rows, target) => `${rows} 行を ${target} に書き出しました。`,
   exportXlsxRows: (rows) => `Excel のシートは ${rows} 行までです。行を絞り込むか、別の形式を選んでください。`,

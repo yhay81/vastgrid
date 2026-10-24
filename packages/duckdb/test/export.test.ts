@@ -228,3 +228,36 @@ test("the handler reports the export formats and passes headers and number forma
   assert.equal((info.result?.capabilities as { export: boolean } | undefined)?.export, false);
   assert.equal(info.result?.exports, undefined);
 });
+
+test("an export of a file that changes is cancelled and leaves no file", async () => {
+  const file = path.join(workspace, "changing.csv");
+  await writeFile(file, csv);
+  const folder = path.join(workspace, "out", "changing");
+  await mkdir(folder);
+  // Changed before the export ends: the export holds old data, so it is refused.
+  let table = await open(file);
+  await writeFile(file, `${csv}\n6,Fig,2,2024-03-01,2024-03-01 00:00:00,true,6`);
+  await assert.rejects(
+    table.exportView({ view: null, format: "xlsx", target: "a.xlsx" }, path.join(folder, "a.xlsx")),
+    (error: unknown) => error instanceof SourceError && error.code === "cancelled" && /changed/.test(error.message),
+  );
+  assert.deepEqual(await readdir(folder), []);
+  // Opened again while exporting (as a grid's reload does): the old table closes and stops its export.
+  const big = path.join(workspace, "changing-many.csv");
+  await writeFile(big, await readFile(path.join(workspace, "many.csv")));
+  table = await open(big);
+  const view = await table.createView({ filters: [{ type: "compare", column: 0, op: "gt", value: 0 }] });
+  const running = table.exportView({ view: view.id, format: "xlsx", target: "b.xlsx" }, path.join(folder, "b.xlsx"));
+  // It may end while the file is opened again below.
+  const outcome = running.then(
+    () => null,
+    (error: unknown) => error,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  await writeFile(big, "n\n1\n2\n");
+  const reopened = await open(big);
+  assert.equal(reopened.info().rowCount, 2);
+  const error = await outcome;
+  assert.ok(error instanceof SourceError && error.code === "cancelled" && /changed/.test(error.message), String(error));
+  assert.deepEqual(await readdir(folder), []);
+});

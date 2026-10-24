@@ -1,6 +1,6 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdir, readdir, realpath, rename, rm, stat } from "node:fs/promises";
+import { mkdir, open as openFile, readdir, realpath, rename, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pipeline, Readable } from "node:stream";
@@ -332,7 +332,7 @@ export class TableEngine {
 
   /**
    * Opens a file, or returns the table already open for it when the file has not changed. A file
-   * that changed (size or modification time) is opened again as a new table, and so is a file whose
+   * that changed (see `fileRevision`) is opened again as a new table, and so is a file whose
    * load failed once `info()` has reported the failure (a retry). Only files whose real location
    * (after following links) is inside the allowed directories are opened. `read` chooses the sheet
    * of a workbook and how its rows are read; each choice is a table of its own.
@@ -352,7 +352,7 @@ export class TableEngine {
     if (!this.allows(absolute)) throw notAllowed();
     const info = await stat(absolute);
     if (!info.isFile()) throw new SourceError(ErrorCodes.notFile, "Only files can be opened as tables.", 400);
-    const revision = `${info.size}:${Math.round(info.mtimeMs)}`;
+    const revision = await fileRevision(absolute);
     // Until its failure is reported, a failed table is returned as it is: reopening it right away would
     // answer every poll of a loading table with a new load, so clients would never see the error.
     const reusable = (table: OpenTable) => table.revision === revision && !table.failureReported;
@@ -544,6 +544,8 @@ export class OpenTable {
   private readonly objects: string[] = [];
   private clock = 0;
   private disposed = false;
+  /** Running exports, stopped when the table closes (for example because its file changed). */
+  private readonly exports = new Set<AbortController>();
   private ready: Promise<void> = Promise.resolve();
   private listed: () => void = () => undefined;
   private readonly sheetsKnown = new Promise<void>((resolve) => {
@@ -562,6 +564,19 @@ export class OpenTable {
 
   touch() {
     this.lastUsed = Date.now();
+  }
+
+  /**
+   * The file's current revision (see `fileRevision`), or null when it is gone. It differs from
+   * `info().revision` once the file changed; opening the file again then reads the new data.
+   */
+  async currentRevision(): Promise<string | null> {
+    try {
+      return await fileRevision(this.path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
   }
 
   start() {
@@ -1542,38 +1557,62 @@ export class OpenTable {
     const destination = path.join(folder, path.basename(target));
     if (!this.engine.allows(destination)) throw notAllowed();
     const temporary = path.join(folder, `.${path.basename(target)}.${randomBytes(6).toString("hex")}.tmp`);
-    return this.engine.work.run(() =>
-      this.engine.withConnection(signal, async (connection) => {
-        try {
-          if (request.format === "xlsx") {
-            await this.writeWorkbook(connection, from, position, columns, headers, request, temporary, signal);
-          } else {
-            const selected = columns
-              .map((column, index) =>
-                headers[index] === column.name
-                  ? quoteIdentifier(column.name)
-                  : `${quoteIdentifier(column.name)} AS ${quoteIdentifier(headers[index])}`,
-              )
-              .join(", ");
-            const options = {
-              csv: "FORMAT csv, HEADER true",
-              tsv: "FORMAT csv, HEADER true, DELIMITER '\\t'",
-              parquet: "FORMAT parquet, COMPRESSION zstd",
-              json: "FORMAT json, ARRAY true",
-            }[request.format];
-            await connection.run(
-              `COPY (SELECT ${selected || "*"} FROM ${from} ORDER BY ${position}) TO ${quoteLiteral(temporary)} (${options})`,
-            );
+    // An export holds the data of one revision of the file: closing the table (also because the file
+    // changed and was opened again) stops it, and so does a change found when it ends.
+    const stop = new AbortController();
+    const forward = () => stop.abort();
+    if (signal?.aborted) stop.abort();
+    signal?.addEventListener("abort", forward, { once: true });
+    this.exports.add(stop);
+    const changed = () =>
+      new SourceError(
+        ErrorCodes.cancelled,
+        "The file changed or was closed while it was exported; export it again.",
+        409,
+      );
+    try {
+      return await this.engine.work.run(() =>
+        this.engine.withConnection(stop.signal, async (connection) => {
+          if (this.disposed) throw changed();
+          try {
+            if (request.format === "xlsx") {
+              await this.writeWorkbook(connection, from, position, columns, headers, request, temporary, stop.signal);
+            } else {
+              const selected = columns
+                .map((column, index) =>
+                  headers[index] === column.name
+                    ? quoteIdentifier(column.name)
+                    : `${quoteIdentifier(column.name)} AS ${quoteIdentifier(headers[index])}`,
+                )
+                .join(", ");
+              const options = {
+                csv: "FORMAT csv, HEADER true",
+                tsv: "FORMAT csv, HEADER true, DELIMITER '\\t'",
+                parquet: "FORMAT parquet, COMPRESSION zstd",
+                json: "FORMAT json, ARRAY true",
+              }[request.format];
+              await connection.run(
+                `COPY (SELECT ${selected || "*"} FROM ${from} ORDER BY ${position}) TO ${quoteLiteral(temporary)} (${options})`,
+              );
+            }
+            if (this.disposed || (await this.currentRevision()) !== this.revision) throw changed();
+            await rename(temporary, destination);
+          } catch (error) {
+            await rm(temporary, { force: true });
+            if (signal?.aborted) throw new SourceError(ErrorCodes.cancelled, "The request was cancelled.", 499);
+            if (this.disposed) throw changed();
+            throw error;
           }
-          await rename(temporary, destination);
-        } catch (error) {
-          await rm(temporary, { force: true });
-          if (signal?.aborted) throw new SourceError(ErrorCodes.cancelled, "The request was cancelled.", 499);
-          throw error;
-        }
-        return { target: request.target, rows };
-      }),
-    );
+          return { target: request.target, rows };
+        }),
+      );
+    } catch (error) {
+      if (!signal?.aborted && this.disposed) throw changed();
+      throw error;
+    } finally {
+      this.exports.delete(stop);
+      signal?.removeEventListener("abort", forward);
+    }
   }
 
   /** Streams the rows into a workbook (see `writeXlsx`): one chunk of rows from DuckDB at a time. */
@@ -1616,6 +1655,7 @@ export class OpenTable {
     if (this.disposed) return;
     this.disposed = true;
     // Loads and view builds notice `disposed` and drop what they create after this point.
+    for (const running of this.exports) running.abort();
     this.loadConnection?.interrupt();
     this.viewConnection?.interrupt();
     const names = [
@@ -1637,6 +1677,26 @@ export class OpenTable {
         .catch((error: unknown) => this.engine.options.log?.(`Dropping ${this.path} failed`, error));
     }
     for (const file of this.tempFiles) await rm(file, { force: true });
+  }
+}
+
+/** Bytes at the start of a file that its revision covers. */
+const REVISION_HEAD_BYTES = 64 * 1024;
+
+/**
+ * A file's revision: its size, its modification time and a hash of its first 64 KiB, so that a file
+ * rewritten with the same size within the resolution of its modification time still counts as changed.
+ */
+export async function fileRevision(file: string): Promise<string> {
+  const handle = await openFile(file, "r");
+  try {
+    const info = await handle.stat();
+    const head = Buffer.alloc(Math.min(info.size, REVISION_HEAD_BYTES));
+    const { bytesRead } = await handle.read(head, 0, head.length, 0);
+    const hash = createHash("sha1").update(head.subarray(0, bytesRead)).digest("hex").slice(0, 16);
+    return `${info.size}:${Math.round(info.mtimeMs)}:${hash}`;
+  } finally {
+    await handle.close();
   }
 }
 

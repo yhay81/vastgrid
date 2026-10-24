@@ -31,6 +31,7 @@ shows the row's position in the file.
 | ⌘/Ctrl + F | Find |
 | Alt + ↓ | Column menu (sort, filter, statistics, freeze, hide) |
 | F2 · double click | Show the full value of the cell |
+| Alt + Enter (again: into the panel) · Esc | Open the detail panel of the active row · close it |
 | Shift + F10 · context menu key · right click | Cell menu (copy, filter to value, sort) |
 | Escape | Close a menu or panel, or cancel a copy that is still reading |
 
@@ -101,3 +102,6 @@ shown or all columns, as CSV, TSV, Parquet, JSON or Excel, depending on the sour
 - "Freeze up to this column" keeps the columns up to it at the left while you scroll sideways.
 - "Hide column" hides it; the "Columns" button in the toolbar lists every column to show or hide.
 - F2 or a double click shows the cell's whole value, with line breaks, in the cell inspector.
+- Alt + Enter, or "Show row details" in the cell menu, opens the detail panel beside the grid (below it
+  when the grid is narrow). It shows every column of the active row in full and follows the active cell
+  as you move. Alt + Enter again moves the focus into it, and Esc closes it.

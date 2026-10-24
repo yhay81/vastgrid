@@ -1,4 +1,5 @@
 import {
+  ErrorCodes,
   EXPORT_EXTENSIONS,
   type ExportFormat,
   type ExportRequest,
@@ -134,6 +135,17 @@ export function exportRequest(controller: GridController, choice: ExportChoice):
   return request;
 }
 
+/**
+ * The table changed while it was exported (the source reported a change, or the server closed the
+ * table because its file changed), so the file would mix revisions or hold old data. Export again.
+ */
+export class ExportInterruptedError extends Error {
+  constructor() {
+    super("The table changed while it was exported.");
+    this.name = "ExportInterruptedError";
+  }
+}
+
 /** Saves a `Blob` as a download in the browser. */
 export function downloadBlob(data: Blob, fileName: string) {
   const url = URL.createObjectURL(data);
@@ -173,7 +185,28 @@ export async function runExport(
   const target = options.target ? await options.target(context) : context.request.target;
   if (target === null || signal.aborted) return null;
   context.request = { ...context.request, target };
-  const result = await exportView(context.request, signal);
+  // A change of the table stops the export: the file would not match what the grid shows next.
+  const running = new AbortController();
+  let changed = false;
+  const forward = () => running.abort(signal.reason);
+  signal.addEventListener("abort", forward, { once: true });
+  const unsubscribe = controller.source.subscribe?.(() => {
+    changed = true;
+    running.abort(new ExportInterruptedError());
+  });
+  let result: ExportResult;
+  try {
+    result = await exportView(context.request, running.signal);
+  } catch (error) {
+    // The server cancels exports of a table it closed, for example because its file changed.
+    const closed = error instanceof Error && "code" in error && error.code === ErrorCodes.cancelled;
+    if (!signal.aborted && (changed || closed)) throw new ExportInterruptedError();
+    throw error;
+  } finally {
+    unsubscribe?.();
+    signal.removeEventListener("abort", forward);
+  }
+  if (changed) throw new ExportInterruptedError();
   if (options.onExported) await options.onExported(result, context);
   else if (result.data) downloadBlob(result.data, fileNameFor(target.split(/[\\/]/).pop() ?? target, choice.format));
   return { result, context };

@@ -18,16 +18,20 @@ import "vastgrid/styles.css";
 | `locale` | `string` | ブラウザーの言語 | 数値と組み込みの文言のロケール。`ja` なら日本語、それ以外は英語です。 |
 | `messages` | `Partial<Messages>` | | 組み込みの文言の一部を置き換えます（`en` と `ja` を参照）。 |
 | `rowHeight` | `number` | `--vg-row-height` か 24 | 行の高さ（px）。 |
+| `maxLines` | `number` | `3` | 折り返す列（`columnFormats` の `wrap`）のセルに表示する最大の行数（1〜20）。 |
 | `headerHeight` | `number` | `--vg-header-height` か 32 | 見出しの高さ（px）。 |
 | `nullText` | `string` | `""` | null のセルに表示する文字。 |
 | `frozenColumns` | `number` | `0` | 表を開いたときに左に固定する列の数。 |
 | `toolbar` | `boolean` | `true` | 検索欄、適用中の絞り込み、行数を表示します。 |
 | `statusBar` | `boolean` | `true` | アクティブなセルと選択範囲の集計を表示します。 |
-| `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。 |
+| `reloadKey` | `unknown` | | 値を変えると表を読み直します。ディスク上のファイルが変わったときなどに使います。変更を通知する source（`subscribe`）は自動で読み直されます。どちらの場合も、クエリー・列の設定・スクロール位置・アクティブなセルはそのままです。 |
+| `followTail` | `boolean` | `false` | 表が変わったとき、それまで最後の行を表示していれば新しい末尾を表示します（`tail -f` のように追記された行を追います）。 |
 | `copyLimit` | `number` | `1000000` | 一度にコピーできるセルの数（選択したすべての範囲の合計）。 |
 | `columnFormats` | `Record<string, ColumnFormat>` | | スキーマの列名ごとの表示設定。表示名、数値と日時の書式、配置、整形関数。 |
 | `copyValues` | `"raw" \| "formatted"` | `"raw"` | コピーするのを、値とスキーマの列名にするか、表示している文字と表示名にするか。 |
 | `exportOptions` | `GridExportOptions \| false` | `{}` | 書き出しパネル。ファイルの行き先と、出す形式を決めます。`false` で隠します。[書き出し](/ja/guides/export/)を参照してください。 |
+| `drawCell` | `(args: DrawCellArgs) => void` | | 表示中の読み込み済みのセルを、グリッドの代わりに描きます。[セルの色と独自の描画](#セルの色と独自の描画)を参照してください。 |
+| `cellAction` | `(cell: GridCellContent) => CellAction \| null` | | セルをリンクやボタンにします（ポインター、下線、スクリーンリーダー向けの役割。クリックと Space で `onCellClick` を呼ぶ）。 |
 | `onQueryChange` | `(query: ViewQuery) => void` | | 並べ替え・絞り込み・検索が変わったときに呼ばれます。 |
 | `onSelectionChange` | `(event: GridSelectionEvent) => void` | | 選択範囲かアクティブなセルが変わったときに呼ばれます。[イベント](#イベント)を参照してください。 |
 | `onColumnsChange` | `(event: GridColumnsEvent) => void` | | 列の幅・順序・表示・固定が変わったときに呼ばれます。 |
@@ -35,6 +39,10 @@ import "vastgrid/styles.css";
 | `onCellDoubleClick` | `(event: GridCellEvent) => void` | | セルをダブルクリックしたとき、または F2 を押したときに呼ばれます。`event.preventDefault()` でセルの詳細を開かないようにできます。 |
 | `initialState` | `GridState` | | グリッドを作るときに、表の列がわかった時点で適用する設定。[設定の保存](#設定の保存)を参照してください。 |
 | `onStateChange` | `(state: GridState) => void` | | クエリーか列の設定が変わったときに、その設定を渡して呼ばれます。 |
+| `detailOpen` | `boolean` | | [詳細パネル](#詳細パネル)を開きます（制御する値）。指定しなければグリッドが状態を持ちます。 |
+| `defaultDetailOpen` | `boolean` | `false` | `detailOpen` を指定しないときに、マウントした時点で詳細パネルを開くかどうか。 |
+| `onDetailOpenChange` | `(open: boolean) => void` | | 利用者か handle が詳細パネルを開閉したときに呼ばれます。 |
+| `detailPanel` | `ComponentType<DetailPanelProps>` | `DetailFields` | 詳細パネルの中身を差し替えます。 |
 | `className`、`style` | | | ルートの要素（`.vg-root`）に付けます。 |
 | `aria-label` | `string` | `messages.gridLabel` | スクリーンリーダー向けのグリッドの名前。 |
 
@@ -52,6 +60,9 @@ ref からは `DataGridHandle` を使えます。
 | `applyState(state)` | 保存した `GridState` を適用します。このバージョンで読めない値なら `false` を返します。 |
 | `goToRow(row)` | 現在のビューのその行までスクロールし、アクティブにします。 |
 | `openExport()` | ツールバーがなくても、書き出しパネルを開きます。source が今書き出せないときは `false` を返します。 |
+| `openDetail({ focus })` | 詳細パネルを開きます。`focus: true` ならフォーカスをパネルに移します。 |
+| `closeDetail()` | 詳細パネルを閉じます。 |
+| `detailOpen` | 詳細パネルが開いているかどうか。 |
 | `controller` | グリッドの状態（選択範囲、列の配置、ビュー）を持つ `GridController`。 |
 | `renderer` | `CanvasRenderer`。`renderer.timings()` などの診断に使います。グリッドがマウントされるまでは `null`。 |
 
@@ -177,16 +188,141 @@ const formats: Record<string, ColumnFormat> = {
 | `number` | 数値と数値の文字列の書式。`style`（`decimal`、`percent`、`currency` と `currency`）、`currencyDisplay`、`fractionDigits`（または `minimumFractionDigits` と `maximumFractionDigits`）、`grouping`、`notation`、`signDisplay`、`prefix` と `suffix`。数値でない文字列はそのまま表示します。 |
 | `date` | 日付と時刻の書式。`pattern`、または `Intl.DateTimeFormat` のオプション（`dateStyle`、`timeStyle`、`year`、`month`、`day`、`hour` など）。`timeZone` は、オフセットのある値（`timestamptz`）を表示するタイムゾーンです。オフセットのない値はそのまま表示します。日時でない文字列はそのまま表示します。 |
 | `align` | `left`、`center`、`right`。既定では数値の列が `right`。 |
-| `format(value, { column, text })` | 値の表示の文字を返す関数。`text` はほかの設定で作った文字です。結果は 1 行で表示します。 |
+| `format(value, { column, text })` | 値の表示の文字を返す関数。`text` はほかの設定で作った文字です。結果は 1 行で（`wrap` では折り返して）表示します。 |
 | `copy` | `raw` か `formatted`。この列のセルについて `copyValues` を上書きします。 |
+| `wrap` | `true` で、文字を `maxLines` 行まで折り返して表示します（下記）。 |
+| `style(value, { column, text })` | 値に応じたセルの `color`、`background`、`description` を返す関数。`null` なら既定の見た目です。[セルの色と独自の描画](#セルの色と独自の描画)を参照してください。 |
 
 パターンでは `yyyy` `yy`（年）、`M` `MM` `MMM` `MMMM`（月）、`d` `dd`（日）、`EEE` `EEEE`（曜日）、`H` `HH`（0〜23 時）、`h` `hh` と `a`（1〜12 時と午前・午後）、`m` `mm`（分）、`s` `ss`（秒）、`S` `SS` `SSS`…（秒の小数の桁）を使います。一重引用符で囲んだ文字はそのまま残ります（`yyyy-MM-dd 'at' HH:mm`）。月と曜日の名前は `locale` に従います。
+
+**折り返し。** `wrap: true` を指定した列は、文字を `maxLines`（既定は 3）行まで折り返して表示します。行は空白と、日本語・中国語・韓国語の文字の間で折り返し（`。` や `」` などの閉じる記号の前と、開く括弧の後では折り返しません）、列より長い単語は途中で切ります。値の中の改行では行を改めます。収まらない分は「…」で示し、全体はセルの値の表示（インスペクター）で読めます。数億行でもスクロールや指定行への移動を正確に保つため、行の高さは全行で同じです。表示中の列が折り返す間は、どの行も `rowHeight` に、2 行目以降の 1 行ごとに `--vg-line-height`（文字の大きさの 1.4 倍）を足した高さになり、高さが変わっても先頭に見えている行は動きません。折り返しの計算は表示中のセルだけで行います。`wrap` と `maxLines` は、ほかの表示設定と同じくアプリが渡す設定で、`GridState` には含めません。
+
+```tsx
+<DataGrid source={source} columnFormats={{ comment: { wrap: true } }} maxLines={4} />
+```
 
 **値と表示。** 設定が変えるのは表示だけです。並べ替え、絞り込み（条件に入力する値も）、検索、表の中の検索、列の統計、選択範囲の集計、書き出しは値そのものに対して動きます。たとえばパーセントの列を「> 0.5」で絞り込むと、50% を超える値が残ります。文字列で届く 64 bit 整数や decimal は、JavaScript の数値を介さずにその桁から整形するので、`"9007199254740993"` も正確に表示されます。セルの値の表示（インスペクター）には、値と、その下に表示上の文字が出ます。
 
 **コピー。** 既定では、コピー（TSV・HTML・Markdown）には `plainText` が書く形の値と、見出しにはスキーマの列名が入り、表計算ソフトが数値や日付として読めます。`copyValues="formatted"` にすると、表示している文字の全体（切らず、改行も残す）と表示名をコピーします。列の `copy` を指定すると、その列のセルはそちらに従います。書き出し（`exportView`）はソースが書くので、値が入ります。書き出しパネルでは、表示名を見出しに、Excel ファイルでは数値・日時の書式を Excel の表示形式にできます（[書き出し](/ja/guides/export/)を参照）。
 
 正しくない設定（`currency` のない通貨の書式や、存在しないタイムゾーンなど）は、グリッドに渡した時点で `RangeError` を投げます。`ColumnFormatter`（`ValueFormatter.column(schema, format)` で作り、グリッドでは `controller.formatterOf(index)`）を使うと、グリッドの外でも同じ設定で値を整形でき、設定は `settings` で読めます。
+
+## 詳細パネル
+
+詳細パネルは、アクティブな行のレコード全体を固定の位置に表示します。グリッドの横に、グリッドの幅が 640px より狭いときは下に表示します。行の高さは変わらないので、スクロール、`goToRow`、固定列はパネルがないときと同じく動きます。`detailOpen`（制御する値。`onDetailOpenChange` と組み合わせます）、`defaultDetailOpen`、handle の `openDetail({ focus })` と `closeDetail()`、Alt ＋ Enter、セルのメニューの「行の詳細を表示」で開閉します。
+
+標準の中身（`DetailFields`）は、すべての列を表示の順に並べ、`columnFormats` の表示名と書式付きの値を表示します。隠した列には「非表示」と付けます。表の中で途中まで表示している値は、全体を読み込みます。
+
+**表示する行。** パネルはアクティブなセル（`onSelectionChange` の `active`）に追従します。
+
+- 別の行へ移ると、その行を表示します。同じ行の中で動いたときや、列の移動・非表示・固定・書式の変更では、表示しているレコードを保ちます。
+- 値は読み込み済みの行から取ります。読み込んでいない列と、source が途中で切った文字列（末尾が「…」）は、その行だけを 120 ms 待ってから全体を読み込みます。読み込む前や読み込み中に別の行へ移ると取り消すので、素早く行を移ったときに読み込むのは止まった行だけです。
+- 新しいビュー（並べ替え・絞り込み・検索）では先頭の行がアクティブになり、パネルはその行を表示します。タイトルには元の表での行も表示します。
+- 表を読み直したとき、表が変わっていなければレコードを保ちます。変わっていても、`reloadKey` や source の変更通知と同じくアクティブな行はそのままで、パネルはそのレコードを読み込み直します。
+- 行がないときは、そのことを表示します。
+
+**キー操作とフォーカス。** グリッドで Alt ＋ Enter を押すとパネルが開き、フォーカスはグリッドに残るので、矢印で行を移り続けられます。もう一度 Alt ＋ Enter を押すと、フォーカスがパネルに移ります。パネルでは Esc で閉じ、Alt ＋ Enter でグリッドに戻ります。どちらもフォーカスをグリッドに戻します。グリッドの Esc も、ほかに閉じるものがなければパネルを閉じます。パネルはタイトルを名前にした補足のランドマーク（`<aside>`）で、値を読み込んでいる間は `aria-busy` になります。
+
+**読み込みの失敗。** 行を読み込めなかったときは、エラーと「再試行」ボタンを表示し（独自の中身では `retry()`）、それまでの値を残します。
+
+**中身の差し替え。** `detailPanel` に、`DetailPanelProps` を受け取るコンポーネントを渡します。
+
+| prop | 型 | 説明 |
+| --- | --- | --- |
+| `row` | `number` | 現在のビューでの行。 |
+| `rowId` | `number \| null` | 元の表での行。ビューの行が読み込まれるまでは `null`。 |
+| `values` | `(CellValue \| undefined)[]` | スキーマの列の番号ごとの値（全体）。読み込み中は `undefined`。 |
+| `schema` | `ColumnSchema[]` | 表の列。 |
+| `status` | `"loading" \| "ready" \| "error"` | 値を読み込み中・読み込み済み・失敗。 |
+| `error` | `string \| null` | 読み込みに失敗した理由。 |
+| `fields` | `DetailField[]` | 表示の順のすべての列。`column`、`name`、`label`、`hidden`、`value` と表示上の `text`。 |
+| `retry()` | | 行を読み込み直します。 |
+| `messages` | `Messages` | グリッドの文言。 |
+
+```tsx
+import { DataGrid, type DetailPanelProps } from "vastgrid";
+
+function Order({ fields, status, rowId }: DetailPanelProps) {
+  return (
+    <article aria-busy={status === "loading"}>
+      <h3>注文 {rowId === null ? "" : rowId + 1}</h3>
+      {fields
+        .filter((field) => !field.hidden)
+        .map((field) => (
+          <p key={field.column}>
+            <strong>{field.label}</strong> {field.text}
+          </p>
+        ))}
+    </article>
+  );
+}
+
+<DataGrid source={source} defaultDetailOpen detailPanel={Order} />;
+```
+
+パネルの大きさは `--vg-detail-width`（340px）と `--vg-detail-height`（45%）で変えられます。`DetailTracker` は `GridController` のアクティブな行に追従してレコードを React の外で読み込むので、詳細をほかの場所に表示するアプリで使えます。
+
+## セルの色と独自の描画
+
+セルの見た目と動作は、次の 3 つの設定で変えられます。どれも表示中の行と列の読み込み済みのセルにだけ呼ばれ、表のほかの部分には呼ばれません。読み込み中の行のセルは仮の表示のままです。関数は安定させてください（コンポーネントの外で定義するか、メモ化する）。新しい関数を渡すとグリッドを描き直します。
+
+```tsx
+import { type CellActionHook, type ColumnFormat, DataGrid, type DrawCell } from "vastgrid";
+
+const formats: Record<string, ColumnFormat> = {
+  // 0 未満は薄赤の背景に赤い文字。それ以外は標準の描画。
+  balance: {
+    style: (value) =>
+      Number(value) < 0 ? { color: "#b42318", background: "#fdecea", description: "残高不足" } : null,
+  },
+};
+
+// 真偽値の列は丸い印、ほかの列は標準のセル。
+const drawCell: DrawCell = (args) => {
+  if (args.schema.name !== "active") return args.drawDefault();
+  const { ctx, rect, theme } = args;
+  ctx.fillStyle = args.value === true ? "#1a7f37" : theme.placeholder;
+  ctx.beginPath();
+  ctx.roundRect(rect.x + args.padding, rect.y + (rect.height - 16) / 2, 36, 16, 8);
+  ctx.fill();
+};
+
+const cellAction: CellActionHook = (cell) =>
+  cell.schema.name === "url" && cell.value !== null ? { kind: "link", label: `${cell.text} を開く` } : null;
+
+<DataGrid
+  source={source}
+  columnFormats={formats}
+  drawCell={drawCell}
+  cellAction={cellAction}
+  onCellClick={(event) => {
+    if (event.column === urlColumn && typeof event.value === "string") window.open(event.value, "_blank");
+  }}
+/>;
+```
+
+**値に応じた色。** 列の `style(value, { column, text })` は `CellStyle`（`color`、`background`、`description`）を返します。`null` なら既定の見た目です。文字・配置・フォントは変わらず、背景は検索の強調と選択範囲の下に描きます。結果は読み込んだ行と一緒に文字と同じく保持するので、関数は読み込んだセルごとに 1 回だけ呼ばれ、フレームごとには呼ばれません。色は読み上げられないので、`description` をアクティブなセルの値の後にスクリーンリーダーが読み上げます。
+
+**描画。** `drawCell(args)` は、表示中の読み込み済みのセルの描画を置き換えます。`args` には、セルの位置（`row`、`rowId`、`col`、`column`）、`value`、`type`、`schema`、表示の文字 `text`、`rect`（CSS ピクセル）、列の `style` と `align`、`action`、`selected`、`active`、`hovered`、`matched`（検索）、`theme`、`padding` と、次のものがあります。
+
+- `ctx`：セルのフォント、`textBaseline = "middle"`、列の `textAlign` を設定したキャンバス。切り抜きは列の範囲で、セルの範囲ではないので、`rect` の中に描くか自分で切り抜いてください。状態はフックの後に元に戻します。
+- `drawDefault(options?)`：標準のセル（背景、検索の強調、スタイルかリンクの色の文字、リンクの下線）。`options` で `text`、`color`、`background`、`align`、`underline` を置き換えられます。
+- `fitText(text, width)`：幅に収まるよう「…」で縮めた文字（セルのフォント）。
+
+罫線と選択範囲は、その後でグリッドがセルの上に描きます。`drawCell` があるときは、ポインターが別の行に移ると描き直すので、`hovered` が追従します。
+
+**リンクとボタン。** `cellAction(cell)` は、操作できるセルには `{ kind: "link" | "button", label?, cursor? }` を、それ以外には `null` を返します。契約は[イベント](#イベント)に合わせています。
+
+| | 動作 |
+| --- | --- |
+| ポインター | セルの上ではポインターが `cursor`（既定は `pointer`）になります。クリックするとセルを選択してから `onCellClick` を `trigger: "pointer"` で呼びます。ドラッグは選択だけで、クリックになりません。 |
+| キーボード | アクティブなセルで Space を押すと `onCellClick` を `trigger: "keyboard"` で、F2 で `onCellDoubleClick` を呼びます。Enter、Tab、矢印キーはこれまでどおりアクティブなセルを移動するので、リンクの並ぶ列でも順にたどれます。 |
+| スクリーンリーダー | アクティブなセルの内容に `link` か `button` の役割と、`label` があればその名前を付けます。`onCellClick` があるときは `aria-keyshortcuts="Space"` も付けます。 |
+| 描画 | リンクは、スタイルや `drawCell` で変えない限り、`--vg-link-fg` の色で下線を付けて描きます。 |
+
+グリッドは自分では何も開きません。開くかどうかは `onCellClick` で決めます（たとえば `window.open`）。フックの外では、`controller.cellContent(row, col)`、`cellActionAt`、`cellStyleAt` で同じ情報を得られます。
+
+**描画時間。** 2520 × 1731 px で 1,349 セルを表示した 1 フレームは、この機能を入れる前が 2.7〜2.8 ms、入れた後でフックを使わないときが 2.8 ms、すべての列に `style` を付けると 2.5 ms、半分の列に `cellAction` を付けると 2.8 ms、`drawDefault()` を呼んで印を足す `drawCell` で 2.8 ms でした（180 フレームを 4 回測った中央値、Chromium、Apple M2 Pro）。セルごとに計測や割り当ての多いフックは時間がかかるので、`renderer.timings()` で確かめてください。
 
 ## エクスポート
 
@@ -195,6 +331,7 @@ const formats: Record<string, ColumnFormat> = {
 | エクスポート | 説明 |
 | --- | --- |
 | `DataGrid`、`DataGridProps`、`DataGridHandle` | コンポーネントと、その props と ref の型。 |
+| `DetailPanelProps`、`DetailField`、`DetailFields`、`DetailTracker`、`DetailRecord`、`DetailStatus`、`detailKeyAction` | [詳細パネル](#詳細パネル)。独自の中身の props、標準の中身、React の外でのレコード。 |
 | `GridCell`、`GridCellEvent`、`GridSelectionEvent`、`GridSelectionRange`、`GridColumnsEvent`、`GridColumn`、`GridColumnsChangeReason` | [イベント](#イベント)の型。 |
 | `GridState`、`GridColumnSetting`、`parseGridState(value)`、`resolveGridState(state, names)`、`GRID_STATE_VERSION` | `vastgrid-core` の、[保存する設定](#設定の保存)。 |
 | `en`、`ja`、`Messages`、`messagesFor(locale)` | 組み込みの文言と、ロケールに合わせてグリッドが選ぶ組。 |
@@ -205,4 +342,5 @@ const formats: Record<string, ColumnFormat> = {
 | `CopyRangesError` | 行も列も同じでない複数の範囲をコピーしようとしたときに投げられます。 |
 | `GridExportOptions`、`ExportChoice`、`ExportContext` | [書き出しパネル](/ja/guides/export/)のオプションと、それに渡す内容。 |
 | `runExport(controller, choice, options, signal)`、`exportRequest(controller, choice)`、`exportSupport(info, exportView)` | パネルと同じように書き出す、またはその要求を作ります。独自の書き出し画面向けです。 |
+| `ExportInterruptedError` | 書き出し中に表が変わったとき `runExport` が投げます。 |
 | `downloadBlob(data, fileName)` | `Blob` をブラウザーのダウンロードとして保存します。 |
