@@ -9,9 +9,9 @@ and this document says how React holds, shows and changes them. Why React comes 
 The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 
 The code of this draft has the store (§4), `DataGrid` and the hooks (§5), the canvas with scrolling, keys,
-pointers, sorting, resizing columns and copying (§6), the toolbar's search, the status bar, the accessibility rows,
-server rendering (§7) and the checks of §10 and §11. The panels, editing in the grid, and the features marked for
-them in §3 come next, on the same store.
+pointers, sorting, resizing columns, copying and pasting (§6), editing with an IME and undo (§6.6), the toolbar's
+search, the status bar, the accessibility rows, server rendering (§7) and the checks of §10 and §11. The panels,
+saving, and the features marked for them in §3 come next, on the same store.
 
 ## 1. Principles
 
@@ -52,7 +52,7 @@ them in §3 come next, on the same store.
 | `<Context value>` | 19.0 | `GridProvider` and the grid's own contexts | yes |
 | `use` | 19.0 | contexts, and `initial` given as a promise, streamed from a Server Component (§7) | yes |
 | `useDeferredValue` | 18 | the accessibility rows and the search box (§6.2) | yes |
-| Actions (`useTransition` with an async function) | 19.0 | saving and exporting, with their pending state | with editing |
+| Actions (`useTransition` with an async function) | 19.0 | saving and exporting, with their pending state | with saving |
 | `useEffectEvent` | 19.2 | every callback prop (`onDocumentChange`, `onSessionChange`, `onError`) and the clipboard's announcements: read when called, never a dependency | yes |
 | `<Activity>` | 19.2 | panels keep their state while they are closed | with the panels |
 | Performance Tracks | 19.2 | React's own tracks, next to the grid's (§9) | yes |
@@ -306,6 +306,25 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   that moving the selection renders again only the rows whose selected cells changed.
 - The keyboard follows §6.4 of the specification (the grid pattern of the ARIA Authoring Practices).
 - Results and failures are announced in a polite live region.
+
+### 6.6 Editing
+
+- A cell is edited through the session's `editor` (§5.2 and §6.5 of the specification): `edit.begin`,
+  `edit.change`, `edit.commit` and `edit.cancel`. The editor is a text field over the cell, which follows the cell
+  at every frame the canvas draws.
+- The text field stays in the page, hidden, while no cell is edited. A key that types text, the start of an IME
+  composition included (`Process`, 229), opens the editor and gives it the focus before the browser handles the
+  key, so that the key's text, or the IME's composition, goes into it whole. F2 and a double click open it with
+  the cell's value.
+- The text reaches the session when the person types it, not while an IME composes: keys that end a composition
+  are the IME's. Enter writes and moves down (Shift+Enter up), Tab right (Shift+Tab left), Esc cancels, and
+  Alt+Enter (⌃↩ on Apple platforms) starts a new line. Leaving the editor for another place of the page writes it.
+  Text that is not a value of the column (§7.3) keeps the editor open and tells why.
+- Delete clears the selected cells (`edit.clear`), pasting writes the clipboard into the selection
+  (`edit.paste`), and the primary modifier with Z undoes (with Shift, or Ctrl+Y off Apple platforms, redoes).
+- The store shows a written value at once, before the engine answers, and shows the cell's value again when the
+  write fails; commands read the written values too. It drops them once the rows of the new edits version are on
+  screen (§4.2).
 
 ### 6.5 Theming
 

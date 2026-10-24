@@ -16,6 +16,11 @@ import {
 export interface MemoryTable {
   columns: Column[];
   rows: JsonValue[][];
+  /**
+   * Whether `write` writes the table's cells (§7). Written values are kept apart from `rows`, which stay as the
+   * host gave them, and every later request sees them.
+   */
+  editable?: boolean;
 }
 
 /** A table that does not follow §2, which the engine answers with `load_failed` (§8.7). */

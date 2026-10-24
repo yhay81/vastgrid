@@ -31,10 +31,13 @@ const info = await engine.handle({ v: 2, id: 1, op: "open", ref: "orders" });
   without a copy, so they must not change afterwards.
 - `engine.handle(message)` answers a request with its response or error, with blocks in the structured
   encoding (`{ bytes }`, §8.8), and never throws; `cancel` has no answer. `engine.subscribe(listener)` listens
-  to the events of §8.5, of which the engine sends none yet.
-- The engine offers what `MEMORY_CAPABILITIES` reports (§4.10): plans that sort, `summarize` and `locate`.
-  Other plans fail with `invalid_plan` (`unsupported`), `write` with `read_only`, `save` with
-  `save_unsupported`, and `find` and `export` with `invalid_request` (`unknown_op`).
+  to the events of §8.5: `changed` after every write.
+- The engine offers what `MEMORY_CAPABILITIES` reports (§4.10): plans that sort, `summarize` and `locate`, and
+  `write` for tables given with `editable: true` (§7.2: by row ID or by `rowKey`, every update or none, with
+  `previous` checked, and a `changed` event). Written values are kept apart from the host's rows, which stay as
+  they were, and a table that holds them keeps them when it is closed. Other plans fail with `invalid_plan`
+  (`unsupported`), `write` on other tables with `read_only`, `save` with `save_unsupported`, and `find` and
+  `export` with `invalid_request` (`unknown_op`).
 - Views are in the order of §3.3. Each column's values are ranked once, by a radix sort of their bits for
   values of fixed width and by code point for strings; a view is then one counting sort per sort key. A
   million floats sort in about 0.2 seconds. Intervals compare as DuckDB 1.5 compares them: whole days of the

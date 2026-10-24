@@ -180,6 +180,7 @@ async function main() {
           bench: {
             columns: table.columns.map((column) => (column.type === "float" ? { ...column, bits: 64 } : column)),
             rows: table.rowData,
+            editable: true,
           },
         },
       });

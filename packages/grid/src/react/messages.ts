@@ -11,6 +11,12 @@ export interface GridMessages {
   average: (average: string) => string;
   copied: (cells: string) => string;
   search: string;
+  /** The cell editor's label. */
+  editing: (row: string, column: string) => string;
+  /** How the editor saves and leaves, for screen readers. */
+  editorHint: string;
+  readOnly: string;
+  invalidValue: (column: string) => string;
 }
 
 const en: GridMessages = {
@@ -25,6 +31,10 @@ const en: GridMessages = {
   average: (average) => `Average ${average}`,
   copied: (cells) => `Copied ${cells} cells`,
   search: "Search",
+  editing: (row, column) => `Editing row ${row}, ${column}`,
+  editorHint: "Enter saves, Esc cancels, Alt+Enter starts a new line",
+  readOnly: "This cell is not written.",
+  invalidValue: (column) => `This is not a value of ${column}.`,
 };
 
 const ja: GridMessages = {
@@ -39,6 +49,10 @@ const ja: GridMessages = {
   average: (average) => `平均 ${average}`,
   copied: (cells) => `${cells} セルをコピーしました`,
   search: "検索",
+  editing: (row, column) => `${row} 行目・${column} を編集中`,
+  editorHint: "Enter で保存、Esc で取り消し、Alt+Enter で改行",
+  readOnly: "このセルは書き込めません。",
+  invalidValue: (column) => `${column} の値として読めません。`,
 };
 
 /** The built-in texts for a language tag: Japanese for `ja`, English otherwise. */

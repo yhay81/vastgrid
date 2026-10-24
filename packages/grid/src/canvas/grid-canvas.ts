@@ -100,7 +100,7 @@ export class GridCanvas {
   private frozenRight = 0;
   private readonly measured = new Map<string, number>();
   private resizing: { column: number; width: number } | null = null;
-  private texts = new Map<string, string>();
+  private texts = new Map<string, { value: JsonValue; text: string }>();
   private textsView: unknown = null;
   private settleTimer: ReturnType<typeof setTimeout> | undefined;
   private settled: Settled = { top: 0, rows: 0, left: 0, right: -1, version: 0 };
@@ -110,6 +110,7 @@ export class GridCanvas {
   private lastScroll: unknown = null;
   private lastView: unknown = null;
   private durations: number[] = [];
+  private readonly frameListeners = new Set<() => void>();
 
   constructor(private options: CanvasOptions = {}) {}
 
@@ -456,14 +457,38 @@ export class GridCanvas {
       this.texts.clear();
     }
     const key = `${row}\u0000${column.name}`;
-    let text = this.texts.get(key);
-    if (text === undefined) {
-      text = textOf(value, column) ?? "";
-      if (this.texts.size > 50_000) this.texts.clear();
-      this.texts.set(key, text);
-    }
+    // Kept with its value: a cell shows another value while a write of it is being answered.
+    const kept = this.texts.get(key);
+    if (kept !== undefined && kept.value === value) return kept.text;
+    const text = textOf(value, column) ?? "";
+    if (this.texts.size > 50_000) this.texts.clear();
+    this.texts.set(key, { value, text });
     return text;
   }
+
+  /**
+   * Where a cell is, in the body's coordinates, and whether it is on screen: outside the header and the gutter,
+   * and for a scrolling column, between the columns pinned at each side.
+   */
+  cellBox(row: number, column: number): { left: number; top: number; width: number; height: number; shown: boolean } {
+    const left = this.columnX(column);
+    const top = this.rowY(row);
+    const width = this.layout.width(column);
+    const height = this.rowHeight;
+    const scrolls = column >= this.frozenLeft && column < this.rightStart;
+    const from = scrolls ? this.gutterWidth + this.frozenWidth : this.gutterWidth;
+    const to = scrolls ? this.width - this.frozenRightWidth : this.width;
+    const shown = top + height > this.headerHeight && top < this.height && left + width > from && left < to;
+    return { left, top, width, height, shown };
+  }
+
+  /** Follows the frames the canvas draws, for what is placed over it (the cell editor). */
+  subscribeFrames = (listener: () => void): (() => void) => {
+    this.frameListeners.add(listener);
+    return () => {
+      this.frameListeners.delete(listener);
+    };
+  };
 
   /** The rows of the view on screen. */
   get rowCount() {
@@ -536,6 +561,7 @@ export class GridCanvas {
     this.durations.push(duration);
     if (this.durations.length > 240) this.durations.shift();
     track("frame", started, "canvas", "secondary");
+    for (const listener of this.frameListeners) listener();
   }
 
   /** Durations of the recent frames in milliseconds, for the bench. */

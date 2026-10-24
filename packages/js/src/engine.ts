@@ -10,6 +10,7 @@ import {
   checkRequest,
   encodeBlock,
   type JsonValue,
+  keyText,
   MESSAGE_LIMITS,
   type Operation,
   PlanError,
@@ -17,6 +18,7 @@ import {
   planHash,
   planOptions,
   type RowKey,
+  sameCellValue,
 } from "vastgrid-spec";
 import { type ColumnRanks, rankColumn, sortRows } from "./order.js";
 import { Summary } from "./summary.js";
@@ -61,9 +63,9 @@ export const MEMORY_CAPABILITIES: Readonly<Capabilities> = Object.freeze({
   changes: "poll",
 });
 
-/** A copy of the capabilities, for a message. */
-function capabilities(): Capabilities {
-  return { ...MEMORY_CAPABILITIES, plan: { ...MEMORY_CAPABILITIES.plan }, functions: [], measures: [] };
+/** A copy of the capabilities, for a message; tables that the host makes editable are written (§7). */
+function capabilities(write = false): Capabilities {
+  return { ...MEMORY_CAPABILITIES, plan: { ...MEMORY_CAPABILITIES.plan }, functions: [], measures: [], write };
 }
 
 const PLAN_OPTIONS = planOptions(capabilities());
@@ -92,8 +94,16 @@ interface Table {
   columns: Column[];
   /** The index of each column by name. */
   index: Map<string, number>;
+  /** The rows as the engine reads them: the host's, with copies of the rows that writes changed. */
   rows: readonly (readonly JsonValue[])[];
   revision: string;
+  editable: boolean;
+  /** The edits version and the cells written so far (§8.2). */
+  edits: { version: number; cells: number };
+  /** Cells written, as `row * columns + column`. */
+  written: Set<number>;
+  /** Row IDs by the key text of a value of a column, made when `write` or `locate` first needs them. */
+  keys: Map<number, Map<string, number>>;
   /** The ranks of each column, made when a view first needs them. */
   ranks: (ColumnRanks | undefined)[];
   /** Checks of each column's values (§2.2); a column is checked whole before anything reads all of it. */
@@ -136,8 +146,6 @@ function revisionOf(table: MemoryTable): string {
   }
   return revision;
 }
-
-const EDITS = { version: 0, cells: 0 } as const;
 
 function isObject(value: unknown): value is Json {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -302,12 +310,13 @@ class Engine implements MemoryEngine {
         return this.info(id, this.table(request));
       }
       case "changes":
-        return { revision: this.table(request).revision, edits: { ...EDITS } };
+        return { revision: this.table(request).revision, edits: { ...this.table(request).edits } };
       case "close": {
         const table = this.table(request);
         this.tables.delete(request.table as string);
-        // A table that no ID names any more forgets its ranks and views; opening it again checks it again.
-        if (--table.open === 0) this.prepared.delete(table.ref);
+        // A table that no ID names any more forgets its ranks and views, unless it holds written values, which
+        // every later request sees (§7.2); opening it again checks it again.
+        if (--table.open === 0 && table.written.size === 0) this.prepared.delete(table.ref);
         return null;
       }
       case "rows":
@@ -317,9 +326,7 @@ class Engine implements MemoryEngine {
       case "locate":
         return this.locate(request, running);
       case "write":
-        // No column is writable when the engine does not report `write` (§7.1, §7.2).
-        this.table(request);
-        throw new Failure("read_only", "This engine does not write tables (capabilities.write is false).");
+        return this.write(request);
       case "save":
         // A table in memory has no file to write back (§7.5).
         this.table(request);
@@ -355,6 +362,10 @@ class Engine implements MemoryEngine {
         index: new Map(columns.map((column, index) => [column.name, index])),
         rows: source.rows,
         revision: revisionOf(source),
+        editable: source.editable === true,
+        edits: { version: 0, cells: 0 },
+        written: new Set(),
+        keys: new Map(),
         ranks: columns.map(() => undefined),
         checkers: columns.map((column, index) => valueChecker(column, index)),
         checked: columns.map(() => false),
@@ -374,13 +385,13 @@ class Engine implements MemoryEngine {
     return {
       table: id,
       revision: table.revision,
-      edits: { ...EDITS },
+      edits: { ...table.edits },
       status: "ready",
       progress: 1,
       rowCount: table.rows.length,
       readableRows: table.rows.length,
       columns: table.columns.map((column) => ({ ...column })),
-      capabilities: capabilities(),
+      capabilities: capabilities(table.editable),
     };
   }
 
@@ -521,7 +532,7 @@ class Engine implements MemoryEngine {
         rowCountExact: true,
         readableRows: view.rowCount,
         columns: view.columns.map((column) => ({ ...column })),
-        edits: { ...EDITS },
+        edits: { ...table.edits },
       },
       start,
       end,
@@ -580,6 +591,102 @@ class Engine implements MemoryEngine {
         return first < 0 ? null : first;
       }),
     };
+  }
+
+  /** The row ID of a row key (§5.3): `{ rowId }`, or `{ value }` of `rowKey`'s column; null when no row has it. */
+  private rowOf(table: Table, key: RowKey, column: number | undefined): number | null {
+    if ("rowId" in key) return Number.isSafeInteger(key.rowId) && key.rowId < table.rows.length ? key.rowId : null;
+    if (column === undefined) return null;
+    let byText = table.keys.get(column);
+    if (!byText) {
+      this.checkColumn(table, column);
+      byText = new Map();
+      for (let row = table.rows.length - 1; row >= 0; row--) {
+        const value = table.rows[row][column];
+        if (value !== null) byText.set(keyText({ value }), row);
+      }
+      table.keys.set(column, byText);
+    }
+    return byText.get(keyText(key)) ?? null;
+  }
+
+  /**
+   * Writes cells (§7.2): every update or none. Values are checked as their column's type, `previous` against the
+   * cell's value now, and the written rows replace the host's rows in the engine's own list of rows.
+   */
+  private write(request: Json) {
+    const table = this.table(request);
+    const updates = request.updates as { key: RowKey; column: string; value: JsonValue; previous?: JsonValue }[];
+    let keyColumn: number | undefined;
+    if (request.rowKey !== undefined) {
+      keyColumn = table.index.get(request.rowKey as string);
+      if (keyColumn === undefined) {
+        throw new Failure("invalid_request", `The table has no column ${shown(request.rowKey)}.`, {
+          path: "/rowKey",
+          reason: "syntax",
+        });
+      }
+    }
+    const width = table.columns.length;
+    const changes = updates.map((update, at) => {
+      const index = table.index.get(update.column);
+      const column = index === undefined ? undefined : table.columns[index];
+      if (
+        index === undefined ||
+        !column ||
+        !table.editable ||
+        column.readOnly ||
+        column.type === "interval" ||
+        column.type === "binary"
+      ) {
+        throw new Failure("read_only", `The cells of ${shown(update.column)} are not written (§7.1).`, {
+          details: { column: update.column },
+        });
+      }
+      const row = this.rowOf(table, update.key, keyColumn);
+      if (row === null) {
+        throw new Failure("edit_conflict", "No row has this key now.", { details: { update: at } });
+      }
+      try {
+        table.checkers[index](update.value, row);
+      } catch (error) {
+        if (!(error instanceof TableProblem)) throw error;
+        throw new Failure("invalid_value", `${shown(update.value)} is not a value of ${shown(update.column)}.`, {
+          details: { update: at },
+        });
+      }
+      const now = table.rows[row][index];
+      if (update.previous !== undefined && !sameCellValue(now, update.previous, column)) {
+        throw new Failure("edit_conflict", "The cell holds another value now.", { details: { update: at } });
+      }
+      return { row, index, value: update.value };
+    });
+    if (changes.length === 0) return { updated: 0, edits: { ...table.edits } };
+    // The host's rows stay as they were: the engine reads its own list, with copies of the rows it wrote.
+    if (table.written.size === 0) table.rows = [...table.rows];
+    const rows = table.rows as JsonValue[][];
+    const copied = new Set<number>();
+    for (const { row, index, value } of changes) {
+      if (!copied.has(row)) {
+        rows[row] = [...rows[row]];
+        copied.add(row);
+      }
+      rows[row][index] = value;
+      table.written.add(row * width + index);
+      table.ranks[index] = undefined;
+      table.keys.delete(index);
+    }
+    table.views.clear();
+    table.edits = { version: table.edits.version + 1, cells: table.written.size };
+    for (const [id, open] of this.tables) {
+      if (open !== table) continue;
+      this.emit({ v: 2, event: "changed", table: id, revision: table.revision, edits: { ...table.edits } });
+    }
+    return { updated: changes.length, edits: { ...table.edits } };
+  }
+
+  private emit(event: Json) {
+    for (const listener of this.listeners) listener(event);
   }
 
   /** The position of a row in a view, or null when the view does not have it. */

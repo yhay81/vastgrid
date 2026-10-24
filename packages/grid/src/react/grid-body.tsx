@@ -14,9 +14,10 @@ import {
 import { browser } from "react-dom";
 import { CommandError } from "vastgrid-spec";
 import { GridCanvas, type Hit } from "../canvas/grid-canvas.js";
-import { isApple, keyCommand } from "../canvas/keys.js";
+import { isApple, type KeyInput, keyCommand, typesText } from "../canvas/keys.js";
 import type { GridStore } from "../core/store.js";
 import { AccessibleRows, cellId } from "./accessible-rows.js";
+import { CellEditor, type EditorControl } from "./cell-editor.js";
 import { LocaleContext } from "./context.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 
@@ -29,6 +30,17 @@ interface Drag {
   column: number;
   width: number;
   x: number;
+}
+
+/** The members of a keyboard event that the grid's keys read. */
+function pick(event: KeyInput): KeyInput {
+  return {
+    key: event.key,
+    shiftKey: event.shiftKey,
+    altKey: event.altKey,
+    ctrlKey: event.ctrlKey,
+    metaKey: event.metaKey,
+  };
 }
 
 /** Writes the output of `copy` (§6.6) into a clipboard. */
@@ -91,10 +103,23 @@ function useClipboard(store: GridStore, scroller: RefObject<HTMLDivElement | nul
       });
     };
     document.addEventListener("beforecopy", onBeforeCopy);
+    // Pasting writes the clipboard into the selection (§6.5.1).
+    const onPaste = (event: ClipboardEvent) => {
+      if (document.activeElement !== element || !event.clipboardData) return;
+      event.preventDefault();
+      const text = event.clipboardData.getData("text/plain");
+      const html = event.clipboardData.getData("text/html");
+      const clipboard = text ? { text } : html ? { html } : {};
+      void store.dispatch({ command: "edit.paste" }, { clipboard }).then((outcome) => {
+        if (!outcome.ok) report(null, outcome.error.message);
+      });
+    };
     document.addEventListener("copy", onCopy);
+    document.addEventListener("paste", onPaste);
     return () => {
       document.removeEventListener("beforecopy", onBeforeCopy);
       document.removeEventListener("copy", onCopy);
+      document.removeEventListener("paste", onPaste);
     };
   }, [store, scroller]);
 }
@@ -128,6 +153,8 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sizerRef = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
+  const editor = useRef<EditorControl>(null);
+  const { messages } = use(LocaleContext);
   const follow = useRef<{ frame: number; x: number; y: number } | null>(null);
   const id = useId();
   const rowCount = useGridSelector((snapshot) => snapshot.view?.rowCount ?? 0);
@@ -294,13 +321,37 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
     const rect = event.currentTarget.getBoundingClientRect();
     const hit = canvas.hit(event.clientX - rect.left, event.clientY - rect.top);
     const name = nameOf(hit.column);
-    // Double-clicking a column's edge fits it to its values again.
+    // Double-clicking a column's edge fits it to its values again; double-clicking a cell edits it.
     if (hit.area === "header" && hit.edge && name !== undefined)
       void store.dispatch({ command: "column.resize", name, width: null });
+    else if (hit.area === "cell") startEditing(undefined);
+  };
+
+  /**
+   * Opens the editor on the active cell (`edit.begin`, §6.5): with its value, or empty for a key that types text,
+   * whose text, an IME's included, then goes into the editor, which takes the focus before the browser handles
+   * the key. Tells why when the cell is not written.
+   */
+  const startEditing = (text: string | undefined) => {
+    const outcome = store.dispatchSync(
+      text === undefined ? { command: "edit.begin" } : { command: "edit.begin", text },
+    );
+    if (outcome.ok) {
+      if (store.getSnapshot().session.editor) editor.current?.open();
+      return true;
+    }
+    if (outcome.error instanceof CommandError && outcome.error.reason === "read_only") announce(messages.readOnly);
+    else announce(messages.failed(outcome.error.message));
+    return false;
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
+    if (typesText({ ...pick(event), keyCode: event.keyCode, isComposing: event.nativeEvent.isComposing })) {
+      // Not prevented: the key's text goes into the editor that now has the focus.
+      if (!startEditing("")) event.preventDefault();
+      return;
+    }
     const command = keyCommand(event, isApple());
     if (!command) return;
     event.preventDefault();
@@ -337,6 +388,7 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
         <div className="vg-sizer" ref={sizerRef} />
         <AccessibleRows canvas={canvas} id={id} />
       </div>
+      <CellEditor canvas={canvas} scrollerRef={scrollerRef} announce={announce} ref={editor} />
     </div>
   );
 }

@@ -27,7 +27,9 @@ const ARROWS: Record<string, "up" | "down" | "left" | "right"> = {
  * The command of a key on the grid (§6.4 of the specification, the grid pattern of the ARIA Authoring
  * Practices): arrows move, with Shift extend and with the primary modifier jump to the end; Page Up and Page
  * Down move by a page; Home and End go to the first and last column (with the modifier, also row); Tab and
- * Enter walk through the selection; the modifier and A selects everything. Null for other keys.
+ * Enter walk through the selection; the modifier and A selects everything. Delete and Backspace clear the selected
+ * cells, F2 edits the active cell, and the modifier and Z undoes (with Shift, or Ctrl+Y off Apple platforms,
+ * redoes). Null for other keys: a key that types text starts editing (`typesText`).
  */
 export function keyCommand(event: KeyInput, apple: boolean): GridCommand | null {
   const primary = apple ? event.metaKey : event.ctrlKey;
@@ -58,7 +60,27 @@ export function keyCommand(event: KeyInput, apple: boolean): GridCommand | null 
     case "a":
     case "A":
       return primary && !event.shiftKey ? { command: "select.all" } : null;
+    case "Delete":
+    case "Backspace":
+      return primary ? null : { command: "edit.clear" };
+    case "F2":
+      return { command: "edit.begin" };
+    case "z":
+    case "Z":
+      if (!primary) return null;
+      return event.shiftKey ? { command: "history.redo" } : { command: "history.undo" };
+    case "y":
+    case "Y":
+      return primary && !apple ? { command: "history.redo" } : null;
     default:
       return null;
   }
+}
+
+/** Whether a key types text, a character or the start of an IME composition, which starts editing the cell. */
+export function typesText(event: KeyInput & { keyCode?: number; isComposing?: boolean }): boolean {
+  if (event.key === "Process" || event.keyCode === 229 || event.isComposing === true) return true;
+  // AltGr gives Ctrl+Alt on Windows; Option gives characters on Apple platforms.
+  const shortcut = event.metaKey || (event.ctrlKey && !event.altKey);
+  return [...event.key].length === 1 && event.key !== " " && !shortcut;
 }

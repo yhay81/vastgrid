@@ -16,6 +16,8 @@ import {
   type GridDocument,
   type GridSession,
   type JsonValue,
+  keyText,
+  type LoadedRow,
   normalizePlan,
   type Operation,
   type Plan,
@@ -142,6 +144,15 @@ export class GridStore {
   private current: View | null = null;
   private next: View | null = null;
   private viewport: Viewport = { top: 0, rows: 0, columns: [] };
+  /**
+   * Values of writes (§7.2) that the rows read do not hold yet, by the key text of their row and by column, with
+   * the write that gave them: the grid shows them at once, and drops them when the write fails or once the view
+   * of its edits version is on screen.
+   */
+  private readonly written = new Map<string, Map<string, { value: JsonValue; write: number }>>();
+  private writes = 0;
+  /** The edits version that each write that succeeded made. */
+  private readonly writeVersions = new Map<number, number>();
   private readScheduled = false;
   private rowsVersion = 0;
   private readonly budget: number;
@@ -210,8 +221,13 @@ export class GridStore {
   // ----- rows -----
 
   /** The value of a cell of the view on screen; undefined while it is not read. */
-  cell(row: number, column: string) {
-    return this.current?.cache.value(row, column);
+  cell(row: number, column: string): JsonValue | undefined {
+    const view = this.current;
+    const value = view?.cache.value(row, column);
+    if (!view || this.written.size === 0) return value;
+    const key = view.cache.loaded(row, this.base("document").rowKey)?.key;
+    const entry = key === undefined ? undefined : this.written.get(keyText(key))?.get(column);
+    return entry === undefined ? value : entry.value;
   }
 
   /** Whether the engine cut a cell's value to the text limit (§8.4). */
@@ -615,6 +631,8 @@ export class GridStore {
       this.change(updated.document, updated.session, { view: view.info ?? info, pending: null });
       // The snapshot keeps the columns of the view before when they are the same, for commands to key on.
       view.info = this.snapshot.view;
+      // Values of writes that the new rows hold are no longer needed.
+      this.dropWritten((write) => (this.writeVersions.get(write) ?? Number.POSITIVE_INFINITY) <= view.edits);
       this.emitRows();
       this.scheduleReads();
     } catch (error) {
@@ -645,13 +663,56 @@ export class GridStore {
         rowCount: info?.rowCount ?? 0,
         rowIds: view.checked.rowIds,
       },
-      lookup: (row) => view.cache.loaded(row, rowKey),
+      lookup: (row) => this.withWritten(view.cache.loaded(row, rowKey)),
       page: Math.max(1, this.viewport.rows - 1),
       capabilities: table.capabilities,
     };
   }
 
   // ----- changing the state -----
+
+  /** A row as commands read it, with the values of writes that its rows do not hold yet. */
+  private withWritten(row: LoadedRow | undefined): LoadedRow | undefined {
+    if (!row?.key || this.written.size === 0) return row;
+    const values = this.written.get(keyText(row.key));
+    if (!values) return row;
+    return {
+      key: row.key,
+      has: (column) => values.has(column) || row.has(column),
+      get: (column) => {
+        const entry = values.get(column);
+        return entry === undefined ? row.get(column) : entry.value;
+      },
+    };
+  }
+
+  /** Shows the values of a write until it is answered (§7.2). */
+  private markWritten(write: number, updates: readonly { key: RowKey; column: string; value: JsonValue }[]) {
+    for (const update of updates) {
+      const text = keyText(update.key);
+      let values = this.written.get(text);
+      if (!values) {
+        values = new Map();
+        this.written.set(text, values);
+      }
+      values.set(update.column, { value: update.value, write });
+    }
+    this.emitRows();
+  }
+
+  /** Forgets the values of writes: one that failed, or those that the rows on screen now hold. */
+  private dropWritten(done: (write: number) => boolean) {
+    let dropped = false;
+    for (const [text, values] of this.written) {
+      for (const [column, entry] of values) {
+        if (!done(entry.write)) continue;
+        values.delete(column);
+        dropped = true;
+      }
+      if (values.size === 0) this.written.delete(text);
+    }
+    if (dropped) this.emitRows();
+  }
 
   /** Makes a part controlled: commands report what they make of it, and only `setDocument`/`setSession` show it. */
   control(part: Part, controlled: boolean) {
@@ -816,14 +877,22 @@ export class GridStore {
     for (const request of requests) {
       if (!client) throw new GridError("not_ready", "The grid is not connected.");
       const { op, ...members } = request;
-      const result = await client.request<Record<string, unknown>>(op as Operation, { table: table.table, ...members });
+      const updates = (op === "write" ? members.updates : []) as {
+        key: RowKey;
+        column: string;
+        value: JsonValue;
+        previous?: JsonValue;
+      }[];
+      const write = op === "write" ? ++this.writes : 0;
+      if (write) this.markWritten(write, updates);
+      let result: Record<string, unknown>;
+      try {
+        result = await client.request<Record<string, unknown>>(op as Operation, { table: table.table, ...members });
+      } catch (error) {
+        if (write) this.dropWritten((other) => other === write);
+        throw error;
+      }
       if (op === "write") {
-        const updates = (members.updates ?? []) as {
-          key: RowKey;
-          column: string;
-          value: JsonValue;
-          previous?: JsonValue;
-        }[];
         const core =
           name === "history.undo"
             ? { command: "history.undone" as const }
@@ -845,6 +914,9 @@ export class GridStore {
           this.change(applied.document, applied.session);
         }
         const edits = result.edits as TableInfo["edits"];
+        this.writeVersions.set(write, edits.version);
+        // The engine's event may have brought the view of this version on screen before the answer came.
+        if (this.current && this.current.edits >= edits.version) this.dropWritten((other) => other === write);
         const current = this.snapshot.table;
         if (current) this.publish({ table: { ...current, edits } });
         this.showPlan(this.base("document").plan ?? {});
