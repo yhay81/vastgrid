@@ -42,7 +42,7 @@ export const CAPABILITIES: Capabilities = {
   summarize: true,
   find: true,
   locate: true,
-  write: false,
+  write: true,
   save: false,
   preview: true,
   partialViews: false,
@@ -130,8 +130,8 @@ export class Views {
     if (table.status !== "ready" && Object.keys(normal).length > 0) {
       throw new EngineError("not_ready", "The table is still loading: until it has, only its rows are read (§9).");
     }
-    // Writes are not supported yet: edit version is 0. A new relation replaces a file-loading preview.
-    const key = `${table.revision}\u0000${relation.sql}\u00000\u0000${canonicalJson(normal)}`;
+    // Views hold the values of one edits version (§8.3). A new relation replaces a file-loading preview.
+    const key = `${table.revision}\u0000${relation.sql}\u0000${table.edits.version}\u0000${canonicalJson(normal)}`;
     return this.cache.use(
       table,
       key,
@@ -307,7 +307,7 @@ export class Views {
         rowCountExact: table.status === "ready",
         readableRows: view.readableRows,
         columns: view.sql.columns,
-        edits: { version: 0, cells: 0 },
+        edits: table.edits.state,
       },
       start,
       end: start + read.rows.length,

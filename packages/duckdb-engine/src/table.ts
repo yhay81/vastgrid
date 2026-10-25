@@ -12,6 +12,7 @@ import type { DuckDBConnection } from "@duckdb/node-api";
 import type { Column } from "vastgrid-spec";
 import { quoteIdentifier } from "vastgrid-sql";
 import { type SourceColumn, sourceExpression, tableColumn } from "./columns.js";
+import { Edits } from "./edits.js";
 import { convertToUtf8, detectEncoding } from "./encoding.js";
 import { EngineError, errorMessage } from "./errors.js";
 import { quoteLiteral, type Session } from "./session.js";
@@ -98,6 +99,8 @@ export class LoadedTable {
   /** Handles that `open` gave and `close` did not take back. */
   handles = 0;
   lastUsed = Date.now();
+  /** The cells written into the table (§7.2), which its relation reads over the file's values. */
+  readonly edits: Edits;
   private readonly objects: string[] = [];
   private readonly tempFiles: string[] = [];
   private preview: string[] = [];
@@ -124,6 +127,12 @@ export class LoadedTable {
     private readonly options: TableOptions,
   ) {
     this.revision = fileState;
+    this.edits = new Edits(session, this);
+  }
+
+  /** Keeps an object of the session (`TABLE name` or `VIEW name`) to drop with the table. */
+  keep(object: string) {
+    this.objects.unshift(object);
   }
 
   start() {

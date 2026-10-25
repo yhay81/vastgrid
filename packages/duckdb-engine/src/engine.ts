@@ -146,7 +146,7 @@ export class DuckDBEngine {
         });
       }
       if (change === "revision") {
-        this.emit({ v: 2, event: "changed", table: id, revision: table.revision, edits: { version: 0, cells: 0 } });
+        this.emit({ v: 2, event: "changed", table: id, revision: table.revision, edits: table.edits.state });
       } else {
         const ready = table.status === "ready";
         this.emit({
@@ -229,7 +229,7 @@ export class DuckDBEngine {
         return this.info(request.table as string, this.table(request));
       case "changes": {
         const table = this.table(request);
-        return { revision: table.revision, edits: { version: 0, cells: 0 } };
+        return { revision: table.revision, edits: table.edits.state };
       }
       case "close":
         await this.close(request.table as string);
@@ -243,8 +243,7 @@ export class DuckDBEngine {
       case "find":
         return this.views.find(this.table(request), request, signal);
       case "write":
-        this.table(request);
-        throw new EngineError("read_only", "This engine does not write cells yet.");
+        return this.write(this.table(request), request, signal);
       case "save":
         this.table(request);
         throw new EngineError("save_unsupported", "This engine does not save files yet.");
@@ -254,6 +253,19 @@ export class DuckDBEngine {
       default:
         throw new EngineError("internal", `The engine does not answer ${request.op}.`);
     }
+  }
+
+  /** Writes cells (§7.2), and tells every handle of the table that its data changed (§8.5). */
+  private async write(table: LoadedTable, request: Json, signal: AbortSignal) {
+    const result = await table.edits.write(request, signal);
+    if (result.updated > 0) {
+      for (const [id, item] of this.handles) {
+        if (item === table) {
+          this.emit({ v: 2, event: "changed", table: id, revision: table.revision, edits: result.edits });
+        }
+      }
+    }
+    return result;
   }
 
   private async resolve(ref: string): Promise<string> {
@@ -319,7 +331,7 @@ export class DuckDBEngine {
     const info: Json = {
       table: id,
       revision: table.revision,
-      edits: { version: 0, cells: 0 },
+      edits: table.edits.state,
       status: table.status,
       progress: ready ? 1 : table.progress,
       rowCount: ready ? table.rowCount : null,
@@ -343,7 +355,10 @@ export class DuckDBEngine {
     this.views.unfollow(id);
     this.handles.delete(id);
     table.handles--;
-    if (table.handles === 0 && this.retired.delete(table)) {
+    if (table.handles === 0 && (this.retired.delete(table) || table.edits.version > 0)) {
+      // Written cells belong to the handles open on the table: once the last one closes, they are gone, and the
+      // file is opened again as it is.
+      for (const [key, item] of this.tables) if (item === table) this.tables.delete(key);
       await this.views.forget(table);
       await table.dispose();
     }

@@ -488,7 +488,7 @@ npm run bench
 
 ## 今後
 
-未公開のv2の作り直しは [#33](https://github.com/yhay81/vastgrid/issues/33) で管理しています。v2ではArrowで保てない値を拒否し、float32への文字入力は書き込み前に丸め、桁あふれはエラーにします。詳しくは [v2仕様](docs/v2-spec.md#22-values-in-json) を参照してください。
+未公開のv2の作り直しは [#33](https://github.com/yhay81/vastgrid/issues/33) で管理しています。v2ではArrowで保てない値を拒否し、float32への文字入力は書き込み前に丸め、桁あふれはエラーにします。詳しくは [v2仕様](docs/v2-spec.md#22-values-in-json) を参照してください。v2のDuckDBエンジンは、CSV・TSV・Parquet・JSON・Excelのセルを書き込みます。書き込んだ値は保存するまでファイルと分けて持ち、競合を検出し、グリッドで取り消せます（§7.2）。
 
 これまでの予定（バイト単位で保つ CSV への書き戻しを含むセルの編集、式の列）は実装済みです。今後の予定は GitHub の issue で管理しています。
 

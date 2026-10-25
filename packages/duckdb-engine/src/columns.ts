@@ -2,7 +2,14 @@
  * DuckDB's types as the logical types of docs/v2-spec.md §2.1, and how the engine reads their values as typed
  * JSON (§2.2).
  */
-import { type Column, floatJson, type JsonValue, timestampText, type ValueType } from "vastgrid-spec";
+import {
+  type Column,
+  floatJson,
+  type JsonValue,
+  parseTimestampText,
+  timestampText,
+  type ValueType,
+} from "vastgrid-spec";
 import { duckdbType, quoteIdentifier } from "vastgrid-sql";
 
 /** A column of a source as DuckDB describes it. */
@@ -138,6 +145,11 @@ export function valueExpression(value: JsonValue, type: ValueType, params: unkno
   if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
   params.push(String(value));
   if (type.type === "binary") return `from_base64(CAST($${params.length} AS VARCHAR))`;
+  // DuckDB's VARCHAR cast overflows near the TIMESTAMP_NS limits, as in `readExpression`: give it the exact count.
+  if (type.type === "timestamp" && type.unit === "ns") {
+    params[params.length - 1] = String(parseTimestampText(String(value), "ns"));
+    return `make_timestamp_ns(CAST($${params.length} AS BIGINT))`;
+  }
   if (type.type === "float") return `CAST(CAST($${params.length} AS VARCHAR) AS ${target})`;
   return `CAST(CAST($${params.length} AS VARCHAR) AS ${target})`;
 }

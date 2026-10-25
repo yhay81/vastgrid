@@ -630,10 +630,10 @@ test("requests that do not follow §8 are answered with invalid_request", async 
       .code,
     "revision_changed",
   );
-  assert.equal(
-    (await client.error("write", { table: info.table, revision: info.revision, updates: [] })).code,
-    "read_only",
-  );
+  assert.deepEqual(await client.result("write", { table: info.table, revision: info.revision, updates: [] }), {
+    updated: 0,
+    edits: { version: 0, cells: 0 },
+  });
 });
 
 test("engines delete their session folders, also those that ended processes left", async () => {

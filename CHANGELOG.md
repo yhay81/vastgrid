@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `vastgrid-duckdb-engine` (unreleased v2): `write` writes cells of open files (§7.2). Written cells are kept
+  apart from the file, in tables of the session read through a view over the file's values, so that rows, plans,
+  summaries and find see them; writes are atomic, check `previous` and the revision, wait for a file that is
+  still loading, and report `changed` events and the edits of `info`, `changes` and `rows`. Handles of a file
+  share its written cells until the last one closes. Timestamps in nanoseconds beyond DuckDB's range are
+  `invalid_value`, and keys and values of such timestamps are given to DuckDB as exact counts.
 - `vastgrid-spec`, `vastgrid-js`, `vastgrid-duckdb-engine` (unreleased v2): reject out-of-range timestamp
   and interval counts, lone Unicode surrogates, and non-binary32 typed values before Arrow conversion.
   Float32 editing rounds to the declared type and rejects numeric overflow; invalid writes remain atomic.

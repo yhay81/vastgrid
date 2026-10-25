@@ -34,11 +34,18 @@ createServer(createHttpHandler(engine, { path: "/api" })).listen(8080);
   rows in the final order, including the same tie breakers. Its `status` is `building`, `readableRows` is the
   prefix size and `rowCount` is exact. A normal read waits for completion; a `view` event also announces it.
   While a file itself loads, only the empty plan is supported (`partialViews: false`).
-- **Sharing and cancellation.** The normalized plan, revision, source relation and edit version (currently 0)
-  identify a cached view. Concurrent callers share its construction; cancelling one caller leaves others running.
+- **Writing.** `write` (§7.2) keeps the written cells apart from the file, in a table of the session for each
+  written column, and reads the table through a view that puts them over the file's values, so that rows, plans,
+  summaries and find all see them. A write is atomic, checks `previous` (`edit_conflict`) and the revision, and
+  waits for a file that is still loading. Handles of one file share its written cells; once the last one closes,
+  they are gone. A file changed on disk opens as a new revision without them, while the handles opened before keep
+  theirs. A view in row ID order reads as fast after a write (about 5 ms for 100 rows at any depth of a
+  20-million-row file); views that save their order are built again for the new edits version.
+- **Sharing and cancellation.** The normalized plan, revision, source relation and edits version identify a cached
+  view. Concurrent callers share its construction; cancelling one caller leaves others running.
   Switching plans or closing the last following handle stops an unfinished build once no request uses it.
-- **Not yet.** Writing cells, saving, exporting and changes of files on disk are
-  the next steps of the rebuild ([rebuild-decision.ja.md](../../docs/rebuild-decision.ja.md)).
+- **Not yet.** Saving, exporting and following changes of files on disk are the next steps of the rebuild
+  ([#33](https://github.com/yhay81/vastgrid/issues/33)).
 
 `node --conditions=vastgrid-source --import tsx packages/duckdb-engine/bench/open.ts` measures opening and
 reading the files of the benches; [`examples/files`](../../examples/files) shows them in v2's grid.

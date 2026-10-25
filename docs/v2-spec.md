@@ -990,6 +990,15 @@ Engines keep written values apart from the source until they are saved, and ever
 client (rows, plans, summaries, find, export) sees them. Writes keep row IDs and the revision, and increment
 the edits version.
 
+Written values belong to the table that the handles share: every handle open on the same file (with the same
+read options) sees them, and `vastgrid-duckdb` drops them when the last of those handles closes, so that the
+file opens again as it is. A file that changes on disk opens as a new table with a new revision and no written
+values, while handles opened before keep reading, and writing, the table as it was read; saving it is then
+refused (`file_changed`, §7.5). A write to a table that is still loading waits until it has loaded, and fails
+with `revision_changed` when its types changed meanwhile (§9). An engine whose source holds a narrower range
+than §2.2 (DuckDB keeps the ends of the 64-bit range of nanosecond timestamps for its infinities) fails the
+write with `invalid_value` for a value beyond it.
+
 ### 7.3 Reading typed text
 
 Typed text becomes a value of the column's type by these rules. White space (Unicode `White_Space`) around
