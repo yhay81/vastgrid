@@ -1225,6 +1225,12 @@ view is `building`, with the readable rows as its `rowCount` (not exact), until 
 `view` events (§8.5) tell when it grows and when it is `ready`. Engines that report `partialViews` MAY also
 answer other plans over the readable rows, with `view.partial: true`.
 
+The Node.js DuckDB engine implements these previews for large sorts, sharing the saved result between equivalent
+requests. A non-preview read waits for a sorted view to finish; it also surfaces a failed background build to
+clients without events. Its file-loading views support only `{}` (`partialViews: false`). The React store defers
+other plans until the file is ready, and waits for a full view when moving an active row by key requires `locate`.
+See [the engine's limits and cleanup](../packages/duckdb-engine/README.md#limits-and-cleanup).
+
 ## 10. Conformance
 
 The corpus in [`packages/spec/conformance`](../packages/spec/conformance) has three parts, each a folder of JSON

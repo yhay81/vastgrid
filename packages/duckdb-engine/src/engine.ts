@@ -17,10 +17,10 @@ import {
 import { EngineError, errorMessage } from "./errors.js";
 import { Session } from "./session.js";
 import { fileRevision, LoadedTable, tableFormatOf } from "./table.js";
-import { CAPABILITIES, Views } from "./view.js";
+import { CAPABILITIES, type ViewOptions, Views } from "./view.js";
 import type { ReadOptions } from "./xlsx.js";
 
-export interface DuckDBEngineOptions {
+export interface DuckDBEngineOptions extends ViewOptions {
   /** Folders whose files may be opened. DuckDB may read no other files, for good. */
   allowedDirectories: string[];
   /**
@@ -36,6 +36,8 @@ export interface DuckDBEngineOptions {
   tempDirectory: string;
   /** DuckDB's memory limit, such as `"4GB"`. A fifth of the system's memory (1–4 GB) by default. */
   memoryLimit?: string;
+  /** Maximum spill files, default 8 GB. Does not include the session database or source files. */
+  maxTempDirectorySize?: string;
   /** DuckDB's threads. The number of CPUs minus one by default. */
   threads?: number;
   /** Tables kept loaded once no handle uses them, for opening them again; the least recently used go first. */
@@ -83,7 +85,21 @@ export class DuckDBEngine {
     /** The hash of the plan `{}` (§4.8), the view of a table that is loading (§9). */
     private readonly tableHash: string,
   ) {
-    this.views = new Views(session, options.textLimit ?? 2000);
+    this.views = new Views(session, options.textLimit ?? 2000, options, (table, view) => {
+      for (const [id, item] of this.handles) {
+        if (item !== table) continue;
+        this.emit({
+          v: 2,
+          event: "view",
+          table: id,
+          hash: view.hash,
+          status: "ready",
+          readableRows: view.readableRows,
+          rowCount: view.rowCount,
+          rowCountExact: true,
+        });
+      }
+    });
   }
 
   static async create(options: DuckDBEngineOptions): Promise<DuckDBEngine> {
@@ -324,10 +340,11 @@ export class DuckDBEngine {
   private async close(id: string) {
     const table = this.handles.get(id);
     if (!table) throw new EngineError("table_not_found", "The table is closed or unknown.");
+    this.views.unfollow(id);
     this.handles.delete(id);
     table.handles--;
     if (table.handles === 0 && this.retired.delete(table)) {
-      this.views.forget(table);
+      await this.views.forget(table);
       await table.dispose();
     }
     await this.trim();
@@ -347,7 +364,7 @@ export class DuckDBEngine {
 
   private async drop(key: string, table: LoadedTable) {
     if (this.tables.get(key) === table) this.tables.delete(key);
-    this.views.forget(table);
+    await this.views.forget(table);
     await table.dispose();
   }
 
@@ -361,6 +378,7 @@ export class DuckDBEngine {
     if (this.disposed) return;
     this.disposed = true;
     for (const controller of this.running.values()) controller.abort();
+    await this.views.forget();
     for (const [key, table] of [...this.tables]) await this.drop(key, table);
     for (const table of this.retired) await table.dispose();
     this.retired.clear();

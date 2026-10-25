@@ -33,3 +33,9 @@ export function Orders() {
 
 The tests run on the sources (`npm test`); [`e2e`](../../e2e) runs the bench of [`examples/bench`](../../examples/bench)
 in Chromium against the build (`npm run build && npm run e2e`).
+
+When the engine offers `preview`, the store can display a sort's first rows while the rest builds. The status
+bar says it is reading, the row count stays exact when known, and a normal read follows completion even without
+an event channel. A keyed active selection waits for the complete view so `locate` can move it to its correct
+position. Changing plans or disconnecting cancels old reads; late answers cannot replace the current view.
+A non-empty plan chosen while a file loads is queued until it is ready when `partialViews` is false.

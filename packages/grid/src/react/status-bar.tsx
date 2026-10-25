@@ -57,6 +57,7 @@ export function StatusBar() {
   const { messages, number } = use(LocaleContext);
   const rowCount = useGridSelector((snapshot) => snapshot.view?.rowCount);
   const status = useGridSelector((snapshot) => snapshot.status);
+  const building = useGridSelector((snapshot) => snapshot.view?.status === "building");
   const pending = useGridSelector((snapshot) => snapshot.pending !== null);
   const error = useGridSelector((snapshot) => snapshot.error);
   const active = useGridSelector((snapshot) => snapshot.session.active);
@@ -67,7 +68,7 @@ export function StatusBar() {
       ? messages.failed(error.message)
       : rowCount === undefined
         ? messages.loading
-        : pending
+        : pending || building
           ? messages.reading
           : "";
   return (
