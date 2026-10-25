@@ -64,6 +64,7 @@ export interface SessionOptions {
   allowedDirectories: string[];
   tempDirectory: string;
   memoryLimit?: string;
+  maxTempDirectorySize?: string;
   threads?: number;
 }
 
@@ -96,6 +97,7 @@ export class Session {
       threads: String(options.threads ?? Math.max(1, os.availableParallelism() - 1)),
       memory_limit: options.memoryLimit ?? defaultMemoryLimit(),
       temp_directory: path.join(folder, "spill"),
+      max_temp_directory_size: options.maxTempDirectorySize ?? "8GB",
       autoinstall_known_extensions: "false",
       autoload_known_extensions: "false",
     });

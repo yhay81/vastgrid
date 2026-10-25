@@ -4,7 +4,7 @@
  *
  * A view without `where`, `aggregate` and `sort` holds every row in row ID order, so its positions are the row IDs:
  * it is read by them, which DuckDB looks up without reading the rows before them, at any depth of the file. Other
- * views are read in their order with offsets.
+ * views store their total order once and read position ranges from that storage.
  */
 import type { DuckDBConnection } from "@duckdb/node-api";
 import {
@@ -27,13 +27,14 @@ import {
   type PivotCombinations,
   pivotQuery,
   quoteIdentifier,
-  rowsQuery,
+  type SqlSource,
   type SqlView,
 } from "vastgrid-sql";
 import { readExpression, readValue, valueExpression } from "./columns.js";
-import { EngineError } from "./errors.js";
-import type { Session } from "./session.js";
+import { cancelled, EngineError } from "./errors.js";
+import { Gate, type Session } from "./session.js";
 import type { LoadedTable } from "./table.js";
+import { type Build, ViewCache } from "./view-cache.js";
 
 /** What the engine evaluates (§4.10): every plan member, function and measure that `vastgrid-sql` compiles. */
 export const CAPABILITIES: Capabilities = {
@@ -43,20 +44,33 @@ export const CAPABILITIES: Capabilities = {
   locate: true,
   write: false,
   save: false,
-  preview: false,
+  preview: true,
   partialViews: false,
   changes: "push",
 };
 
-/** Views kept per table, the least recently used dropped first. */
-const VIEWS = 16;
+export interface ViewOptions {
+  /** Cached views per engine, excluding requests currently reading them. Default 8. */
+  maxViews?: number;
+  /** Above this input size keep only row IDs in view order. Default 20 million. */
+  materializeRows?: number;
+  /** Input rows above which a sort can give its first rows before it finishes. Default 1 million. */
+  viewPreviewMinRows?: number;
+  /** Rows held by a sort's preview. Default 1,000. */
+  viewPreviewRows?: number;
+}
 
 export interface View {
   plan: CheckedPlan;
   sql: SqlView;
+  source: SqlSource;
   /** Every row in row ID order: positions are row IDs. */
   positional: boolean;
   rowCount: number;
+  readableRows: number;
+  ready: boolean;
+  /** The saved position, or the row ID of a view in source order. */
+  position: string;
   hash: string;
 }
 
@@ -74,13 +88,7 @@ function freeName(base: string, columns: readonly Column[]) {
 
 /** The view's rows with their positions: `from` is a relation with a column `position`. */
 function positioned(view: View): { with: string; from: string; position: string } {
-  if (view.positional) return { with: view.sql.with, from: "vg_view", position: view.sql.rowId as string };
-  const position = freeName("vg_position", view.sql.columns);
-  return {
-    with: `${view.sql.with}, vg_positioned AS (SELECT *, row_number() OVER (ORDER BY ${view.sql.order.join(", ")}) - 1 AS ${position} FROM vg_view)`,
-    from: "vg_positioned",
-    position,
-  };
+  return { with: view.sql.with, from: "vg_view", position: view.position };
 }
 
 function columnsOf(view: View, names: readonly string[]): Column[] {
@@ -98,77 +106,191 @@ function columnsOf(view: View, names: readonly string[]): Column[] {
 
 /** The views of the open tables of an engine, kept by table, relation and plan. */
 export class Views {
-  private readonly views = new Map<string, Promise<View>>();
+  private readonly cache: ViewCache<View>;
+  private readonly builds = new Gate(1);
 
   constructor(
     private readonly session: Session,
     private readonly textLimit: number,
-  ) {}
+    private readonly options: ViewOptions = {},
+    private readonly changed: (table: LoadedTable, view: View) => void = () => {},
+  ) {
+    this.cache = new ViewCache(options.maxViews ?? 8);
+  }
 
-  /** The view of a plan over a table (§4.7, §9); throws `PlanError` for a plan that does not validate. */
-  async view(table: LoadedTable, plan: unknown, signal?: AbortSignal): Promise<View> {
+  private async use<T>(
+    table: LoadedTable,
+    request: Json,
+    signal: AbortSignal | undefined,
+    read: (view: View) => Promise<T>,
+  ) {
     const relation = table.requireRelation();
-    const checked = checkPlan(plan, table.columns, planOptions(CAPABILITIES));
+    const checked = checkPlan(request.plan, table.columns, planOptions(CAPABILITIES));
     const normal = normalizePlan(checked.plan);
     if (table.status !== "ready" && Object.keys(normal).length > 0) {
       throw new EngineError("not_ready", "The table is still loading: until it has, only its rows are read (§9).");
     }
-    const key = `${table.revision}\u0000${relation.sql}\u0000${canonicalJson(normal)}`;
-    const cached = this.views.get(key);
-    if (cached) {
-      this.views.delete(key);
-      this.views.set(key, cached);
-      return cached;
-    }
-    const made = this.make(checked, relation.sql, relation.rowId, relation.rows, signal);
-    this.views.set(key, made);
-    made.catch(() => this.views.delete(key));
-    while (this.views.size > VIEWS) this.views.delete(this.views.keys().next().value as string);
-    return made;
+    // Writes are not supported yet: edit version is 0. A new relation replaces a file-loading preview.
+    const key = `${table.revision}\u0000${relation.sql}\u00000\u0000${canonicalJson(normal)}`;
+    return this.cache.use(
+      table,
+      key,
+      request.table as string,
+      request.preview === true,
+      signal,
+      (signal) => this.make(table, checked, relation, request.preview === true, signal),
+      read,
+    );
   }
 
-  private async make(
+  private make(
+    table: LoadedTable,
     plan: CheckedPlan,
-    relation: string,
-    rowId: string,
-    rows: number,
-    signal?: AbortSignal,
-  ): Promise<View> {
-    const source = { relation, rowId };
-    let combinations: PivotCombinations | undefined;
-    if (plan.aggregate?.pivot) {
-      const query = pivotQuery(plan, source);
-      const read = await this.session.withConnection(signal, (connection) =>
-        connection.runAndReadAll(query.sql, query.params as never),
-      );
-      combinations = read.getRowsJS().map((row) => row.map((value) => (value === null ? null : String(value))));
-    }
-    const sql = compileView(plan, source, combinations);
-    const positional = !plan.where && !plan.aggregate && plan.sort.length === 0;
-    let rowCount = rows;
-    if (!positional) {
-      const query = countQuery(sql);
-      const read = await this.session.withConnection(signal, (connection) =>
-        connection.runAndReadAll(query.sql, query.params as never),
-      );
-      rowCount = Number(read.getRowsJS()[0][0]);
-    }
-    return { plan, sql, positional, rowCount, hash: await planHash(plan.plan) };
+    relation: { sql: string; rowId: string; rows: number },
+    preview: boolean,
+    signal: AbortSignal,
+  ): Build<View> {
+    const objects: string[] = [];
+    let resolveFirst!: (view: View) => void;
+    let rejectFirst!: (error: unknown) => void;
+    const first = new Promise<View>((resolve, reject) => {
+      resolveFirst = resolve;
+      rejectFirst = reject;
+    });
+    const done = this.builds.run(async () => {
+      if (signal.aborted) throw cancelled();
+      const source = { relation: relation.sql, rowId: relation.rowId };
+      let combinations: PivotCombinations | undefined;
+      if (plan.aggregate?.pivot) {
+        const query = pivotQuery(plan, source);
+        const read = await this.session.withConnection(signal, (connection) =>
+          connection.runAndReadAll(query.sql, query.params as never),
+        );
+        combinations = read.getRowsJS().map((row) => row.map((value) => (value === null ? null : String(value))));
+      }
+      const sql = compileView(plan, source, combinations);
+      const positional = !plan.where && !plan.aggregate && plan.sort.length === 0;
+      const hash = await planHash(plan.plan);
+      const position = freeName("vg_position", sql.columns);
+      let rowCount = relation.rows;
+      if (plan.where || plan.aggregate) {
+        const query = countQuery(sql);
+        const read = await this.session.withConnection(signal, (connection) =>
+          connection.runAndReadAll(query.sql, query.params as never),
+        );
+        rowCount = Number(read.getRowsJS()[0][0]);
+      }
+      const base: View = {
+        plan,
+        sql,
+        source,
+        positional,
+        hash,
+        position: positional ? (sql.rowId as string) : position,
+        rowCount,
+        readableRows: rowCount,
+        ready: true,
+      };
+      if (positional) {
+        resolveFirst(base);
+        return base;
+      }
+      const canPreview =
+        preview && plan.sort.length > 0 && relation.rows >= (this.options.viewPreviewMinRows ?? 1_000_000);
+      if (canPreview) {
+        const head = await this.materialize(base, objects, false, this.options.viewPreviewRows ?? 1000, signal);
+        head.ready = head.readableRows === rowCount;
+        resolveFirst(head);
+        if (head.ready) return head;
+      }
+      const orderOnly = sql.rowIds && relation.rows > (this.options.materializeRows ?? 20_000_000);
+      const result = await this.materialize(base, objects, orderOnly, undefined, signal);
+      if (signal.aborted) throw cancelled();
+      resolveFirst(result);
+      if (canPreview) this.changed(table, result);
+      return result;
+    });
+    void done.catch(rejectFirst);
+    return {
+      first,
+      done,
+      dispose: () =>
+        this.session.withConnection(undefined, async (connection) => {
+          for (const name of objects) await connection.run(`DROP TABLE IF EXISTS ${name}`);
+        }),
+    };
   }
 
-  /** Forgets the views of a table, once it is closed. */
-  forget(table: LoadedTable) {
-    const prefix = `${table.revision}\u0000${table.relation?.sql ?? ""}\u0000`;
-    for (const key of [...this.views.keys()]) if (key.startsWith(prefix)) this.views.delete(key);
+  /** Stores the total order once. Internal columns have fixed names, so even a user column `rowid` is safe. */
+  private async materialize(
+    view: View,
+    objects: string[],
+    orderOnly: boolean,
+    limit: number | undefined,
+    signal: AbortSignal,
+  ): Promise<View> {
+    const name = quoteIdentifier(this.session.createName("vg_order"));
+    objects.push(name);
+    const sql = view.sql;
+    const outputs = orderOnly ? [] : sql.columns.map((column, index) => `${quoteIdentifier(column.name)} AS c${index}`);
+    if (sql.rowId) outputs.push(`${sql.rowId} AS source_id`);
+    const order = sql.order.length ? ` ORDER BY ${sql.order.join(", ")}` : "";
+    const suffix = limit === undefined ? "" : ` LIMIT ${limit}`;
+    await this.session.withConnection(signal, (connection) =>
+      connection.run(
+        `CREATE TABLE ${name} AS ${sql.with} SELECT ${outputs.join(", ")} FROM vg_view${order}${suffix}`,
+        sql.params as never,
+      ),
+    );
+    if (signal.aborted) throw cancelled();
+    const position = view.position;
+    let saved: SqlView;
+    if (orderOnly) {
+      // Derived columns are evaluated only for the rows being read. The filter and sort were already applied.
+      const plain = compileView(checkPlan({ derive: view.plan.plan.derive }, view.plan.table), view.source);
+      const selected = sql.columns.map((column) => `s.${quoteIdentifier(column.name)}`);
+      saved = {
+        ...sql,
+        with: `WITH vg_view AS (SELECT ${[...selected, `s.${plain.rowId} AS ${sql.rowId}`, `o.rowid AS ${position}`].join(", ")} FROM ${name} o JOIN (${plain.with} SELECT * FROM vg_view) s ON o.source_id = s.${plain.rowId})`,
+        params: plain.params,
+        order: [position],
+      };
+    } else {
+      const selected = sql.columns.map((column, index) => `c${index} AS ${quoteIdentifier(column.name)}`);
+      if (sql.rowId) selected.push(`source_id AS ${sql.rowId}`);
+      selected.push(`rowid AS ${position}`);
+      saved = {
+        ...sql,
+        with: `WITH vg_view AS (SELECT ${selected.join(", ")} FROM ${name})`,
+        params: [],
+        order: [position],
+      };
+    }
+    return {
+      ...view,
+      sql: saved,
+      readableRows: Math.min(view.rowCount, limit ?? view.rowCount),
+    };
+  }
+
+  unfollow(handle: string) {
+    this.cache.unfollow(handle);
+  }
+
+  forget(table?: LoadedTable) {
+    return this.cache.forget(table);
   }
 
   /** The answer of `rows` (§8.2): positions `[start, end)` of the view, cut at its row count, as a block (§8.4). */
   async rows(table: LoadedTable, request: Json, signal?: AbortSignal): Promise<Json> {
-    const view = await this.view(table, request.plan, signal);
+    return this.use(table, request, signal, (view) => this.rowsOf(table, view, request, signal));
+  }
+
+  private async rowsOf(table: LoadedTable, view: View, request: Json, signal?: AbortSignal): Promise<Json> {
     const names = request.columns as string[];
     const columns = columnsOf(view, names);
     const start = request.start as number;
-    const end = Math.max(start, Math.min(request.end as number, view.rowCount));
+    const end = Math.max(start, Math.min(request.end as number, view.readableRows));
     const limit = (request.textLimit as number | undefined) ?? this.textLimit;
     const read =
       end > start
@@ -176,14 +298,14 @@ export class Views {
             this.read(connection, view, columns, start, end, limit),
           )
         : { rows: [], rowIds: view.sql.rowIds ? [] : null, truncated: {} };
-    const ready = table.status === "ready";
+    const ready = table.status === "ready" && view.ready;
     const result: Json = {
       view: {
         hash: view.hash,
         status: ready ? "ready" : "building",
         rowCount: view.rowCount,
-        rowCountExact: ready,
-        readableRows: view.rowCount,
+        rowCountExact: table.status === "ready",
+        readableRows: view.readableRows,
         columns: view.sql.columns,
         edits: { version: 0, cells: 0 },
       },
@@ -205,18 +327,14 @@ export class Views {
     limit: number,
   ) {
     const select = (column: Column, sql: string) => readExpression(column, sql, limit);
-    let query: { sql: string; params: unknown[] };
-    if (view.positional) {
-      const rowId = view.sql.rowId as string;
-      const outputs = columns.map((column) => select(column, quoteIdentifier(column.name)));
-      const params = [...view.sql.params, start, end];
-      query = {
-        sql: `${view.sql.with} SELECT ${[...outputs, rowId].join(", ")} FROM vg_view WHERE ${rowId} >= $${params.length - 1} AND ${rowId} < $${params.length} ORDER BY ${rowId}`,
-        params,
-      };
-    } else {
-      query = rowsQuery(view.sql, { start, end, columns: columns.map((column) => column.name) }, select);
-    }
+    const outputs = columns.map((column) => select(column, quoteIdentifier(column.name)));
+    if (view.sql.rowId) outputs.push(view.sql.rowId);
+    if (outputs.length === 0) outputs.push("NULL");
+    const params = [...view.sql.params, start, end];
+    const query = {
+      sql: `${view.sql.with} SELECT ${outputs.join(", ")} FROM vg_view WHERE ${view.position} >= $${params.length - 1} AND ${view.position} < $${params.length} ORDER BY ${view.position}`,
+      params,
+    };
     const data = (await connection.runAndReadAll(query.sql, query.params as never)).getColumnsJS();
     const count = data[0]?.length ?? 0;
     const truncated: Record<string, number[]> = {};
@@ -237,7 +355,10 @@ export class Views {
 
   /** The answer of `locate` (§8.2): the positions of rows by key, null for keys that the view does not have. */
   async locate(table: LoadedTable, request: Json, signal?: AbortSignal): Promise<Json> {
-    const view = await this.view(table, request.plan, signal);
+    return this.use(table, request, signal, (view) => this.locateOf(view, request, signal));
+  }
+
+  private async locateOf(view: View, request: Json, signal?: AbortSignal): Promise<Json> {
     const keys = request.keys as RowKey[];
     const rows: (number | null)[] = keys.map(() => null);
     const byRowId = keys.flatMap((key, index) => ("rowId" in key ? [{ index, value: key.rowId as JsonValue }] : []));
@@ -277,7 +398,10 @@ export class Views {
 
   /** The answer of `summarize` (§8.2): the cells of ranges × columns that are not blank, and their finite numbers. */
   async summarize(table: LoadedTable, request: Json, signal?: AbortSignal): Promise<Json> {
-    const view = await this.view(table, request.plan, signal);
+    return this.use(table, request, signal, (view) => this.summarizeOf(view, request, signal));
+  }
+
+  private async summarizeOf(view: View, request: Json, signal?: AbortSignal): Promise<Json> {
     const columns = columnsOf(view, request.columns as string[]);
     const ranges = request.ranges as [number, number][];
     const empty = { count: 0, numericCount: 0, sum: null, min: null, max: null, average: null };
@@ -332,7 +456,10 @@ export class Views {
    * order of `columns`, whose text form contains the text, wrapping around and ending with `from` itself.
    */
   async find(table: LoadedTable, request: Json, signal?: AbortSignal): Promise<Json | null> {
-    const view = await this.view(table, request.plan, signal);
+    return this.use(table, request, signal, (view) => this.findOf(view, request, signal));
+  }
+
+  private async findOf(view: View, request: Json, signal?: AbortSignal): Promise<Json | null> {
     const columns = columnsOf(view, request.columns as string[]);
     const text = request.text as string;
     if (text === "" || view.rowCount === 0) return null;

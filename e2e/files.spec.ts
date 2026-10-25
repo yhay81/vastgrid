@@ -62,3 +62,89 @@ test("a CSV file of 735 MB shows its first rows at once, then every row to the l
   await expect(grid).toHaveAttribute("aria-rowcount", String(csvRows + 1), { timeout: 180_000 });
   await scrollToEnd(page, grid, csvRows);
 });
+
+for (const [extension, rows] of [
+  ["parquet", parquetRows],
+  ["csv", csvRows],
+] as const) {
+  test(`a large ${extension} view sorts, filters and reconnects with stable positions`, async ({ page }) => {
+    const name = `sales-${rows}.${extension}`;
+    await page.goto(`${site}/?file=${name}`);
+    const grid = page.getByRole("grid", { name });
+    await expect(grid).toHaveAttribute("aria-rowcount", String(rows + 1), { timeout: 180_000 });
+    // A deterministic order makes the first, middle and last row independently checkable.
+    await page.evaluate(() =>
+      window.files.handle?.store.setDocument({ plan: { sort: [{ column: "id", direction: "desc" }] } }),
+    );
+    await expect(page.getByRole("gridcell", { name: nameOf(rows - 1), exact: true })).toBeAttached({ timeout: 60_000 });
+    await page.locator(".vg-scroller").evaluate((element) => {
+      element.scrollTop = element.scrollHeight / 2;
+    });
+    await expect
+      .poll(() => page.evaluate(() => window.files.handle?.store.getSnapshot().view?.status), { timeout: 60_000 })
+      .toBe("ready");
+    // Explicit row reads verify middle positions through the same HTTP transport used by the grid.
+    const middle = await page.evaluate(
+      async ({ rows }) => {
+        const snapshot = window.files.handle?.store.getSnapshot();
+        if (!snapshot?.table) throw new Error("The table is not open.");
+        const answer = await fetch("/api", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            v: 2,
+            id: 9999,
+            op: "rows",
+            table: snapshot.table.table,
+            revision: snapshot.table.revision,
+            plan: snapshot.document.plan,
+            start: Math.floor(rows / 2),
+            end: Math.floor(rows / 2) + 1,
+            columns: ["id"],
+          }),
+        });
+        return (await answer.json()).result.rowIds;
+      },
+      { rows },
+    );
+    expect(middle).toEqual([rows - 1 - Math.floor(rows / 2)]);
+    await page.locator(".vg-scroller").evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect(page.getByRole("gridcell", { name: nameOf(0), exact: true })).toBeAttached({ timeout: 60_000 });
+    await page.evaluate(() =>
+      window.files.handle?.store.setDocument({
+        plan: {
+          where: { fn: "eq", args: [{ col: "city" }, { lit: "Tokyo" }] },
+          sort: [{ column: "id", direction: "desc" }],
+        },
+      }),
+    );
+    const count = Math.ceil(rows / 8);
+    await expect(grid).toHaveAttribute("aria-rowcount", String(count + 1), { timeout: 60_000 });
+    await page.locator(".vg-scroller").evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await expect(page.getByRole("gridcell", { name: nameOf((count - 1) * 8), exact: true })).toBeAttached({
+      timeout: 60_000,
+    });
+    await page.locator(".vg-scroller").evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect(page.getByRole("gridcell", { name: nameOf(0), exact: true })).toBeAttached({ timeout: 60_000 });
+    // A new plan supersedes a sort that has just started; its late answer must not change the screen.
+    await page.evaluate(async () => {
+      const store = window.files.handle?.store;
+      store?.setDocument({ plan: { sort: [{ column: "price", direction: "asc" }] } });
+      await Promise.resolve();
+      store?.setDocument({ plan: {} });
+    });
+    await expect(grid).toHaveAttribute("aria-rowcount", String(rows + 1), { timeout: 60_000 });
+    await page.locator(".vg-scroller").evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await expect(page.getByRole("gridcell", { name: nameOf(1), exact: true })).toBeAttached({ timeout: 30_000 });
+    await page.reload();
+    await expect(page.getByRole("gridcell", { name: nameOf(1), exact: true })).toBeAttached({ timeout: 30_000 });
+  });
+}
