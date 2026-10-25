@@ -1,7 +1,47 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readCellText, type ValueType } from "vastgrid-spec";
 import type { MemoryTable } from "../src/index.ts";
 import { Client } from "./client.ts";
+
+test("writes reject lossy values atomically, and float32 edits persist the rounded value", async () => {
+  const cases: [ValueType, string | number, string | number][] = [
+    [{ type: "timestamp", unit: "ns" }, "2024-01-01 00:00:00", "9999-12-31 23:59:59.999999999"],
+    [{ type: "float", bits: 32 }, 1, 1e39],
+    [{ type: "float", bits: 32 }, 1, 0.1],
+    [{ type: "string" }, "ok", "\ud800"],
+  ];
+  for (const [type, initial, invalid] of cases) {
+    const columns = [
+      { name: "safe", type: "integer" as const },
+      { name: "value", ...type },
+    ];
+    const client = new Client({ t: { columns, rows: [[1, initial]], editable: true } });
+    const info = await client.open("t");
+    const error = await client.error("write", {
+      table: info.table,
+      revision: info.revision,
+      updates: [
+        { key: { rowId: 0 }, column: "safe", value: 2 },
+        { key: { rowId: 0 }, column: "value", value: invalid },
+      ],
+    });
+    assert.equal(error.code, "invalid_value");
+    assert.equal(error.path, "/updates/1/value");
+    assert.equal(error.reason, "type");
+    assert.deepEqual((await client.rows(info, {})).rows, [[1, initial]]);
+    if (type.type === "float") {
+      const input = readCellText("0.1", type);
+      assert.ok(input.ok);
+      await client.result("write", {
+        table: info.table,
+        revision: info.revision,
+        updates: [{ key: { rowId: 0 }, column: "value", value: input.value }],
+      });
+      assert.deepEqual((await client.rows(info, {})).rows, [[1, Math.fround(0.1)]]);
+    }
+  }
+});
 
 function orders(): MemoryTable {
   return {

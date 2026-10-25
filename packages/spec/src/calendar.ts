@@ -12,6 +12,8 @@ export const UNIT_PER_SECOND: Record<TimestampUnit, bigint> = { s: 1n, ms: 1000n
 export const UNIT_DIGITS: Record<TimestampUnit, number> = { s: 0, ms: 3, us: 6, ns: 9 };
 
 const DAY_SECONDS = 86_400n;
+const INT64_MIN = -(2n ** 63n);
+const INT64_MAX = 2n ** 63n - 1n;
 
 /** `a / b` rounded down, for a positive `b`. */
 function floorDiv(a: bigint, b: bigint) {
@@ -114,7 +116,8 @@ export function parseTimestampText(text: string, unit: TimestampUnit = "us"): bi
   const days = parseDateText(text.slice(0, space));
   const time = parseClock(text.slice(space + 1), unit);
   if (days === null || time === null) return null;
-  return BigInt(days) * DAY_SECONDS * UNIT_PER_SECOND[unit] + time;
+  const count = BigInt(days) * DAY_SECONDS * UNIT_PER_SECOND[unit] + time;
+  return count >= INT64_MIN && count <= INT64_MAX ? count : null;
 }
 
 /** An interval (§2.1): months, days and nanoseconds. */
@@ -159,7 +162,7 @@ export function parseIntervalText(text: string): IntervalParts | null {
       text,
     );
   if (!match || text === "" || text.endsWith(" ")) return null;
-  const [years, months, days] = [match[1], match[2], match[3]].map((part) => Number(part ?? 0));
+  const [years, months, days] = [match[1], match[2], match[3]].map((part) => BigInt(part ?? 0));
   if (Number(match[6] ?? 0) > 59 || Number(match[7] ?? 0) > 59) return null;
   let nanos = 0n;
   if (match[5] !== undefined) {
@@ -167,7 +170,8 @@ export function parseIntervalText(text: string): IntervalParts | null {
     nanos = seconds * 1_000_000_000n + BigInt((match[8] ?? "").padEnd(9, "0"));
     if (match[4] === "-") nanos = -nanos;
   }
-  const total = years * 12 + months;
-  if (!Number.isSafeInteger(total) || Math.abs(total) > 2_147_483_647 || Math.abs(days) > 2_147_483_647) return null;
-  return { months: total, days, nanos };
+  const total = years * 12n + months;
+  if (total < -2147483648n || total > 2147483647n || days < -2147483648n || days > 2147483647n) return null;
+  if (nanos < INT64_MIN || nanos > INT64_MAX) return null;
+  return { months: Number(total), days: Number(days), nanos };
 }

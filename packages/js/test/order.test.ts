@@ -216,10 +216,21 @@ test("floats: NaN is the greatest number, −0.0 equals 0.0, and null comes last
     asc: [4, 11, 7, 9, 0, 1, 13, 8, 6, 14, 10, 3, 2, 12, 5],
     desc: [2, 12, 3, 10, 14, 6, 8, 0, 1, 13, 9, 7, 11, 4, 5],
   });
-  // Values of a 32-bit column are 32-bit floats: 16777217 is 16777216, and 0.1 is Math.fround(0.1).
-  await checkOrder(single({ type: "float", bits: 32 }, [16777217, 16777216, 0.1, Math.fround(0.1), -0, 0, "NaN"]), {
-    asc: [4, 5, 2, 3, 0, 1, 6],
-  });
+  // Typed JSON already holds float32 values; equal values retain their original row order.
+  await checkOrder(
+    single({ type: "float", bits: 32 }, [
+      Math.fround(16777217),
+      16777216,
+      Math.fround(0.1),
+      Math.fround(0.1),
+      -0,
+      0,
+      "NaN",
+    ]),
+    {
+      asc: [4, 5, 2, 3, 0, 1, 6],
+    },
+  );
 });
 
 test("blanks come last in both directions and tie with each other in row ID order (§3.2, §3.3)", async () => {

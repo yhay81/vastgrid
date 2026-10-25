@@ -3,7 +3,7 @@
  * tests of this package.
  */
 import type { DuckDBConnection } from "@duckdb/node-api";
-import type { Column, JsonValue } from "vastgrid-spec";
+import { type Column, type JsonValue, timestampText } from "vastgrid-spec";
 import type { CorpusTable } from "vastgrid-spec/conformance";
 import { duckdbType, floatParam, quoteIdentifier, type SqlValue } from "../src/index.ts";
 
@@ -49,6 +49,7 @@ export async function createTable(connection: DuckDBConnection, name: string, ta
  * a U+FEFF at the start of a value.
  */
 export function output(column: Column, sql: string): string {
+  if (column.type === "timestamp" && column.unit === "ns") return `epoch_ns(${sql})`;
   switch (column.type) {
     case "string":
       return `('.' || ${sql})`;
@@ -70,6 +71,7 @@ export function output(column: Column, sql: string): string {
 
 export function jsonOf(value: unknown, column: Column): JsonValue {
   if (value === null || value === undefined) return null;
+  if (column.type === "timestamp" && column.unit === "ns") return timestampText(BigInt(String(value)), "ns");
   switch (column.type) {
     case "bigint": {
       const text = String(value);

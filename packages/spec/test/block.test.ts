@@ -12,6 +12,7 @@ import {
   tableFromIPC,
   tableToIPC,
   uint32,
+  utf8,
   utf8View,
   Version,
 } from "@uwdata/flechette";
@@ -168,6 +169,21 @@ function stream(name: string, column: ArrowColumn<unknown>) {
   );
   return tableToIPC(table, { format: "stream" }) as Uint8Array;
 }
+
+test("readers reject malformed UTF-8 instead of inserting replacement characters", () => {
+  const type = utf8();
+  for (const bytes of [new Uint8Array([0xed, 0xa0, 0x80]), new Uint8Array([0xff]), new Uint8Array([0xf0, 0x9f])]) {
+    const batch = new Batch({
+      length: 1,
+      nullCount: 0,
+      type,
+      validity: new Uint8Array(0),
+      values: bytes,
+      offsets: new Int32Array([0, bytes.length]),
+    } as never);
+    assert.throws(() => decodeBlock(stream("s", new ArrowColumn([batch], type))), TypeError);
+  }
+});
 
 test("readers accept LargeUtf8 and Utf8View strings (§8.4)", () => {
   const large = decodeBlock(stream("s", columnFromValues(["﻿a", null, "b"], largeUtf8())));

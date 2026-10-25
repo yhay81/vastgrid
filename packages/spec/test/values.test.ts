@@ -7,6 +7,7 @@ import {
   isTimestampText,
   isTimeText,
   isValueOf,
+  parseTimestampText,
   trimSpaces,
   valueOfText,
 } from "../src/index.ts";
@@ -115,6 +116,7 @@ test("trim removes space separators only (§4.4)", () => {
 });
 
 test("text forms read back as typed JSON", () => {
+  assert.equal(valueOfText("0.1", { type: "float", bits: 32 }), Math.fround(0.1));
   assert.equal(valueOfText("nan", { type: "float" }), "NaN");
   assert.equal(valueOfText("-inf", { type: "float" }), "-Infinity");
   assert.equal(valueOfText("1.5", { type: "float" }), 1.5);
@@ -129,6 +131,7 @@ test("dates, times and timestamps read as the regular expressions of §2.2 read 
   // The forms as they were written before they were read character by character.
   const leap = (year: number) => (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
   const day = (year: number, month: number, date: number) =>
+    year >= 1 &&
     month >= 1 &&
     month <= 12 &&
     date >= 1 &&
@@ -150,7 +153,12 @@ test("dates, times and timestamps read as the regular expressions of §2.2 read 
   const units = { s: 0, ms: 3, us: 6, ns: 9 } as const;
   const timestampForm = (text: string, unit: keyof typeof units) => {
     const space = text.indexOf(" ");
-    return space === 10 && dateForm(text.slice(0, space)) && timeForm(text.slice(space + 1), units[unit]);
+    return (
+      space === 10 &&
+      dateForm(text.slice(0, space)) &&
+      timeForm(text.slice(space + 1), units[unit]) &&
+      (unit !== "ns" || parseTimestampText(text, unit) !== null)
+    );
   };
   const samples = [
     "2024-02-29",

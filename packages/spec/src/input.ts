@@ -3,7 +3,7 @@
  */
 import { parseDateText, parseTimestampText, timestampText, UNIT_DIGITS, UNIT_PER_SECOND } from "./calendar.js";
 import type { JsonValue, ValueType } from "./types.js";
-import { textOf } from "./values.js";
+import { isValueOf, textOf } from "./values.js";
 
 /** Why typed text is not a value of its column's type (§7.3). */
 export type InputError =
@@ -18,6 +18,7 @@ export type InputError =
   | "time"
   | "timestamp"
   | "uuid"
+  | "unicode"
   | "type";
 
 export type InputResult = { ok: true; value: JsonValue } | { ok: false; error: InputError };
@@ -60,12 +61,12 @@ function readDecimal(text: string, precision: number, scale: number): InputResul
   return { ok: true, value: `${match[1] === "-" && !zero ? "-" : ""}${digits}` };
 }
 
-function readFloat(text: string): InputResult {
+function readFloat(text: string, bits = 64): InputResult {
   if (/^[+-]?(?:inf|infinity)$/i.test(text))
     return { ok: true, value: text.startsWith("-") ? "-Infinity" : "Infinity" };
   if (/^nan$/i.test(text)) return { ok: true, value: "NaN" };
   if (!numberText.test(text)) return fail("number");
-  const value = Number(text);
+  const value = bits === 32 ? Math.fround(Number(text)) : Number(text);
   return Number.isFinite(value) ? { ok: true, value: Object.is(value, -0) ? 0 : value } : fail("range");
 }
 
@@ -100,7 +101,10 @@ function readTimestamp(text: string, type: ValueType): InputResult {
   const day = dayText(match[1]);
   const clock = match[2] === undefined ? "00:00:00" : clockText(match[2], UNIT_DIGITS[unit]);
   if (!day || !clock) return fail("timestamp");
-  if (!zoned) return { ok: true, value: `${day} ${clock}` };
+  if (!zoned) {
+    const value = `${day} ${clock}`;
+    return isValueOf(value, type) ? { ok: true, value } : fail("range");
+  }
   let offsetMinutes = 0;
   const offset = /^([+-])([0-9]{2}):?([0-9]{2})?$/.exec(match[3] ?? "");
   if (offset) {
@@ -123,7 +127,10 @@ function readTimestamp(text: string, type: ValueType): InputResult {
  * strings), an empty text is null, and the value is written as JSON writes it (§2.2).
  */
 export function readCellText(text: string, type: ValueType, options: InputOptions = {}): InputResult {
-  if (type.type === "string") return { ok: true, value: text.replace(whiteSpace, "") === "" ? null : text };
+  if (type.type === "string") {
+    if (!isValueOf(text, type)) return fail("unicode");
+    return { ok: true, value: text.replace(whiteSpace, "") === "" ? null : text };
+  }
   if (type.type === "interval" || type.type === "binary") return fail("type");
   let trimmed = text.replace(whiteSpace, "");
   if (trimmed === "") return { ok: true, value: null };
@@ -136,7 +143,7 @@ export function readCellText(text: string, type: ValueType, options: InputOption
     case "decimal":
       return readDecimal(trimmed, type.precision ?? 38, type.scale ?? 0);
     case "float":
-      return readFloat(trimmed);
+      return readFloat(trimmed, type.bits);
     case "boolean": {
       const lower = trimmed.toLowerCase();
       if (lower === "true" || lower === "1") return { ok: true, value: true };

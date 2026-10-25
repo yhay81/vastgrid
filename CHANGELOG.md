@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `vastgrid-spec`, `vastgrid-js`, `vastgrid-duckdb-engine` (unreleased v2): reject out-of-range timestamp
+  and interval counts, lone Unicode surrogates, and non-binary32 typed values before Arrow conversion.
+  Float32 editing rounds to the declared type and rejects numeric overflow; invalid writes remain atomic.
+  Read DuckDB nanosecond timestamps by their exact counts to avoid its text-cast overflow near the lower bound.
+
 - Fixes of grouping: `ArraySource` and `vastgrid-browser` order float keys that are not finite as DuckDB
   does (-Infinity, numbers, Infinity, NaN, then null) and group `NaN` numbers with their text;
   `GroupedSource.reload()` and a new base `revision` read the groups again, and the grid's `reload()` and

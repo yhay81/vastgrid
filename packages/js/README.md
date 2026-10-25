@@ -29,6 +29,10 @@ const info = await engine.handle({ v: 2, id: 1, op: "open", ref: "orders" });
   summed), so that opening a table of millions of rows takes milliseconds; a table that does not follow §2 is
   answered with `load_failed` and the JSON Pointer of the place at fault. Its rows are read as they are,
   without a copy, so they must not change afterwards.
+- Float32 table values and writes must already be binary32 numbers (`Math.fround(0.1)`, not `0.1`);
+  `readCellText` converts typed input to them. Invalid timestamps, intervals and lone Unicode surrogates
+  are rejected by the same specification checks used to write Arrow blocks. An invalid write changes
+  no cells and identifies the offending value with `/updates/{index}/value`.
 - `engine.handle(message)` answers a request with its response or error, with blocks in the structured
   encoding (`{ bytes }`, §8.8), and never throws; `cancel` has no answer. `engine.subscribe(listener)` listens
   to the events of §8.5: `changed` after every write.

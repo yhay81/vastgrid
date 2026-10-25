@@ -608,6 +608,8 @@ npm run bench
 
 ## Roadmap
 
+The unreleased v2 rebuild is tracked in [#33](https://github.com/yhay81/vastgrid/issues/33). Its typed-value contract rejects values that Arrow cannot preserve; float32 text input is rounded before writing, and numeric overflow is rejected. See the [v2 specification](docs/v2-spec.md#22-values-in-json).
+
 The items of the earlier roadmap (cell editing with byte-preserving CSV write-back, formula columns) are
 done; plans are tracked in the GitHub issues. See [docs/research.ja.md](docs/research.ja.md) (Japanese) for the survey of existing viewers and grids
 that shaped these choices.

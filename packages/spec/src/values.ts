@@ -1,6 +1,7 @@
 /**
  * Rules of values (docs/v2-spec.md §2): how JSON writes them, their text form, and literals.
  */
+import { parseIntervalText, parseTimestampText } from "./calendar.js";
 import type { JsonValue, TimestampUnit, ValueType } from "./types.js";
 
 const INT32_MIN = -2147483648;
@@ -12,6 +13,8 @@ const integerText = /^-?(0|[1-9][0-9]*)$/;
 const decimalText = /^-?(0|[1-9][0-9]*)(?:\.([0-9]+))?$/;
 const uuidText = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const base64Text = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const surrogate = /[\uD800-\uDFFF]/;
+const loneSurrogate = /\p{Cs}/u;
 // Unicode category Zs, which `trim` removes (§4.4).
 const spaceSeparators = /^[\p{Zs}]+|[\p{Zs}]+$/gu;
 
@@ -49,7 +52,7 @@ function dateAt(text: string, at: number, end: number): boolean {
   if (end - at !== 10 || text.charCodeAt(at + 4) !== 45 || text.charCodeAt(at + 7) !== 45) return false;
   const century = twoDigits(text, at);
   const years = twoDigits(text, at + 2);
-  if (century < 0 || years < 0) return false;
+  if (century < 0 || years < 0 || (century === 0 && years === 0)) return false;
   return isDay(century * 100 + years, twoDigits(text, at + 5), twoDigits(text, at + 8));
 }
 
@@ -88,7 +91,7 @@ export function isTimeText(text: string, digits = 6): boolean {
 
 /** Whether the text is a timestamp as §2.2 writes it, for a unit. */
 export function isTimestampText(text: string, unit: TimestampUnit = "us"): boolean {
-  return timestampAt(text, text.length, unitDigits[unit]);
+  return timestampAt(text, text.length, unitDigits[unit]) && (unit !== "ns" || parseTimestampText(text, unit) !== null);
 }
 
 /** The precision and scale of a decimal written as text (§2.5), or null when the text is not a decimal. */
@@ -122,11 +125,12 @@ export function isValueOf(value: JsonValue, type: ValueType): boolean {
     }
     case "float":
       return typeof value === "number"
-        ? Number.isFinite(value)
+        ? Number.isFinite(value) && (type.bits !== 32 || Math.fround(value) === value)
         : value === "NaN" || value === "Infinity" || value === "-Infinity";
     case "string":
+      return typeof value === "string" && (!surrogate.test(value) || !loneSurrogate.test(value));
     case "interval":
-      return typeof value === "string";
+      return typeof value === "string" && parseIntervalText(value) !== null;
     case "date":
       return typeof value === "string" && isDateText(value);
     case "time":
@@ -225,7 +229,7 @@ export function valueOfText(text: string | null, type: ValueType): JsonValue {
       if (text === "nan") return "NaN";
       if (text === "inf") return "Infinity";
       if (text === "-inf") return "-Infinity";
-      return Number(text);
+      return type.bits === 32 ? Math.fround(Number(text)) : Number(text);
     default:
       return text;
   }
