@@ -87,7 +87,14 @@ export class Client {
   /** Reads rows of a plan's view, with the values of its block. */
   async rows(
     info: TableInfo,
-    request: { start?: number; end?: number; columns?: string[]; plan?: Json; textLimit?: number } = {},
+    request: {
+      start?: number;
+      end?: number;
+      columns?: string[];
+      plan?: Json;
+      textLimit?: number;
+      preview?: boolean;
+    } = {},
   ): Promise<Rows> {
     const columns = request.columns ?? info.columns.map((column) => column.name);
     const result = await this.result<Json & { block: { bytes: Uint8Array } }>("rows", {
@@ -97,6 +104,7 @@ export class Client {
       start: request.start ?? 0,
       end: request.end ?? (request.start ?? 0) + 10_000,
       columns,
+      ...(request.preview === undefined ? {} : { preview: request.preview }),
       ...(request.textLimit === undefined ? {} : { textLimit: request.textLimit }),
     });
     const block = decodeBlock(result.block.bytes);

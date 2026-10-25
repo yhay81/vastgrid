@@ -274,7 +274,7 @@ export class GridStore {
   /** Reads rows `[start, end)` of `columns` of the view on screen if they are not read, for cells React renders. */
   ensure(start: number, end: number, columns: readonly string[]) {
     const view = this.current;
-    if (!view?.info || !this.opened) return;
+    if (!view?.info || !this.opened || this.next || view.abort.signal.aborted) return;
     for (const read of view.cache.reads(start, end, this.withKey(columns), view.info.rowCount)) {
       void this.read(view, read).catch(() => {});
     }
@@ -301,14 +301,15 @@ export class GridStore {
 
   private readVisible() {
     const view = this.current;
-    if (!view?.info || !this.opened) return;
+    if (!view?.info || !this.opened || this.next || view.abort.signal.aborted) return;
     const { top, rows, columns } = this.viewport;
     if (columns.length === 0) return;
     const margin = Math.max(rows, 32);
     const start = Math.max(0, top - margin);
-    const end = Math.min(view.info.rowCount, top + rows + margin);
+    const readable = view.info.status === "building" ? view.info.readableRows : view.info.rowCount;
+    const end = Math.min(readable, top + rows + margin);
     view.cache.touch(top, top + rows);
-    for (const read of view.cache.reads(start, end, this.withKey(columns), view.info.rowCount)) {
+    for (const read of view.cache.reads(start, end, this.withKey(columns), readable)) {
       void this.read(view, read).catch(() => {});
     }
     view.cache.evict(this.budget, start, end);
@@ -330,6 +331,8 @@ export class GridStore {
           start: read.start,
           end: read.end,
           columns: read.columns,
+          // A keyed selection needs locate on the complete view before its position can change.
+          ...(!view.info && table.capabilities.preview && !this.base("session").active?.key ? { preview: true } : {}),
         },
         view.abort.signal,
       );
@@ -343,7 +346,15 @@ export class GridStore {
         result.truncated,
       );
       const info = result.view;
-      if (!view.info || view.info.rowCount !== info.rowCount || view.info.status !== info.status) {
+      view.cache.reading(read, false);
+      // A ready event can arrive before the response containing the preview.
+      if (
+        !(view.info?.status === "ready" && info.status === "building") &&
+        (!view.info ||
+          view.info.rowCount !== info.rowCount ||
+          view.info.status !== info.status ||
+          view.info.readableRows !== info.readableRows)
+      ) {
         view.info =
           view.info && sameColumns(view.info.columns, info.columns) ? { ...info, columns: view.info.columns } : info;
         if (view === this.current) this.publish({ view: view.info });
@@ -458,6 +469,7 @@ export class GridStore {
           rowCount: event.rowCount as number | null,
         },
       });
+      if (event.status === "ready") this.showPlan(this.base("document").plan ?? {});
       // A view still being made reads its rows again once the table is read, also without `view` events (§9).
       const view = this.current;
       if (event.status === "ready" && view?.info && view.info.status !== "ready") {
@@ -468,8 +480,10 @@ export class GridStore {
         );
       }
     } else if (event.event === "view") {
-      const view = this.current;
-      if (view?.info && event.hash === view.info.hash) {
+      const view = [this.next, this.current].find(
+        (item) => item?.info?.hash === event.hash && item?.revision === table.revision,
+      );
+      if (view?.info) {
         view.info = {
           ...view.info,
           status: event.status as ViewInfo["status"],
@@ -477,7 +491,7 @@ export class GridStore {
           rowCount: event.rowCount as number,
           rowCountExact: event.rowCountExact as boolean,
         };
-        this.publish({ view: view.info });
+        if (view === this.current) this.publish({ view: view.info });
         this.scheduleReads();
       }
     }
@@ -529,8 +543,18 @@ export class GridStore {
     const table = this.snapshot.table;
     if (!table || !this.client || !this.opened) return;
     const key = planKey(plan);
+    if (table.status === "loading" && !table.capabilities.partialViews && key !== planKey({})) {
+      this.next?.abort.abort();
+      this.next = null;
+      this.publish({ pending: { plan } });
+      return;
+    }
     const fresh = (view: View | null) =>
-      view !== null && view.key === key && view.revision === table.revision && view.edits === table.edits.version;
+      view !== null &&
+      !view.abort.signal.aborted &&
+      view.key === key &&
+      view.revision === table.revision &&
+      view.edits === table.edits.version;
     if (this.next && !fresh(this.next)) {
       this.next.abort.abort();
       this.next = null;
@@ -540,6 +564,7 @@ export class GridStore {
       return;
     }
     if (this.next) return;
+    if (this.current?.info?.status === "building") this.current.abort.abort();
     let checked: CheckedPlan;
     try {
       checked = checkPlan(plan, table.columns, planOptions(table.capabilities));
@@ -619,7 +644,12 @@ export class GridStore {
       );
       const scroll = updated.session.scroll;
       const target = scroll && scroll !== state.session.scroll ? scroll.row : Math.min(top, info.rowCount - 1);
-      if (target >= 0 && view.cache.value(target, columns[0] ?? "") === undefined && columns.length > 0) {
+      if (
+        info.status === "ready" &&
+        target >= 0 &&
+        view.cache.value(target, columns[0] ?? "") === undefined &&
+        columns.length > 0
+      ) {
         await this.read(view, this.around(target, info.rowCount, columns));
         if (!this.live(view, connection)) return;
       }
@@ -635,6 +665,14 @@ export class GridStore {
       this.dropWritten((write) => (this.writeVersions.get(write) ?? Number.POSITIVE_INFINITY) <= view.edits);
       this.emitRows();
       this.scheduleReads();
+      // A normal read waits for completion, also when there is no event channel or the ready event raced
+      // the preview. It reports a failed build and is cancelled when the plan or connection changes.
+      if (view.info?.status === "building" && table.status === "ready") {
+        void this.read(view, this.around(Math.max(0, target), null, columns)).then(
+          () => this.scheduleReads(),
+          () => {},
+        );
+      }
     } catch (error) {
       if (view === this.next) {
         this.next = null;

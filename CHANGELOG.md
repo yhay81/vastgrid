@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- v2: DuckDB saves sorted and filtered view positions instead of recomputing them for every scroll. Large
+  inputs store only row IDs; smaller inputs and aggregates keep their output columns. Sort previews share the
+  final order, the grid follows completion and cancels old reads, and queued plans wait until files finish
+  loading. Shared builds, LRU cleanup and a configurable 8 GB spill limit bound their work. See
+  [measurements and limits](docs/v2-views-benchmark.md).
+
 - Fixes of grouping: `ArraySource` and `vastgrid-browser` order float keys that are not finite as DuckDB
   does (-Infinity, numbers, Infinity, NaN, then null) and group `NaN` numbers with their text;
   `GroupedSource.reload()` and a new base `revision` read the groups again, and the grid's `reload()` and
