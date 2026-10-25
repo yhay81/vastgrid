@@ -1,4 +1,4 @@
-export { decodeBlock, encodeBlock, UUID_EXTENSION } from "./block.js";
+export { BlockValueError, decodeBlock, encodeBlock, UUID_EXTENSION } from "./block.js";
 export {
   civilFromDays,
   dateText,

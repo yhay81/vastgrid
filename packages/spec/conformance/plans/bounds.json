@@ -1,0 +1,211 @@
+{
+  "$schema": "../../schema/conformance.schema.json",
+  "description": "Typed values keep their representable values through Arrow; invalid literals fail before evaluation.",
+  "tables": {
+    "bounds": {
+      "columns": [
+        {
+          "name": "at",
+          "type": "timestamp",
+          "unit": "ns"
+        },
+        {
+          "name": "f",
+          "type": "float",
+          "bits": 32
+        },
+        {
+          "name": "s",
+          "type": "string"
+        }
+      ],
+      "rows": [
+        [
+          "1677-09-21 00:12:43.145225",
+          3.4028234663852886e+38,
+          "\u65e5\u672c\u8a9e \ud83d\ude00"
+        ],
+        [
+          "2262-04-11 23:47:16.854775",
+          1.401298464324817e-45,
+          "\ufeff\u4fdd\u3064"
+        ],
+        [
+          "1969-12-31 23:59:59.999999999",
+          0.10000000149011612,
+          ""
+        ]
+      ]
+    }
+  },
+  "cases": [
+    {
+      "id": "bounds.block-roundtrip",
+      "section": "2.2",
+      "table": "bounds",
+      "plan": {},
+      "expect": {
+        "rowCount": 3,
+        "rowIds": [
+          0,
+          1,
+          2
+        ],
+        "rows": [
+          [
+            "1677-09-21 00:12:43.145225",
+            3.4028234663852886e+38,
+            "\u65e5\u672c\u8a9e \ud83d\ude00"
+          ],
+          [
+            "2262-04-11 23:47:16.854775",
+            1.401298464324817e-45,
+            "\ufeff\u4fdd\u3064"
+          ],
+          [
+            "1969-12-31 23:59:59.999999999",
+            0.10000000149011612,
+            ""
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bounds.reject-timestamp-low",
+      "section": "2.2",
+      "table": "bounds",
+      "plan": {
+        "derive": [
+          {
+            "name": "bad",
+            "expr": {
+              "lit": "1677-09-21 00:12:43.145224191",
+              "type": "timestamp"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_plan",
+          "reason": "literal",
+          "path": "/derive/0/expr"
+        }
+      }
+    },
+    {
+      "id": "bounds.reject-timestamp-high",
+      "section": "2.2",
+      "table": "bounds",
+      "plan": {
+        "derive": [
+          {
+            "name": "bad",
+            "expr": {
+              "lit": "2262-04-11 23:47:16.854775808",
+              "type": "timestamp"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_plan",
+          "reason": "literal",
+          "path": "/derive/0/expr"
+        }
+      }
+    },
+    {
+      "id": "bounds.reject-unicode-inferred",
+      "section": "2.2",
+      "table": "bounds",
+      "plan": {
+        "derive": [
+          {
+            "name": "bad",
+            "expr": {
+              "lit": "\ud800"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_plan",
+          "reason": "literal",
+          "path": "/derive/0/expr"
+        }
+      }
+    },
+    {
+      "id": "bounds.reject-unicode-declared",
+      "section": "2.2",
+      "table": "bounds",
+      "plan": {
+        "derive": [
+          {
+            "name": "bad",
+            "expr": {
+              "lit": "\udc00",
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_plan",
+          "reason": "literal",
+          "path": "/derive/0/expr"
+        }
+      }
+    },
+    {
+      "id": "bounds.reject-interval-overflow",
+      "section": "2.2",
+      "table": "bounds",
+      "plan": {
+        "derive": [
+          {
+            "name": "bad",
+            "expr": {
+              "lit": "2562047:47:16.854775808",
+              "type": "interval"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_plan",
+          "reason": "literal",
+          "path": "/derive/0/expr"
+        }
+      }
+    },
+    {
+      "id": "bounds.reject-year-zero",
+      "section": "2.2",
+      "table": "bounds",
+      "plan": {
+        "derive": [
+          {
+            "name": "bad",
+            "expr": {
+              "lit": "0000-01-01",
+              "type": "date"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_plan",
+          "reason": "literal",
+          "path": "/derive/0/expr"
+        }
+      }
+    }
+  ]
+}

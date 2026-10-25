@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `vastgrid-spec`, `vastgrid-js`, `vastgrid-duckdb-engine` (unreleased v2): reject out-of-range timestamp
+  and interval counts, lone Unicode surrogates, and non-binary32 typed values before Arrow conversion.
+  Float32 editing rounds to the declared type and rejects numeric overflow; invalid writes remain atomic.
+  Read DuckDB nanosecond timestamps by their exact counts to avoid its text-cast overflow near the lower bound.
 - v2: DuckDB saves sorted and filtered view positions instead of recomputing them for every scroll. Large
   inputs store only row IDs; smaller inputs and aggregates keep their output columns. Sort previews share the
   final order, the grid follows completion and cancels old reads, and queued plans wait until files finish

@@ -44,7 +44,20 @@ import {
   UNIT_PER_SECOND,
 } from "./calendar.js";
 import type { Column, JsonValue, TimestampUnit, ValueType } from "./types.js";
-import { floatJson, floatOf, fromBase64, toBase64 } from "./values.js";
+import { floatJson, floatOf, fromBase64, isValueOf, toBase64, typeName } from "./values.js";
+
+/** A value that cannot be written without loss; the path is relative to the block's rows. */
+export class BlockValueError extends TypeError {
+  readonly reason = "type";
+
+  constructor(
+    readonly path: string,
+    type: ValueType,
+  ) {
+    super(`The value at ${path} is not a ${typeName(type)} value within the ranges of §2.2.`);
+    this.name = "BlockValueError";
+  }
+}
 
 /** The field metadata that marks a FixedSizeBinary(16) field as UUIDs (§8.4). */
 export const UUID_EXTENSION = { key: "ARROW:extension:name", value: "arrow.uuid" } as const;
@@ -59,7 +72,7 @@ const UNITS = {
 const UNIT_NAMES: TimestampUnit[] = ["s", "ms", "us", "ns"];
 
 // A string that starts with U+FEFF keeps it (§8.4).
-const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
+const decoder = new TextDecoder("utf-8", { ignoreBOM: true, fatal: true });
 const encoder = new TextEncoder();
 
 /** The JSON of a 64-bit integer (§2.2): a number when it is safe, otherwise its digits. */
@@ -283,7 +296,11 @@ export function encodeBlock(columns: readonly Column[], rows: readonly (readonly
   );
   const children = columns.map((column, index) => {
     const type = fields[index].type;
-    const values = rows.map((row) => row[index] ?? null);
+    const values = rows.map((row, at) => {
+      const value = row[index] ?? null;
+      if (!isValueOf(value, column)) throw new BlockValueError(`/rows/${at}/${index}`, column);
+      return value;
+    });
     const batch = new Batch({ length: rows.length, type, ...buffers(column, values) } as ConstructorParameters<
       typeof Batch
     >[0]);

@@ -2,7 +2,7 @@
  * DuckDB's types as the logical types of docs/v2-spec.md §2.1, and how the engine reads their values as typed
  * JSON (§2.2).
  */
-import { type Column, floatJson, type JsonValue, type ValueType } from "vastgrid-spec";
+import { type Column, floatJson, type JsonValue, timestampText, type ValueType } from "vastgrid-spec";
 import { duckdbType, quoteIdentifier } from "vastgrid-sql";
 
 /** A column of a source as DuckDB describes it. */
@@ -76,6 +76,10 @@ function inYears(sql: string) {
  * (Appendix B). Dates and timestamps outside the years 0001 to 9999 read as null (§12).
  */
 export function readExpression(column: Column, sql: string, textLimit: number): string {
+  // DuckDB's VARCHAR cast overflows near the negative TIMESTAMP_NS limit. Read its exact count instead.
+  if (column.type === "timestamp" && column.unit === "ns") {
+    return `(CASE WHEN isfinite(${sql}) THEN epoch_ns(${sql}) END)`;
+  }
   switch (column.type) {
     case "boolean":
     case "integer":
@@ -100,6 +104,9 @@ export function readExpression(column: Column, sql: string, textLimit: number): 
 /** A value that `readExpression` read, as typed JSON (§2.2); `cut` is true for a string cut at the limit. */
 export function readValue(column: Column, value: unknown): { value: JsonValue; cut: boolean } {
   if (value === null || value === undefined) return { value: null, cut: false };
+  if (column.type === "timestamp" && column.unit === "ns") {
+    return { value: timestampText(BigInt(String(value)), "ns"), cut: false };
+  }
   switch (column.type) {
     case "boolean":
       return { value: Boolean(value), cut: false };

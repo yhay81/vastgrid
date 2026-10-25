@@ -652,6 +652,8 @@ class Engine implements MemoryEngine {
       } catch (error) {
         if (!(error instanceof TableProblem)) throw error;
         throw new Failure("invalid_value", `${shown(update.value)} is not a value of ${shown(update.column)}.`, {
+          path: `/updates/${at}/value`,
+          reason: "type",
           details: { update: at },
         });
       }

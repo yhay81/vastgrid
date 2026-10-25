@@ -100,6 +100,22 @@ type of their column or literal:
 Dates and timestamps are written for the years 0001 to 9999, which `YYYY` holds; how values outside them are
 written is an open question (§12).
 
+Typed JSON is already a value of its declared type, rather than text awaiting conversion:
+
+- A finite `float` with `bits: 32` MUST equal its IEEE 754 binary32 value (for example,
+  `0.10000000149011612`, not `0.1`). Other finite numbers, including overflow and underflow, are invalid
+  typed JSON for that type. Typed input is rounded before it becomes typed JSON (§7.3).
+- A `string` MUST be well-formed Unicode text: paired UTF-16 surrogates are allowed, lone surrogates are
+  not. Readers and writers MUST NOT silently replace invalid text with U+FFFD.
+- A `timestamp` MUST fit a signed 64-bit count of its unit since the Unix epoch. For `ns`, the inclusive
+  bounds are `1677-09-21 00:12:43.145224192` and `2262-04-11 23:47:16.854775807`. Other units remain
+  limited by the years above. Engines may have a narrower source range (for example reserved infinity values).
+- An `interval` has signed 32-bit months and days (−2^31 through 2^31 − 1) and signed 64-bit nanoseconds
+  (−2^63 through 2^63 − 1). Its parsed totals MUST fit these ranges; blocks write the canonical text of
+  those same three parts when read back.
+- A JSON number for `bigint` MUST be a safe integer. Larger values MUST use the string form; accepting
+  both forms does not allow an unsafe number.
+
 ### 2.3 Values in blocks
 
 Rows travel as Apache Arrow IPC streams (§8.4) with the Arrow types of §2.1. Timestamps keep their unit;
@@ -981,14 +997,14 @@ the text is removed first, except for strings. An empty text is null for every t
 
 | Type | Accepted | Value | Errors |
 | --- | --- | --- | --- |
-| `string` | anything | the text as typed; a text of only white space is null | |
+| `string` | well-formed Unicode text | the text as typed; a text of only white space is null | `unicode` |
 | `integer`, `bigint` | `[+-]?[0-9]+` | the number, within the type's range | `integer` (a number with a fraction or an exponent), `range`, `number` |
 | `decimal` | `[+-]?([0-9]+(\.[0-9]*)?\|\.[0-9]+)` | the value with exactly `scale` fraction digits | `scale` (more fraction digits than the scale, not counting trailing zeros), `precision` (more whole digits than `precision − scale`), `decimal` (an exponent), `number` |
-| `float` | a number as above with an optional exponent; `inf` or `infinity` with an optional sign, or `nan`, in any letter case | the float, with −0 read as 0 | `range` (beyond the largest float), `number` |
+| `float` | a number as above with an optional exponent; `inf` or `infinity` with an optional sign, or `nan`, in any letter case | the float rounded to its declared bits, with −0 read as 0 | `range` (rounding overflows to infinity), `number` |
 | `boolean` | `true`, `false`, `1`, `0`, in any letter case | | `boolean` |
 | `date` | year, month and day separated by `-`, `/` or `.`, naming a real day | `YYYY-MM-DD` | `date` |
 | `time` | `H:MM`, `H:MM:SS` or `H:MM:SS.f` with 1 to 6 fraction digits | `HH:MM:SS`, with the fraction without trailing zeros | `time` |
-| `timestamp` | a date, then optionally a space or `T` and a time with as many fraction digits as the unit keeps | §2.2; midnight without a time | `timestamp` |
+| `timestamp` | a date, then optionally a space or `T` and a time with as many fraction digits as the unit keeps | §2.2; midnight without a time | `timestamp`, `range` (outside the signed 64-bit count) |
 | `timestamptz` | a timestamp, then optionally `Z` or an offset `±HH`, `±HHMM` or `±HH:MM` | the instant in UTC (§2.2); without an offset, the time is UTC | `timestamp` |
 | `uuid` | 32 hex digits, with or without the dashes of `8-4-4-4-12`, in any letter case | lowercase with dashes | `uuid` |
 | `interval`, `binary` | nothing | | `type` |
@@ -996,6 +1012,11 @@ the text is removed first, except for strings. An empty text is null for every t
 With **digit grouping** (pasting), numbers whose whole digits are grouped by commas in threes (`1,234.5`) are
 also read, without the commas. The text that an editor starts with for a value is its text form (§2.4), and
 the empty string for null.
+
+For `float(32)`, rounding is IEEE 754 round-to-nearest, ties-to-even (JavaScript `Math.fround`): typed
+`0.1` becomes `0.10000000149011612`. Subnormal values and underflow to zero follow that rule. Numeric
+overflow is an error; explicit `inf`/`infinity` remains allowed. Engines and block writers validate the
+resulting typed JSON instead of rounding it again. Row keys and writes use this same typed JSON contract.
 
 ### 7.4 Undo and redo
 
@@ -1113,6 +1134,13 @@ columns, whose positions the answer gives), without compression:
   `arrow.uuid`; `binary` Binary;
 - the rows `start` to `end`, in order.
 
+Writers MUST validate the ranges and text of §2.2 before packing values. A value that does not fit MUST
+fail rather than wrap, overflow to infinity or acquire replacement characters. `encodeBlock` throws a
+`BlockValueError` (a `TypeError`) with `reason: "type"` and a block-relative JSON Pointer
+`/rows/{offset}/{columnIndex}`. A source value that fails this check is returned by the DuckDB engine as
+`invalid_value` with the same path and reason; no partial block is returned. Write validation identifies
+the request value at `/updates/{index}/value`.
+
 Readers MUST accept Utf8, LargeUtf8 and Utf8View for strings, and MUST keep a U+FEFF that starts a string
 (Appendix B). Strings longer than `textLimit` code points are cut to that length, and `truncated` maps the
 column's name to the offsets, from `start`, of its cut values; the core shows that they go on.
@@ -1146,7 +1174,7 @@ answer it. `cancel` itself has no response.
 | `file_changed` | §7.5 | 409 |
 | `read_only` | §7.2 | 403 |
 | `not_allowed` | a `ref` or `target` outside what the host allows | 403 |
-| `invalid_value` | §7.2 | 422 |
+| `invalid_value` | §7.2, or a source value that cannot be represented in a block (§8.4) | 422 |
 | `too_many_columns` | §4.6 | 422 |
 | `save_unsupported` | §7.5 | 422 |
 | `load_failed` | the table could not be read | 422 |
@@ -1290,15 +1318,11 @@ Found while writing the memory engine of [`vastgrid-js`](../packages/js), which 
   largest float.
 - `locate` by a value that rows repeat: `vastgrid-js` gives its first position in the view. And whether a key
   `"1.5"` finds the decimal(4, 2) value `"1.50"`.
-- Values that blocks cannot hold: `isValueOf` accepts nanosecond timestamps outside 1677–2262 and intervals whose
-  nanoseconds do not fit 64 bits, which wrap around in blocks, and strings with lone surrogates, which become
-  U+FFFD. §2.2 should give the ranges and say that strings are well-formed.
-- Bigints as JSON numbers beyond 2^53 − 1 (§2.2): `isValueOf` refuses them; the text should say so.
 - `checkRequest` repeats an unknown member's name in the error's `path` and message, so a name beyond the limit
-  of §8.1 makes an error that breaks §8.1; and the limit is not checked inside plans, keys and values.
-- 32-bit float values that are not 32-bit floats (`0.1`, `1e39`): invalid, or rounded as blocks round them.
-- Column names that a `rows` request repeats, and the error for a column that the view does not have.
-- The `id` of the answer to a message whose `id` is not valid: 0 may be a request's.
+  of §8.1 makes an error that breaks §8.1; and the limit is not checked inside plans, keys and values
+  ([#46](https://github.com/yhay81/vastgrid/issues/46)).
+- Column names that a `rows` request repeats, and the error for a column that the view does not have (#46).
+- The `id` of the answer to a message whose `id` is not valid: 0 may be a request's (#46).
 - `planHash` needs `crypto.subtle`, which browsers give only to secure pages; a client can take hashes from the
   engine's answers (as `vastgrid-grid` does), but an engine in such a page cannot make them.
 

@@ -5,6 +5,7 @@
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import {
+  BlockValueError,
   checkRequest,
   type ErrorCode,
   type Operation,
@@ -200,6 +201,8 @@ export class DuckDBEngine {
   }
 
   private errorOf(error: unknown): Json {
+    if (error instanceof BlockValueError)
+      return { code: "invalid_value", message: error.message, path: error.path, reason: error.reason };
     if (error instanceof EngineError) return { code: error.code, message: error.message, ...error.members };
     if (error instanceof PlanError)
       return { code: "invalid_plan", message: error.message, path: error.path, reason: error.reason };

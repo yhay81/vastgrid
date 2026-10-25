@@ -338,7 +338,10 @@ class Checker {
     if (declared === undefined) {
       if (value === null) return { kind: "literal", value, type: { type: "null" } };
       if (typeof value === "boolean") return { kind: "literal", value, type: BOOLEAN };
-      if (typeof value === "string") return { kind: "literal", value, type: STRING };
+      if (typeof value === "string") {
+        if (!isValueOf(value, STRING)) fail(path, "literal", "A string literal is well-formed Unicode text.");
+        return { kind: "literal", value, type: STRING };
+      }
       if (!Number.isFinite(value)) fail(path, "literal", "A number literal is finite; write NaN with type float.");
       return { kind: "literal", value, type: Number.isSafeInteger(value) ? BIGINT : FLOAT };
     }
@@ -367,6 +370,7 @@ class Checker {
   private search(text: unknown, path: string, place: Place): TypedExpr {
     this.member("search", path);
     if (typeof text !== "string") fail(child(path, "search"), "syntax", "A search is a string.");
+    if (!isValueOf(text, STRING)) fail(child(path, "search"), "literal", "A search is well-formed Unicode text.");
     if (place !== "where" || this.searched) fail(path, "misplaced", "A plan can search once, in where.");
     if (trimSpaces(text) === "") fail(path, "literal", "A search needs text other than spaces.");
     this.searched = true;

@@ -6,7 +6,10 @@ The [vastgrid v2 specification](../../docs/v2-spec.md) as code. It is a draft an
   that engines run, or throws a `PlanError` with the `path` and `reason` of the problem. `normalizePlan`,
   `canonicalJson` and `planHash` give a plan's normal form and hash.
 - **Values** (§2): `floatText`, `textOf`, `isValueOf` and the other helpers of `values.ts` and `calendar.ts`
-  follow the rules of values and their text forms.
+  follow the rules of values and their text forms. Typed JSON must fit its Arrow representation: signed
+  timestamp/interval counts, well-formed Unicode and already-rounded float32 numbers. `readCellText` rounds
+  float32 input and rejects overflow; `encodeBlock` refuses invalid values with a `BlockValueError` and a
+  `/rows/{row}/{column}` path instead of silently changing them.
 - **State** (§5): `checkDocument` and `checkSession` check the two parts of the state, `displayedColumns`
   gives the display order, `repairDocument` fits a document to a table, and `migrateGridState` migrates v1's
   `GridState`.

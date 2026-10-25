@@ -416,10 +416,19 @@ test("locate finds values of every type, by their first position", async () => {
       { name: "d", type: "decimal", precision: 30, scale: 1 },
     ],
     rows: [
-      [-0, 0.1, "2024-01-31 12:00:00.5", "1 month", "00000000-0000-0000-0000-000000000001", "AA==", "😀", "-0.5"],
+      [
+        -0,
+        Math.fround(0.1),
+        "2024-01-31 12:00:00.5",
+        "1 month",
+        "00000000-0000-0000-0000-000000000001",
+        "AA==",
+        "😀",
+        "-0.5",
+      ],
       [
         0,
-        16777217,
+        Math.fround(16777217),
         "2024-01-31 12:00:00",
         "30 days",
         "ffffffff-ffff-ffff-ffff-ffffffffffff",
@@ -442,7 +451,8 @@ test("locate finds values of every type, by their first position", async () => {
     ).rows;
   // Desc keeps ties in row ID order: −0.0 and 0.0 are equal, and row 0 comes first.
   assert.deepEqual(await locate("f", [0, -0, 1]), [0, 0, null]);
-  assert.deepEqual(await locate("f32", [16777216, Math.fround(0.1), 0.1, 0.2]), [0, 1, 1, null]);
+  // Keys are typed JSON too: 0.1 is not a binary32 value, so it cannot match a row.
+  assert.deepEqual(await locate("f32", [16777216, Math.fround(0.1), 0.1, 0.2]), [0, 1, null, null]);
   assert.deepEqual(await locate("t", ["2024-01-31 12:00:00", "2024-01-31 12:00:00.50", "2024-01-31 12:00:00.5"]), [
     1,
     null,
