@@ -15,3 +15,7 @@ site/src/content/docs/reference/protocol.md
 site/public/og.jpg
 site/.astro/
 site/.wrangler/
+
+# Claude Code's worktrees and the settings of one person
+.claude/worktrees/
+.claude/settings.local.json

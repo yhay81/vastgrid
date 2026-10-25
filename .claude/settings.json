@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "NODE_OPTIONS": "--test-reporter=dot"
+  },
+  "enabledPlugins": {
+    "vercel@claude-plugins-official": false
+  }
+}
