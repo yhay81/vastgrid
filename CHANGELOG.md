@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `vastgrid-mcp` (unreleased v2): an MCP server with an MCP App (docs/mcp-app.md). `vastgrid-mcp [--save] <folder>…`
+  opens CSV, TSV, Parquet, JSON Lines and Excel files of the folders in a grid that the host shows in the chat
+  (`open_grid`), read by DuckDB on the server. The agent reads the grid's state and rows (`grid_state`,
+  `grid_rows`) and applies the commands of the specification (`grid_command`), the person works in the same grid,
+  and each sees what the other does: the App carries its requests through the host's tool calls
+  (`vastgrid_message`) and keeps its document and session in step with the grid's (`grid_sync`). The page is one
+  HTML file without WebAssembly, workers or network, for the hosts' default CSP. `registerVastgrid` adds the tools
+  to another MCP server.
 - `vastgrid-spec`, `vastgrid-js`, `vastgrid-duckdb-engine` (unreleased v2): messages are checked to their limits
   (§8.1) all through, plans, keys and values included: names and strings of at most 1,000,000 code points, 256
   levels of objects and lists, and 1,000,000 items in a list or members in an object. Errors follow the limits

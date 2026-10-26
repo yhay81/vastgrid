@@ -1350,8 +1350,10 @@ response is `application/json` with the text encoding, except that a client that
 with its block attached, then the block's bytes. Errors are `application/json`, with the HTTP status of
 §8.7. Events go out as Server-Sent Events at a URL the host chooses.
 
-An **MCP App** calls a tool of its server with the request as the tool's arguments; the tool result's
-`structuredContent` is the response, with the text encoding.
+An **MCP App** calls a tool of its server with the request in the tool's arguments; the tool result's
+`structuredContent` is the response, with the text encoding. Tool calls carry no events: the server gives them in
+the answers of a tool that the App calls again and again. [mcp-app.md](mcp-app.md) describes `vastgrid-mcp`'s
+tools (`vastgrid_message`, `grid_sync`).
 
 `vastgrid-spec` gives the three encodings (`toTextEncoding`, `toStructuredEncoding`, `frameAttached` and
 `readAttached`) and the checks of §8 (`checkRequest`, `checkResponse` and `checkEvent`).

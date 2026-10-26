@@ -1,0 +1,28 @@
+html,
+body {
+  margin: 0;
+  background: transparent;
+  color-scheme: light dark;
+}
+
+.vastgrid-app {
+  position: relative;
+  height: 520px;
+}
+
+.vastgrid-app-status {
+  margin: 0;
+  padding: 12px 16px;
+  font:
+    13px / 1.4 system-ui,
+    sans-serif;
+}
+
+.vastgrid-app .vastgrid-app-status {
+  position: absolute;
+  right: 8px;
+  bottom: 32px;
+  border-radius: 4px;
+  background: Canvas;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
+}

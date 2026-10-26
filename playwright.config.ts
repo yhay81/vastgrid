@@ -26,5 +26,12 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
+    {
+      // e2e/mcp.spec.ts: the MCP App in a host's sandboxed frame, with the built server over stdio.
+      command: "npm run build -w vastgrid-mcp && node --import tsx packages/mcp/host/serve.ts .data/mcp-e2e 5184",
+      url: "http://127.0.0.1:5184",
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
   ],
 });
