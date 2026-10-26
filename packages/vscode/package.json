@@ -1,0 +1,157 @@
+{
+  "name": "vastgrid-vscode",
+  "displayName": "vastgrid",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Huge CSV, TSV, Parquet, JSON Lines and Excel files in a grid in VS Code, read by DuckDB in the extension: scroll to the last row, sort, filter, group, edit cells and save CSV and TSV files with the bytes that were not edited kept as they are.",
+  "license": "MIT",
+  "author": "yhay81",
+  "publisher": "yhay81",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yhay81/vastgrid.git",
+    "directory": "packages/vscode"
+  },
+  "homepage": "https://vastgrid.yhay81.com",
+  "bugs": "https://github.com/yhay81/vastgrid/issues",
+  "type": "module",
+  "main": "./dist/extension.cjs",
+  "exports": {
+    ".": {
+      "vastgrid-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "vscode": "^1.100.0",
+    "node": ">=20"
+  },
+  "categories": [
+    "Data Science",
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "csv",
+    "tsv",
+    "parquet",
+    "excel",
+    "duckdb",
+    "data grid",
+    "table"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In a workspace that is not trusted, files open read-only: cells cannot be edited or saved."
+    }
+  },
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "vastgrid.table",
+        "displayName": "vastgrid",
+        "selector": [
+          {
+            "filenamePattern": "*.parquet"
+          },
+          {
+            "filenamePattern": "*.pq"
+          },
+          {
+            "filenamePattern": "*.xlsx"
+          },
+          {
+            "filenamePattern": "*.xlsm"
+          }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "vastgrid.text",
+        "displayName": "vastgrid",
+        "selector": [
+          {
+            "filenamePattern": "*.csv"
+          },
+          {
+            "filenamePattern": "*.tsv"
+          },
+          {
+            "filenamePattern": "*.tab"
+          },
+          {
+            "filenamePattern": "*.csv.gz"
+          },
+          {
+            "filenamePattern": "*.tsv.gz"
+          },
+          {
+            "filenamePattern": "*.csv.zst"
+          },
+          {
+            "filenamePattern": "*.tsv.zst"
+          },
+          {
+            "filenamePattern": "*.jsonl"
+          },
+          {
+            "filenamePattern": "*.ndjson"
+          },
+          {
+            "filenamePattern": "*.jsonl.gz"
+          },
+          {
+            "filenamePattern": "*.ndjson.gz"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "vastgrid.open",
+        "title": "Open in vastgrid",
+        "category": "vastgrid"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "vastgrid.open",
+          "when": "resourceFilename =~ /\\.(csv|tsv|tab|jsonl|ndjson)(\\.gz|\\.zst)?$/i",
+          "group": "navigation@20"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "vastgrid.open",
+          "when": "resourceFilename =~ /\\.(csv|tsv|tab|jsonl|ndjson)$/i && activeEditor == workbench.editors.files.textFileEditor",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "vastgrid.open",
+          "when": "resourceFilename =~ /\\.(csv|tsv|tab|jsonl|ndjson|parquet|pq|xlsx|xlsm)(\\.gz|\\.zst)?$/i"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsc -b && node scripts/build.mjs",
+    "test:vscode": "node scripts/test-vscode.mjs"
+  },
+  "dependencies": {
+    "vastgrid-duckdb-engine": "0.0.0",
+    "vastgrid-grid": "0.0.0",
+    "vastgrid-spec": "0.0.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "1.100.0",
+    "@vscode/test-electron": "3.1.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  }
+}

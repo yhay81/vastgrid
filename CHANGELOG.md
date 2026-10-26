@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `vastgrid-vscode` (unreleased v2): a VS Code extension (docs/vscode.md). CSV, TSV, Parquet, JSON Lines and Excel
+  files of any size open in a grid as a custom editor, read by DuckDB in the extension's process; Parquet and Excel
+  files open in it by default, and a bar chooses an Excel file's sheet. Cells of CSV and TSV files are edited in a
+  trusted workspace and saved with VS Code's Save, keeping the bytes that were not edited; writes make the editor
+  dirty, Revert drops them, and Save As writes the table as CSV, TSV, Parquet, JSON or Excel. Each file has an
+  engine of its own, shared by its editors (split editors read what each writes) and closed with its last editor.
+  The webview carries the messages of §8 with blocks as bytes, under a CSP without network.
+- `vastgrid-grid`: `RequestIds` (in `vastgrid-grid/core`, before in `vastgrid-mcp`) gives the requests of several
+  clients of one engine ids of their own.
 - `vastgrid-mcp` (unreleased v2): an MCP server with an MCP App (docs/mcp-app.md). `vastgrid-mcp [--save] <folder>…`
   opens CSV, TSV, Parquet, JSON Lines and Excel files of the folders in a grid that the host shows in the chat
   (`open_grid`), read by DuckDB on the server. The agent reads the grid's state and rows (`grid_state`,

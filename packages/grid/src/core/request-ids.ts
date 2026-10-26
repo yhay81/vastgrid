@@ -1,7 +1,8 @@
 /**
- * Ids of requests (docs/v2-spec.md §8.1) for several clients of one engine. Each client chooses ids of its own,
- * which the engine would mix up (a `cancel` of one client's request would stop another's): the requests of each
- * client get ids that are unique in the engine, and the answers get the client's ids back.
+ * Ids of requests (§8.1 of the specification) for several clients of one engine, such as the grids of a server or
+ * the webviews of an editor. Each client chooses ids of its own, which the engine would mix up (a `cancel` of one
+ * client's request would stop another's): the requests of each client get ids that are unique in the engine, and
+ * the answers get the client's ids back.
  */
 
 type Json = Record<string, unknown>;

@@ -19,3 +19,4 @@ site/.wrangler/
 # Claude Code's worktrees and the settings of one person
 .claude/worktrees/
 .claude/settings.local.json
+.vscode-test/

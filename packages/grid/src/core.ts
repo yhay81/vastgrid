@@ -4,6 +4,7 @@
  */
 export { BLOCK_ROWS } from "./core/cache.js";
 export { GridClient, type Transport } from "./core/client.js";
+export { type Handler, RequestIds } from "./core/request-ids.js";
 export {
   CACHE_BYTES,
   createGridStore,

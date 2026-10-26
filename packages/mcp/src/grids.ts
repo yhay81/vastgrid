@@ -5,7 +5,15 @@
  * grid's (`sync`): what the person does reaches the grid, and what the agent does reaches the person.
  */
 
-import { GridClient, GridError, type GridSnapshot, GridStore, localTransport } from "vastgrid-grid/core";
+import {
+  GridClient,
+  GridError,
+  type GridSnapshot,
+  GridStore,
+  type Handler,
+  localTransport,
+  RequestIds,
+} from "vastgrid-grid/core";
 import {
   type CommandError,
   checkDocument,
@@ -16,7 +24,6 @@ import {
   type GridSession,
   type JsonValue,
 } from "vastgrid-spec";
-import { type Handler, RequestIds } from "./ids.js";
 
 type Json = Record<string, unknown>;
 

@@ -1355,6 +1355,9 @@ An **MCP App** calls a tool of its server with the request in the tool's argumen
 the answers of a tool that the App calls again and again. [mcp-app.md](mcp-app.md) describes `vastgrid-mcp`'s
 tools (`vastgrid_message`, `grid_sync`).
 
+A **VS Code webview** and its extension carry the messages with `postMessage`, blocks as bytes (the structured
+encoding): [vscode.md](vscode.md) describes `vastgrid-vscode`.
+
 `vastgrid-spec` gives the three encodings (`toTextEncoding`, `toStructuredEncoding`, `frameAttached` and
 `readAttached`) and the checks of §8 (`checkRequest`, `checkResponse` and `checkEvent`).
 

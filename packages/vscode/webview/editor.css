@@ -1,0 +1,86 @@
+/* The grid in VS Code's colors and font (docs/vscode.md): the theme's variables, light or dark as the theme is. */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--vscode-editor-background);
+}
+
+body.vscode-light .vg-root,
+body.vscode-high-contrast-light .vg-root {
+  color-scheme: light;
+}
+
+body.vscode-dark .vg-root,
+body.vscode-high-contrast .vg-root {
+  color-scheme: dark;
+}
+
+.vg-root {
+  --vg-font-family: var(--vscode-font-family);
+  --vg-font-size: var(--vscode-font-size, 13px);
+  --vg-bg: var(--vscode-editor-background);
+  --vg-fg: var(--vscode-editor-foreground);
+  --vg-muted: var(--vscode-descriptionForeground);
+  --vg-surface: var(--vscode-editorWidget-background);
+  --vg-border: var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  --vg-header-bg: var(--vscode-editorGroupHeader-tabsBackground);
+  --vg-header-fg: var(--vscode-foreground);
+  --vg-gutter-bg: var(--vscode-editorGutter-background, var(--vscode-editor-background));
+  --vg-gutter-fg: var(--vscode-editorLineNumber-foreground);
+  --vg-selection-bg: var(--vscode-editor-selectionBackground);
+  --vg-selection-border: var(--vscode-focusBorder);
+  --vg-active-border: var(--vscode-focusBorder);
+  --vg-accent: var(--vscode-button-background);
+  --vg-accent-fg: var(--vscode-button-foreground);
+  --vg-match-bg: var(--vscode-editor-findMatchHighlightBackground);
+  --vg-error-fg: var(--vscode-errorForeground);
+  --vg-link-fg: var(--vscode-textLink-foreground);
+  --vg-focus: var(--vscode-focusBorder);
+}
+
+.vastgrid-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.vastgrid-grid {
+  flex: 1;
+  min-height: 0;
+}
+
+.vastgrid-sheets {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  font: 12px var(--vscode-font-family);
+}
+
+.vastgrid-sheets button {
+  padding: 2px 10px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+
+.vastgrid-sheets button:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.vastgrid-sheets button[aria-pressed="true"] {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+.vastgrid-sheets button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+}

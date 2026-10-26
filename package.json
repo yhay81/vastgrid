@@ -16,15 +16,16 @@
     "packages/js",
     "packages/grid",
     "packages/mcp",
+    "packages/vscode",
     "examples/playground",
     "examples/bench",
     "examples/files",
     "site"
   ],
   "scripts": {
-    "build": "tsc -b packages/core packages/duckdb packages/browser packages/react packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp && node scripts/copy-assets.mjs && node scripts/compile-react.mjs packages/grid && npm run build -w vastgrid-mcp",
+    "build": "tsc -b packages/core packages/duckdb packages/browser packages/react packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp packages/vscode && node scripts/copy-assets.mjs && node scripts/compile-react.mjs packages/grid && npm run build -w vastgrid-mcp && node packages/vscode/scripts/build.mjs",
     "clean": "rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo",
-    "typecheck": "tsc -b packages/core packages/duckdb packages/browser packages/react packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp && tsc -p packages/mcp/app && tsc -p packages/mcp/host && tsc -p examples/playground --noEmit && tsc -p examples/bench --noEmit && tsc -p examples/files --noEmit && tsc -p site --noEmit",
+    "typecheck": "tsc -b packages/core packages/duckdb packages/browser packages/react packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp packages/vscode && tsc -p packages/mcp/app && tsc -p packages/mcp/host && tsc -p packages/vscode/webview && tsc -p examples/playground --noEmit && tsc -p examples/bench --noEmit && tsc -p examples/files --noEmit && tsc -p site --noEmit",
     "test": "node --conditions=vastgrid-source --import tsx --test packages/*/test/*.test.ts",
     "lint": "biome check . && eslint",
     "format": "biome check --write .",
