@@ -8,6 +8,11 @@
   expression of a derived column back as a formula that compiles to it. `migrateGridState` migrates v1's formulas
   into `plan.derive`, ordered by what they use, with the filters, sort keys, groups and measures that use them, and
   gives a reason for each part it drops (`reasons`). `checkExpression` checks one expression.
+- `vastgrid-grid` (unreleased v2): column statistics (rows, values, empty, distinct, minimum, maximum, sum,
+  average, median, standard deviation), a totals row at the bottom of the grid set from each column's menu
+  (`column.total`), and grouping: from a column's menu, and the toolbar's Group menu of keys and measures
+  (`group.set`, `group.clear`). The engine computes all of them as aggregates. `GridStore.aggregate` reads
+  measures, and the snapshot's `totals` holds the totals row.
 - `vastgrid-grid` (unreleased v2): a column menu, from the arrow at the right of each header, a right click or
   Alt+↓: sorting by the column, its filter (a list of its values with how many rows have each, read by the engine
   under the other filters, and a condition on typed text) as `filter.column`, and fitting, pinning and hiding the

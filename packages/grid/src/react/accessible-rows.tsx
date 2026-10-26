@@ -1,5 +1,5 @@
 import { startTransition, useEffect, useState } from "react";
-import type { ActiveCell, CellRange, DisplayedColumn, SortKey } from "vastgrid-spec";
+import { type ActiveCell, type CellRange, type DisplayedColumn, type SortKey, textOf } from "vastgrid-spec";
 import type { GridCanvas, Settled } from "../canvas/grid-canvas.js";
 import type { GridStore } from "../core/store.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
@@ -153,6 +153,7 @@ export function AccessibleRows({ canvas, id }: { canvas: GridCanvas; id: string 
   const sort = useGridSelector((snapshot) => snapshot.document.plan?.sort);
   const selection = useGridSelector((snapshot) => snapshot.session.selection);
   const active = useGridSelector((snapshot) => snapshot.session.active);
+  const totals = useGridSelector((snapshot) => snapshot.totals);
   const screen = readScreen(canvas, store, settled, columns);
   const elsewhere =
     active && (active.row < settled.top || active.row >= screen.end) && active.row < canvas.rowCount
@@ -182,6 +183,29 @@ export function AccessibleRows({ canvas, id }: { canvas: GridCanvas; id: string 
       {rows.map((row) => (
         <AccessibleRow key={row.row} id={id} row={row} selected={selectedOf(selection, active, row)} />
       ))}
+      {canvas.footer > 0 && (
+        // The totals row (§5.1 of the specification), after the rows.
+        // biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas.
+        // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
+        <div role="row" aria-rowindex={canvas.rowCount + 2}>
+          {screen.header.map((cell) => {
+            const value = totals?.values[cell.name];
+            const type = totals?.columns[cell.name];
+            return (
+              // biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas.
+              // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
+              <div
+                key={cell.name}
+                role="gridcell"
+                aria-colindex={cell.column + 1}
+                style={{ left: cell.left, top: canvas.bottom, width: cell.width, height: canvas.footer }}
+              >
+                {value === undefined || value === null || !type ? "" : (textOf(value, type) ?? "")}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

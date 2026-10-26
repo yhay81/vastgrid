@@ -6,6 +6,7 @@ import type {
   ErrorCode,
   GridDocument,
   GridSession,
+  JsonValue,
   Operation,
   Plan,
 } from "vastgrid-spec";
@@ -129,4 +130,12 @@ export interface GridSnapshot {
   readonly status: "idle" | "opening" | "ready" | "error";
   /** The last failure that belongs to no command. */
   readonly error: GridError | null;
+  /**
+   * The totals row (§5.1): the total of each displayed column that has one, over the whole view on screen, with
+   * the types of the values; null without totals, or for a view that groups rows.
+   */
+  readonly totals: {
+    readonly values: Readonly<Record<string, JsonValue>>;
+    readonly columns: Readonly<Record<string, Column>>;
+  } | null;
 }

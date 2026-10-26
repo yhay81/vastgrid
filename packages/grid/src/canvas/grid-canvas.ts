@@ -88,6 +88,8 @@ export class GridCanvas {
   width = 0;
   height = 0;
   gutterWidth = 48;
+  /** The height of the totals row at the bottom (§5.1 of the specification), 0 without totals. */
+  footer = 0;
   private store: GridStore | null = null;
   private elements: CanvasElements | null = null;
   private context: CanvasRenderingContext2D | null = null;
@@ -209,6 +211,8 @@ export class GridCanvas {
     if (snapshot.displayed !== previous?.displayed || snapshot.view?.rowCount !== previous?.view?.rowCount) {
       this.relayout();
     }
+    // Totals that come widen their columns as rows do.
+    if (snapshot.totals !== previous?.totals) this.measure();
     if (snapshot.view !== this.lastView) {
       this.lastView = snapshot.view;
       this.texts.clear();
@@ -250,6 +254,8 @@ export class GridCanvas {
     const left = columns.filter((item) => item.setting.pin === "left").length;
     const right = columns.filter((item) => item.setting.pin === "right").length;
     const rowCount = snapshot?.view?.rowCount ?? 0;
+    const totals = !snapshot?.document.plan?.aggregate && columns.some((item) => item.setting.total !== undefined);
+    this.footer = totals ? this.rowHeight : 0;
     const digits = String(Math.max(1, rowCount)).length;
     this.gutterWidth = Math.max(40, Math.ceil(digits * 8 + PADDING * 2));
     const fitted = fitFrozen(this.layout, left, right, this.width - this.gutterWidth);
@@ -257,7 +263,7 @@ export class GridCanvas {
     this.frozenRight = fitted.right;
     const elements = this.elements;
     if (elements) {
-      const height = this.scrollY.resize(this.headerHeight + rowCount * this.rowHeight, this.height);
+      const height = this.scrollY.resize(this.headerHeight + rowCount * this.rowHeight + this.footer, this.height);
       const width = this.scrollX.resize(this.gutterWidth + this.layout.total, this.width);
       elements.sizer.style.width = `${width}px`;
       elements.sizer.style.height = `${height}px`;
@@ -297,6 +303,8 @@ export class GridCanvas {
         const text = this.text(row, item.column, value);
         if (text) widest = Math.max(widest, fitter.width(text.length > 120 ? text.slice(0, 120) : text) + PADDING * 2);
       }
+      const total = this.totalText(item.column.name);
+      if (total) widest = Math.max(widest, fitter.width(total) + PADDING * 2);
       if (!loaded) return;
       // Columns grow to fit the rows that come on screen, and never shrink while the view stays.
       const width = Math.min(MAX_AUTO_WIDTH, Math.max(MIN_WIDTH, Math.ceil(widest)));
@@ -333,10 +341,15 @@ export class GridCanvas {
   /** Rows on screen `[first, last)`. */
   visibleRows(): [number, number] {
     const rowCount = this.snapshot?.view?.rowCount ?? 0;
-    const body = Math.max(0, this.height - this.headerHeight);
+    const body = Math.max(0, this.bottom - this.headerHeight);
     const first = Math.min(rowCount, this.topRow());
     const last = Math.min(rowCount, Math.ceil((this.scrollY.position + body) / this.rowHeight));
     return [first, Math.max(first, last)];
+  }
+
+  /** The bottom of the rows: the top of the totals row. */
+  get bottom() {
+    return this.height - this.footer;
   }
 
   get frozenWidth() {
@@ -397,7 +410,7 @@ export class GridCanvas {
   scrollToRow(row: number, place: "top" | "nearest") {
     const scroller = this.elements?.scroller;
     if (!scroller) return;
-    const body = Math.max(this.rowHeight, this.height - this.headerHeight);
+    const body = Math.max(this.rowHeight, this.bottom - this.headerHeight);
     const y = row * this.rowHeight;
     let target = this.scrollY.position;
     if (place === "top") target = y;
@@ -488,7 +501,7 @@ export class GridCanvas {
     const scrolls = column >= this.frozenLeft && column < this.rightStart;
     const from = scrolls ? this.gutterWidth + this.frozenWidth : this.gutterWidth;
     const to = scrolls ? this.width - this.frozenRightWidth : this.width;
-    const shown = top + height > this.headerHeight && top < this.height && left + width > from && left < to;
+    const shown = top + height > this.headerHeight && top < this.bottom && left + width > from && left < to;
     return { left, top, width, height, shown };
   }
 
@@ -511,7 +524,7 @@ export class GridCanvas {
   hit(x: number, y: number): Hit {
     const rowCount = this.snapshot?.view?.rowCount ?? 0;
     const none: Hit = { area: "none", row: 0, column: 0, edge: false, menu: false };
-    if (x < 0 || y < 0 || x > this.width || y > this.height) return none;
+    if (x < 0 || y < 0 || x > this.width || y > this.height || y >= this.bottom) return none;
     const row = Math.max(
       0,
       Math.min(rowCount - 1, Math.floor((y - this.headerHeight + this.scrollY.position) / this.rowHeight)),
@@ -620,7 +633,7 @@ export class GridCanvas {
     ];
     for (const [x0, x1, from, to] of regions) {
       if (x1 <= x0 || to < from) continue;
-      this.clipped(ctx, x0, top, x1 - x0, this.height - top, () => {
+      this.clipped(ctx, x0, top, x1 - x0, this.bottom - top, () => {
         for (let column = from; column <= to; column++) this.drawCells(ctx, theme, store, column, first, last);
         this.drawLines(ctx, theme, from, to, first, last);
         this.drawSelection(ctx, theme, snapshot, from, to);
@@ -628,6 +641,7 @@ export class GridCanvas {
     }
     this.drawHeaders(ctx, theme, snapshot, left, right);
     this.drawGutter(ctx, theme, snapshot, first, last);
+    if (this.footer > 0) this.drawTotals(ctx, theme, snapshot, left, right);
     ctx.fillStyle = theme.headerBackground;
     ctx.fillRect(0, 0, this.gutterWidth, top);
     ctx.strokeStyle = theme.lineStrong;
@@ -650,7 +664,7 @@ export class GridCanvas {
       // The view on screen stays until the new one's first rows arrive (§4.2 of v2-react.md).
       ctx.fillStyle = theme.background;
       ctx.globalAlpha = 0.45;
-      ctx.fillRect(this.gutterWidth, top, this.width - this.gutterWidth, this.height - top);
+      ctx.fillRect(this.gutterWidth, top, this.width - this.gutterWidth, this.bottom - top);
       ctx.globalAlpha = 1;
     }
     if (this.resizing) {
@@ -892,9 +906,9 @@ export class GridCanvas {
     const fitter = this.cellText;
     if (!fitter) return;
     const active = snapshot.session.active?.row ?? 0;
-    this.clipped(ctx, 0, this.headerHeight, this.gutterWidth, this.height - this.headerHeight, () => {
+    this.clipped(ctx, 0, this.headerHeight, this.gutterWidth, this.bottom - this.headerHeight, () => {
       ctx.fillStyle = theme.gutterBackground;
-      ctx.fillRect(0, this.headerHeight, this.gutterWidth, this.height - this.headerHeight);
+      ctx.fillRect(0, this.headerHeight, this.gutterWidth, this.bottom - this.headerHeight);
       ctx.font = fitter.font;
       ctx.textBaseline = "middle";
       ctx.textAlign = "right";
@@ -909,5 +923,80 @@ export class GridCanvas {
       }
       ctx.textAlign = "left";
     });
+  }
+
+  /** The text of a column's total; undefined while it is read. */
+  private totalText(name: string): string | undefined {
+    const totals = this.snapshot?.totals;
+    const value = totals?.values[name];
+    const type = totals?.columns[name];
+    if (value === undefined || !type) return undefined;
+    return textOf(value, type) ?? "";
+  }
+
+  /**
+   * The totals row, at the bottom: each displayed column's total (§5.1), in the column's format and alignment, a
+   * placeholder while it is read, and Σ in the gutter.
+   */
+  private drawTotals(
+    ctx: CanvasRenderingContext2D,
+    theme: GridTheme,
+    snapshot: GridSnapshot,
+    left: number,
+    right: number,
+  ) {
+    const fitter = this.cellText;
+    if (!fitter) return;
+    const top = this.bottom;
+    const middle = top + this.footer / 2;
+    ctx.fillStyle = theme.headerBackground;
+    ctx.fillRect(0, top, this.width, this.footer);
+    ctx.font = fitter.font;
+    ctx.textBaseline = "middle";
+    const totals = snapshot.totals;
+    const draw = (column: number) => {
+      const item = this.columns[column];
+      if (!item?.setting.total) return;
+      const x = this.columnX(column);
+      const width = this.layout.width(column);
+      const text = this.totalText(item.column.name);
+      if (text === undefined) {
+        ctx.fillStyle = theme.placeholder;
+        ctx.fillRect(x + PADDING, middle - 4, Math.max(0, Math.min(width - PADDING * 2, 64)), 8);
+        return;
+      }
+      const type = totals?.columns[item.column.name] ?? item.column;
+      const fitted = fitter.fit(text, width - PADDING * 2);
+      ctx.fillStyle = theme.headerText;
+      const align = item.setting.format?.align ?? (isNumeric(type) ? "right" : "left");
+      ctx.textAlign = align;
+      ctx.fillText(
+        fitted,
+        align === "right" ? x + width - PADDING : align === "center" ? x + width / 2 : x + PADDING,
+        middle,
+      );
+    };
+    const scrollLeft = this.gutterWidth + this.frozenWidth;
+    const scrollRight = this.width - this.frozenRightWidth;
+    this.clipped(ctx, scrollLeft, top, scrollRight - scrollLeft, this.footer, () => {
+      for (let column = left; column <= right; column++) draw(column);
+    });
+    this.clipped(ctx, this.gutterWidth, top, this.frozenWidth, this.footer, () => {
+      for (let column = 0; column < this.frozenLeft; column++) draw(column);
+    });
+    this.clipped(ctx, scrollRight, top, this.frozenRightWidth, this.footer, () => {
+      for (let column = this.rightStart; column < this.columns.length; column++) draw(column);
+    });
+    ctx.fillStyle = theme.gutterText;
+    ctx.textAlign = "right";
+    ctx.fillText("Σ", this.gutterWidth - PADDING, middle);
+    ctx.textAlign = "left";
+    ctx.strokeStyle = theme.lineStrong;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    const line = this.snap(top) - 0.5 / this.ratio;
+    ctx.moveTo(0, line);
+    ctx.lineTo(this.width, line);
+    ctx.stroke();
   }
 }

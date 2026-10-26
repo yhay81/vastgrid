@@ -554,3 +554,80 @@
   background: var(--vg-accent);
   border-color: var(--vg-accent);
 }
+
+/* Column statistics, in the column menu. */
+
+.vg-statistics__list {
+  display: grid;
+  gap: 2px;
+  margin: 6px 0 0;
+}
+
+.vg-statistics__list div {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.vg-statistics__list dt {
+  color: var(--vg-muted);
+}
+
+.vg-statistics__list dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The group menu: the keys and the measures of the groups. */
+
+.vg-groups {
+  width: min(360px, calc(100vw - 16px));
+}
+
+.vg-groups__part {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  border: none;
+}
+
+.vg-groups__part legend {
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.vg-groups__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vg-groups__list li {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 1px 2px 1px 8px;
+  background: var(--vg-surface-muted);
+  border: 1px solid var(--vg-line);
+  border-radius: var(--vg-radius);
+}
+
+.vg-groups__add {
+  display: flex;
+  gap: 6px;
+}
+
+.vg-groups__add .vg-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.vg-button--small {
+  min-height: 22px;
+  padding: 0 6px;
+}

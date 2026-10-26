@@ -1,4 +1,6 @@
+import type { MeasureName } from "vastgrid-spec";
 import type { FilterOperator } from "../core/filters.js";
+import type { Statistic } from "../core/measures.js";
 
 /** The texts of the grid's UI. Hosts replace any of them with the `messages` prop. */
 export interface GridMessages {
@@ -81,6 +83,26 @@ export interface GridMessages {
   otherConditions: string;
   back: string;
   apply: string;
+  /** The statistics of a column, over the rows of the view. */
+  statistics: string;
+  statisticsOf: (column: string) => string;
+  statisticNames: Record<Statistic["kind"] | "nulls", string>;
+  /** The total of a column in the totals row (§5.1), and the names of the measures (§4.5). */
+  total: string;
+  noTotal: string;
+  measureNames: Record<MeasureName, string>;
+  /** Grouping rows (§6.2): from a column's menu, and the toolbar's menu of keys and measures. */
+  groupByColumn: string;
+  removeFromGroups: string;
+  ungroup: string;
+  groups: string;
+  groupKeys: string;
+  addKey: string;
+  measures: string;
+  addMeasure: string;
+  measureColumn: string;
+  allRows: string;
+  remove: (item: string) => string;
 }
 
 const en: GridMessages = {
@@ -166,6 +188,43 @@ const en: GridMessages = {
   otherConditions: "This column has other conditions. Applying replaces them.",
   back: "Back",
   apply: "Apply",
+  statistics: "Statistics…",
+  statisticsOf: (column) => `Statistics of ${column}`,
+  statisticNames: {
+    rows: "Rows",
+    values: "Values",
+    nulls: "Empty",
+    distinct: "Distinct",
+    min: "Minimum",
+    max: "Maximum",
+    sum: "Sum",
+    average: "Average",
+    median: "Median",
+    stddev: "Standard deviation",
+  },
+  total: "Total",
+  noTotal: "No total",
+  measureNames: {
+    count: "Count",
+    count_distinct: "Distinct count",
+    sum: "Sum",
+    avg: "Average",
+    stddev: "Standard deviation",
+    min: "Minimum",
+    max: "Maximum",
+    quantile: "Quantile",
+  },
+  groupByColumn: "Group by this column",
+  removeFromGroups: "Stop grouping by this column",
+  ungroup: "Ungroup",
+  groups: "Group",
+  groupKeys: "Group by",
+  addKey: "Add a column…",
+  measures: "Measures",
+  addMeasure: "Add",
+  measureColumn: "Column",
+  allRows: "(rows)",
+  remove: (item) => `Remove ${item}`,
 };
 
 const ja: GridMessages = {
@@ -251,6 +310,43 @@ const ja: GridMessages = {
   otherConditions: "この列にはほかの条件があります。適用すると置き換えます。",
   back: "戻る",
   apply: "適用",
+  statistics: "統計…",
+  statisticsOf: (column) => `${column} の統計`,
+  statisticNames: {
+    rows: "行数",
+    values: "値の数",
+    nulls: "空",
+    distinct: "異なる値の数",
+    min: "最小",
+    max: "最大",
+    sum: "合計",
+    average: "平均",
+    median: "中央値",
+    stddev: "標準偏差",
+  },
+  total: "集計行",
+  noTotal: "集計しない",
+  measureNames: {
+    count: "個数",
+    count_distinct: "異なる値の数",
+    sum: "合計",
+    avg: "平均",
+    stddev: "標準偏差",
+    min: "最小",
+    max: "最大",
+    quantile: "分位数",
+  },
+  groupByColumn: "この列でグループ化",
+  removeFromGroups: "この列でのグループ化をやめる",
+  ungroup: "グループ化を解除",
+  groups: "グループ",
+  groupKeys: "グループ化する列",
+  addKey: "列を追加…",
+  measures: "集計",
+  addMeasure: "追加",
+  measureColumn: "列",
+  allRows: "（行）",
+  remove: (item) => `${item} を削除`,
 };
 
 /** The built-in texts for a language tag: Japanese for `ja`, English otherwise. */

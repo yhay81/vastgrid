@@ -164,6 +164,10 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
   const busy = useGridSelector((snapshot) => snapshot.view === null || snapshot.pending !== null);
   const active = useGridSelector((snapshot) => snapshot.session.active);
   const [menu, setMenu] = useState<MenuTarget | null>(null);
+  const totalsRow = useGridSelector(
+    (snapshot) =>
+      !snapshot.document.plan?.aggregate && snapshot.displayed.some((item) => item.setting.total !== undefined),
+  );
   const pressed = useRef(false);
   const later = useRef<MenuTarget | null>(null);
 
@@ -236,7 +240,7 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
   const extendTo = (scroller: HTMLElement, current: Drag, x: number, y: number) => {
     const hit = canvas.hit(
       Math.max(canvas.gutterWidth + 1, Math.min(scroller.clientWidth - 1, x)),
-      Math.max(canvas.headerHeight + 1, Math.min(scroller.clientHeight - 1, y)),
+      Math.max(canvas.headerHeight + 1, Math.min(canvas.bottom - 1, y)),
     );
     if (current.kind === "cells" && hit.area === "cell") {
       const key = `${hit.row}:${hit.column}`;
@@ -260,8 +264,7 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
 
   /** While a drag is beyond the body, scrolls towards the pointer every frame and extends the selection. */
   const followPointer = (scroller: HTMLElement, x: number, y: number) => {
-    const beyondY =
-      y < canvas.headerHeight ? y - canvas.headerHeight : y > scroller.clientHeight ? y - scroller.clientHeight : 0;
+    const beyondY = y < canvas.headerHeight ? y - canvas.headerHeight : y > canvas.bottom ? y - canvas.bottom : 0;
     const beyondX =
       x < canvas.gutterWidth ? x - canvas.gutterWidth : x > scroller.clientWidth ? x - scroller.clientWidth : 0;
     if (beyondX === 0 && beyondY === 0) {
@@ -278,8 +281,7 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
     const step = () => {
       const current = drag.current;
       if (follow.current !== state || !current) return;
-      const dy =
-        state.y < canvas.headerHeight ? state.y - canvas.headerHeight : Math.max(0, state.y - scroller.clientHeight);
+      const dy = state.y < canvas.headerHeight ? state.y - canvas.headerHeight : Math.max(0, state.y - canvas.bottom);
       const dx =
         state.x < canvas.gutterWidth ? state.x - canvas.gutterWidth : Math.max(0, state.x - scroller.clientWidth);
       // Faster the farther the pointer is.
@@ -436,7 +438,7 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
         role="grid"
         tabIndex={0}
         aria-label={label}
-        aria-rowcount={rowCount + 1}
+        aria-rowcount={rowCount + 1 + (totalsRow ? 1 : 0)}
         aria-colcount={columns.length}
         aria-multiselectable="true"
         aria-busy={busy}

@@ -18,6 +18,7 @@ import {
   type JsonValue,
   keyText,
   type LoadedRow,
+  type Measure,
   normalizePlan,
   type Operation,
   type Plan,
@@ -29,6 +30,7 @@ import {
 import { BLOCK_ROWS, type Read, ViewCache } from "./cache.js";
 import { GridClient, type Transport } from "./client.js";
 import { valuesPlan } from "./filters.js";
+import { measuresPlan, totalMeasures } from "./measures.js";
 import { now, track } from "./trace.js";
 import {
   type CommandOutcome,
@@ -155,6 +157,8 @@ export class GridStore {
   /** The edits version that each write that succeeded made. */
   private readonly writeVersions = new Map<number, number>();
   private readScheduled = false;
+  private totalsKey = "";
+  private totalsAbort: AbortController | null = null;
   private rowsVersion = 0;
   private readonly budget: number;
 
@@ -169,6 +173,7 @@ export class GridStore {
       pending: null,
       status: "idle",
       error: null,
+      totals: null,
     };
     if (options.initial) this.seed(options.initial);
   }
@@ -208,6 +213,67 @@ export class GridStore {
     next.displayed = keep ? previous.displayed : this.displayedOf(next);
     this.snapshot = next;
     for (const listener of this.listeners) listener();
+    this.followTotals();
+  }
+
+  /** Reads the totals row again when the view on screen, its edits or the totals change. */
+  private followTotals() {
+    const view = this.current;
+    const measures = totalMeasures(this.snapshot.displayed);
+    // A view that is being made is totalled once it is ready.
+    if (view && measures.length > 0 && this.snapshot.view?.status !== "ready") return;
+    const plan = view && measures.length > 0 ? measuresPlan(view.plan, measures) : null;
+    const key = view && plan ? `${view.revision}\u0000${view.edits}\u0000${canonicalJson(plan)}` : "";
+    if (key === this.totalsKey) return;
+    this.totalsKey = key;
+    this.totalsAbort?.abort();
+    this.totalsAbort = null;
+    if (!view || !plan) {
+      if (this.snapshot.totals) this.publish({ totals: null });
+      return;
+    }
+    const abort = new AbortController();
+    this.totalsAbort = abort;
+    // The totals on screen stay until the new ones come.
+    this.measure(plan, view.revision, abort.signal)
+      .then((totals) => {
+        if (!abort.signal.aborted) this.publish({ totals });
+      })
+      .catch(() => {});
+  }
+
+  /** Reads the one row of a plan that aggregates without keys: its values and their types, by column name. */
+  private async measure(plan: Plan, revision: string | null, signal?: AbortSignal) {
+    const table = this.snapshot.table;
+    const client = this.client;
+    if (!table || !client || !this.opened) throw new GridError("not_ready", "The table is not open yet.");
+    const names = plan.aggregate?.measures.map((measure) => measure.name) ?? [];
+    const result = await client.request<RowsResult>(
+      "rows",
+      { table: table.table, revision, plan, start: 0, end: 1, columns: names },
+      signal,
+    );
+    const block = decodeBlock(result.block.bytes);
+    const values: Record<string, JsonValue> = {};
+    const columns: Record<string, Column> = {};
+    block.columns.forEach((column, index) => {
+      values[column.name] = block.rows[0]?.[index] ?? null;
+      columns[column.name] = column;
+    });
+    return { values, columns };
+  }
+
+  /**
+   * Measures (§4.5) over the rows of the document's plan, for the column statistics: an `aggregate` without keys
+   * (`measuresPlan`). Fails for a plan that groups rows.
+   */
+  async aggregate(
+    measures: Measure[],
+    signal?: AbortSignal,
+  ): Promise<{ values: Record<string, JsonValue>; columns: Record<string, Column> }> {
+    const plan = measuresPlan(this.base("document").plan ?? {}, measures);
+    if (!plan) throw new GridError("invalid_plan", "The measures of a grouped view are not read.");
+    return this.measure(plan, this.current?.revision ?? this.snapshot.table?.revision ?? null, signal);
   }
 
   private displayedOf(snapshot: GridSnapshot) {

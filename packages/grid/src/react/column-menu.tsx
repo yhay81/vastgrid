@@ -16,6 +16,7 @@ import {
   type GridCommand,
   type JsonValue,
   joinParts,
+  measureTakes,
   type SortDirection,
   textOf,
 } from "vastgrid-spec";
@@ -30,6 +31,7 @@ import {
   readFilter,
   takesNoValue,
 } from "../core/filters.js";
+import { measureName, offers, statisticsOf, TOTALS } from "../core/measures.js";
 import { LocaleContext } from "./context.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 
@@ -277,6 +279,74 @@ function FilterForm({ column, onDone }: { column: Column; onDone: () => void }) 
 }
 
 /**
+ * The statistics of a column over the rows of the view (`GridStore.aggregate`): the rows, the values and the empty
+ * ones, the distinct values, and the measures that take its type, read by the engine when the panel opens.
+ */
+function Statistics({ column }: { column: Column }) {
+  const store = useGridStore();
+  const { messages, number } = use(LocaleContext);
+  const capabilities = useGridSelector((snapshot) => snapshot.table?.capabilities);
+  const [result, setResult] = useState<{
+    values: Record<string, JsonValue>;
+    columns: Record<string, Column>;
+  } | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const statistics = statisticsOf(column, capabilities);
+
+  useEffect(() => {
+    const abort = new AbortController();
+    store
+      .aggregate(
+        statisticsOf(column, capabilities).map((statistic) => statistic.measure),
+        abort.signal,
+      )
+      .then((read) => {
+        setResult(read);
+        setFailure(null);
+      })
+      .catch((cause: unknown) => {
+        if (!abort.signal.aborted) setFailure(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => abort.abort();
+  }, [store, column, capabilities]);
+
+  const text = (name: string) => {
+    const value = result?.values[name];
+    if (value === undefined || value === null) return "";
+    if (typeof value === "number") return number.format(value);
+    return textOf(value, result?.columns[name] ?? column) ?? "";
+  };
+  const rows = Number(result?.values.rows ?? 0);
+  const values = Number(result?.values.values ?? 0);
+  return (
+    <section className="vg-statistics" aria-label={messages.statisticsOf(column.name)} aria-busy={result === null}>
+      <p className="vg-filter__title">{messages.statisticsOf(column.name)}</p>
+      {failure !== null && <p className="vg-filter__error">{messages.failed(failure)}</p>}
+      {failure === null && result === null && <p className="vg-filter__note">{messages.loading}</p>}
+      {result && (
+        <dl className="vg-statistics__list">
+          {statistics.flatMap((statistic) => [
+            <div key={statistic.kind}>
+              <dt>{messages.statisticNames[statistic.kind]}</dt>
+              <dd>{text(statistic.kind)}</dd>
+            </div>,
+            // The empty values (null) follow the values.
+            ...(statistic.kind === "values"
+              ? [
+                  <div key="nulls">
+                    <dt>{messages.statisticNames.nulls}</dt>
+                    <dd>{number.format(rows - values)}</dd>
+                  </div>,
+                ]
+              : []),
+          ])}
+        </dl>
+      )}
+    </section>
+  );
+}
+
+/**
  * The menu of a column of the view, opened from its header (the arrow at its right, a right click, or Alt+↓ on the
  * active cell): sorting by it (§6.2), its filter, and its pin, width and visibility (§6.3), all as commands. It is
  * a popover: Esc and a click outside close it, and the focus goes back to the grid.
@@ -285,18 +355,19 @@ export function ColumnMenu({ target, onClose }: { target: MenuTarget | null; onC
   const store = useGridStore();
   const { messages } = use(LocaleContext);
   const ref = useRef<HTMLDivElement>(null);
-  const [filtering, setFiltering] = useState<string | null>(null);
+  const [panel, setPanel] = useState<"filter" | "statistics" | "total" | null>(null);
   const [shown, setShown] = useState(target);
   if (shown !== target) {
     setShown(target);
-    setFiltering(null);
+    setPanel(null);
   }
   const name = target?.column;
   const item = useGridSelector((snapshot) => snapshot.displayed.find((entry) => entry.column.name === name));
   const displayed = useGridSelector((snapshot) => snapshot.displayed.length);
   const hidden = useGridSelector((snapshot) => (snapshot.view?.columns.length ?? 0) > snapshot.displayed.length);
   const sort = useGridSelector((snapshot) => snapshot.document.plan?.sort);
-  const grouped = useGridSelector((snapshot) => snapshot.document.plan?.aggregate !== undefined);
+  const aggregate = useGridSelector((snapshot) => snapshot.document.plan?.aggregate);
+  const grouped = aggregate !== undefined;
   const capabilities = useGridSelector((snapshot) => snapshot.table?.capabilities);
   const ready = useGridSelector((snapshot) => snapshot.table?.status === "ready");
 
@@ -336,6 +407,30 @@ export function ColumnMenu({ target, onClose }: { target: MenuTarget | null; onC
     run({ command: "sort.set", keys: [...(add ? others : []), { column: column.name, direction }] });
   const filters = ready && !grouped && capabilities?.plan?.where !== false;
   const pin = item.setting.pin;
+  const measures = ready && !grouped && offers(capabilities, "count");
+  const totals = TOTALS.filter((fn) => offers(capabilities, fn) && measureTakes(fn, column));
+  const keys = aggregate?.keys ?? [];
+  const groupBy = () =>
+    run({
+      command: "group.set",
+      aggregate: {
+        keys: [column.name],
+        measures: [{ name: measureName("count", undefined, new Set([column.name])), fn: "count" }],
+      },
+    });
+  const ungroupBy = () => {
+    const rest = keys.filter((key) => key !== column.name);
+    run(
+      rest.length === 0 || !aggregate
+        ? { command: "group.clear" }
+        : { command: "group.set", aggregate: { ...aggregate, keys: rest } },
+    );
+  };
+  const back = (
+    <button type="button" className="vg-menu__item" onClick={() => setPanel(null)}>
+      ← {messages.back}
+    </button>
+  );
 
   return (
     <div
@@ -346,12 +441,38 @@ export function ColumnMenu({ target, onClose }: { target: MenuTarget | null; onC
       aria-label={messages.columnMenu(column.name)}
       onToggle={onToggle}
     >
-      {filtering === column.name ? (
+      {panel === "filter" ? (
         <>
-          <button type="button" className="vg-menu__item" onClick={() => setFiltering(null)}>
-            ← {messages.back}
-          </button>
+          {back}
           <FilterForm key={column.name} column={column} onDone={close} />
+        </>
+      ) : panel === "statistics" ? (
+        <>
+          {back}
+          <Statistics key={column.name} column={column} />
+        </>
+      ) : panel === "total" ? (
+        <>
+          {back}
+          <div role="menu" aria-label={messages.total} onKeyDown={moveFocus}>
+            <MenuItem
+              radio
+              checked={item.setting.total === undefined}
+              onClick={() => run({ command: "column.total", name: column.name, total: null })}
+            >
+              {messages.noTotal}
+            </MenuItem>
+            {totals.map((fn) => (
+              <MenuItem
+                key={fn}
+                radio
+                checked={item.setting.total?.fn === fn}
+                onClick={() => run({ command: "column.total", name: column.name, total: { fn } })}
+              >
+                {messages.measureNames[fn]}
+              </MenuItem>
+            ))}
+          </div>
         </>
       ) : (
         <div role="menu" aria-label={messages.columnMenu(column.name)} onKeyDown={moveFocus}>
@@ -378,12 +499,21 @@ export function ColumnMenu({ target, onClose }: { target: MenuTarget | null; onC
               <hr className="vg-menu__line" />
             </>
           )}
-          {filters && (
-            <>
-              <MenuItem onClick={() => setFiltering(column.name)}>{messages.filter}</MenuItem>
-              <hr className="vg-menu__line" />
-            </>
+          {filters && <MenuItem onClick={() => setPanel("filter")}>{messages.filter}</MenuItem>}
+          {measures && <MenuItem onClick={() => setPanel("statistics")}>{messages.statistics}</MenuItem>}
+          {!grouped && totals.length > 0 && (
+            <MenuItem onClick={() => setPanel("total")}>
+              {item.setting.total
+                ? `${messages.total}: ${messages.measureNames[item.setting.total.fn]}`
+                : `${messages.total}…`}
+            </MenuItem>
           )}
+          {measures && capabilities?.plan?.aggregate !== false && (
+            <MenuItem onClick={groupBy}>{messages.groupByColumn}</MenuItem>
+          )}
+          {keys.includes(column.name) && <MenuItem onClick={ungroupBy}>{messages.removeFromGroups}</MenuItem>}
+          {grouped && <MenuItem onClick={() => run({ command: "group.clear" })}>{messages.ungroup}</MenuItem>}
+          {(filters || measures || grouped || totals.length > 0) && <hr className="vg-menu__line" />}
           <MenuItem onClick={() => run({ command: "column.resize", name: column.name, width: null })}>
             {messages.autoFit}
           </MenuItem>
@@ -435,11 +565,13 @@ function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
 
 function MenuItem({
   checked,
+  radio,
   disabled,
   onClick,
   children,
 }: {
   checked?: boolean;
+  radio?: boolean;
   disabled?: boolean;
   onClick: () => void;
   children: string;
@@ -447,6 +579,20 @@ function MenuItem({
   if (checked === undefined) {
     return (
       <button type="button" role="menuitem" className="vg-menu__item" disabled={disabled} onClick={onClick}>
+        {children}
+      </button>
+    );
+  }
+  if (radio) {
+    return (
+      <button
+        type="button"
+        role="menuitemradio"
+        aria-checked={checked}
+        className="vg-menu__item"
+        disabled={disabled}
+        onClick={onClick}
+      >
         {children}
       </button>
     );

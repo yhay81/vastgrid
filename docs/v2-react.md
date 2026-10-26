@@ -85,10 +85,16 @@ interface GridStore {
     options?: { search?: string; limit?: number },
     signal?: AbortSignal,
   ): Promise<{ values: { value: JsonValue; count: number }[]; truncated: boolean }>;
+  aggregate(
+    measures: Measure[],
+    signal?: AbortSignal,
+  ): Promise<{ values: Record<string, JsonValue>; columns: Record<string, Column> }>;
 }
 ```
 
 `values` lists a column's values with how many rows have each, the most common first, for the column menu (§6.7).
+`aggregate` reads measures (§4.5 of the specification) over the rows of the document's plan, as an `aggregate`
+without keys; it fails for a plan that groups rows.
 
 `exportUrl` gives where the file of an `export` without a target can be downloaded, from the transport
 (`Transport.exportUrl`; `httpTransport` gives `<url>/exports/<target>`), or null.
@@ -109,6 +115,7 @@ interface GridSnapshot {
   pending: { plan: Plan } | null; // a plan whose view is being read to replace the one on screen
   status: "idle" | "opening" | "ready" | "error";
   error: GridError | null;
+  totals: { values: Record<string, JsonValue>; columns: Record<string, Column> } | null; // the totals row (§6.8)
 }
 ```
 
@@ -373,6 +380,26 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   derived columns and the other parts of `where`, and groups by the column with a `count` (§4.5), so the engine
   does the work and nothing is added to the messages. Engines that do not group rows offer the condition only.
 - Headers of columns with conditions of their own show a funnel instead of the arrow.
+- Statistics… (when the engine groups rows and the view does not) shows the column's statistics over the rows of the
+  view, read by `GridStore.aggregate`: the rows, the values and the empty ones, the distinct values, and the
+  minimum, maximum, sum, average, median (`quantile` 0.5) and standard deviation when they take the column's type
+  and the engine evaluates them.
+- Total… sets the column's total in the totals row (`column.total`): a measure that takes its type, or none.
+- Group by this column dispatches `group.set` with the column as the only key and `count(*)`; on a grouped view,
+  a key's menu stops grouping by it, and Ungroup dispatches `group.clear`.
+
+### 6.8 The totals row and the group menu
+
+- When displayed columns have a total (§5.1 of the specification) and the view does not group rows, a row at the
+  bottom of the body shows them, drawn by the canvas like the headers and pinned while the rows scroll. The store
+  reads them as one `rows` request of an `aggregate` without keys over the plan's rows (Appendix A of the
+  specification), into the snapshot's `totals`, again when the view, its edits or the totals change; the totals on
+  screen stay until the new ones come. Columns are widened to fit them, and the accessibility rows end with them
+  (`aria-rowcount` counts them). Totals of a grouped view are not shown: one plan cannot aggregate groups again.
+- When the engine groups rows, the toolbar has a Group menu: the keys, with a list to add a column of the rows,
+  and the measures, each with a measure, a column (none for counting rows) and an Add button that names it as v1
+  did (`sum(qty)`, `count(*)`). Each change dispatches `group.set` with the whole aggregate, or `group.clear` when
+  nothing is left; rows grouped for the first time are counted.
 
 ### 6.5 Theming
 

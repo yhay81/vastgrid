@@ -75,7 +75,40 @@ export function fakeEngine(table: FakeTable, capabilities: Capabilities = CAPABI
     });
   };
 
+  /** An aggregate without keys: `count`, `sum`, `min` and `max` over every row, as floats but for counts. */
+  const measures = async (plan: Plan) => {
+    const list = plan.aggregate?.measures ?? [];
+    const row = list.map((measure): JsonValue => {
+      const index = table.columns.findIndex((column) => column.name === measure.column);
+      const values = table.rows.map((item) => (index < 0 ? 1 : item[index])).filter((value) => value !== null);
+      if (measure.fn === "count") return values.length;
+      const numbers = values.map(Number);
+      if (numbers.length === 0) return null;
+      if (measure.fn === "sum") return numbers.reduce((a, b) => a + b, 0);
+      return measure.fn === "min" ? Math.min(...numbers) : Math.max(...numbers);
+    });
+    const columns: Column[] = list.map((measure) =>
+      measure.fn === "count" ? { name: measure.name, type: "bigint" } : { name: measure.name, type: "float", bits: 64 },
+    );
+    return {
+      view: {
+        hash: await planHash(plan),
+        status: "ready",
+        rowCount: 1,
+        rowCountExact: true,
+        readableRows: 1,
+        columns,
+        edits: { version: 0, cells: 0 },
+      },
+      start: 0,
+      end: 1,
+      rowIds: null,
+      block: { bytes: encodeBlock(columns, [row]) },
+    };
+  };
+
   const counts = async (plan: Plan, start: number, end: number) => {
+    if (plan.aggregate?.keys.length === 0) return measures(plan);
     const [key] = plan.aggregate?.keys ?? [];
     const measure = plan.aggregate?.measures[0]?.name ?? "count";
     const index = table.columns.findIndex((column) => column.name === key);
