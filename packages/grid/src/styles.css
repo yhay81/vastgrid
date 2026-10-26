@@ -711,3 +711,38 @@
   display: flex;
   gap: 4px;
 }
+
+/* A column's format, in the column menu. */
+
+.vg-format {
+  max-height: min(70vh, 560px);
+  overflow: auto;
+}
+
+.vg-column-menu:has(.vg-format) {
+  max-width: min(420px, calc(100vw - 16px));
+}
+
+.vg-format__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vg-format__group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--vg-line);
+  border-radius: var(--vg-radius);
+}
+
+.vg-format__rule {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--vg-line);
+}

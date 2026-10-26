@@ -155,7 +155,7 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
   const sizerRef = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const editor = useRef<EditorControl>(null);
-  const { messages } = use(LocaleContext);
+  const { messages, locale } = use(LocaleContext);
   const saving = use(SaveContext);
   const follow = useRef<{ frame: number; x: number; y: number } | null>(null);
   const id = useId();
@@ -174,6 +174,10 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
   useLayoutEffect(() => {
     canvas.setSizes(rowHeight, headerHeight);
   }, [canvas, rowHeight, headerHeight]);
+
+  useLayoutEffect(() => {
+    canvas.setLocale(locale);
+  }, [canvas, locale]);
 
   useLayoutEffect(() => {
     const root = rootRef.current;

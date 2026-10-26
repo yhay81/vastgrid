@@ -418,6 +418,28 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   that hides them and buttons that move them by one place (`column.move`), then the hidden ones with a check box
   that shows them, a box that finds columns by name, and Show all.
 
+### 6.10 Formats
+
+- The canvas shows a column's values by its `format` (§5.1 of the specification): `number` and `date` as v1's
+  `NumberFormat` and `DateFormat` do (Intl formats in the grid's `locale`, the exact digits of decimals, date patterns
+  such as `yyyy/MM/dd`, `timestamptz` values moved to `timeZone`), `align`, and `label` in the header. A format that
+  Intl refuses (an unknown currency or time zone) shows the text form (§2.4). Columns are fitted to the formatted
+  text.
+- `styles` are evaluated in the grid, cell by cell, over the row's values: the first rule whose `when` is true gives
+  the cell's text color and background, and its `description` becomes the cell's `aria-description`. The grid
+  evaluates the logic and comparisons that the menus write (`and`, `or`, `not`, `coalesce`, comparisons, `in`,
+  `is_null`, `is_blank`, and `contains`, `starts_with` and `ends_with` over `lower` and `text`) with the order of §3.1
+  and the nulls of §3.6; a rule whose `when` uses anything else, or a column the view does not have, is skipped.
+  The columns that the rules read are read with the rows on screen.
+- `wrap` wraps a column's text at spaces and between CJK characters, ending with "…" when it needs more lines. Rows
+  keep one height, so that a view of any size scrolls (§6.3): while a displayed column wraps, every row has room
+  for two lines.
+- Format… in the column menu edits the label, the alignment, wrapping, the number format (number, percent or
+  currency, decimal places and digit grouping) of number columns, the date pattern of dates and times, and the rules
+  of conditional colors: a condition on a column of the view as in the column's filter (§6.7), a text color and a
+  background, and what they mean. Rules it does not take apart are shown as formulas and kept. Apply dispatches
+  `column.format`, and Clear format removes the format.
+
 ### 6.5 Theming
 
 Colors, fonts and sizes are CSS custom properties on `.vg-root`, which the canvas reads (and reads again when the

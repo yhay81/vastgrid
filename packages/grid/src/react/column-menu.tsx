@@ -33,6 +33,7 @@ import {
 } from "../core/filters.js";
 import { measureName, offers, statisticsOf, TOTALS } from "../core/measures.js";
 import { LocaleContext } from "./context.js";
+import { FormatForm } from "./format-form.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 
 /** Where the column menu opens: a column of the view, at a point of the page. */
@@ -355,7 +356,7 @@ export function ColumnMenu({ target, onClose }: { target: MenuTarget | null; onC
   const store = useGridStore();
   const { messages } = use(LocaleContext);
   const ref = useRef<HTMLDivElement>(null);
-  const [panel, setPanel] = useState<"filter" | "statistics" | "total" | null>(null);
+  const [panel, setPanel] = useState<"filter" | "statistics" | "total" | "format" | null>(null);
   const [shown, setShown] = useState(target);
   if (shown !== target) {
     setShown(target);
@@ -446,6 +447,11 @@ export function ColumnMenu({ target, onClose }: { target: MenuTarget | null; onC
           {back}
           <FilterForm key={column.name} column={column} onDone={close} />
         </>
+      ) : panel === "format" ? (
+        <>
+          {back}
+          <FormatForm key={column.name} column={column} setting={item.setting} onDone={close} />
+        </>
       ) : panel === "statistics" ? (
         <>
           {back}
@@ -514,6 +520,7 @@ export function ColumnMenu({ target, onClose }: { target: MenuTarget | null; onC
           {keys.includes(column.name) && <MenuItem onClick={ungroupBy}>{messages.removeFromGroups}</MenuItem>}
           {grouped && <MenuItem onClick={() => run({ command: "group.clear" })}>{messages.ungroup}</MenuItem>}
           {(filters || measures || grouped || totals.length > 0) && <hr className="vg-menu__line" />}
+          <MenuItem onClick={() => setPanel("format")}>{messages.format}</MenuItem>
           <MenuItem onClick={() => run({ command: "column.resize", name: column.name, width: null })}>
             {messages.autoFit}
           </MenuItem>

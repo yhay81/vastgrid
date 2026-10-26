@@ -1,4 +1,6 @@
 import { type Column, columnsOf, type DisplayedColumn, type JsonValue, partsOf, textOf } from "vastgrid-spec";
+import { compileRule, type Rule } from "../core/evaluate.js";
+import { formatterFor } from "../core/format.js";
 import type { GridStore } from "../core/store.js";
 import { now, track } from "../core/trace.js";
 import type { GridSnapshot } from "../core/types.js";
@@ -10,6 +12,8 @@ import { cssLength, type GridTheme, resolveTheme } from "./theme.js";
 const PADDING = 8;
 const MIN_WIDTH = 40;
 const MAX_AUTO_WIDTH = 360;
+/** Lines of a row while a displayed column wraps its text (§5.1 of the specification). */
+const WRAP_LINES = 2;
 /** The width of the button at the right of a header that opens the column menu. */
 const MENU_WIDTH = 16;
 /** How long scrolling must pause before the accessibility rows and the session follow (§6.1 of v2-react.md). */
@@ -90,6 +94,14 @@ export class GridCanvas {
   gutterWidth = 48;
   /** The height of the totals row at the bottom (§5.1 of the specification), 0 without totals. */
   footer = 0;
+  /** The row height of the theme or the props; rows are taller while a column wraps. */
+  private baseRowHeight = 24;
+  private locale: string | undefined = undefined;
+  /** By column name: the text of its values by its format, and its style rules (§5.1). */
+  private formatters = new Map<string, (value: JsonValue) => string | null>();
+  private rules = new Map<string, { rule: Rule; color?: string; background?: string; description?: string }[]>();
+  /** Columns that the style rules read besides those on screen. */
+  private ruleColumns: string[] = [];
   private store: GridStore | null = null;
   private elements: CanvasElements | null = null;
   private context: CanvasRenderingContext2D | null = null;
@@ -119,6 +131,20 @@ export class GridCanvas {
   private readonly frameListeners = new Set<() => void>();
 
   constructor(private options: CanvasOptions = {}) {}
+
+  /** The language that formats show numbers and dates in (§5.1). */
+  setLocale(locale: string | undefined) {
+    if (this.locale === locale) return;
+    this.locale = locale;
+    this.relayout();
+  }
+
+  /** The row height for displayed columns: room for `WRAP_LINES` lines when one of them wraps. */
+  private wrappedHeight(columns: readonly DisplayedColumn[]) {
+    const wraps = columns.some((item) => item.setting.format?.wrap === true);
+    const lineHeight = this.theme?.lineHeight ?? 16;
+    return wraps ? Math.max(this.baseRowHeight, Math.ceil(lineHeight * WRAP_LINES + 8)) : this.baseRowHeight;
+  }
 
   /** Row and header heights given as props, instead of the CSS custom properties. */
   setSizes(rowHeight: number | undefined, headerHeight: number | undefined) {
@@ -194,7 +220,8 @@ export class GridCanvas {
     this.theme = theme;
     this.cellText = new TextFitter(this.context, theme.font);
     this.headerText = new TextFitter(this.context, theme.headerFont);
-    this.rowHeight = this.options.rowHeight ?? cssLength(elements.root, "--vg-row-height", 24);
+    this.baseRowHeight = this.options.rowHeight ?? cssLength(elements.root, "--vg-row-height", 24);
+    this.rowHeight = this.wrappedHeight(this.columns);
     this.headerHeight = this.options.headerHeight ?? cssLength(elements.root, "--vg-header-height", 32);
     this.texts.clear();
     this.schedule();
@@ -251,6 +278,28 @@ export class GridCanvas {
         : (item.setting.width ?? this.measured.get(item.column.name) ?? defaultWidth(item.column)),
     );
     this.layout = new ColumnLayout(widths);
+    this.rowHeight = this.wrappedHeight(columns);
+    this.formatters = new Map();
+    this.rules = new Map();
+    const read = new Set<string>();
+    const view = snapshot?.view?.columns ?? [];
+    for (const item of columns) {
+      const format = item.setting.format;
+      const formatter = formatterFor(item.column, format, this.locale);
+      if (formatter) this.formatters.set(item.column.name, formatter);
+      const rules = (format?.styles ?? []).flatMap((style) => {
+        // A rule whose `when` the grid does not evaluate over the view is skipped (§5.1).
+        const compiled = compileRule(style.when, view);
+        if (!compiled) return [];
+        for (const name of compiled.columns) read.add(name);
+        return [
+          { rule: compiled.rule, color: style.color, background: style.background, description: style.description },
+        ];
+      });
+      if (rules.length > 0) this.rules.set(item.column.name, rules);
+    }
+    this.ruleColumns = [...read];
+    this.texts.clear();
     const left = columns.filter((item) => item.setting.pin === "left").length;
     const right = columns.filter((item) => item.setting.pin === "right").length;
     const rowCount = snapshot?.view?.rowCount ?? 0;
@@ -403,6 +452,7 @@ export class GridCanvas {
     for (let column = this.rightStart; column < this.columns.length; column++) {
       names.push(this.columns[column].column.name);
     }
+    for (const name of this.ruleColumns) if (!names.includes(name)) names.push(name);
     store.setViewport({ top: first, rows: Math.max(1, last - first), columns: names });
   }
 
@@ -483,7 +533,7 @@ export class GridCanvas {
     // Kept with its value: a cell shows another value while a write of it is being answered.
     const kept = this.texts.get(key);
     if (kept !== undefined && kept.value === value) return kept.text;
-    const text = textOf(value, column) ?? "";
+    const text = this.formatters.get(column.name)?.(value) ?? textOf(value, column) ?? "";
     if (this.texts.size > 50_000) this.texts.clear();
     this.texts.set(key, { value, text });
     return text;
@@ -707,8 +757,11 @@ export class GridCanvas {
     const numeric = isNumeric(item.column);
     const align =
       item.setting.format?.align ?? (numeric ? "right" : item.column.type === "boolean" ? "center" : "left");
+    const wrap = item.setting.format?.wrap === true;
     ctx.font = fitter.font;
     ctx.textBaseline = "middle";
+    ctx.textAlign = align;
+    const textX = align === "right" ? x + width - PADDING : align === "center" ? x + width / 2 : x + PADDING;
     for (let row = first; row < last; row++) {
       const y = this.rowY(row);
       const value = store.cell(row, item.column.name);
@@ -717,23 +770,30 @@ export class GridCanvas {
         ctx.fillRect(x + PADDING, y + this.rowHeight / 2 - 4, Math.max(0, Math.min(width - PADDING * 2, 64)), 8);
         continue;
       }
+      const style = this.styleOf(row, item.column.name);
+      if (style?.background) {
+        ctx.fillStyle = style.background;
+        ctx.fillRect(x, y, width, this.rowHeight);
+      }
       if (value === null) continue;
       let text = this.text(row, item.column, value);
       if (store.isCut(row, item.column.name)) text = `${text}…`;
-      const fitted = fitter.fit(text, width - PADDING * 2);
-      if (!fitted) continue;
-      ctx.fillStyle = theme.text;
-      const middle = y + this.rowHeight / 2;
-      if (align === "right") {
-        ctx.textAlign = "right";
-        ctx.fillText(fitted, x + width - PADDING, middle);
-      } else if (align === "center") {
-        ctx.textAlign = "center";
-        ctx.fillText(fitted, x + width / 2, middle);
-      } else {
-        ctx.textAlign = "left";
-        ctx.fillText(fitted, x + PADDING, middle);
+      ctx.fillStyle = style?.color ?? theme.text;
+      if (wrap) {
+        const lineHeight = theme.lineHeight;
+        const lines = fitter.lines(
+          text,
+          width - PADDING * 2,
+          Math.max(1, Math.floor((this.rowHeight - 4) / lineHeight)),
+        );
+        const top = y + (this.rowHeight - lines.length * lineHeight) / 2 + lineHeight / 2;
+        lines.forEach((line, index) => {
+          ctx.fillText(line, textX, top + index * lineHeight);
+        });
+        continue;
       }
+      const fitted = fitter.fit(text, width - PADDING * 2);
+      if (fitted) ctx.fillText(fitted, textX, y + this.rowHeight / 2);
     }
     ctx.textAlign = "left";
   }
@@ -923,6 +983,15 @@ export class GridCanvas {
       }
       ctx.textAlign = "left";
     });
+  }
+
+  /** The style rule that colors a cell: the first whose `when` is true for its row (§5.1); undefined for none. */
+  styleOf(row: number, name: string): { color?: string; background?: string; description?: string } | undefined {
+    const rules = this.rules.get(name);
+    const store = this.store;
+    if (!rules || !store) return undefined;
+    const read = (column: string) => store.cell(row, column);
+    return rules.find((item) => item.rule(read) === true);
   }
 
   /** The text of a column's total; undefined while it is read. */

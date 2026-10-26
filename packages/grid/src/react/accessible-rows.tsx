@@ -24,6 +24,8 @@ interface Cell extends Box {
   column: number;
   name: string;
   text: string;
+  /** What the colors of a style rule mean (§5.1), read by screen readers. */
+  description?: string;
 }
 
 interface ShownRow {
@@ -63,6 +65,7 @@ function readRow(
       column,
       name: item.name,
       text: value === undefined || value === null ? "" : canvas.text(row, item, value),
+      description: canvas.styleOf(row, item.name)?.description,
       ...boxOf(canvas, canvas.columnX(column), y, canvas.columnWidth(column), canvas.rowHeight),
     };
   });
@@ -125,6 +128,7 @@ function AccessibleRow({ id, row, selected }: { id: string; row: ShownRow; selec
           role="gridcell"
           aria-colindex={cell.column + 1}
           aria-selected={marked.has(cell.column)}
+          aria-description={cell.description}
           style={style(cell)}
         >
           {cell.text}

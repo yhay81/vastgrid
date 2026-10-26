@@ -8,6 +8,9 @@
   expression of a derived column back as a formula that compiles to it. `migrateGridState` migrates v1's formulas
   into `plan.derive`, ordered by what they use, with the filters, sort keys, groups and measures that use them, and
   gives a reason for each part it drops (`reasons`). `checkExpression` checks one expression.
+- `vastgrid-grid` (unreleased v2): column formats (§5.1): number and date formats as in v1, alignment, labels,
+  wrapped text (rows take two lines while a column wraps) and conditional colors, whose rules the grid evaluates for
+  each cell and whose descriptions screen readers read. The column menu's Format… edits them (`column.format`).
 - `vastgrid-grid` (unreleased v2): a Conditions menu in the toolbar edits the conditions of the view across columns,
   in nested groups of AND and OR (`filter.set`); a Columns menu shows, hides and moves columns; and the Group menu
   makes pivots (§4.6). A view that fails to read (a pivot with too many columns) keeps the view before and shows why

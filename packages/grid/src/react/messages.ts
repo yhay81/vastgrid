@@ -127,6 +127,27 @@ export interface GridMessages {
   moveUp: (column: string) => string;
   moveDown: (column: string) => string;
   pinned: Record<"left" | "right", string>;
+  /** A column's format (§5.1): label, alignment, wrapping, number and date formats, and conditional colors. */
+  format: string;
+  formatOf: (column: string) => string;
+  columnLabel: string;
+  alignment: string;
+  alignments: Record<"auto" | "left" | "center" | "right", string>;
+  wrapText: string;
+  numberFormat: string;
+  numberStyles: Record<"none" | "decimal" | "percent" | "currency", string>;
+  currency: string;
+  invalidCurrency: string;
+  fractionDigits: string;
+  grouping: string;
+  datePattern: string;
+  conditionalColors: string;
+  textColor: string;
+  backgroundColor: string;
+  ruleDescription: string;
+  addRule: string;
+  removeRule: string;
+  clearFormat: string;
 }
 
 const en: GridMessages = {
@@ -270,6 +291,26 @@ const en: GridMessages = {
   moveUp: (column) => `Move ${column} left`,
   moveDown: (column) => `Move ${column} right`,
   pinned: { left: "Frozen left", right: "Frozen right" },
+  format: "Format…",
+  formatOf: (column) => `Format of ${column}`,
+  columnLabel: "Label",
+  alignment: "Alignment",
+  alignments: { auto: "By type", left: "Left", center: "Center", right: "Right" },
+  wrapText: "Wrap text",
+  numberFormat: "Numbers",
+  numberStyles: { none: "As they are", decimal: "Number", percent: "Percent", currency: "Currency" },
+  currency: "Currency code",
+  invalidCurrency: "This is not a currency code (such as JPY or USD).",
+  fractionDigits: "Decimal places",
+  grouping: "Group digits",
+  datePattern: "Date pattern",
+  conditionalColors: "Conditional colors",
+  textColor: "Text",
+  backgroundColor: "Background",
+  ruleDescription: "What the colors mean",
+  addRule: "Add rule",
+  removeRule: "Remove rule",
+  clearFormat: "Clear format",
 };
 
 const ja: GridMessages = {
@@ -413,6 +454,26 @@ const ja: GridMessages = {
   moveUp: (column) => `${column} を左へ移動`,
   moveDown: (column) => `${column} を右へ移動`,
   pinned: { left: "左に固定", right: "右に固定" },
+  format: "書式…",
+  formatOf: (column) => `${column} の書式`,
+  columnLabel: "表示名",
+  alignment: "配置",
+  alignments: { auto: "型に合わせる", left: "左", center: "中央", right: "右" },
+  wrapText: "折り返して表示",
+  numberFormat: "数値",
+  numberStyles: { none: "そのまま", decimal: "数値", percent: "パーセント", currency: "通貨" },
+  currency: "通貨コード",
+  invalidCurrency: "通貨コード（JPY・USD など）ではありません。",
+  fractionDigits: "小数点以下の桁数",
+  grouping: "桁区切り",
+  datePattern: "日付の形式",
+  conditionalColors: "条件付きの色",
+  textColor: "文字",
+  backgroundColor: "背景",
+  ruleDescription: "色の意味",
+  addRule: "規則を追加",
+  removeRule: "規則を削除",
+  clearFormat: "書式を解除",
 };
 
 /** The built-in texts for a language tag: Japanese for `ja`, English otherwise. */
