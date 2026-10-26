@@ -5,12 +5,15 @@
 import {
   type Capabilities,
   type Column,
+  checkPlan,
   type DisplayedColumn,
   type Measure,
   type MeasureName,
   measureTakes,
   type Plan,
+  planOptions,
 } from "vastgrid-spec";
+import type { TableInfo } from "./types.js";
 
 /** The rows of a plan before grouping: its derived columns and `where`. Null when the plan groups rows. */
 export function rowsPlan(plan: Plan): Plan | null {
@@ -83,4 +86,14 @@ export function measureName(fn: MeasureName, column: string | undefined, taken: 
   let name = base;
   for (let n = 2; taken.has(name); n++) name = `${base} (${n})`;
   return name;
+}
+
+/** The columns of the rows before grouping: the table's and the derived ones, or the table's when the plan fails. */
+export function rowColumns(plan: Plan | undefined, table: TableInfo): readonly Column[] {
+  try {
+    return checkPlan(rowsPlan({ ...plan, aggregate: undefined }) ?? {}, table.columns, planOptions(table.capabilities))
+      .rows;
+  } catch {
+    return table.columns;
+  }
 }

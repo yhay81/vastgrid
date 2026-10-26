@@ -1,6 +1,8 @@
 import { use, useDeferredValue, useEffect, useState, useTransition } from "react";
 import { type Expr, partsOf } from "vastgrid-spec";
 import { isApple } from "../canvas/keys.js";
+import { ColumnsMenu } from "./columns-menu.js";
+import { ConditionsMenu } from "./conditions-menu.js";
 import { LocaleContext, SaveContext } from "./context.js";
 import { ExportMenu } from "./export-menu.js";
 import { FormulaMenu } from "./formula-menu.js";
@@ -17,7 +19,8 @@ function searchOf(where: Expr | undefined): string {
 }
 
 /**
- * The toolbar: a search box when the engine searches (§3.5), the group menu when it groups rows (§4.5), the formula
+ * The toolbar: a search box when the engine searches (§3.5), the conditions menu when it filters (§6.2.1), the
+ * columns menu (§6.3), the group menu when it groups rows (§4.5), the formula
  * menu when it derives columns (§4.11), a
  * button that saves the written cells when the engine saves (§7.5), and one that reads the file again when it
  * changed on disk while cells were written (§7.6). The
@@ -67,7 +70,8 @@ export function Toolbar({ announce }: { announce: (text: string) => void }) {
   const groups = useGridSelector(
     (snapshot) => snapshot.table !== null && snapshot.table.capabilities.plan?.aggregate !== false,
   );
-  if (!searches && !showsSave && !fileChanged && !exports && !derives && !groups) return null;
+  const opened = useGridSelector((snapshot) => snapshot.view !== null);
+  if (!searches && !showsSave && !fileChanged && !exports && !derives && !groups && !opened) return null;
   return (
     <div className="vg-toolbar">
       {searches && (
@@ -86,6 +90,8 @@ export function Toolbar({ announce }: { announce: (text: string) => void }) {
           {unsaved > 0 ? messages.discardAndReload : messages.reload}
         </button>
       )}
+      <ConditionsMenu />
+      <ColumnsMenu />
       <GroupMenu />
       <FormulaMenu />
       <ExportMenu announce={announce} />

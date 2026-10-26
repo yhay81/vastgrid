@@ -725,7 +725,8 @@ export class GridStore {
       this.current = view;
       this.next = null;
       // The rows, the view and the session's new positions are shown in one step.
-      this.change(updated.document, updated.session, { view: view.info ?? info, pending: null });
+      // A view that comes on screen ends the failure of the one before (a pivot with too many columns).
+      this.change(updated.document, updated.session, { view: view.info ?? info, pending: null, error: null });
       // The snapshot keeps the columns of the view before when they are the same, for commands to key on.
       view.info = this.snapshot.view;
       // Values of writes that the new rows hold are no longer needed.

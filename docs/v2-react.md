@@ -400,6 +400,23 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   and the measures, each with a measure, a column (none for counting rows) and an Add button that names it as v1
   did (`sum(qty)`, `count(*)`). Each change dispatches `group.set` with the whole aggregate, or `group.clear` when
   nothing is left; rows grouped for the first time are counted.
+- When the engine pivots (`capabilities.plan.pivot`), the group menu also lists the columns whose values become
+  columns (§4.6 of the specification); a pivot without measures counts rows. A view that fails to read, such as a
+  pivot that would make more columns than `maxColumns`, leaves the view before on screen and puts the failure in the
+  snapshot's `error`, which the status bar shows until a view comes on screen.
+
+### 6.9 The conditions and columns menus
+
+- When the engine filters, the toolbar has a Conditions menu (with their number when there are some): every
+  condition of the plan, those across columns included, as a group whose items all hold (AND) or one of which holds
+  (OR), with groups nested in it. A condition is a column, an operator and texts, as in the column's filter (§6.7);
+  parts of `where` that are not such conditions (an agent's expression) are shown as formulas (§4.11), and kept or
+  removed. The menu reads `where` when it opens; Apply dispatches `filter.set` with the tree, which keeps the
+  search, and conditions without text are left out. Text that is not a value of its column marks that condition and
+  is not dispatched.
+- The toolbar's Columns menu lists every column of the view: the displayed ones in display order with a check box
+  that hides them and buttons that move them by one place (`column.move`), then the hidden ones with a check box
+  that shows them, a box that finds columns by name, and Show all.
 
 ### 6.5 Theming
 

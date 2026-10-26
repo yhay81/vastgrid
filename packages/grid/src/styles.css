@@ -631,3 +631,83 @@
   min-height: 22px;
   padding: 0 6px;
 }
+
+/* The columns menu: each column of the view, shown or hidden, with buttons that move it. */
+
+.vg-columns {
+  width: min(320px, calc(100vw - 16px));
+}
+
+.vg-columns__list {
+  max-height: 320px;
+  margin: 6px 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.vg-columns__item {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 0;
+}
+
+.vg-columns__item label {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+/* The conditions menu: groups of conditions, nested. */
+
+.vg-conditions {
+  width: min(640px, calc(100vw - 16px));
+  max-height: min(70vh, 600px);
+  overflow: auto;
+}
+
+.vg-conditions__group {
+  margin: 0 0 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--vg-line);
+  border-radius: var(--vg-radius);
+}
+
+.vg-conditions__group--top {
+  padding: 0;
+  border: none;
+}
+
+.vg-conditions__items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vg-conditions__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.vg-conditions__row .vg-input {
+  flex: 1 1 8em;
+  min-width: 0;
+}
+
+.vg-conditions__expression {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.vg-conditions__add {
+  display: flex;
+  gap: 4px;
+}

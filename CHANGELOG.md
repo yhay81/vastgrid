@@ -8,6 +8,10 @@
   expression of a derived column back as a formula that compiles to it. `migrateGridState` migrates v1's formulas
   into `plan.derive`, ordered by what they use, with the filters, sort keys, groups and measures that use them, and
   gives a reason for each part it drops (`reasons`). `checkExpression` checks one expression.
+- `vastgrid-grid` (unreleased v2): a Conditions menu in the toolbar edits the conditions of the view across columns,
+  in nested groups of AND and OR (`filter.set`); a Columns menu shows, hides and moves columns; and the Group menu
+  makes pivots (§4.6). A view that fails to read (a pivot with too many columns) keeps the view before and shows why
+  in the status bar.
 - `vastgrid-grid` (unreleased v2): column statistics (rows, values, empty, distinct, minimum, maximum, sum,
   average, median, standard deviation), a totals row at the bottom of the grid set from each column's menu
   (`column.total`), and grouping: from a column's menu, and the toolbar's Group menu of keys and measures

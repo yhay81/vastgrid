@@ -64,27 +64,25 @@ export function StatusBar() {
   const revision = useGridSelector((snapshot) => snapshot.table?.revision);
   const fileChanged = useGridSelector((snapshot) => snapshot.table?.fileChanged === true);
   const rowCount = useGridSelector((snapshot) => snapshot.view?.rowCount);
-  const status = useGridSelector((snapshot) => snapshot.status);
   const building = useGridSelector((snapshot) => snapshot.view?.status === "building");
   const pending = useGridSelector((snapshot) => snapshot.pending !== null);
   const error = useGridSelector((snapshot) => snapshot.error);
   const active = useGridSelector((snapshot) => snapshot.session.active);
   const selection = useGridSelector((snapshot) => snapshot.session.selection);
   const summary = useSummary(store, selection);
-  const doing =
-    status === "error" && error
-      ? messages.failed(error.message)
-      : rowCount === undefined
-        ? messages.loading
-        : saving?.pending
-          ? messages.saving
-          : saving?.outcome && edits && revision === saving.outcome.revision && edits.version <= saving.outcome.version
-            ? saving.outcome.text
-            : fileChanged
-              ? messages.changedOnDisk
-              : pending || building
-                ? messages.reading
-                : "";
+  const doing = error
+    ? messages.failed(error.message)
+    : rowCount === undefined
+      ? messages.loading
+      : saving?.pending
+        ? messages.saving
+        : saving?.outcome && edits && revision === saving.outcome.revision && edits.version <= saving.outcome.version
+          ? saving.outcome.text
+          : fileChanged
+            ? messages.changedOnDisk
+            : pending || building
+              ? messages.reading
+              : "";
   return (
     <div className="vg-statusbar">
       <span className="vg-statusbar__cell">

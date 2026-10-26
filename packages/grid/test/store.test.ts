@@ -303,3 +303,31 @@ test("a plan chosen while the table loads waits until ready when partialViews is
   assert.equal(store.getSnapshot().error, null);
   disconnect();
 });
+
+test("a view that fails to read keeps the one on screen with the failure, until a view comes", async () => {
+  const engine = fakeEngine(numbers(100));
+  const failing = {
+    ...engine,
+    async handle(message: unknown) {
+      const request = message as { id: number; op: string; plan?: { sort?: { direction: string }[] } };
+      if (request.op === "rows" && request.plan?.sort?.[0]?.direction === "desc") {
+        return { v: 2, id: request.id, error: { code: "too_many_columns", message: "Too many." } };
+      }
+      return engine.handle(message);
+    },
+  };
+  const store = createGridStore({ transport: localTransport(failing), table: "numbers" });
+  const disconnect = store.connect();
+  store.setViewport({ top: 0, rows: 20, columns: ["id"] });
+  await until(store, (snapshot) => snapshot.view !== null);
+  const shown = store.getSnapshot().view;
+  await store.dispatch({ command: "sort.set", keys: [{ column: "id", direction: "desc" }] });
+  await until(store, (snapshot) => snapshot.error !== null);
+  assert.equal(store.getSnapshot().error?.code, "too_many_columns");
+  assert.equal(store.getSnapshot().view, shown);
+  assert.equal(store.getSnapshot().pending, null);
+  await store.dispatch({ command: "sort.set", keys: [{ column: "id", direction: "asc" }] });
+  await until(store, (snapshot) => snapshot.view !== shown);
+  assert.equal(store.getSnapshot().error, null);
+  disconnect();
+});

@@ -1,32 +1,11 @@
 import { type ToggleEvent, use, useId, useRef, useState, useTransition } from "react";
-import {
-  type Aggregate,
-  type Column,
-  checkPlan,
-  type GridCommand,
-  MEASURES,
-  type MeasureName,
-  measureTakes,
-  type Plan,
-  planOptions,
-} from "vastgrid-spec";
-import { measureName, offers, rowsPlan } from "../core/measures.js";
-import type { TableInfo } from "../core/types.js";
+import { type Aggregate, type GridCommand, MEASURES, type MeasureName, measureTakes } from "vastgrid-spec";
+import { measureName, offers, rowColumns } from "../core/measures.js";
 import { LocaleContext } from "./context.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 
 /** The measures the menu offers; `quantile` needs a `p`, which it does not ask for. */
 const OFFERED = MEASURES.filter((fn) => fn !== "quantile");
-
-/** The columns of the rows before grouping: the table's and the derived ones, or the table's when the plan fails. */
-function rowColumns(plan: Plan | undefined, table: TableInfo): readonly Column[] {
-  try {
-    return checkPlan(rowsPlan({ ...plan, aggregate: undefined }) ?? {}, table.columns, planOptions(table.capabilities))
-      .rows;
-  } catch {
-    return table.columns;
-  }
-}
 
 /**
  * The toolbar's group menu (§6.2 of the specification): the columns that the rows are grouped by and the measures of
@@ -64,6 +43,17 @@ export function GroupMenu() {
         ? { command: "group.clear" }
         : { command: "group.set", aggregate: next },
     );
+  const pivots = table.capabilities.plan?.pivot !== false;
+  const pivot = aggregate.pivot?.columns ?? [];
+  // A pivot makes a column per value of its columns and measure (§4.6), so it needs a measure: rows are counted.
+  const setPivot = (columns: string[]) => {
+    const { pivot: _pivot, ...rest } = aggregate;
+    const measures =
+      columns.length > 0 && rest.measures.length === 0
+        ? [{ name: measureName("count", undefined, new Set(rest.keys)), fn: "count" as const }]
+        : rest.measures;
+    set(columns.length > 0 ? { ...rest, measures, pivot: { columns } } : rest);
+  };
   const taken = () => new Set([...aggregate.keys, ...aggregate.measures.map((measure) => measure.name)]);
   const addMeasure = () => {
     if (!canAdd) return;
@@ -141,6 +131,46 @@ export function GroupMenu() {
               ))}
           </select>
         </fieldset>
+        {pivots && (
+          <fieldset className="vg-groups__part" disabled={pending}>
+            <legend>{messages.pivotBy}</legend>
+            <ul className="vg-groups__list">
+              {pivot.map((name) => (
+                <li key={name}>
+                  <span>{name}</span>
+                  <button
+                    type="button"
+                    className="vg-button vg-button--small"
+                    aria-label={messages.remove(name)}
+                    onClick={() => setPivot(pivot.filter((other) => other !== name))}
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <select
+              className="vg-input"
+              aria-label={messages.pivotBy}
+              value=""
+              onChange={(event) => {
+                if (event.target.value) setPivot([...pivot, event.target.value]);
+              }}
+            >
+              <option value="">{messages.addPivot}</option>
+              {rows
+                .filter(
+                  (item) =>
+                    !aggregate.keys.includes(item.name) && !pivot.includes(item.name) && measureTakes("min", item),
+                )
+                .map((item) => (
+                  <option key={item.name} value={item.name}>
+                    {item.name}
+                  </option>
+                ))}
+            </select>
+          </fieldset>
+        )}
         <fieldset className="vg-groups__part" disabled={pending}>
           <legend>{messages.measures}</legend>
           <ul className="vg-groups__list">

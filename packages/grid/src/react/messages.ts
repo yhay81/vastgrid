@@ -103,6 +103,30 @@ export interface GridMessages {
   measureColumn: string;
   allRows: string;
   remove: (item: string) => string;
+  /** The pivot of the groups (§4.6): the columns whose values become columns. */
+  pivotBy: string;
+  addPivot: string;
+  /** The conditions menu (§6.2.1): groups of conditions across columns. */
+  conditions: string;
+  conditionsCount: (count: string) => string;
+  conditionsTitle: string;
+  conditionColumn: string;
+  matchLabel: string;
+  matchAll: string;
+  matchAny: string;
+  noConditions: string;
+  addCondition: string;
+  addGroup: string;
+  removeGroup: string;
+  removeCondition: string;
+  invalidCondition: string;
+  clearConditions: string;
+  /** The columns menu (§6.3): every column of the view, shown or hidden, in order. */
+  columns: string;
+  findColumn: string;
+  moveUp: (column: string) => string;
+  moveDown: (column: string) => string;
+  pinned: Record<"left" | "right", string>;
 }
 
 const en: GridMessages = {
@@ -225,6 +249,27 @@ const en: GridMessages = {
   measureColumn: "Column",
   allRows: "(rows)",
   remove: (item) => `Remove ${item}`,
+  pivotBy: "Columns from values of",
+  addPivot: "Add a column…",
+  conditions: "Conditions",
+  conditionsCount: (count) => `Conditions (${count})`,
+  conditionsTitle: "Filter conditions",
+  conditionColumn: "Column",
+  matchLabel: "Match",
+  matchAll: "All of these (AND)",
+  matchAny: "Any of these (OR)",
+  noConditions: "No conditions. Add one to filter the rows.",
+  addCondition: "Add condition",
+  addGroup: "Add group",
+  removeGroup: "Remove group",
+  removeCondition: "Remove condition",
+  invalidCondition: "A value is not a value of its column.",
+  clearConditions: "Clear all",
+  columns: "Columns",
+  findColumn: "Find a column",
+  moveUp: (column) => `Move ${column} left`,
+  moveDown: (column) => `Move ${column} right`,
+  pinned: { left: "Frozen left", right: "Frozen right" },
 };
 
 const ja: GridMessages = {
@@ -347,6 +392,27 @@ const ja: GridMessages = {
   measureColumn: "列",
   allRows: "（行）",
   remove: (item) => `${item} を削除`,
+  pivotBy: "値を列にする列",
+  addPivot: "列を追加…",
+  conditions: "条件",
+  conditionsCount: (count) => `条件（${count}）`,
+  conditionsTitle: "絞り込み条件",
+  conditionColumn: "列",
+  matchLabel: "一致",
+  matchAll: "すべてを満たす（AND）",
+  matchAny: "いずれかを満たす（OR）",
+  noConditions: "条件はありません。条件を追加すると行を絞り込みます。",
+  addCondition: "条件を追加",
+  addGroup: "グループを追加",
+  removeGroup: "グループを削除",
+  removeCondition: "条件を削除",
+  invalidCondition: "列の値として読めない値があります。",
+  clearConditions: "すべて解除",
+  columns: "列",
+  findColumn: "列を検索",
+  moveUp: (column) => `${column} を左へ移動`,
+  moveDown: (column) => `${column} を右へ移動`,
+  pinned: { left: "左に固定", right: "右に固定" },
 };
 
 /** The built-in texts for a language tag: Japanese for `ja`, English otherwise. */
