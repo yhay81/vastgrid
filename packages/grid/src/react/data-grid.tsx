@@ -16,9 +16,10 @@ import type { GridDocument, GridSession } from "vastgrid-spec";
 import type { Transport } from "../core/client.js";
 import { createGridStore, type GridStore } from "../core/store.js";
 import type { GridError, InitialView, OpenOptions } from "../core/types.js";
-import { GridContext, LocaleContext } from "./context.js";
+import { GridContext, LocaleContext, SaveContext } from "./context.js";
 import { GridBody } from "./grid-body.js";
 import { type GridMessages, messagesFor } from "./messages.js";
+import { useSaveAction } from "./save.js";
 import { StaticRows } from "./static-rows.js";
 import { StatusBar } from "./status-bar.js";
 import { Toolbar } from "./toolbar.js";
@@ -169,6 +170,7 @@ function Frame({
   const label = ariaLabel ?? messages.grid;
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [notice, setNotice] = useState("");
+  const saving = useSaveAction(store, language, setNotice);
   const status = useGridSelectorOf(store, (snapshot) => snapshot.status);
   useControlled(store, "document", document, onDocumentChange);
   useControlled(store, "session", session, onSessionChange);
@@ -186,22 +188,24 @@ function Frame({
   return (
     <GridContext value={store}>
       <LocaleContext value={language}>
-        <div className={className ? `vg-root ${className}` : "vg-root"} style={style} data-status={status}>
-          {toolbar && <Toolbar />}
-          <Suspense fallback={<StaticRows label={label} />}>
-            <GridBody
-              rowHeight={rowHeight}
-              headerHeight={headerHeight}
-              label={label}
-              scrollerRef={scrollerRef}
-              announce={setNotice}
-            />
-          </Suspense>
-          {statusBar && <StatusBar />}
-          <div className="vg-sr-only" aria-live="polite">
-            {notice}
+        <SaveContext value={saving}>
+          <div className={className ? `vg-root ${className}` : "vg-root"} style={style} data-status={status}>
+            {toolbar && <Toolbar />}
+            <Suspense fallback={<StaticRows label={label} />}>
+              <GridBody
+                rowHeight={rowHeight}
+                headerHeight={headerHeight}
+                label={label}
+                scrollerRef={scrollerRef}
+                announce={setNotice}
+              />
+            </Suspense>
+            {statusBar && <StatusBar />}
+            <div className="vg-sr-only" aria-live="polite">
+              {notice}
+            </div>
           </div>
-        </div>
+        </SaveContext>
       </LocaleContext>
     </GridContext>
   );

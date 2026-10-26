@@ -13,7 +13,7 @@ import type { Column } from "vastgrid-spec";
 import { quoteIdentifier } from "vastgrid-sql";
 import { type SourceColumn, sourceExpression, tableColumn } from "./columns.js";
 import { Edits } from "./edits.js";
-import { convertToUtf8, detectEncoding } from "./encoding.js";
+import { convertToUtf8, detectEncoding, type TextEncoding } from "./encoding.js";
 import { EngineError, errorMessage } from "./errors.js";
 import { quoteLiteral, type Session } from "./session.js";
 import { convertSheet, type ReadOptions, readWorkbook, type SheetInfo, sheetList, WorkbookError } from "./xlsx.js";
@@ -101,6 +101,14 @@ export class LoadedTable {
   lastUsed = Date.now();
   /** The cells written into the table (§7.2), which its relation reads over the file's values. */
   readonly edits: Edits;
+  /** Delimited files: the encoding the file was read in. */
+  encoding: TextEncoding = "utf-8";
+  /** The file that DuckDB loaded: the file, or a copy of it converted to UTF-8. */
+  loadedSource: string;
+  /** The reader that loaded the table (`readerFunction`): 2 for delimited files read as text. */
+  attempt = 0;
+  /** The quoted name of the session's table that holds the loaded rows; null for a Parquet file read in place. */
+  base: string | null = null;
   private readonly objects: string[] = [];
   private readonly tempFiles: string[] = [];
   private preview: string[] = [];
@@ -120,13 +128,14 @@ export class LoadedTable {
     private readonly session: Session,
     readonly path: string,
     readonly format: TableFormat,
-    /** The file's revision when it was opened (`fileRevision`). */
-    readonly fileState: string,
+    /** The file's revision when it was opened, or saved (§7.5) (`fileRevision`). */
+    public fileState: string,
     readonly byteSize: number,
     readonly read: ReadOptions,
     private readonly options: TableOptions,
   ) {
     this.revision = fileState;
+    this.loadedSource = path;
     this.edits = new Edits(session, this);
   }
 
@@ -188,7 +197,7 @@ export class LoadedTable {
     reader: string,
     source: string,
     limit?: number,
-  ): Promise<{ objects: string[]; columns: Column[]; relation: Relation }> {
+  ): Promise<{ objects: string[]; table: string; columns: Column[]; relation: Relation }> {
     const sources = await this.describe(connection, `SELECT * FROM ${reader}`, [source]);
     const columns = sources.map(tableColumn);
     const table = this.session.createName("vg_t");
@@ -209,6 +218,7 @@ export class LoadedTable {
       const count = await connection.runAndReadAll(`SELECT count(*) FROM ${quoteIdentifier(table)}`);
       return {
         objects,
+        table: quoteIdentifier(table),
         columns,
         relation: { sql: quoteIdentifier(view), rowId, rows: Number(count.getRowsJS()[0][0]) },
       };
@@ -237,17 +247,21 @@ export class LoadedTable {
         return attempt === 0
           ? "read_json_auto($1, format='newline_delimited')"
           : "read_json_auto($1, format='newline_delimited', sample_size=-1)";
-      default: {
-        // Without null_padding, DuckDB's sniffer may settle on the last consistent part of a file whose rows have
-        // different numbers of fields and silently skip the rest.
-        const options = `${this.format === "tsv" ? ", delim='\\t'" : ""}, null_padding=true`;
-        if (attempt === 0) return `read_csv($1${options})`;
-        // Types sniffed from the beginning did not hold for the whole file: sniff all rows.
-        if (attempt === 1) return `read_csv($1${options}, sample_size=-1)`;
-        // Irregular files: read every column as text and tolerate quotes and long lines.
-        return `read_csv($1${options}, all_varchar=true, strict_mode=false, max_line_size=67108864)`;
-      }
+      default:
+        return `read_csv($1${this.delimitedOptions(attempt)})`;
     }
+  }
+
+  /** The options of `read_csv` for an attempt, which `sniff_csv` also takes to tell how the file was read. */
+  delimitedOptions(attempt = this.attempt): string {
+    // Without null_padding, DuckDB's sniffer may settle on the last consistent part of a file whose rows have
+    // different numbers of fields and silently skip the rest.
+    const options = `${this.format === "tsv" ? ", delim='\\t'" : ""}, null_padding=true`;
+    if (attempt === 0) return options;
+    // Types sniffed from the beginning did not hold for the whole file: sniff all rows.
+    if (attempt === 1) return `${options}, sample_size=-1`;
+    // Irregular files: read every column as text and tolerate quotes and long lines.
+    return `${options}, all_varchar=true, strict_mode=false, max_line_size=67108864`;
   }
 
   private async load() {
@@ -256,6 +270,7 @@ export class LoadedTable {
     let workbook = "";
     if (this.format === "csv" || this.format === "tsv") {
       const encoding = await detectEncoding(this.path);
+      this.encoding = encoding;
       if (encoding !== "utf-8") source = await this.convert(encoding);
     }
     if (this.format === "xlsx") ({ source, reader: workbook } = await this.convertWorkbook());
@@ -407,6 +422,9 @@ export class LoadedTable {
       this.objects.push(...loaded.objects);
       this.columns = loaded.columns;
       this.relation = loaded.relation;
+      this.base = loaded.table;
+      this.loadedSource = source;
+      this.attempt = attempt;
       this.rowCount = loaded.relation.rows;
       this.status = "ready";
       this.progress = 1;

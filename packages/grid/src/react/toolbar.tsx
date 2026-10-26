@@ -1,6 +1,7 @@
 import { use, useDeferredValue, useEffect, useState } from "react";
 import { type Expr, partsOf } from "vastgrid-spec";
-import { LocaleContext } from "./context.js";
+import { isApple } from "../canvas/keys.js";
+import { LocaleContext, SaveContext } from "./context.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 
 /** How long typing must pause before the search is set. */
@@ -13,8 +14,9 @@ function searchOf(where: Expr | undefined): string {
 }
 
 /**
- * The toolbar: a search box when the engine searches (§3.5). Its text is React state, which updates as the
- * person types; `search.set` follows through `useDeferredValue` once typing pauses.
+ * The toolbar: a search box when the engine searches (§3.5), and a button that saves the written cells when the
+ * engine saves (§7.5). The search's text is React state, which updates as the person types; `search.set` follows
+ * through `useDeferredValue` once typing pauses.
  */
 export function Toolbar() {
   const store = useGridStore();
@@ -22,6 +24,9 @@ export function Toolbar() {
   const searches = useGridSelector(
     (snapshot) => snapshot.table !== null && snapshot.table.capabilities.plan?.search !== false,
   );
+  const saving = use(SaveContext);
+  const saves = useGridSelector((snapshot) => snapshot.table?.capabilities.save === true);
+  const unsaved = useGridSelector((snapshot) => snapshot.table?.edits.cells ?? 0);
   const current = useGridSelector((snapshot) => searchOf(snapshot.document.plan?.where));
   const [text, setText] = useState(current);
   const [shown, setShown] = useState(current);
@@ -38,17 +43,32 @@ export function Toolbar() {
     }, SEARCH_DELAY);
     return () => clearTimeout(timer);
   }, [store, deferred, current]);
-  if (!searches) return null;
+  const showsSave = saves && saving !== null;
+  if (!searches && !showsSave) return null;
   return (
     <div className="vg-toolbar">
-      <input
-        type="search"
-        className="vg-input vg-toolbar__search"
-        aria-label={messages.search}
-        placeholder={messages.search}
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-      />
+      {searches && (
+        <input
+          type="search"
+          className="vg-input vg-toolbar__search"
+          aria-label={messages.search}
+          placeholder={messages.search}
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+        />
+      )}
+      <span className="vg-toolbar__spacer" />
+      {showsSave && (
+        <button
+          type="button"
+          className="vg-button"
+          aria-keyshortcuts={isApple() ? "Meta+S" : "Control+S"}
+          disabled={unsaved === 0 || saving.pending}
+          onClick={saving.save}
+        >
+          {messages.save}
+        </button>
+      )}
     </div>
   );
 }

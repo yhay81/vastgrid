@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `vastgrid-duckdb-engine` (unreleased v2): `save` writes the written cells into CSV and TSV files with the new
+  option `saveFiles` (§7.5). Only the fields that changed are written anew, in the file's encoding and date
+  formats; every other byte stays. The file is replaced through a temporary file next to it, and files changed by
+  someone else since they were read (`file_changed`), links that lead elsewhere (`not_allowed`) and other formats
+  (`save_unsupported`) are refused. After a save the table keeps its revision, row IDs and history.
+- `vastgrid-grid` (unreleased v2): ⌘S or Ctrl+S saves (from the cell editor too), the toolbar has a Save button,
+  and the status bar counts the cells not saved and shows the outcome of the last save.
 - `vastgrid-duckdb-engine` (unreleased v2): `write` writes cells of open files (§7.2). Written cells are kept
   apart from the file, in tables of the session read through a view over the file's values, so that rows, plans,
   summaries and find see them; writes are atomic, check `previous` and the revision, wait for a file that is

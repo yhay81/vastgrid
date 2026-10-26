@@ -322,6 +322,10 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   Text that is not a value of the column (§7.3) keeps the editor open and tells why.
 - Delete clears the selected cells (`edit.clear`), pasting writes the clipboard into the selection
   (`edit.paste`), and the primary modifier with Z undoes (with Shift, or Ctrl+Y off Apple platforms, redoes).
+- When the engine saves the table's file (`capabilities.save`), the primary modifier with S saves (`save`), also
+  from the editor, which writes its text first; otherwise the key is the browser's. The toolbar has a Save button
+  while cells are not saved. The status bar counts the cells not saved, and shows the save while it runs and then
+  its outcome (the rows saved, or why not: `file_changed` keeps the written cells) until the cells change.
 - The store shows a written value at once, before the engine answers, and shows the cell's value again when the
   write fails; commands read the written values too. It drops them once the rows of the new edits version are on
   screen (§4.2).

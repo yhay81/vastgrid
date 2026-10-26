@@ -17,6 +17,15 @@ export interface GridMessages {
   editorHint: string;
   readOnly: string;
   invalidValue: (column: string) => string;
+  /** The button that saves the written cells into the file. */
+  save: string;
+  saving: string;
+  saved: (records: string) => string;
+  /** Written cells that the file does not hold yet. */
+  unsaved: (cells: string) => string;
+  /** The file changed on disk since it was read: the save was refused, and the written cells are kept. */
+  fileChanged: string;
+  saveUnsupported: string;
 }
 
 const en: GridMessages = {
@@ -35,6 +44,13 @@ const en: GridMessages = {
   editorHint: "Enter saves, Esc cancels, Alt+Enter starts a new line",
   readOnly: "This cell is not written.",
   invalidValue: (column) => `This is not a value of ${column}.`,
+  save: "Save",
+  saving: "Saving…",
+  saved: (records) => `Saved rows: ${records}`,
+  unsaved: (cells) => `Unsaved ${cells}`,
+  fileChanged:
+    "Not saved: the file was changed by someone else. Your edits are kept; open the file again to see the changes.",
+  saveUnsupported: "This file cannot be saved.",
 };
 
 const ja: GridMessages = {
@@ -53,6 +69,13 @@ const ja: GridMessages = {
   editorHint: "Enter で保存、Esc で取り消し、Alt+Enter で改行",
   readOnly: "このセルは書き込めません。",
   invalidValue: (column) => `${column} の値として読めません。`,
+  save: "保存",
+  saving: "保存しています…",
+  saved: (records) => `${records} 行を保存しました`,
+  unsaved: (cells) => `未保存 ${cells}`,
+  fileChanged:
+    "保存しませんでした: ファイルがほかで変更されています。編集は残っています。変更を見るにはファイルを開き直してください。",
+  saveUnsupported: "このファイルは保存できません。",
 };
 
 /** The built-in texts for a language tag: Japanese for `ja`, English otherwise. */

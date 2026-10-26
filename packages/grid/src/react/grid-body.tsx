@@ -18,7 +18,7 @@ import { isApple, type KeyInput, keyCommand, typesText } from "../canvas/keys.js
 import type { GridStore } from "../core/store.js";
 import { AccessibleRows, cellId } from "./accessible-rows.js";
 import { CellEditor, type EditorControl } from "./cell-editor.js";
-import { LocaleContext } from "./context.js";
+import { LocaleContext, SaveContext } from "./context.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 
 interface Drag {
@@ -155,6 +155,7 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
   const drag = useRef<Drag | null>(null);
   const editor = useRef<EditorControl>(null);
   const { messages } = use(LocaleContext);
+  const saving = use(SaveContext);
   const follow = useRef<{ frame: number; x: number; y: number } | null>(null);
   const id = useId();
   const rowCount = useGridSelector((snapshot) => snapshot.view?.rowCount ?? 0);
@@ -354,6 +355,13 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
     }
     const command = keyCommand(event, isApple());
     if (!command) return;
+    if (command.command === "save") {
+      // Without saving, the key is the browser's.
+      if (!saving || store.getSnapshot().table?.capabilities.save !== true) return;
+      event.preventDefault();
+      saving.save();
+      return;
+    }
     event.preventDefault();
     void store.dispatch(command);
   };

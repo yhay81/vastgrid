@@ -129,6 +129,60 @@ export class Edits {
     });
   }
 
+  /** Runs a task between writes, so that the written cells it reads stay as they are (a save, §7.5). */
+  exclusive<T>(task: () => Promise<T>): Promise<T> {
+    return this.gate.run(task);
+  }
+
+  /**
+   * The written cells that hold another value than the source, by row ID and then column index: the text of each
+   * value (null for null) and whether that text reads back as the value. `expression` gives the SQL of both for a
+   * column, from the SQL of the written value.
+   */
+  async changedCells(
+    connection: DuckDBConnection,
+    expression: (column: Column, value: string) => { text: string; same?: string },
+  ): Promise<{ cells: Map<number, Map<number, string | null>>; lost: Column[] }> {
+    const cells = new Map<number, Map<number, string | null>>();
+    const lost: Column[] = [];
+    const source = this.source;
+    if (!source) return { cells, lost };
+    for (const [index, store] of this.stores) {
+      const column = this.table.columns[index];
+      const { text, same = "TRUE" } = expression(column, "e.v");
+      const read = await connection.runAndReadAll(
+        `SELECT e.id, ${text}, ${same} FROM ${store} e JOIN ${source.sql} s ON s.${source.rowId} = e.id WHERE e.v IS DISTINCT FROM s.${quoteIdentifier(column.name)}`,
+      );
+      for (const [row, value, kept] of read.getRowsJS()) {
+        if (kept !== true && !lost.includes(column)) lost.push(column);
+        const fields = cells.get(Number(row)) ?? new Map<number, string | null>();
+        fields.set(index, value === null ? null : String(value));
+        cells.set(Number(row), fields);
+      }
+    }
+    return { cells, lost };
+  }
+
+  /**
+   * Makes the written values the source's own once the file holds them (§7.5): they go into `base`, the table
+   * that the source reads, and the written cells are none. Row IDs stay; the edits version is incremented.
+   */
+  async saved(connection: DuckDBConnection, base: string): Promise<void> {
+    await connection.run("BEGIN TRANSACTION");
+    try {
+      for (const [index, store] of this.stores) {
+        await connection.run(`UPDATE ${base} SET "c${index}" = e.v FROM ${store} e WHERE ${base}.rowid = e.id`);
+        await connection.run(`DELETE FROM ${store}`);
+      }
+      await connection.run("COMMIT");
+    } catch (error) {
+      await connection.run("ROLLBACK").catch(() => undefined);
+      throw error;
+    }
+    this.written.clear();
+    this.version++;
+  }
+
   /** The row ID of each update's key (§5.3), or null when no row has it now. */
   private async rowsOf(
     connection: DuckDBConnection,

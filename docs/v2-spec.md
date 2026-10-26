@@ -1051,6 +1051,20 @@ file next to the original that it then renames over it. It refuses files that so
 they were read (`file_changed`) and files it cannot write back (`save_unsupported`); the file is then as it
 was.
 
+- Only cells whose written value differs from the file's are written: a cell written back to the file's value
+  keeps its bytes. A value is written as text that the file is read back as: in the file's date and timestamp
+  formats, otherwise as DuckDB writes it (`3.0` for a float), quoted when it holds a delimiter, a quote or a line
+  break. A value that the file's encoding cannot hold fails the save with `invalid_value`.
+- `records` counts the records written anew. After a save, the file holds the written values: the table keeps
+  its revision, row IDs and the session's history, its written cells are none, and the edits version is
+  incremented (a `changed` event, §8.5), so that a later write compares `previous` with the saved value.
+- The file is saved only where it was read, inside the folders the engine may read: a file that is now a link
+  elsewhere fails with `not_allowed`. The new file keeps the file's mode, and no temporary file is left behind,
+  also when the save fails or is cancelled.
+- `vastgrid-duckdb` saves only when its host allows it (`saveFiles`), and `capabilities.save` is true for the CSV
+  and TSV files that are not compressed. Files of other formats are never written: their `save` fails with
+  `save_unsupported`.
+
 ## 8. Messages
 
 [`messages.schema.json`](../packages/spec/schema/messages.schema.json) gives the form of every message.

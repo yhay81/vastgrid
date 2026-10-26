@@ -168,6 +168,11 @@
   text-overflow: ellipsis;
 }
 
+.vg-statusbar__unsaved {
+  color: var(--vg-fg);
+  font-variant-numeric: tabular-nums;
+}
+
 .vg-statusbar__summary {
   display: flex;
   gap: 14px;
@@ -219,6 +224,27 @@
 .vg-input:focus-visible {
   outline: 2px solid var(--vg-focus);
   outline-offset: -1px;
+}
+
+.vg-button {
+  min-height: 28px;
+  padding: 3px 12px;
+  color: var(--vg-fg);
+  font: inherit;
+  background: var(--vg-surface);
+  border: 1px solid var(--vg-border);
+  border-radius: var(--vg-radius);
+  cursor: pointer;
+}
+
+.vg-button:disabled {
+  color: var(--vg-muted);
+  cursor: default;
+}
+
+.vg-button:focus-visible {
+  outline: 2px solid var(--vg-focus);
+  outline-offset: 1px;
 }
 
 /* The cell editor: in the page while no cell is edited, so that typing moves into it (§6.5 of the specification). */

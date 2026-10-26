@@ -15,6 +15,7 @@ import {
   SpecError,
 } from "vastgrid-spec";
 import { EngineError, errorMessage } from "./errors.js";
+import { isSavable, saveTable } from "./save.js";
 import { Session } from "./session.js";
 import { fileRevision, LoadedTable, tableFormatOf } from "./table.js";
 import { CAPABILITIES, type ViewOptions, Views } from "./view.js";
@@ -46,6 +47,11 @@ export interface DuckDBEngineOptions extends ViewOptions {
   previewRows?: number;
   /** The longest text of a string that `rows` gives without `textLimit` (§8.2). 2,000 by default. */
   textLimit?: number;
+  /**
+   * Lets `save` write the written cells into the CSV and TSV files they came from (§7.5), keeping every byte that
+   * holds no edited field. Off by default: the engine then never changes a file, and `capabilities.save` is false.
+   */
+  saveFiles?: boolean;
   /** Receives problems that no request caused, for logs. */
   log?: (message: string, error?: unknown) => void;
 }
@@ -245,8 +251,7 @@ export class DuckDBEngine {
       case "write":
         return this.write(this.table(request), request, signal);
       case "save":
-        this.table(request);
-        throw new EngineError("save_unsupported", "This engine does not save files yet.");
+        return this.save(this.table(request), signal);
       case "export":
         this.table(request);
         throw new EngineError("not_allowed", "This engine does not export yet.");
@@ -259,6 +264,23 @@ export class DuckDBEngine {
   private async write(table: LoadedTable, request: Json, signal: AbortSignal) {
     const result = await table.edits.write(request, signal);
     if (result.updated > 0) {
+      for (const [id, item] of this.handles) {
+        if (item === table) {
+          this.emit({ v: 2, event: "changed", table: id, revision: table.revision, edits: result.edits });
+        }
+      }
+    }
+    return result;
+  }
+
+  /** Saves the written cells into the file (§7.5), and tells every handle of the table that its edits changed. */
+  private async save(table: LoadedTable, signal: AbortSignal) {
+    if (!this.options.saveFiles) {
+      throw new EngineError("save_unsupported", "This engine does not save files (saveFiles is off).");
+    }
+    const version = table.edits.version;
+    const result = await saveTable(this.session, table, signal);
+    if (result.edits.version !== version) {
       for (const [id, item] of this.handles) {
         if (item === table) {
           this.emit({ v: 2, event: "changed", table: id, revision: table.revision, edits: result.edits });
@@ -337,7 +359,7 @@ export class DuckDBEngine {
       rowCount: ready ? table.rowCount : null,
       readableRows: table.status === "error" ? 0 : (table.relation?.rows ?? 0),
       columns: table.columns,
-      capabilities: CAPABILITIES,
+      capabilities: { ...CAPABILITIES, save: this.options.saveFiles === true && isSavable(table) },
       format: table.format,
       byteSize: table.byteSize,
     };

@@ -29,6 +29,9 @@ test("keys give the commands of the grid pattern (§6.4)", () => {
     [key("Enter"), false, { command: "advance", axis: "row" }],
     [key("a", { metaKey: true }), true, { command: "select.all" }],
     [key("a"), true, null],
+    [key("s", { metaKey: true }), true, { command: "save" }],
+    [key("s", { ctrlKey: true }), false, { command: "save" }],
+    [key("S", { ctrlKey: true, shiftKey: true }), false, null],
     [key("ArrowDown", { altKey: true }), true, null],
   ];
   for (const [input, apple, expected] of cases)

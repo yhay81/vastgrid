@@ -18,6 +18,8 @@ function engine(): Plugin {
     const made = DuckDBEngine.create({
       allowedDirectories: [data],
       tempDirectory: path.join(os.tmpdir(), "vastgrid-files-example"),
+      // `VASTGRID_SAVE=1` lets the page save edited cells into the CSV and TSV files of the folder (⌘S or Ctrl+S).
+      saveFiles: process.env.VASTGRID_SAVE === "1",
       log: (message, error) => server.config.logger.warn(`${message}: ${String(error ?? "")}`),
     });
     const handler = made.then((created) => createHttpHandler(created, { path: "/api" }));

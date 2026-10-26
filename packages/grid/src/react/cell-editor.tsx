@@ -14,9 +14,9 @@ import {
 } from "react";
 import { CommandError, type Editor } from "vastgrid-spec";
 import type { GridCanvas } from "../canvas/grid-canvas.js";
-import { isApple } from "../canvas/keys.js";
+import { isApple, keyCommand } from "../canvas/keys.js";
 import type { GridStore } from "../core/store.js";
-import { LocaleContext } from "./context.js";
+import { LocaleContext, SaveContext } from "./context.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 
 /** What the grid asks of the editor while it handles a key. */
@@ -67,6 +67,7 @@ export interface CellEditorProps {
 export function CellEditor({ canvas, scrollerRef, announce, ref }: CellEditorProps) {
   const store = useGridStore();
   const { messages, number } = use(LocaleContext);
+  const saving = use(SaveContext);
   const editor = useGridSelector((snapshot) => snapshot.session.editor);
   const columns = useGridSelector((snapshot) => snapshot.displayed);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -121,19 +122,20 @@ export function CellEditor({ canvas, scrollerRef, announce, ref }: CellEditorPro
     if (store.getSnapshot().session.editor) store.dispatchSync({ command: "edit.change", text });
   };
 
-  const commit = (move: "up" | "down" | "left" | "right" | null) => {
+  /** Writes the text (`edit.commit`); resolves with whether it was written. */
+  const commit = async (move: "up" | "down" | "left" | "right" | null) => {
     const textarea = textareaRef.current;
     const current = store.getSnapshot().session.editor;
-    if (!textarea || !current) return;
+    if (!textarea || !current) return false;
     setProblem(null);
     change(textarea.value);
-    void store.dispatch({ command: "edit.commit", move }).then((outcome) => {
-      if (outcome.ok) return;
-      const reason = outcome.error instanceof CommandError ? outcome.error.reason : null;
-      if (reason === "invalid_value") setProblem({ editor: current, text: messages.invalidValue(current.column) });
-      else if (reason === "read_only") setProblem({ editor: current, text: messages.readOnly });
-      else announce(messages.failed(outcome.error.message));
-    });
+    const outcome = await store.dispatch({ command: "edit.commit", move });
+    if (outcome.ok) return true;
+    const reason = outcome.error instanceof CommandError ? outcome.error.reason : null;
+    if (reason === "invalid_value") setProblem({ editor: current, text: messages.invalidValue(current.column) });
+    else if (reason === "read_only") setProblem({ editor: current, text: messages.readOnly });
+    else announce(messages.failed(outcome.error.message));
+    return false;
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -151,10 +153,17 @@ export function CellEditor({ canvas, scrollerRef, announce, ref }: CellEditorPro
       fit(textarea);
     } else if (event.key === "Enter") {
       event.preventDefault();
-      commit(event.shiftKey ? "up" : "down");
+      void commit(event.shiftKey ? "up" : "down");
     } else if (event.key === "Tab") {
       event.preventDefault();
-      commit(event.shiftKey ? "left" : "right");
+      void commit(event.shiftKey ? "left" : "right");
+    } else if (saving && keyCommand(event, isApple())?.command === "save") {
+      // The modifier and S writes the text, then saves, as a spreadsheet does.
+      if (store.getSnapshot().table?.capabilities.save !== true) return;
+      event.preventDefault();
+      void commit(null).then((written) => {
+        if (written) saving.save();
+      });
     }
   };
 
@@ -168,7 +177,7 @@ export function CellEditor({ canvas, scrollerRef, announce, ref }: CellEditorPro
 
   // Leaving the editor for another place of the page saves it, as a spreadsheet does.
   const onBlur = (event: FocusEvent<HTMLTextAreaElement>) => {
-    if (open && event.relatedTarget !== null) commit(null);
+    if (open && event.relatedTarget !== null) void commit(null);
   };
 
   return (

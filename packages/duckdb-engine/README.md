@@ -44,7 +44,13 @@ createServer(createHttpHandler(engine, { path: "/api" })).listen(8080);
 - **Sharing and cancellation.** The normalized plan, revision, source relation and edits version identify a cached
   view. Concurrent callers share its construction; cancelling one caller leaves others running.
   Switching plans or closing the last following handle stops an unfinished build once no request uses it.
-- **Not yet.** Saving, exporting and following changes of files on disk are the next steps of the rebuild
+- **Saving.** With `saveFiles: true`, `save` (§7.5) writes the written cells into the CSV or TSV file they came
+  from, and only the fields that changed: every other byte (byte order mark, quoting, delimiters, line breaks, the
+  encoding, Shift_JIS and UTF-16 included) stays. The file is written next to itself under a temporary name and
+  renamed over it once complete, so that a failed or cancelled save leaves it as it was; a file changed by someone
+  else since it was read is refused (`file_changed`). Afterwards the table reads the saved values as the file's
+  own, with the same revision and row IDs. Saving two cells takes about 60 ms in a 200,000-row file (6 MB) and 0.3 s in a 2-million-row file (65 MB) on an Apple-silicon laptop.
+- **Not yet.** Exporting and following changes of files on disk are the next steps of the rebuild
   ([#33](https://github.com/yhay81/vastgrid/issues/33)).
 
 `node --conditions=vastgrid-source --import tsx packages/duckdb-engine/bench/open.ts` measures opening and

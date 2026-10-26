@@ -1,7 +1,7 @@
 import { use, useEffect, useState } from "react";
 import type { CellRange } from "vastgrid-spec";
 import type { GridStore } from "../core/store.js";
-import { LocaleContext } from "./context.js";
+import { LocaleContext, SaveContext } from "./context.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 
 interface Summary {
@@ -51,10 +51,16 @@ function format(number: Intl.NumberFormat, value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
-/** The status bar: the active cell, the sum of the selection, what the grid is doing and the rows. */
+/**
+ * The status bar: the active cell, the sum of the selection, what the grid is doing (saving and the outcome of the
+ * last save included), the cells not saved yet and the rows.
+ */
 export function StatusBar() {
   const store = useGridStore();
   const { messages, number } = use(LocaleContext);
+  const saving = use(SaveContext);
+  const saves = useGridSelector((snapshot) => snapshot.table?.capabilities.save === true);
+  const edits = useGridSelector((snapshot) => snapshot.table?.edits);
   const rowCount = useGridSelector((snapshot) => snapshot.view?.rowCount);
   const status = useGridSelector((snapshot) => snapshot.status);
   const building = useGridSelector((snapshot) => snapshot.view?.status === "building");
@@ -68,9 +74,13 @@ export function StatusBar() {
       ? messages.failed(error.message)
       : rowCount === undefined
         ? messages.loading
-        : pending || building
-          ? messages.reading
-          : "";
+        : saving?.pending
+          ? messages.saving
+          : saving?.outcome && edits && edits.version <= saving.outcome.version
+            ? saving.outcome.text
+            : pending || building
+              ? messages.reading
+              : "";
   return (
     <div className="vg-statusbar">
       <span className="vg-statusbar__cell">
@@ -89,6 +99,9 @@ export function StatusBar() {
       <span className="vg-statusbar__muted" role="status">
         {doing}
       </span>
+      {saves && edits && edits.cells > 0 && (
+        <span className="vg-statusbar__unsaved">{messages.unsaved(number.format(edits.cells))}</span>
+      )}
       <span className="vg-toolbar__count">{rowCount === undefined ? "" : messages.rows(number.format(rowCount))}</span>
     </div>
   );
