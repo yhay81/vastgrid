@@ -17,6 +17,7 @@ import type { Transport } from "../core/client.js";
 import { createGridStore, type GridStore } from "../core/store.js";
 import type { GridError, InitialView, OpenOptions } from "../core/types.js";
 import { GridContext, LocaleContext, SaveContext } from "./context.js";
+import { DetailPanel } from "./detail-panel.js";
 import { GridBody } from "./grid-body.js";
 import { type GridMessages, messagesFor } from "./messages.js";
 import { useSaveAction } from "./save.js";
@@ -53,6 +54,8 @@ export interface DataGridProps {
   initial?: InitialView | Promise<InitialView>;
   toolbar?: boolean;
   statusBar?: boolean;
+  /** A check box for each row in the gutter, and Space to check the active row (§5.2.1). */
+  checkboxes?: boolean;
   rowHeight?: number;
   headerHeight?: number;
   /** The language of the UI, a BCP 47 tag; the browser's by default. */
@@ -148,6 +151,7 @@ function Frame({
   store,
   toolbar = true,
   statusBar = true,
+  checkboxes = false,
   className,
   style,
   ref,
@@ -191,15 +195,19 @@ function Frame({
         <SaveContext value={saving}>
           <div className={className ? `vg-root ${className}` : "vg-root"} style={style} data-status={status}>
             {toolbar && <Toolbar announce={setNotice} />}
-            <Suspense fallback={<StaticRows label={label} />}>
-              <GridBody
-                rowHeight={rowHeight}
-                headerHeight={headerHeight}
-                label={label}
-                scrollerRef={scrollerRef}
-                announce={setNotice}
-              />
-            </Suspense>
+            <div className="vg-main">
+              <Suspense fallback={<StaticRows label={label} />}>
+                <GridBody
+                  rowHeight={rowHeight}
+                  headerHeight={headerHeight}
+                  checkboxes={checkboxes}
+                  label={label}
+                  scrollerRef={scrollerRef}
+                  announce={setNotice}
+                />
+              </Suspense>
+              <DetailPanel />
+            </div>
             {statusBar && <StatusBar />}
             <div className="vg-sr-only" aria-live="polite">
               {notice}

@@ -1,5 +1,6 @@
 import { use, useEffect, useState } from "react";
 import type { CellRange } from "vastgrid-spec";
+import { checkedCount } from "../core/checked.js";
 import type { GridStore } from "../core/store.js";
 import { LocaleContext, SaveContext } from "./context.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
@@ -70,6 +71,9 @@ export function StatusBar() {
   const active = useGridSelector((snapshot) => snapshot.session.active);
   const selection = useGridSelector((snapshot) => snapshot.session.selection);
   const summary = useSummary(store, selection);
+  const checked = useGridSelector((snapshot) =>
+    checkedCount(snapshot.session.checked, snapshot.document.plan, snapshot.view?.rowCount ?? 0),
+  );
   const doing = error
     ? messages.failed(error.message)
     : rowCount === undefined
@@ -101,6 +105,11 @@ export function StatusBar() {
       <span className="vg-statusbar__muted" role="status">
         {doing}
       </span>
+      {checked !== 0 && (
+        <span className="vg-statusbar__checked">
+          {checked === null ? messages.checkedUnknown : messages.checkedRows(number.format(checked))}
+        </span>
+      )}
       {saves && edits && edits.cells > 0 && (
         <span className="vg-statusbar__unsaved">{messages.unsaved(number.format(edits.cells))}</span>
       )}

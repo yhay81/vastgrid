@@ -51,6 +51,7 @@
   --vg-detail-width: 340px;
   --vg-detail-height: 45%;
 
+  container: vg-root / inline-size;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -745,4 +746,77 @@
   gap: 4px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--vg-line);
+}
+
+/* The grid's body and the detail panel beside it. */
+
+.vg-main {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.vg-main > .vg-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.vg-detail {
+  display: flex;
+  flex: 0 0 min(var(--vg-detail-width), 50%);
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  border-left: 1px solid var(--vg-border);
+  background: var(--vg-surface);
+}
+
+.vg-detail__header {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 6px 12px;
+  background: var(--vg-surface);
+  border-bottom: 1px solid var(--vg-line);
+}
+
+.vg-detail__title {
+  margin: 0;
+  font-size: inherit;
+  font-weight: 600;
+}
+
+.vg-detail__list {
+  margin: 0;
+  padding: 6px 12px 12px;
+}
+
+.vg-detail__item {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--vg-line);
+}
+
+.vg-detail__item dt {
+  color: var(--vg-muted);
+  font-size: 0.9em;
+}
+
+.vg-detail__item dd {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@container vg-root (max-width: 640px) {
+  .vg-main {
+    flex-direction: column;
+  }
+
+  .vg-detail {
+    flex-basis: var(--vg-detail-height);
+    border-top: 1px solid var(--vg-border);
+    border-left: none;
+  }
 }

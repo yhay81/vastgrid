@@ -29,6 +29,7 @@ createRoot(element).render(
       transport={transport}
       table={file}
       locale="en"
+      checkboxes
       aria-label={file}
       style={{ height: "100%" }}
     />

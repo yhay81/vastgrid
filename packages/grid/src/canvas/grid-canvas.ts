@@ -1,4 +1,5 @@
 import { type Column, columnsOf, type DisplayedColumn, type JsonValue, partsOf, textOf } from "vastgrid-spec";
+import { allState, checkState } from "../core/checked.js";
 import { compileRule, type Rule } from "../core/evaluate.js";
 import { formatterFor } from "../core/format.js";
 import type { GridStore } from "../core/store.js";
@@ -14,6 +15,8 @@ const MIN_WIDTH = 40;
 const MAX_AUTO_WIDTH = 360;
 /** Lines of a row while a displayed column wraps its text (§5.1 of the specification). */
 const WRAP_LINES = 2;
+/** The width of the check boxes at the left of the gutter (§5.2.1 of the specification). */
+const CHECK_WIDTH = 24;
 /** The width of the button at the right of a header that opens the column menu. */
 const MENU_WIDTH = 16;
 /** How long scrolling must pause before the accessibility rows and the session follow (§6.1 of v2-react.md). */
@@ -30,6 +33,8 @@ export interface Hit {
   edge: boolean;
   /** On the button of a header that opens the column menu. */
   menu: boolean;
+  /** On the check box of a row (the gutter) or of every row (the corner). */
+  check?: boolean;
 }
 
 /** The rows on screen once scrolling pauses, for the accessibility rows. */
@@ -94,6 +99,8 @@ export class GridCanvas {
   gutterWidth = 48;
   /** The height of the totals row at the bottom (§5.1 of the specification), 0 without totals. */
   footer = 0;
+  /** Whether the gutter has a check box for each row. */
+  private checkboxes = false;
   /** The row height of the theme or the props; rows are taller while a column wraps. */
   private baseRowHeight = 24;
   private locale: string | undefined = undefined;
@@ -131,6 +138,13 @@ export class GridCanvas {
   private readonly frameListeners = new Set<() => void>();
 
   constructor(private options: CanvasOptions = {}) {}
+
+  /** Shows a check box for each row in the gutter, and one for every row in the corner. */
+  setCheckboxes(on: boolean) {
+    if (this.checkboxes === on) return;
+    this.checkboxes = on;
+    this.relayout();
+  }
 
   /** The language that formats show numbers and dates in (§5.1). */
   setLocale(locale: string | undefined) {
@@ -306,7 +320,7 @@ export class GridCanvas {
     const totals = !snapshot?.document.plan?.aggregate && columns.some((item) => item.setting.total !== undefined);
     this.footer = totals ? this.rowHeight : 0;
     const digits = String(Math.max(1, rowCount)).length;
-    this.gutterWidth = Math.max(40, Math.ceil(digits * 8 + PADDING * 2));
+    this.gutterWidth = Math.max(40, Math.ceil(digits * 8 + PADDING * 2)) + (this.checkboxes ? CHECK_WIDTH : 0);
     const fitted = fitFrozen(this.layout, left, right, this.width - this.gutterWidth);
     this.frozenLeft = fitted.left;
     this.frozenRight = fitted.right;
@@ -580,7 +594,14 @@ export class GridCanvas {
       Math.min(rowCount - 1, Math.floor((y - this.headerHeight + this.scrollY.position) / this.rowHeight)),
     );
     if (x < this.gutterWidth) {
-      return { area: y < this.headerHeight ? "corner" : "gutter", row, column: 0, edge: false, menu: false };
+      return {
+        area: y < this.headerHeight ? "corner" : "gutter",
+        row,
+        column: 0,
+        edge: false,
+        menu: false,
+        check: this.checkboxes && x < CHECK_WIDTH,
+      };
     }
     const column = this.columnAt(x);
     if (column < 0) return none;
@@ -694,6 +715,10 @@ export class GridCanvas {
     if (this.footer > 0) this.drawTotals(ctx, theme, snapshot, left, right);
     ctx.fillStyle = theme.headerBackground;
     ctx.fillRect(0, 0, this.gutterWidth, top);
+    if (this.checkboxes) {
+      const all = allState(snapshot.session.checked, snapshot.document.plan, snapshot.view.rowCount);
+      this.drawCheck(ctx, theme, top / 2, all === "all" ? "checked" : all === "none" ? "unchecked" : "unknown");
+    }
     ctx.strokeStyle = theme.lineStrong;
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -980,6 +1005,16 @@ export class GridCanvas {
         }
         ctx.fillStyle = row === active ? theme.headerText : theme.gutterText;
         ctx.fillText(String(row + 1), this.gutterWidth - PADDING, y + this.rowHeight / 2);
+        const key = this.checkboxes ? this.store?.rowKey(row) : undefined;
+        if (key) {
+          this.drawCheck(
+            ctx,
+            theme,
+            y + this.rowHeight / 2,
+            checkState(snapshot.session.checked, snapshot.document.plan, key),
+          );
+          ctx.textAlign = "right";
+        }
       }
       ctx.textAlign = "left";
     });
@@ -992,6 +1027,38 @@ export class GridCanvas {
     if (!rules || !store) return undefined;
     const read = (column: string) => store.cell(row, column);
     return rules.find((item) => item.rule(read) === true);
+  }
+
+  /** A check box in the gutter, centered at `middle`: checked, not checked, or unknown (a dash). */
+  private drawCheck(
+    ctx: CanvasRenderingContext2D,
+    theme: GridTheme,
+    middle: number,
+    state: "checked" | "unchecked" | "unknown",
+  ) {
+    const size = 12;
+    const x = Math.round((CHECK_WIDTH - size) / 2) + 2;
+    const y = Math.round(middle - size / 2);
+    ctx.lineWidth = 1;
+    if (state === "unchecked") {
+      ctx.strokeStyle = theme.gutterText;
+      ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+      return;
+    }
+    ctx.fillStyle = theme.accent;
+    ctx.fillRect(x, y, size, size);
+    ctx.strokeStyle = theme.accentText;
+    ctx.lineWidth = 1.75;
+    ctx.beginPath();
+    if (state === "checked") {
+      ctx.moveTo(x + 2.5, y + 6);
+      ctx.lineTo(x + 5, y + 8.5);
+      ctx.lineTo(x + 9.5, y + 3.5);
+    } else {
+      ctx.moveTo(x + 3, y + 6);
+      ctx.lineTo(x + 9, y + 6);
+    }
+    ctx.stroke();
   }
 
   /** The text of a column's total; undefined while it is read. */

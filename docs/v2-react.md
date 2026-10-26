@@ -210,6 +210,7 @@ export function Orders() {
 | `session`, `defaultSession`, `onSessionChange` | §5.2 of the specification | where the person is (§5.2) |
 | `initial` | an `InitialView` or a promise of one | rows read on the server, shown before the first read (§7) |
 | `toolbar`, `statusBar` | booleans | the built-in toolbar and status bar |
+| `checkboxes` | boolean (default false) | a check box for each row in the gutter (§6.11) |
 | `rowHeight`, `headerHeight` | CSS pixels | instead of `--vg-row-height` and `--vg-header-height` |
 | `locale`, `messages` | a BCP 47 tag, texts | the language of the UI; English and Japanese are built in |
 | `onError` | `(error: GridError) => void` | failures that belong to no command (§4.2) |
@@ -439,6 +440,23 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   of conditional colors: a condition on a column of the view as in the column's filter (§6.7), a text color and a
   background, and what they mean. Rules it does not take apart are shown as formulas and kept. Apply dispatches
   `column.format`, and Clear format removes the format.
+
+### 6.11 Checked rows and the detail panel
+
+- With `checkboxes`, the gutter has a check box for each row and the corner one for every row of the view, drawn by
+  the canvas. A row's box, and Space on the grid, check the active row or uncheck it (`check`, `uncheck` by its key,
+  §5.2.1 of the specification), so the same records stay checked when the view is sorted or filtered. The corner's
+  box dispatches `check.all` (with the view's `where`), or `check.clear` once every row is checked. Rows whose state
+  is unknown (checked under a `where` that the view's does not imply) show a dash, and checking one is refused with
+  `unknown_state`, which the grid announces.
+- The status bar shows how many rows are checked: the keys of `include`, or the rows of the view less the keys of
+  `exclude`; it says when the view's rows are unknown.
+- When the session's `detail` is open, a panel beside the body (below it in a grid narrower than 640 pixels,
+  `--vg-detail-width` and `--vg-detail-height`) shows every column of the view for the active row, hidden ones
+  included, with labels and formats, the text in full; it follows the active cell and reads the row's values that
+  the canvas did not (`useGridRows`). The toolbar's Details button dispatches `detail.open` and `detail.close`.
+  Only an open panel follows the rows, so a closed one keeps scrolling free of commits (§10); an open one renders
+  again when rows of the view arrive.
 
 ### 6.5 Theming
 

@@ -71,6 +71,7 @@ export function Toolbar({ announce }: { announce: (text: string) => void }) {
     (snapshot) => snapshot.table !== null && snapshot.table.capabilities.plan?.aggregate !== false,
   );
   const opened = useGridSelector((snapshot) => snapshot.view !== null);
+  const detail = useGridSelector((snapshot) => snapshot.session.detail?.open === true);
   if (!searches && !showsSave && !fileChanged && !exports && !derives && !groups && !opened) return null;
   return (
     <div className="vg-toolbar">
@@ -88,6 +89,16 @@ export function Toolbar({ announce }: { announce: (text: string) => void }) {
       {fileChanged && (
         <button type="button" className="vg-button" disabled={reloading} onClick={reload}>
           {unsaved > 0 ? messages.discardAndReload : messages.reload}
+        </button>
+      )}
+      {opened && (
+        <button
+          type="button"
+          className="vg-button"
+          aria-pressed={detail}
+          onClick={() => void store.dispatch({ command: detail ? "detail.close" : "detail.open" })}
+        >
+          {messages.details}
         </button>
       )}
       <ConditionsMenu />

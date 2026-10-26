@@ -12,9 +12,10 @@ import {
   useState,
 } from "react";
 import { browser } from "react-dom";
-import { CommandError } from "vastgrid-spec";
+import { CommandError, type GridCommand } from "vastgrid-spec";
 import { GridCanvas, type Hit } from "../canvas/grid-canvas.js";
 import { isApple, type KeyInput, keyCommand, typesText } from "../canvas/keys.js";
+import { allState, checkedCount, checkState } from "../core/checked.js";
 import type { GridStore } from "../core/store.js";
 import { AccessibleRows, cellId } from "./accessible-rows.js";
 import { CellEditor, type EditorControl } from "./cell-editor.js";
@@ -135,6 +136,8 @@ function countCells(output: unknown) {
 export interface GridBodyProps {
   rowHeight?: number;
   headerHeight?: number;
+  /** A check box for each row in the gutter (§5.2.1 of the specification). */
+  checkboxes?: boolean;
   label: string;
   /** Receives the scroller, which has the focus of the grid. */
   scrollerRef: RefObject<HTMLDivElement | null>;
@@ -146,7 +149,7 @@ export interface GridBodyProps {
  * the store without rendering React, and the accessibility rows follow when scrolling pauses. Rendered only in
  * the browser: on the server, the nearest Suspense boundary sends its fallback, the first rows as HTML.
  */
-export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce }: GridBodyProps) {
+export function GridBody({ rowHeight, headerHeight, checkboxes = false, label, scrollerRef, announce }: GridBodyProps) {
   use(browser("The grid draws on a canvas, which only the browser has."));
   const store = useGridStore();
   const [canvas] = useState(() => new GridCanvas({ rowHeight, headerHeight }));
@@ -155,7 +158,7 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
   const sizerRef = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const editor = useRef<EditorControl>(null);
-  const { messages, locale } = use(LocaleContext);
+  const { messages, locale, number } = use(LocaleContext);
   const saving = use(SaveContext);
   const follow = useRef<{ frame: number; x: number; y: number } | null>(null);
   const id = useId();
@@ -178,6 +181,10 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
   useLayoutEffect(() => {
     canvas.setLocale(locale);
   }, [canvas, locale]);
+
+  useLayoutEffect(() => {
+    canvas.setCheckboxes(checkboxes);
+  }, [canvas, checkboxes]);
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -225,6 +232,13 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
       if (column === undefined) return;
       void store.dispatch({ command: "select", row: hit.row, column, mode });
       start("cells", `${hit.row}:${hit.column}`);
+    } else if (hit.area === "gutter" && hit.check) {
+      toggleCheck(hit.row);
+    } else if (hit.area === "corner" && hit.check) {
+      const { session, document, view } = store.getSnapshot();
+      const all = allState(session.checked, document.plan, view?.rowCount ?? 0);
+      // The header's box checks every row of the view, or none once they all are.
+      dispatchCheck(all === "all" ? { command: "check.clear" } : { command: "check.all" });
     } else if (hit.area === "gutter") {
       void store.dispatch({ command: "select.rows", from: hit.row, to: hit.row, mode });
       start("rows", String(hit.row));
@@ -334,6 +348,32 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
     }
   };
 
+  /** Dispatches a command of checked rows, and announces how many rows are checked, or why it failed. */
+  const dispatchCheck = (command: GridCommand) => {
+    void store.dispatch(command).then((outcome) => {
+      if (!outcome.ok) {
+        announce(
+          outcome.error instanceof CommandError && outcome.error.reason === "unknown_state"
+            ? messages.checkedUnknown
+            : messages.failed(outcome.error.message),
+        );
+        return;
+      }
+      const { session, document, view } = store.getSnapshot();
+      const count = checkedCount(session.checked, document.plan, view?.rowCount ?? 0);
+      announce(count === null ? messages.checkedUnknown : messages.checkedRows(number.format(count)));
+    });
+  };
+
+  /** Checks a row of the view, or unchecks it when it is checked. */
+  const toggleCheck = (row: number) => {
+    const key = store.rowKey(row);
+    if (!key) return;
+    const { session, document } = store.getSnapshot();
+    const state = checkState(session.checked, document.plan, key);
+    dispatchCheck({ command: state === "checked" ? "uncheck" : "check", keys: [key] });
+  };
+
   /** Opens the menu of a column under its header. */
   const openMenu = (column: string, index: number) => {
     const scroller = scrollerRef.current;
@@ -400,6 +440,14 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
+    // Space checks the active row, or unchecks it.
+    if (checkboxes && event.key === " " && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+      const row = store.getSnapshot().session.active?.row;
+      if (row === undefined) return;
+      event.preventDefault();
+      toggleCheck(row);
+      return;
+    }
     // Alt+↓ opens the menu of the active cell's column.
     if (event.altKey && event.key === "ArrowDown" && !event.ctrlKey && !event.metaKey) {
       const column = store.getSnapshot().session.active?.column;

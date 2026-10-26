@@ -302,6 +302,11 @@ export class GridStore {
     return this.current?.cache.isCut(row, column) ?? false;
   }
 
+  /** The key of a row of the view on screen (§5.3); undefined while it is not read. */
+  rowKey(row: number): RowKey | undefined {
+    return this.current?.cache.loaded(row, this.base("document").rowKey)?.key;
+  }
+
   /** The row ID of a row of the view on screen. */
   rowId(row: number) {
     return this.current?.cache.rowId(row);

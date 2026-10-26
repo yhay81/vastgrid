@@ -148,6 +148,13 @@ export interface GridMessages {
   addRule: string;
   removeRule: string;
   clearFormat: string;
+  /** The detail panel of the active row (§5.2). */
+  details: string;
+  detailOf: (row: string) => string;
+  closeDetails: string;
+  /** Checked rows (§5.2.1): how many, or that the view may not match them. */
+  checkedRows: (count: string) => string;
+  checkedUnknown: string;
 }
 
 const en: GridMessages = {
@@ -311,6 +318,11 @@ const en: GridMessages = {
   addRule: "Add rule",
   removeRule: "Remove rule",
   clearFormat: "Clear format",
+  details: "Details",
+  detailOf: (row) => `Row ${row}`,
+  closeDetails: "Close details",
+  checkedRows: (count) => `${count} checked`,
+  checkedUnknown: "Some rows of this view may not be checked: filter as when they were checked, or clear the checks.",
 };
 
 const ja: GridMessages = {
@@ -474,6 +486,12 @@ const ja: GridMessages = {
   addRule: "規則を追加",
   removeRule: "規則を削除",
   clearFormat: "書式を解除",
+  details: "詳細",
+  detailOf: (row) => `${row} 行目`,
+  closeDetails: "詳細を閉じる",
+  checkedRows: (count) => `${count} 行をチェック`,
+  checkedUnknown:
+    "このビューにはチェックの状態が分からない行があります。チェックしたときの絞り込みに戻すか、チェックを解除してください。",
 };
 
 /** The built-in texts for a language tag: Japanese for `ja`, English otherwise. */
