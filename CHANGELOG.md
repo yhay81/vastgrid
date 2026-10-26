@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `vastgrid-js` (unreleased v2): the memory engine evaluates `derive`, `where` and `search` with every function of
+  §4.4, and sorts by derived columns: exact numbers are computed exactly (BigInt beyond 2^53), strings compare and
+  change case by code point, and errors give null (§3.6). `locate` and `summarize` work on the rows a view keeps.
+  Every conformance case without `aggregate` passes; a million rows derive, filter and sort in under a second.
 - `vastgrid-vscode` (unreleased v2): a VS Code extension (docs/vscode.md). CSV, TSV, Parquet, JSON Lines and Excel
   files of any size open in a grid as a custom editor, read by DuckDB in the extension's process; Parquet and Excel
   files open in it by default, and a bar chooses an Excel file's sheet. Cells of CSV and TSV files are edited in a

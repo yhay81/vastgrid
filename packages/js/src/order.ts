@@ -10,15 +10,8 @@
  * Values of fixed width are ranked through 32-bit words compared as unsigned integers, most significant
  * first, with a radix sort; strings and bytes are ranked with a comparison sort.
  */
-import {
-  type Column,
-  daysFromCivil,
-  floatOf,
-  fromBase64,
-  isValueOf,
-  type JsonValue,
-  parseIntervalText,
-} from "vastgrid-spec";
+import { type Column, daysFromCivil, floatOf, fromBase64, isValueOf, type JsonValue } from "vastgrid-spec";
+import { normalizeInterval } from "./interval.js";
 
 /** The ranks of one column's values. */
 export interface ColumnRanks {
@@ -33,7 +26,8 @@ export interface ColumnRanks {
   rankOf(value: JsonValue): number;
 }
 
-type Rows = readonly (readonly JsonValue[])[];
+/** The values of a column by row ID. */
+type Values = readonly JsonValue[];
 
 /** How the values of a column of fixed width become words. */
 interface WordCodec {
@@ -47,7 +41,6 @@ interface WordCodec {
 const TWO_32 = 4_294_967_296;
 const MASK_32 = 0xffff_ffffn;
 const SIGN = 0x8000_0000;
-const NANOS_PER_DAY = 86_400_000_000_000n;
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
 
@@ -152,19 +145,6 @@ export function unscaledDigits(text: string, scale: number): string | null {
   const fraction = match[3] ?? "";
   if (fraction.length > scale && !/^0*$/.test(fraction.slice(scale))) return null;
   return `${match[1]}${match[2]}${fraction.slice(0, scale).padEnd(scale, "0")}`;
-}
-
-/**
- * The parts of an interval as DuckDB 1.5 compares them: whole days of the nanoseconds go into the days, then
- * whole 30-day months of the days into the months, each by a division that truncates toward zero. Intervals
- * compare by these months, then days, then nanoseconds; `1 month` equals `30 days`, and `1 month -1 day` is
- * greater than `29 days`. Null when the text is not an interval.
- */
-export function normalizeInterval(text: string): [bigint, bigint, bigint] | null {
-  const parts = parseIntervalText(text);
-  if (!parts) return null;
-  const days = BigInt(parts.days) + parts.nanos / NANOS_PER_DAY;
-  return [BigInt(parts.months) + days / 30n, days % 30n, parts.nanos % NANOS_PER_DAY];
 }
 
 function codecOf(column: Column): WordCodec {
@@ -321,14 +301,14 @@ function radixSort(rows: Uint32Array, words: readonly Uint32Array[]): Uint32Arra
 }
 
 /** Ranks a column of fixed width through its words. */
-function rankWords(column: Column, rows: Rows, index: number): ColumnRanks {
+function rankWords(column: Column, values: Values): ColumnRanks {
   const codec = codecOf(column);
-  const count = rows.length;
+  const count = values.length;
   const words = Array.from({ length: codec.width }, () => new Uint32Array(count));
   const filled = new Uint32Array(count);
   let present = 0;
   for (let row = 0; row < count; row++) {
-    const value = rows[row][index];
+    const value = values[row];
     if (value === null) continue;
     codec.write(value, words, row);
     filled[present++] = row;
@@ -347,7 +327,7 @@ function rankWords(column: Column, rows: Rows, index: number): ColumnRanks {
     }
     ranks[row] = distinct - 1;
   }
-  for (let row = 0; row < count; row++) if (rows[row][index] === null) ranks[row] = distinct + 1;
+  for (let row = 0; row < count; row++) if (values[row] === null) ranks[row] = distinct + 1;
   const key = words.map(() => new Uint32Array(1));
   return {
     ranks,
@@ -398,16 +378,16 @@ function byteString(bytes: Uint8Array): string {
 }
 
 /** Ranks a column of strings by their code points, or of binary values by their bytes. */
-function rankTexts(column: Column, rows: Rows, index: number): ColumnRanks {
+function rankTexts(column: Column, values: Values): ColumnRanks {
   const strings = column.type === "string";
-  const count = rows.length;
+  const count = values.length;
   const keys: string[] = new Array(count);
   const filled = new Uint32Array(count);
   let present = 0;
   let empty = false;
   let surrogates = false;
   for (let row = 0; row < count; row++) {
-    const value = rows[row][index];
+    const value = values[row];
     if (value === null) continue;
     if (strings && value === "") {
       empty = true;
@@ -436,7 +416,7 @@ function rankTexts(column: Column, rows: Rows, index: number): ColumnRanks {
   }
   const distinct = distinctKeys.length;
   for (let row = 0; row < count; row++) {
-    const value = rows[row][index];
+    const value = values[row];
     if (value === null) ranks[row] = distinct + 1;
     else if (strings && value === "") ranks[row] = distinct;
   }
@@ -463,13 +443,10 @@ function rankTexts(column: Column, rows: Rows, index: number): ColumnRanks {
 }
 
 /**
- * Ranks the values of a column of the rows, at `index` in each row, in the order of §3.1; blanks rank after
- * the other values (§3.2).
+ * Ranks the values of a column by row ID in the order of §3.1; blanks rank after the other values (§3.2).
  */
-export function rankColumn(column: Column, rows: Rows, index: number): ColumnRanks {
-  return column.type === "string" || column.type === "binary"
-    ? rankTexts(column, rows, index)
-    : rankWords(column, rows, index);
+export function rankColumn(column: Column, values: Values): ColumnRanks {
+  return column.type === "string" || column.type === "binary" ? rankTexts(column, values) : rankWords(column, values);
 }
 
 /** A sort key of a view: the ranks of its column and its direction. */
@@ -503,10 +480,16 @@ function sortByKey(order: Uint32Array | null, count: number, key: RankedKey): Ui
 
 /**
  * The row IDs of `count` rows in the order of the keys (§3.3): by the first key, ties by the next, and rows
- * equal for every key in row ID order. Null without keys: the rows stay in row ID order.
+ * equal for every key in row ID order. The rows are the row IDs from 0, or those of `rows` (in row ID order)
+ * when it is given. Without keys, the rows as they are: null for the row IDs from 0.
  */
-export function sortRows(count: number, keys: readonly RankedKey[]): Uint32Array | null {
-  let order: Uint32Array | null = null;
-  for (let index = keys.length - 1; index >= 0; index--) order = sortByKey(order, count, keys[index]);
+export function sortRows(
+  count: number,
+  keys: readonly RankedKey[],
+  rows: Uint32Array | null = null,
+): Uint32Array | null {
+  let order = rows;
+  const length = rows ? rows.length : count;
+  for (let index = keys.length - 1; index >= 0; index--) order = sortByKey(order, length, keys[index]);
   return order;
 }

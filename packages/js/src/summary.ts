@@ -97,13 +97,13 @@ export class Summary {
     if (value > this.max) this.max = value;
   }
 
-  /** Adds the values of one column at the rows of `rows` (row IDs), read at `index` of each row. */
-  add(column: Column, values: readonly (readonly JsonValue[])[], index: number, rows: Uint32Array) {
+  /** Adds the values of one column, by row ID, at the rows of `rows` (row IDs). */
+  add(column: Column, values: readonly JsonValue[], rows: Uint32Array) {
     switch (column.type) {
       case "string":
         // The empty string is blank (§3.2).
         for (const row of rows) {
-          const value = values[row][index];
+          const value = values[row];
           if (value !== null && value !== "") this.count++;
         }
         return;
@@ -111,7 +111,7 @@ export class Summary {
       case "bigint": {
         const sum = this.exactAt(0);
         for (const row of rows) {
-          const value = values[row][index];
+          const value = values[row];
           if (value === null) continue;
           this.count++;
           if (typeof value === "number") {
@@ -128,7 +128,7 @@ export class Summary {
         const scale = column.scale ?? 0;
         const sum = this.exactAt(scale);
         for (const row of rows) {
-          const value = values[row][index];
+          const value = values[row];
           if (value === null) continue;
           this.count++;
           const digits = (value as string).replace(".", "");
@@ -141,7 +141,7 @@ export class Summary {
       case "float": {
         const single = column.bits === 32;
         for (const row of rows) {
-          const value = values[row][index];
+          const value = values[row];
           if (value === null) continue;
           this.count++;
           const number = single ? Math.fround(floatOf(value)) : floatOf(value);
@@ -154,7 +154,7 @@ export class Summary {
         return;
       }
       default:
-        for (const row of rows) if (values[row][index] !== null) this.count++;
+        for (const row of rows) if (values[row] !== null) this.count++;
     }
   }
 

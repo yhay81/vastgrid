@@ -12,6 +12,7 @@ import {
   type ErrorCode,
   encodeBlock,
   errorResponse,
+  FUNCTIONS,
   type JsonValue,
   keyText,
   MESSAGE_LIMITS,
@@ -23,7 +24,8 @@ import {
   type RowKey,
   sameCellValue,
 } from "vastgrid-spec";
-import { type ColumnRanks, rankColumn, sortRows } from "./order.js";
+import type { ColumnReader } from "./evaluate.js";
+import { type ColumnRanks, type RankedKey, rankColumn, sortRows } from "./order.js";
 import { Summary } from "./summary.js";
 import { checkTable, type MemoryTable, shown, TableProblem, valueChecker } from "./table.js";
 
@@ -43,18 +45,21 @@ export interface MemoryEngine {
   subscribe(listener: (event: Record<string, unknown>) => void): () => void;
 }
 
-/** What the engine evaluates (§4.10): plans that only sort, `summarize` and `locate`. */
+/**
+ * What the engine evaluates (§4.10): plans that derive, filter, search and sort, with every function of §4.4;
+ * `summarize` and `locate`.
+ */
 export const MEMORY_CAPABILITIES: Readonly<Capabilities> = Object.freeze({
   plan: Object.freeze({
-    derive: false,
-    where: false,
+    derive: true,
+    where: true,
     aggregate: false,
     pivot: false,
     having: false,
     sort: true,
-    search: false,
+    search: true,
   }),
-  functions: [],
+  functions: Object.freeze([...FUNCTIONS]) as unknown as string[],
   measures: [],
   summarize: true,
   find: false,
@@ -68,7 +73,13 @@ export const MEMORY_CAPABILITIES: Readonly<Capabilities> = Object.freeze({
 
 /** A copy of the capabilities, for a message; tables that the host makes editable are written (§7). */
 function capabilities(write = false): Capabilities {
-  return { ...MEMORY_CAPABILITIES, plan: { ...MEMORY_CAPABILITIES.plan }, functions: [], measures: [], write };
+  return {
+    ...MEMORY_CAPABILITIES,
+    plan: { ...MEMORY_CAPABILITIES.plan },
+    functions: [...FUNCTIONS],
+    measures: [],
+    write,
+  };
 }
 
 const PLAN_OPTIONS = planOptions(capabilities());
@@ -113,24 +124,48 @@ interface Table {
   checkers: ((value: unknown, row: number) => void)[];
   /** The columns whose values are all checked. */
   checked: boolean[];
+  /** Each checked column's values by row ID, which ranks, summaries and expressions read. */
+  values: (JsonValue[] | undefined)[];
   /** Views by plan hash, the most recently used last. */
   views: Map<string, View>;
   /** The table IDs open on it. */
   open: number;
 }
 
+/** A derived column of a view (§4.1): its values for every row of the table, by row ID. */
+interface Derived {
+  column: Column;
+  values: JsonValue[];
+}
+
 /** A view of a table (§4.2): its rows in order. */
 interface View {
   hash: string;
   columns: Column[];
+  /** The derived columns by name. */
+  derived: Map<string, Derived>;
+  /** The rows of the table when the view was made. */
+  tableRows: number;
   rowCount: number;
-  /** The row ID at each position; null when the view is in row ID order. */
+  /** The row ID at each position; null when the view is every row of the table in row ID order. */
   order: Uint32Array | null;
   /** The position of each row ID, made when `locate` first needs it. */
   positions?: Uint32Array;
   /** For each column that `locate` looked values up in, by its index: the first position of each rank. */
   firsts: Map<number, Int32Array>;
 }
+
+/** A column that a request reads: a table's column at its index, or a derived column with its values. */
+interface Source {
+  name: string;
+  column: Column;
+  /** The index of a table's column; −1 for a derived column. */
+  index: number;
+  values: readonly JsonValue[] | null;
+}
+
+/** The position of a row that a view leaves out, in `View.positions`. */
+const NO_POSITION = 0xffff_ffff;
 
 /** A request being answered, which `cancel` marks. */
 interface Running {
@@ -315,6 +350,7 @@ class Engine implements MemoryEngine {
         ranks: columns.map(() => undefined),
         checkers: columns.map((column, index) => valueChecker(column, index)),
         checked: columns.map(() => false),
+        values: columns.map(() => undefined),
         views: new Map(),
         open: 0,
       };
@@ -359,24 +395,32 @@ class Engine implements MemoryEngine {
     );
   }
 
-  /** Checks every value of a column, once, before something reads all of it. */
-  private checkColumn(table: Table, index: number) {
-    if (table.checked[index]) return;
+  /** Checks every value of a column, once, before something reads all of it, and gives its values by row ID. */
+  private valuesOf(table: Table, index: number): JsonValue[] {
+    const made = table.values[index];
+    if (made) return made;
     const check = table.checkers[index];
+    const rows = table.rows;
+    const values: JsonValue[] = new Array(rows.length);
     try {
-      for (let row = 0; row < table.rows.length; row++) check(table.rows[row][index], row);
+      for (let row = 0; row < rows.length; row++) {
+        const value = rows[row][index];
+        if (!table.checked[index]) check(value, row);
+        values[row] = value;
+      }
     } catch (error) {
       if (error instanceof TableProblem) this.loadFailed(table, error);
       throw error;
     }
     table.checked[index] = true;
+    table.values[index] = values;
+    return values;
   }
 
   private ranksOf(table: Table, index: number): ColumnRanks {
     let ranks = table.ranks[index];
     if (!ranks) {
-      this.checkColumn(table, index);
-      ranks = rankColumn(table.columns[index], table.rows, index);
+      ranks = rankColumn(table.columns[index], this.valuesOf(table, index));
       table.ranks[index] = ranks;
     }
     return ranks;
@@ -393,20 +437,40 @@ class Engine implements MemoryEngine {
       table.views.set(hash, kept);
       return kept;
     }
+    const count = table.rows.length;
+    // derive, then where, then sort (§4.1); expressions read the table's columns and the derived ones before.
+    const derived = new Map<string, Derived>();
+    const read: ColumnReader = (name) => {
+      const values = derived.get(name)?.values ?? this.valuesOf(table, table.index.get(name) as number);
+      return (row) => values[row];
+    };
+    let filtered: Uint32Array | null = null;
+    if (checked.derive.length > 0 || checked.where) {
+      // The evaluator loads with the first plan that needs it, so that pages that only sort do not load it.
+      const { evaluate, filter } = await import("./evaluate.js");
+      for (const item of checked.derive) {
+        derived.set(item.name, { column: item.column, values: evaluate(item.expr, read, count) });
+      }
+      if (checked.where) filtered = filter(checked.where, read, count);
+    }
     // A key on a column that an earlier key has already sorted by cannot break a tie.
-    const used = new Set<number>();
-    const keys = [];
+    const used = new Set<string>();
+    const keys: RankedKey[] = [];
     for (const key of checked.sort) {
-      const index = table.index.get(key.column.name) as number;
-      if (used.has(index)) continue;
-      used.add(index);
-      keys.push({ ranks: this.ranksOf(table, index), descending: key.direction === "desc" });
+      const name = key.column.name;
+      if (used.has(name)) continue;
+      used.add(name);
+      const made = derived.get(name);
+      const ranks = made ? rankColumn(made.column, made.values) : this.ranksOf(table, table.index.get(name) as number);
+      keys.push({ ranks, descending: key.direction === "desc" });
     }
     const view: View = {
       hash,
       columns: checked.columns,
-      rowCount: table.rows.length,
-      order: sortRows(table.rows.length, keys),
+      derived,
+      tableRows: count,
+      rowCount: filtered ? filtered.length : count,
+      order: sortRows(count, keys, filtered),
       firsts: new Map(),
     };
     table.views.set(hash, view);
@@ -414,9 +478,14 @@ class Engine implements MemoryEngine {
     return view;
   }
 
-  /** The indexes in the table of columns that a request names, which must be columns of the view. */
-  private columnsOf(table: Table, view: View, names: string[]): number[] {
+  /**
+   * The columns that a request names, which must be columns of the view: the index of a table's column, or the
+   * values of a derived one.
+   */
+  private columnsOf(table: Table, view: View, names: string[]): Source[] {
     return names.map((name, at) => {
+      const derived = view.derived.get(name);
+      if (derived) return { name, column: derived.column, index: -1, values: derived.values };
       const index = table.index.get(name);
       if (index === undefined || !view.columns.some((column) => column.name === name)) {
         throw new Failure("invalid_request", `The view has no column ${shown(name)}.`, {
@@ -424,7 +493,7 @@ class Engine implements MemoryEngine {
           reason: "syntax",
         });
       }
-      return index;
+      return { name, column: table.columns[index], index, values: null };
     });
   }
 
@@ -432,13 +501,13 @@ class Engine implements MemoryEngine {
     const table = this.table(request);
     const view = await this.view(table, request.plan, running);
     const names = request.columns as string[];
-    const indexes = this.columnsOf(table, view, names);
+    const sources = this.columnsOf(table, view, names);
     const start = request.start as number;
     const end = Math.max(start, Math.min(request.end as number, view.rowCount));
     const limit = (request.textLimit as number | undefined) ?? MESSAGE_LIMITS.textLimitDefault;
-    const columns = indexes.map((index) => table.columns[index]);
-    // The values read are checked, of the columns not checked whole (§2.2).
-    const checks = indexes.map((index) => (table.checked[index] ? null : table.checkers[index]));
+    const columns = sources.map((source) => source.column);
+    // The values read are checked, of the table's columns not checked whole (§2.2).
+    const checks = sources.map(({ index }) => (index < 0 || table.checked[index] ? null : table.checkers[index]));
     const rowIds: number[] = [];
     const values: JsonValue[][] = [];
     // By name in a Map: a column may be named "__proto__".
@@ -449,8 +518,8 @@ class Engine implements MemoryEngine {
       const offset = position - start;
       rowIds.push(row);
       values.push(
-        indexes.map((index, at) => {
-          const value = source[index];
+        sources.map(({ index, values }, at) => {
+          const value = values ? values[row] : source[index];
           const check = checks[at];
           if (check) {
             try {
@@ -492,7 +561,7 @@ class Engine implements MemoryEngine {
     const table = this.table(request);
     const view = await this.view(table, request.plan, running);
     // The cells of ranges × columns: each cell once, however the ranges overlap or a column repeats.
-    const indexes = [...new Set(this.columnsOf(table, view, request.columns as string[]))];
+    const sources = new Map(this.columnsOf(table, view, request.columns as string[]).map((item) => [item.name, item]));
     const spans = mergeRanges(request.ranges as [number, number][], view.rowCount);
     const rows = new Uint32Array(spans.reduce((total, [start, end]) => total + end - start, 0));
     let at = 0;
@@ -500,9 +569,8 @@ class Engine implements MemoryEngine {
       for (let position = start; position < end; position++) rows[at++] = view.order ? view.order[position] : position;
     }
     const summary = new Summary();
-    for (const index of indexes) {
-      this.checkColumn(table, index);
-      summary.add(table.columns[index], table.rows, index, rows);
+    for (const { column, index, values } of sources.values()) {
+      summary.add(column, values ?? this.valuesOf(table, index), rows);
     }
     return summary.result();
   }
@@ -545,10 +613,10 @@ class Engine implements MemoryEngine {
     if (column === undefined) return null;
     let byText = table.keys.get(column);
     if (!byText) {
-      this.checkColumn(table, column);
+      const values = this.valuesOf(table, column);
       byText = new Map();
-      for (let row = table.rows.length - 1; row >= 0; row--) {
-        const value = table.rows[row][column];
+      for (let row = values.length - 1; row >= 0; row--) {
+        const value = values[row];
         if (value !== null) byText.set(keyText({ value }), row);
       }
       table.keys.set(column, byText);
@@ -620,6 +688,8 @@ class Engine implements MemoryEngine {
         copied.add(row);
       }
       rows[row][index] = value;
+      const values = table.values[index];
+      if (values) values[row] = value;
       table.written.add(row * width + index);
       table.ranks[index] = undefined;
       table.keys.delete(index);
@@ -639,16 +709,18 @@ class Engine implements MemoryEngine {
 
   /** The position of a row in a view, or null when the view does not have it. */
   private positionOf(view: View, rowId: number): number | null {
-    if (rowId >= view.rowCount) return null;
+    if (rowId >= view.tableRows) return null;
     if (!view.order) return rowId;
     if (!view.positions) {
-      const positions = new Uint32Array(view.rowCount);
+      // Rows that the view leaves out have no position.
+      const positions = new Uint32Array(view.tableRows).fill(NO_POSITION);
       view.order.forEach((row, position) => {
         positions[row] = position;
       });
       view.positions = positions;
     }
-    return view.positions[rowId];
+    const position = view.positions[rowId];
+    return position === NO_POSITION ? null : position;
   }
 
   /** The first position in a view of each rank of a column, −1 for ranks that no row of the view has. */
