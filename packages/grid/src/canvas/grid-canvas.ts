@@ -1,4 +1,4 @@
-import { type Column, type DisplayedColumn, type JsonValue, textOf } from "vastgrid-spec";
+import { type Column, columnsOf, type DisplayedColumn, type JsonValue, partsOf, textOf } from "vastgrid-spec";
 import type { GridStore } from "../core/store.js";
 import { now, track } from "../core/trace.js";
 import type { GridSnapshot } from "../core/types.js";
@@ -10,6 +10,8 @@ import { cssLength, type GridTheme, resolveTheme } from "./theme.js";
 const PADDING = 8;
 const MIN_WIDTH = 40;
 const MAX_AUTO_WIDTH = 360;
+/** The width of the button at the right of a header that opens the column menu. */
+const MENU_WIDTH = 16;
 /** How long scrolling must pause before the accessibility rows and the session follow (§6.1 of v2-react.md). */
 export const SETTLE_MS = 150;
 
@@ -22,6 +24,8 @@ export interface Hit {
   column: number;
   /** Within a few pixels of the right edge of a header, where dragging resizes the column. */
   edge: boolean;
+  /** On the button of a header that opens the column menu. */
+  menu: boolean;
 }
 
 /** The rows on screen once scrolling pauses, for the accessibility rows. */
@@ -281,7 +285,10 @@ export class GridCanvas {
       if (before !== undefined && before >= MAX_AUTO_WIDTH) return;
       let loaded = false;
       context.font = header.font;
-      let widest = Math.max(before ?? 0, header.width(item.setting.format?.label ?? name) + PADDING * 2 + 18);
+      let widest = Math.max(
+        before ?? 0,
+        header.width(item.setting.format?.label ?? name) + PADDING * 2 + 18 + MENU_WIDTH,
+      );
       context.font = fitter.font;
       for (let row = first; row < Math.min(last, first + 200); row++) {
         const value = store.cell(row, name);
@@ -503,22 +510,24 @@ export class GridCanvas {
   /** What is at a point given in the scroller's client coordinates. */
   hit(x: number, y: number): Hit {
     const rowCount = this.snapshot?.view?.rowCount ?? 0;
-    const none: Hit = { area: "none", row: 0, column: 0, edge: false };
+    const none: Hit = { area: "none", row: 0, column: 0, edge: false, menu: false };
     if (x < 0 || y < 0 || x > this.width || y > this.height) return none;
     const row = Math.max(
       0,
       Math.min(rowCount - 1, Math.floor((y - this.headerHeight + this.scrollY.position) / this.rowHeight)),
     );
     if (x < this.gutterWidth) {
-      return { area: y < this.headerHeight ? "corner" : "gutter", row, column: 0, edge: false };
+      return { area: y < this.headerHeight ? "corner" : "gutter", row, column: 0, edge: false, menu: false };
     }
     const column = this.columnAt(x);
     if (column < 0) return none;
     const right = this.columnX(column) + this.layout.width(column);
     const edge = Math.abs(x - right) <= 4;
-    if (y < this.headerHeight) return { area: "header", row: 0, column, edge };
+    if (y < this.headerHeight) {
+      return { area: "header", row: 0, column, edge, menu: !edge && x >= right - MENU_WIDTH - 4 };
+    }
     if (rowCount === 0 || y - this.headerHeight + this.scrollY.position >= rowCount * this.rowHeight) return none;
-    return { area: "cell", row, column, edge: false };
+    return { area: "cell", row, column, edge: false, menu: false };
   }
 
   /** The display position of the column at an x of the canvas; -1 when there is none. */
@@ -802,6 +811,13 @@ export class GridCanvas {
     const fitter = this.headerText;
     if (!fitter) return;
     const sort = snapshot.document.plan?.sort ?? [];
+    // Columns with conditions of their own (§6.2.1) show a funnel instead of the menu's arrow.
+    const filtered = new Set<string>();
+    for (const part of partsOf(snapshot.document.plan?.where)) {
+      if ("search" in part) continue;
+      const names = columnsOf(part);
+      if (names.size === 1) for (const name of names) filtered.add(name);
+    }
     const draw = (column: number) => {
       const item = this.columns[column];
       const x = this.columnX(column);
@@ -814,7 +830,7 @@ export class GridCanvas {
       ctx.textBaseline = "middle";
       ctx.fillStyle = theme.headerText;
       ctx.textAlign = "left";
-      const space = width - PADDING * 2 - (mark ? 18 : 0);
+      const space = width - PADDING * 2 - MENU_WIDTH - (mark ? 18 : 0);
       ctx.fillText(
         fitter.fit(item.setting.format?.label ?? item.column.name, space),
         x + PADDING,
@@ -823,9 +839,28 @@ export class GridCanvas {
       if (mark) {
         ctx.fillStyle = theme.accent;
         ctx.textAlign = "right";
-        ctx.fillText(mark, x + width - PADDING, this.headerHeight / 2);
+        ctx.fillText(mark, x + width - PADDING - MENU_WIDTH, this.headerHeight / 2);
         ctx.textAlign = "left";
       }
+      const middle = this.headerHeight / 2;
+      const center = x + width - PADDING / 2 - MENU_WIDTH / 2;
+      ctx.beginPath();
+      if (filtered.has(item.column.name)) {
+        ctx.fillStyle = theme.accent;
+        ctx.moveTo(center - 5, middle - 4);
+        ctx.lineTo(center + 5, middle - 4);
+        ctx.lineTo(center + 1, middle + 1);
+        ctx.lineTo(center + 1, middle + 5);
+        ctx.lineTo(center - 1, middle + 5);
+        ctx.lineTo(center - 1, middle + 1);
+      } else {
+        ctx.fillStyle = theme.muted;
+        ctx.moveTo(center - 4, middle - 2);
+        ctx.lineTo(center + 4, middle - 2);
+        ctx.lineTo(center, middle + 3);
+      }
+      ctx.closePath();
+      ctx.fill();
       ctx.strokeStyle = theme.line;
       ctx.lineWidth = 1;
       ctx.beginPath();

@@ -1,3 +1,5 @@
+import type { FilterOperator } from "../core/filters.js";
+
 /** The texts of the grid's UI. Hosts replace any of them with the `messages` prop. */
 export interface GridMessages {
   grid: string;
@@ -48,6 +50,37 @@ export interface GridMessages {
   addFormula: string;
   applyFormula: string;
   removeFormula: string;
+  /** The menu of a column (§6.2, §6.3): its label, sorting, filtering, pins, width and hiding. */
+  columnMenu: (column: string) => string;
+  sortAscending: string;
+  sortDescending: string;
+  thenSortAscending: string;
+  thenSortDescending: string;
+  clearSort: string;
+  filter: string;
+  filterBy: (column: string) => string;
+  clearFilter: string;
+  pinLeft: string;
+  pinRight: string;
+  unpin: string;
+  autoFit: string;
+  hideColumn: string;
+  showAllColumns: string;
+  /** The filter of a column: a list of its values with check boxes, or a condition. */
+  valuesSearch: string;
+  selectAll: string;
+  blank: string;
+  valuesTruncated: (shown: string) => string;
+  condition: string;
+  conditionNone: string;
+  operators: Record<FilterOperator, string>;
+  value: string;
+  minimum: string;
+  maximum: string;
+  /** The column has conditions that the menu does not show; applying the menu's filter replaces them. */
+  otherConditions: string;
+  back: string;
+  apply: string;
 }
 
 const en: GridMessages = {
@@ -91,6 +124,48 @@ const en: GridMessages = {
   addFormula: "Add",
   applyFormula: "Apply",
   removeFormula: "Remove",
+  columnMenu: (column) => `${column} column menu`,
+  sortAscending: "Sort ascending",
+  sortDescending: "Sort descending",
+  thenSortAscending: "Then sort ascending",
+  thenSortDescending: "Then sort descending",
+  clearSort: "Clear sort",
+  filter: "Filter…",
+  filterBy: (column) => `Filter ${column}`,
+  clearFilter: "Clear filter",
+  pinLeft: "Freeze at the left",
+  pinRight: "Freeze at the right",
+  unpin: "Unfreeze",
+  autoFit: "Fit width to content",
+  hideColumn: "Hide column",
+  showAllColumns: "Show all columns",
+  valuesSearch: "Search values",
+  selectAll: "(Select all)",
+  blank: "(Blank)",
+  valuesTruncated: (shown) => `Showing the ${shown} most common values. Search to find others.`,
+  condition: "Condition",
+  conditionNone: "None",
+  operators: {
+    eq: "Equals",
+    ne: "Does not equal",
+    lt: "Less than",
+    le: "Less than or equal to",
+    gt: "Greater than",
+    ge: "Greater than or equal to",
+    between: "Between",
+    contains: "Contains",
+    notContains: "Does not contain",
+    startsWith: "Begins with",
+    endsWith: "Ends with",
+    blank: "Is blank",
+    notBlank: "Is not blank",
+  },
+  value: "Value",
+  minimum: "From",
+  maximum: "To",
+  otherConditions: "This column has other conditions. Applying replaces them.",
+  back: "Back",
+  apply: "Apply",
 };
 
 const ja: GridMessages = {
@@ -134,6 +209,48 @@ const ja: GridMessages = {
   addFormula: "追加",
   applyFormula: "適用",
   removeFormula: "削除",
+  columnMenu: (column) => `${column} 列のメニュー`,
+  sortAscending: "昇順に並べ替え",
+  sortDescending: "降順に並べ替え",
+  thenSortAscending: "次の順で昇順に並べ替え",
+  thenSortDescending: "次の順で降順に並べ替え",
+  clearSort: "並べ替えを解除",
+  filter: "絞り込み…",
+  filterBy: (column) => `${column} で絞り込み`,
+  clearFilter: "絞り込みを解除",
+  pinLeft: "左端に固定",
+  pinRight: "右端に固定",
+  unpin: "固定を解除",
+  autoFit: "幅を内容に合わせる",
+  hideColumn: "列を隠す",
+  showAllColumns: "すべての列を表示",
+  valuesSearch: "値を検索",
+  selectAll: "（すべて選択）",
+  blank: "（空白）",
+  valuesTruncated: (shown) => `多い順に ${shown} 件を表示しています。ほかの値は検索してください。`,
+  condition: "条件",
+  conditionNone: "なし",
+  operators: {
+    eq: "等しい",
+    ne: "等しくない",
+    lt: "より小さい",
+    le: "以下",
+    gt: "より大きい",
+    ge: "以上",
+    between: "範囲",
+    contains: "を含む",
+    notContains: "を含まない",
+    startsWith: "で始まる",
+    endsWith: "で終わる",
+    blank: "空白",
+    notBlank: "空白以外",
+  },
+  value: "値",
+  minimum: "下限",
+  maximum: "上限",
+  otherConditions: "この列にはほかの条件があります。適用すると置き換えます。",
+  back: "戻る",
+  apply: "適用",
 };
 
 /** The built-in texts for a language tag: Japanese for `ja`, English otherwise. */

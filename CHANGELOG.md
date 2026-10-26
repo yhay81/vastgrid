@@ -8,6 +8,10 @@
   expression of a derived column back as a formula that compiles to it. `migrateGridState` migrates v1's formulas
   into `plan.derive`, ordered by what they use, with the filters, sort keys, groups and measures that use them, and
   gives a reason for each part it drops (`reasons`). `checkExpression` checks one expression.
+- `vastgrid-grid` (unreleased v2): a column menu, from the arrow at the right of each header, a right click or
+  Alt+↓: sorting by the column, its filter (a list of its values with how many rows have each, read by the engine
+  under the other filters, and a condition on typed text) as `filter.column`, and fitting, pinning and hiding the
+  column. `GridStore.values` lists a column's values. Filtered columns show a funnel in their header.
 - `vastgrid-grid` (unreleased v2): the toolbar's Formulas menu adds, changes, renames and removes derived columns
   written as formulas (`derive.add`, `derive.update`, `derive.remove`), and shows why a formula does not compile.
   The accessibility rows follow columns that come and go.

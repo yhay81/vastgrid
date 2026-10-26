@@ -28,6 +28,7 @@ import {
 } from "vastgrid-spec";
 import { BLOCK_ROWS, type Read, ViewCache } from "./cache.js";
 import { GridClient, type Transport } from "./client.js";
+import { valuesPlan } from "./filters.js";
 import { now, track } from "./trace.js";
 import {
   type CommandOutcome,
@@ -928,6 +929,40 @@ export class GridStore {
       { table: table.table, revision: view.revision, plan: view.plan, ranges, columns },
       signal,
     );
+  }
+
+  /**
+   * The values of a column with how many rows have each, the most common first, for the column menu's list: the
+   * rows of the document's plan without the column's own conditions, and those whose text contains `search`
+   * (`valuesPlan`). At most `limit` of them; `truncated` when there are more.
+   */
+  async values(
+    column: string,
+    { search = "", limit = 1_000 }: { search?: string; limit?: number } = {},
+    signal?: AbortSignal,
+  ): Promise<{ values: { value: JsonValue; count: number }[]; truncated: boolean }> {
+    const table = this.snapshot.table;
+    const client = this.client;
+    if (!table || !client || !this.opened) throw new GridError("not_ready", "The table is not open yet.");
+    const made = valuesPlan(this.base("document").plan ?? {}, column, search);
+    if (!made) throw new GridError("invalid_plan", "The values of a grouped view are not listed.");
+    const result = await client.request<RowsResult>(
+      "rows",
+      {
+        table: table.table,
+        revision: this.current?.revision ?? table.revision,
+        plan: made.plan,
+        start: 0,
+        end: limit + 1,
+        columns: [column, made.count],
+      },
+      signal,
+    );
+    const rows = decodeBlock(result.block.bytes).rows;
+    return {
+      values: rows.slice(0, limit).map(([value, count]) => ({ value, count: Number(count) })),
+      truncated: rows.length > limit,
+    };
   }
 
   /** Reads the rows that a command needs (`not_loaded`, §6.1), in whole blocks. */

@@ -1,6 +1,7 @@
 /**
  * A small engine for the store's tests: one table in memory, plans `{}` and `sort` by one number or string
- * column, and requests that wait until the test lets them through. `vastgrid-js` is the real engine.
+ * column, the count of each value of a column (an `aggregate` of one key and `count`, by count then value), and
+ * requests that wait until the test lets them through. `vastgrid-js` is the real engine.
  */
 import {
   type Capabilities,
@@ -74,6 +75,34 @@ export function fakeEngine(table: FakeTable, capabilities: Capabilities = CAPABI
     });
   };
 
+  const counts = async (plan: Plan, start: number, end: number) => {
+    const [key] = plan.aggregate?.keys ?? [];
+    const measure = plan.aggregate?.measures[0]?.name ?? "count";
+    const index = table.columns.findIndex((column) => column.name === key);
+    const counted = new Map<JsonValue, number>();
+    for (const row of table.rows) counted.set(row[index], (counted.get(row[index]) ?? 0) + 1);
+    const groups = [...counted].sort(
+      ([x, a], [y, b]) => b - a || (x === y ? 0 : x === null ? 1 : y === null ? -1 : x < y ? -1 : 1),
+    );
+    const columns: Column[] = [table.columns[index], { name: measure, type: "bigint" }];
+    const slice = groups.slice(start, Math.max(start, end));
+    return {
+      view: {
+        hash: await planHash(plan),
+        status: "ready",
+        rowCount: groups.length,
+        rowCountExact: true,
+        readableRows: groups.length,
+        columns,
+        edits: { version: 0, cells: 0 },
+      },
+      start,
+      end: start + slice.length,
+      rowIds: null,
+      block: { bytes: encodeBlock(columns, slice) },
+    };
+  };
+
   const answer = async (request: Json & { op: string }): Promise<unknown> => {
     switch (request.op) {
       case "open": {
@@ -90,6 +119,7 @@ export function fakeEngine(table: FakeTable, capabilities: Capabilities = CAPABI
         if (held) await new Promise<void>((resolve) => waiting.push(resolve));
         const plan = request.plan as Plan;
         checkPlan(plan, table.columns, planOptions(capabilities));
+        if (plan.aggregate) return counts(plan, request.start as number, request.end as number);
         const ids = order(plan);
         const start = request.start as number;
         const end = Math.min(request.end as number, ids.length);

@@ -18,6 +18,7 @@ import { isApple, type KeyInput, keyCommand, typesText } from "../canvas/keys.js
 import type { GridStore } from "../core/store.js";
 import { AccessibleRows, cellId } from "./accessible-rows.js";
 import { CellEditor, type EditorControl } from "./cell-editor.js";
+import { ColumnMenu, type MenuTarget } from "./column-menu.js";
 import { LocaleContext, SaveContext } from "./context.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 
@@ -162,6 +163,9 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
   const columns = useGridSelector((snapshot) => snapshot.displayed);
   const busy = useGridSelector((snapshot) => snapshot.view === null || snapshot.pending !== null);
   const active = useGridSelector((snapshot) => snapshot.session.active);
+  const [menu, setMenu] = useState<MenuTarget | null>(null);
+  const pressed = useRef(false);
+  const later = useRef<MenuTarget | null>(null);
 
   useLayoutEffect(() => {
     canvas.setSizes(rowHeight, headerHeight);
@@ -193,6 +197,7 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
   const nameOf = (column: number) => store.getSnapshot().displayed[column]?.column.name;
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    pressed.current = event.buttons !== 0;
     if (event.button !== 0) return;
     const scroller = event.currentTarget;
     const { x, y } = point(event);
@@ -220,6 +225,8 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
     } else if (hit.area === "header") {
       const column = nameOf(hit.column);
       if (column === undefined) return;
+      // The menu opens on the click, after the pointer is up: a popover shown before closes as the pointer goes up.
+      if (hit.menu) return;
       if (hit.edge) start("resize", "", { column: hit.column, width: canvas.columnWidth(hit.column) });
       else void store.dispatch({ command: "sort.toggle", column, ...(event.shiftKey ? { add: true } : {}) });
     }
@@ -301,6 +308,9 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
   };
 
   const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    pressed.current = false;
+    if (later.current && event.type === "pointerup") setMenu(later.current);
+    later.current = null;
     const current = drag.current;
     if (!current || current.pointer !== event.pointerId) return;
     drag.current = null;
@@ -316,6 +326,42 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
     } else {
       canvas.previewWidth(current.column, null);
     }
+  };
+
+  /** Opens the menu of a column under its header. */
+  const openMenu = (column: string, index: number) => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const rect = scroller.getBoundingClientRect();
+    setMenu({
+      column,
+      x: rect.left + Math.max(0, canvas.columnX(index) + canvas.columnWidth(index) - 200),
+      y: rect.top + canvas.headerHeight,
+    });
+  };
+
+  const onClick = (event: MouseEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const hit = canvas.hit(event.clientX - rect.left, event.clientY - rect.top);
+    const column = nameOf(hit.column);
+    if (hit.area === "header" && hit.menu && column !== undefined) openMenu(column, hit.column);
+  };
+
+  const onContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const hit = canvas.hit(event.clientX - rect.left, event.clientY - rect.top);
+    const column = nameOf(hit.column);
+    if (hit.area !== "header" || column === undefined) return;
+    event.preventDefault();
+    const target = { column, x: event.clientX, y: event.clientY };
+    // Where the menu comes as the button goes down (macOS), it opens once the button is up.
+    if (pressed.current) later.current = target;
+    else setMenu(target);
+  };
+
+  const closeMenu = () => {
+    setMenu(null);
+    scrollerRef.current?.focus({ preventScroll: true });
   };
 
   const onDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
@@ -348,6 +394,15 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
+    // Alt+↓ opens the menu of the active cell's column.
+    if (event.altKey && event.key === "ArrowDown" && !event.ctrlKey && !event.metaKey) {
+      const column = store.getSnapshot().session.active?.column;
+      const index = columns.findIndex((item) => item.column.name === column);
+      if (column === undefined || index < 0) return;
+      event.preventDefault();
+      openMenu(column, index);
+      return;
+    }
     if (typesText({ ...pick(event), keyCode: event.keyCode, isComposing: event.nativeEvent.isComposing })) {
       // Not prevented: the key's text goes into the editor that now has the focus.
       if (!startEditing("")) event.preventDefault();
@@ -392,11 +447,14 @@ export function GridBody({ rowHeight, headerHeight, label, scrollerRef, announce
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onDoubleClick={onDoubleClick}
+        onClick={onClick}
+        onContextMenu={onContextMenu}
       >
         <div className="vg-sizer" ref={sizerRef} />
         <AccessibleRows canvas={canvas} id={id} />
       </div>
       <CellEditor canvas={canvas} scrollerRef={scrollerRef} announce={announce} ref={editor} />
+      <ColumnMenu target={menu} onClose={closeMenu} />
     </div>
   );
 }

@@ -80,8 +80,15 @@ interface GridStore {
   setSession(session: GridSession): void;
   reload(): Promise<void>;
   exportUrl(target: string): string | null;
+  values(
+    column: string,
+    options?: { search?: string; limit?: number },
+    signal?: AbortSignal,
+  ): Promise<{ values: { value: JsonValue; count: number }[]; truncated: boolean }>;
 }
 ```
+
+`values` lists a column's values with how many rows have each, the most common first, for the column menu (§6.7).
 
 `exportUrl` gives where the file of an `export` without a target can be downloaded, from the transport
 (`Transport.exportUrl`; `httpTransport` gives `<url>/exports/<target>`), or null.
@@ -349,6 +356,23 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
 - The store shows a written value at once, before the engine answers, and shows the cell's value again when the
   write fails; commands read the written values too. It drops them once the rows of the new edits version are on
   screen (§4.2).
+
+### 6.7 The column menu
+
+- Each header has an arrow at its right that opens the column's menu, as do a right click on the header and Alt+↓
+  on a cell of the column. The menu is a popover: Esc and a click outside close it, and the focus goes back to the
+  grid. Its items are commands: sorting by the column alone or after the other keys (`sort.set`), `sort.clear`,
+  fitting the width (`column.resize`), pinning at either side (`column.pin`), `column.hide` and `column.show`.
+- Filter… (when the engine filters and the view is not grouped) shows the column's filter: the column's values with
+  how many rows have each, the most common first, with check boxes and a search box, and a condition on typed text
+  (comparisons, a range, text matching that ignores letter case, blank). Applying dispatches `filter.column` with
+  the parts it makes (`in`, `is_blank`, `not(coalesce(…, false))` to exclude, `ge` and `le` for a range), and reads
+  them back when the menu opens again; conditions of the column that it did not write are said to be replaced.
+  Typed text is read as a cell's text is (§7.3 of the specification), digit grouping included.
+- The list is read by `GridStore.values(column, { search, limit })`: a `rows` request whose plan keeps the
+  derived columns and the other parts of `where`, and groups by the column with a `count` (§4.5), so the engine
+  does the work and nothing is added to the messages. Engines that do not group rows offer the condition only.
+- Headers of columns with conditions of their own show a funnel instead of the arrow.
 
 ### 6.5 Theming
 
