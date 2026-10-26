@@ -112,6 +112,7 @@ export async function saveTable(
   return table.edits.exclusive(async () => {
     // Writes wait for the file to load (§7.2): a table with written cells has loaded.
     if (table.edits.state.cells === 0) return { records: 0, edits: table.edits.state };
+    if (table.fileChanged) throw fileChanged();
     if (table.attempt === 2) {
       // Irregular files are read loosely as text: their records may not be the rows.
       throw new EngineError("save_unsupported", "The file was read as text, since its records are irregular.");

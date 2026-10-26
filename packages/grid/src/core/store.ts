@@ -441,9 +441,11 @@ export class GridStore {
     if (event.event === "changed") {
       const revision = event.revision as string | null;
       const edits = event.edits as TableInfo["edits"];
-      if (revision === table.revision && edits.version === table.edits.version) return;
+      const fileChanged = event.fileChanged === true;
       if (revision === table.revision) {
-        this.publish({ table: { ...table, edits } });
+        if (edits.version === table.edits.version && fileChanged === (table.fileChanged === true)) return;
+        const { fileChanged: _, ...rest } = table;
+        this.publish({ table: fileChanged ? { ...rest, edits, fileChanged } : { ...rest, edits } });
         this.showPlan(this.base("document").plan ?? {});
         return;
       }
@@ -452,9 +454,7 @@ export class GridStore {
       void client
         ?.request<TableInfo>("info", { table: table.table })
         .then((info) => {
-          if (connection !== this.connection) return;
-          this.publish({ table: info });
-          this.showPlan(this.base("document").plan ?? {});
+          if (connection === this.connection) this.adopt(info);
         })
         .catch((error: unknown) => {
           if (connection === this.connection && !isCancelled(error)) this.fail(asGridError(error));
@@ -874,6 +874,38 @@ export class GridStore {
       });
     }
     return applied.result.output === undefined ? { ok: true } : { ok: true, output: applied.result.output };
+  }
+
+  /**
+   * Reads the table's file as it is now (`reload`, §7.6), without the cells written into the table as it was read:
+   * for a file that changed on disk while the table had written cells (`fileChanged` of the table).
+   */
+  async reload(): Promise<void> {
+    const table = this.snapshot.table;
+    const client = this.client;
+    const connection = this.connection;
+    if (!table || !client || !this.opened) throw new GridError("not_ready", "The table is not open yet.");
+    const info = await client.request<TableInfo>("reload", { table: table.table });
+    if (connection === this.connection) this.adopt(info);
+  }
+
+  /** Another revision of the table (§5.4): the document is repaired for its columns (§5.5), and the view read. */
+  private adopt(info: TableInfo) {
+    const current = this.snapshot.table;
+    if (
+      current &&
+      current.revision === info.revision &&
+      current.edits.version === info.edits.version &&
+      current.fileChanged === info.fileChanged &&
+      current.status === info.status
+    ) {
+      return;
+    }
+    const repaired = repairDocument(this.base("document"), info.columns, planOptions(info.capabilities));
+    this.publish({ table: info, status: info.status === "error" ? "error" : "ready" });
+    if (repaired.removed.length > 0) this.change(repaired.document, this.base("session"));
+    this.showPlan(this.base("document").plan ?? {});
+    this.scheduleReads();
   }
 
   /** Counts and sums the cells of ranges of the view on screen (`summarize`, §8.2). */

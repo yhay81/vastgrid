@@ -21,6 +21,7 @@ export const OPERATIONS = [
   "save",
   "export",
   "changes",
+  "reload",
   "cancel",
   "close",
 ] as const;
@@ -271,7 +272,7 @@ class Checker {
     this.members(
       info,
       ["table", "revision", "edits", "status", "progress", "rowCount", "readableRows", "columns", "capabilities"],
-      ["format", "byteSize", "notes", "sheets", "sheet", "error"],
+      ["format", "byteSize", "notes", "sheets", "sheet", "error", "fileChanged"],
       path,
     );
     this.string(info.table, `${path}/table`);
@@ -298,6 +299,7 @@ class Checker {
     }
     this.optionalString(info.sheet, `${path}/sheet`);
     this.optionalString(info.error, `${path}/error`);
+    this.boolean(info.fileChanged, `${path}/fileChanged`, true);
   }
 
   /** A block or data (§8.8) in one of the encodings. */
@@ -351,6 +353,7 @@ const REQUESTS: Record<Operation, [readonly string[], readonly string[]]> = {
     ["target", "columns", "headers", "numberFormats"],
   ],
   changes: [["table"], []],
+  reload: [["table"], []],
   cancel: [["request"], []],
   close: [["table"], []],
 };
@@ -487,6 +490,7 @@ function checkResult(check: Checker, op: Operation, value: unknown) {
   switch (op) {
     case "open":
     case "info":
+    case "reload":
       check.tableInfo(value, path);
       return;
     case "rows": {
@@ -581,9 +585,10 @@ function checkResult(check: Checker, op: Operation, value: unknown) {
     }
     case "changes": {
       const result = check.object(value, path, "The result");
-      check.members(result, ["revision", "edits"], [], path);
+      check.members(result, ["revision", "edits"], ["fileChanged"], path);
       check.nullableString(result.revision, `${path}/revision`);
       check.edits(result.edits, `${path}/edits`);
+      check.boolean(result.fileChanged, `${path}/fileChanged`, true);
       return;
     }
     case "cancel":
@@ -620,10 +625,11 @@ export function checkEvent(message: unknown): Json & { v: 2; event: string } {
   check.choice(event.event, ["changed", "progress", "view"], "/event");
   switch (event.event) {
     case "changed":
-      check.members(event, ["v", "event", "table", "revision", "edits"], [], "");
+      check.members(event, ["v", "event", "table", "revision", "edits"], ["fileChanged"], "");
       check.string(event.table, "/table");
       check.nullableString(event.revision, "/revision");
       check.edits(event.edits, "/edits");
+      check.boolean(event.fileChanged, "/fileChanged", true);
       break;
     case "progress":
       check.members(event, ["v", "event", "table", "status", "progress", "readableRows", "rowCount"], [], "");

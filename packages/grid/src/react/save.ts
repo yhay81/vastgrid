@@ -19,17 +19,20 @@ export function useSaveAction(store: GridStore, language: GridLocale, announce: 
       running.current = run;
       const result = await run;
       const { messages, number } = language;
-      const version = store.getSnapshot().table?.edits.version ?? 0;
+      const table = store.getSnapshot().table;
+      const revision = table?.revision ?? null;
+      const version = table?.edits.version ?? 0;
       let next: NonNullable<GridSave["outcome"]>;
       if (result.ok) {
         const saved = result.output as { records: number; edits: { version: number } };
-        next = { text: messages.saved(number.format(saved.records)), failed: false, version: saved.edits.version };
+        const text = messages.saved(number.format(saved.records));
+        next = { text, failed: false, revision, version: saved.edits.version };
       } else if (result.error instanceof CommandError && result.error.reason === "unsupported") {
-        next = { text: messages.saveUnsupported, failed: true, version };
+        next = { text: messages.saveUnsupported, failed: true, revision, version };
       } else if (result.error.code === "file_changed") {
-        next = { text: messages.fileChanged, failed: true, version };
+        next = { text: messages.fileChanged, failed: true, revision, version };
       } else {
-        next = { text: messages.failed(result.error.message), failed: true, version };
+        next = { text: messages.failed(result.error.message), failed: true, revision, version };
       }
       startTransition(() => setOutcome(next));
       announce(next.text);

@@ -17,8 +17,9 @@ import {
 import { EngineError, errorMessage } from "./errors.js";
 import { isSavable, saveTable } from "./save.js";
 import { Session } from "./session.js";
-import { fileRevision, LoadedTable, tableFormatOf } from "./table.js";
+import { fileRevision, LoadedTable, type TableFormat, tableFormatOf } from "./table.js";
 import { CAPABILITIES, type ViewOptions, Views } from "./view.js";
+import { FileWatcher } from "./watch.js";
 import type { ReadOptions } from "./xlsx.js";
 
 export interface DuckDBEngineOptions extends ViewOptions {
@@ -52,12 +53,34 @@ export interface DuckDBEngineOptions extends ViewOptions {
    * holds no edited field. Off by default: the engine then never changes a file, and `capabilities.save` is false.
    */
   saveFiles?: boolean;
+  /**
+   * Follows the files of open tables (§7.6): a file that changes on disk is read again, or, when its table has
+   * written cells, reported with `fileChanged`. On by default; without it, files are checked on `changes` and
+   * `open` only.
+   */
+  watchFiles?: boolean;
   /** Receives problems that no request caused, for logs. */
   log?: (message: string, error?: unknown) => void;
 }
 
 type Json = Record<string, unknown>;
 type Request = Json & { v: 2; id: number; op: Operation };
+
+/** How long a file must stay unchanged before the engine reads it again, in milliseconds. */
+const WATCH_DELAY = 100;
+
+/** The size of a file, or null when it is not there. */
+function fileSize(file: string): Promise<number | null> {
+  return stat(file).then(
+    (info) => info.size,
+    () => null,
+  );
+}
+
+/** The key of the tables of a file read with some options. */
+function tableKey(file: string, options: ReadOptions) {
+  return `${file}\u0000${JSON.stringify(options)}`;
+}
 
 /** The options of `open` that change how a file of a format is read (only workbooks have any). */
 function readOptionsOf(format: string, read: unknown): ReadOptions {
@@ -82,6 +105,9 @@ export class DuckDBEngine {
   /** What the last `view` event told of the view `{}` of each loading table. */
   private readonly told = new WeakMap<LoadedTable, string>();
   private readonly views: Views;
+  private readonly watcher: FileWatcher;
+  /** Stops watching the file of each table. */
+  private readonly unwatch = new Map<LoadedTable, () => void>();
   private nextHandle = 1;
   private disposed = false;
 
@@ -91,6 +117,7 @@ export class DuckDBEngine {
     /** The hash of the plan `{}` (§4.8), the view of a table that is loading (§9). */
     private readonly tableHash: string,
   ) {
+    this.watcher = new FileWatcher(WATCH_DELAY, options.log);
     this.views = new Views(session, options.textLimit ?? 2000, options, (table, view) => {
       for (const [id, item] of this.handles) {
         if (item !== table) continue;
@@ -130,6 +157,18 @@ export class DuckDBEngine {
     }
   }
 
+  /** The `changed` event of a handle (§8.5), with `fileChanged` for a table whose file changed on disk (§7.6). */
+  private changedEvent(id: string, table: LoadedTable): Json {
+    const event: Json = { v: 2, event: "changed", table: id, revision: table.revision, edits: table.edits.state };
+    if (table.fileChanged) event.fileChanged = true;
+    return event;
+  }
+
+  /** Sends `changed` to every handle of a table. */
+  private tellChanged(table: LoadedTable) {
+    for (const [id, item] of this.handles) if (item === table) this.emit(this.changedEvent(id, table));
+  }
+
   private changed(table: LoadedTable, change: "progress" | "revision") {
     // The view `{}` of a loading table holds its readable rows (§9): a `view` event tells when they change.
     const ready = table.status === "ready";
@@ -152,7 +191,7 @@ export class DuckDBEngine {
         });
       }
       if (change === "revision") {
-        this.emit({ v: 2, event: "changed", table: id, revision: table.revision, edits: table.edits.state });
+        this.emit(this.changedEvent(id, table));
       } else {
         const ready = table.status === "ready";
         this.emit({
@@ -234,9 +273,15 @@ export class DuckDBEngine {
       case "info":
         return this.info(request.table as string, this.table(request));
       case "changes": {
+        // Clients without events poll `changes` (§8.5): the file is checked then too (§7.6).
+        await this.follow(this.table(request));
         const table = this.table(request);
-        return { revision: table.revision, edits: table.edits.state };
+        return table.fileChanged
+          ? { revision: table.revision, edits: table.edits.state, fileChanged: true }
+          : { revision: table.revision, edits: table.edits.state };
       }
+      case "reload":
+        return this.reload(request.table as string);
       case "close":
         await this.close(request.table as string);
         return null;
@@ -263,13 +308,7 @@ export class DuckDBEngine {
   /** Writes cells (§7.2), and tells every handle of the table that its data changed (§8.5). */
   private async write(table: LoadedTable, request: Json, signal: AbortSignal) {
     const result = await table.edits.write(request, signal);
-    if (result.updated > 0) {
-      for (const [id, item] of this.handles) {
-        if (item === table) {
-          this.emit({ v: 2, event: "changed", table: id, revision: table.revision, edits: result.edits });
-        }
-      }
-    }
+    if (result.updated > 0) this.tellChanged(table);
     return result;
   }
 
@@ -280,13 +319,7 @@ export class DuckDBEngine {
     }
     const version = table.edits.version;
     const result = await saveTable(this.session, table, signal);
-    if (result.edits.version !== version) {
-      for (const [id, item] of this.handles) {
-        if (item === table) {
-          this.emit({ v: 2, event: "changed", table: id, revision: table.revision, edits: result.edits });
-        }
-      }
-    }
+    if (result.edits.version !== version) this.tellChanged(table);
     return result;
   }
 
@@ -322,22 +355,11 @@ export class DuckDBEngine {
     if (!info.isFile()) throw new EngineError("load_failed", "Only files are opened as tables.");
     const revision = await fileRevision(file);
     const options = readOptionsOf(format, read);
-    const key = `${file}\u0000${JSON.stringify(options)}`;
-    let table = this.tables.get(key);
-    if (!table || table.fileState !== revision || table.status === "error") {
-      if (table && table.handles === 0) await this.drop(key, table);
-      else if (table) {
-        this.tables.delete(key);
-        this.retired.add(table);
-      }
-      table = new LoadedTable(this.session, file, format, revision, info.size, options, {
-        previewRows: this.options.previewRows ?? 1000,
-        onChange: (changed, change) => this.changed(changed, change),
-        log: this.options.log,
-      });
-      this.tables.set(key, table);
-      table.start();
-    }
+    const key = tableKey(file, options);
+    const loaded = this.tables.get(key);
+    // The handles of a table whose file changed follow it first (§7.6), so that all of them read the same table.
+    if (loaded && loaded.fileState !== revision && loaded.handles > 0) await this.follow(loaded);
+    const table = await this.tableOf(key, file, format, revision, info.size, options);
     table.handles++;
     table.lastUsed = Date.now();
     const id = `t${this.nextHandle++}`;
@@ -346,6 +368,154 @@ export class DuckDBEngine {
     await table.whenReadable();
     await this.trim();
     return this.info(id, table);
+  }
+
+  /**
+   * The table of a file as it is now (`revision`): the one loaded for it, or a new one when the file changed or its
+   * load failed. A table it replaces is dropped, or, while handles use it, kept apart for them.
+   */
+  private async tableOf(
+    key: string,
+    file: string,
+    format: TableFormat,
+    revision: string,
+    size: number,
+    options: ReadOptions,
+  ): Promise<LoadedTable> {
+    const loaded = this.tables.get(key);
+    if (loaded && loaded.fileState === revision && loaded.status !== "error") return loaded;
+    if (loaded && loaded.handles === 0) await this.drop(key, loaded);
+    else if (loaded) {
+      this.tables.delete(key);
+      this.retired.add(loaded);
+    }
+    const table = new LoadedTable(this.session, file, format, revision, size, options, {
+      previewRows: this.options.previewRows ?? 1000,
+      onChange: (changed, change) => this.changed(changed, change),
+      log: this.options.log,
+    });
+    this.tables.set(key, table);
+    table.start();
+    if (this.options.watchFiles !== false) {
+      const follow = () =>
+        void this.follow(table).catch((error: unknown) => this.options.log?.(`Could not follow ${file}`, error));
+      this.unwatch.set(table, this.watcher.watch(file, follow));
+    }
+    return table;
+  }
+
+  /**
+   * Follows the file of a table that handles use when it changed on disk (§7.6): a table without written cells is
+   * read again, and its handles move to the new table once it has loaded; one with written cells stays, with
+   * `fileChanged`, and so does one whose file cannot be read now (removed, or half written). The checks run between
+   * writes and saves, so that a save of the engine itself is not a change.
+   */
+  private async follow(table: LoadedTable): Promise<void> {
+    const key = tableKey(table.path, table.read);
+    const told = () => {
+      if (table.fileChanged) return null;
+      table.fileChanged = true;
+      return "told" as const;
+    };
+    const checked = await this.unlessLeft(table, async () => {
+      const revision = await fileRevision(table.path).catch(() => null);
+      if (revision === table.fileState) {
+        // A file that came back as it was read.
+        if (!table.fileChanged) return null;
+        table.fileChanged = false;
+        return "told" as const;
+      }
+      const size = revision === null ? null : await fileSize(table.path);
+      if (revision === null || size === null || table.edits.state.cells > 0) return told();
+      return { revision, size };
+    });
+    if (checked === null) return;
+    if (checked === "told") {
+      this.tellChanged(table);
+      return;
+    }
+    // The handles read the table as it was until the new one has loaded.
+    const fresh = await this.tableOf(key, table.path, table.format, checked.revision, checked.size, table.read);
+    await this.untilLoaded(fresh);
+    const moved = await this.unlessLeft(table, async () => {
+      // A newer change made another table, which its own follow moves the handles to.
+      if (this.tables.get(key) !== fresh) return null;
+      if (fresh.status === "error" || table.edits.state.cells > 0) return told();
+      return this.move(table, fresh, null);
+    });
+    if (moved === null) return;
+    if (moved === "told") {
+      this.tellChanged(table);
+      return;
+    }
+    await this.leave(table);
+    for (const id of moved) this.emit(this.changedEvent(id, fresh));
+  }
+
+  /** Runs a check between the writes of a table, unless its handles have left it. */
+  private unlessLeft<T>(table: LoadedTable, check: () => Promise<T>): Promise<T | null> {
+    const left = () => this.disposed || table.handles === 0 || table.replaced;
+    if (left()) return Promise.resolve(null);
+    return table.edits.exclusive(async () => (left() ? null : check()));
+  }
+
+  /** Moves a handle (or, with null, every handle) of a table to another table. Gives the handles moved. */
+  private move(table: LoadedTable, fresh: LoadedTable, only: string | null): string[] {
+    const moved: string[] = [];
+    for (const [id, item] of this.handles) {
+      if (item !== table || (only !== null && id !== only)) continue;
+      this.views.unfollow(id);
+      this.handles.set(id, fresh);
+      fresh.handles++;
+      table.handles--;
+      moved.push(id);
+    }
+    if (table.handles === 0) table.replaced = true;
+    return moved;
+  }
+
+  /** Drops a table that its last handle left. */
+  private async leave(table: LoadedTable) {
+    if (table.handles > 0) return;
+    this.retired.delete(table);
+    for (const [key, item] of this.tables) if (item === table) this.tables.delete(key);
+    await this.release(table);
+  }
+
+  /**
+   * Moves a handle to its file as it is now (`reload`, §7.6), once it has loaded: with a new revision and without
+   * the written cells, which stay with the other handles of the table it leaves. A handle whose file has not
+   * changed stays.
+   */
+  private async reload(id: string) {
+    const table = this.table({ table: id });
+    await this.follow(table);
+    const current = this.handles.get(id) as LoadedTable;
+    if (current !== table || (!table.fileChanged && table.status !== "error")) return this.info(id, current);
+    const revision = await fileRevision(table.path).catch(() => null);
+    const size = revision === null ? null : await fileSize(table.path);
+    if (revision === null || size === null) throw new EngineError("load_failed", "The file does not exist.");
+    const key = tableKey(table.path, table.read);
+    const fresh = await this.tableOf(key, table.path, table.format, revision, size, table.read);
+    await this.untilLoaded(fresh);
+    if (fresh.status === "error") throw new EngineError("load_failed", fresh.error ?? "The file could not be read.");
+    if (this.handles.get(id) === table && fresh !== table) {
+      this.move(table, fresh, id);
+      await this.leave(table);
+    }
+    const now = this.handles.get(id) as LoadedTable;
+    this.emit(this.changedEvent(id, now));
+    return this.info(id, now);
+  }
+
+  /** Waits until a table that handles are about to move to has loaded; it counts as used meanwhile, for `trim`. */
+  private async untilLoaded(table: LoadedTable) {
+    table.handles++;
+    try {
+      await table.whenReady();
+    } finally {
+      table.handles--;
+    }
   }
 
   private info(id: string, table: LoadedTable): Json {
@@ -367,6 +537,7 @@ export class DuckDBEngine {
     if (table.sheets) info.sheets = table.sheets.map((sheet) => ({ ...sheet }));
     if (table.sheet !== undefined) info.sheet = table.sheet;
     if (table.error !== undefined) info.error = table.error;
+    if (table.fileChanged) info.fileChanged = true;
     return info;
   }
 
@@ -377,12 +548,11 @@ export class DuckDBEngine {
     this.views.unfollow(id);
     this.handles.delete(id);
     table.handles--;
-    if (table.handles === 0 && (this.retired.delete(table) || table.edits.version > 0)) {
+    if (table.handles === 0 && (this.retired.delete(table) || table.edits.version > 0 || table.fileChanged)) {
       // Written cells belong to the handles open on the table: once the last one closes, they are gone, and the
       // file is opened again as it is.
       for (const [key, item] of this.tables) if (item === table) this.tables.delete(key);
-      await this.views.forget(table);
-      await table.dispose();
+      await this.release(table);
     }
     await this.trim();
   }
@@ -401,6 +571,13 @@ export class DuckDBEngine {
 
   private async drop(key: string, table: LoadedTable) {
     if (this.tables.get(key) === table) this.tables.delete(key);
+    await this.release(table);
+  }
+
+  /** Stops watching a table's file, and deletes its views and what it made. */
+  private async release(table: LoadedTable) {
+    this.unwatch.get(table)?.();
+    this.unwatch.delete(table);
     await this.views.forget(table);
     await table.dispose();
   }
@@ -417,8 +594,9 @@ export class DuckDBEngine {
     for (const controller of this.running.values()) controller.abort();
     await this.views.forget();
     for (const [key, table] of [...this.tables]) await this.drop(key, table);
-    for (const table of this.retired) await table.dispose();
+    for (const table of this.retired) await this.release(table);
     this.retired.clear();
+    this.watcher.dispose();
     this.handles.clear();
     this.listeners.clear();
     await this.session.dispose();

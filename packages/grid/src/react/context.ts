@@ -23,8 +23,11 @@ export interface GridSave {
   /** Saves the written cells (the `save` command); a save asked for while one runs waits for it. */
   save: () => void;
   pending: boolean;
-  /** The text of the last save's outcome, and the edits version it is about: shown until the cells change. */
-  outcome: { text: string; failed: boolean; version: number } | null;
+  /**
+   * The text of the last save's outcome, and the revision and edits version it is about: shown until the cells or
+   * the revision change.
+   */
+  outcome: { text: string; failed: boolean; revision: string | null; version: number } | null;
 }
 
 export const SaveContext = createContext<GridSave | null>(null);

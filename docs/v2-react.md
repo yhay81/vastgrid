@@ -78,8 +78,13 @@ interface GridStore {
   connect(): () => void;
   setDocument(document: GridDocument): void;
   setSession(session: GridSession): void;
+  reload(): Promise<void>;
 }
 ```
+
+`reload` reads the table's file as it is now (`reload`, §7.6 of the specification), for a file that changed on disk
+while the table had written cells (`fileChanged` of the table); a new revision is applied as an engine's `changed`
+event is (§5.4 of the specification).
 
 ### 4.1 Snapshots
 
@@ -326,6 +331,9 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   from the editor, which writes its text first; otherwise the key is the browser's. The toolbar has a Save button
   while cells are not saved. The status bar counts the cells not saved, and shows the save while it runs and then
   its outcome (the rows saved, or why not: `file_changed` keeps the written cells) until the cells change.
+- A file that changes on disk (§7.6 of the specification) is shown as it is now once the engine has read it again.
+  When the table has written cells, it stays as it was: the status bar says that the file changed and the edits
+  are kept, and the toolbar's "Discard edits and reload" button calls `reload`.
 - The store shows a written value at once, before the engine answers, and shows the cell's value again when the
   write fails; commands read the written values too. It drops them once the rows of the new edits version are on
   screen (§4.2).

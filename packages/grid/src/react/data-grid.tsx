@@ -190,7 +190,7 @@ function Frame({
       <LocaleContext value={language}>
         <SaveContext value={saving}>
           <div className={className ? `vg-root ${className}` : "vg-root"} style={style} data-status={status}>
-            {toolbar && <Toolbar />}
+            {toolbar && <Toolbar announce={setNotice} />}
             <Suspense fallback={<StaticRows label={label} />}>
               <GridBody
                 rowHeight={rowHeight}

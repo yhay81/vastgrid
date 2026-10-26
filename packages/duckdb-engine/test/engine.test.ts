@@ -466,7 +466,7 @@ test("serves the first rows while a file loads, and tells clients when it has (�
   assert.equal((await client.result<TableInfo>("info", { table: big.table })).rowCount, 1_500_000);
 });
 
-test("handles share a loaded table; a changed file is opened anew; closed handles are gone", async () => {
+test("handles share a loaded table; a changed file is opened anew, and handles without written cells follow it (§7.6)", async () => {
   const file = path.join(workspace, "growing.csv");
   await writeFile(file, "x\n1\n2\n3\n");
   const first = await client.open("growing.csv");
@@ -478,11 +478,26 @@ test("handles share a loaded table; a changed file is opened anew; closed handle
   const changed = await client.open("growing.csv");
   assert.notEqual(changed.revision, first.revision);
   assert.equal(changed.rowCount, 4);
-  // The handles opened before the change still read the file as it was.
-  assert.equal((await client.rows(first)).rows.length, 3);
+  // The handles opened before the change, without written cells, follow the file (§7.6).
+  assert.equal(
+    (
+      await client.error("rows", {
+        table: first.table,
+        revision: first.revision,
+        plan: {},
+        start: 0,
+        end: 10,
+        columns: ["x"],
+      })
+    ).code,
+    "revision_changed",
+  );
+  const followed = await client.result<TableInfo>("info", { table: first.table });
+  assert.equal(followed.revision, changed.revision);
+  assert.equal((await client.rows(followed)).rows.length, 4);
   await client.result("close", { table: first.table });
   assert.equal((await client.error("info", { table: first.table })).code, "table_not_found");
-  assert.equal((await client.rows(again)).rows.length, 3);
+  assert.equal((await client.rows({ ...again, revision: changed.revision })).rows.length, 4);
   assert.deepEqual(await client.result("changes", { table: changed.table }), {
     revision: changed.revision,
     edits: { version: 0, cells: 0 },

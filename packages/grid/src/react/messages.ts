@@ -26,6 +26,11 @@ export interface GridMessages {
   /** The file changed on disk since it was read: the save was refused, and the written cells are kept. */
   fileChanged: string;
   saveUnsupported: string;
+  /** The file changed on disk while cells were written: they are kept, and the file is not read again. */
+  changedOnDisk: string;
+  reload: string;
+  /** Reading the file again drops the cells written into the table as it was read. */
+  discardAndReload: string;
 }
 
 const en: GridMessages = {
@@ -51,6 +56,9 @@ const en: GridMessages = {
   fileChanged:
     "Not saved: the file was changed by someone else. Your edits are kept; open the file again to see the changes.",
   saveUnsupported: "This file cannot be saved.",
+  changedOnDisk: "The file changed on disk. Your unsaved edits are kept.",
+  reload: "Reload",
+  discardAndReload: "Discard edits and reload",
 };
 
 const ja: GridMessages = {
@@ -76,6 +84,9 @@ const ja: GridMessages = {
   fileChanged:
     "保存しませんでした: ファイルがほかで変更されています。編集は残っています。変更を見るにはファイルを開き直してください。",
   saveUnsupported: "このファイルは保存できません。",
+  changedOnDisk: "ディスク上のファイルが変更されました。未保存の編集は残っています。",
+  reload: "再読み込み",
+  discardAndReload: "編集を破棄して再読み込み",
 };
 
 /** The built-in texts for a language tag: Japanese for `ja`, English otherwise. */

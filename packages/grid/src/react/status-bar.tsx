@@ -53,7 +53,7 @@ function format(number: Intl.NumberFormat, value: unknown) {
 
 /**
  * The status bar: the active cell, the sum of the selection, what the grid is doing (saving and the outcome of the
- * last save included), the cells not saved yet and the rows.
+ * last save included) or that the file changed on disk, the cells not saved yet and the rows.
  */
 export function StatusBar() {
   const store = useGridStore();
@@ -61,6 +61,8 @@ export function StatusBar() {
   const saving = use(SaveContext);
   const saves = useGridSelector((snapshot) => snapshot.table?.capabilities.save === true);
   const edits = useGridSelector((snapshot) => snapshot.table?.edits);
+  const revision = useGridSelector((snapshot) => snapshot.table?.revision);
+  const fileChanged = useGridSelector((snapshot) => snapshot.table?.fileChanged === true);
   const rowCount = useGridSelector((snapshot) => snapshot.view?.rowCount);
   const status = useGridSelector((snapshot) => snapshot.status);
   const building = useGridSelector((snapshot) => snapshot.view?.status === "building");
@@ -76,11 +78,13 @@ export function StatusBar() {
         ? messages.loading
         : saving?.pending
           ? messages.saving
-          : saving?.outcome && edits && edits.version <= saving.outcome.version
+          : saving?.outcome && edits && revision === saving.outcome.revision && edits.version <= saving.outcome.version
             ? saving.outcome.text
-            : pending || building
-              ? messages.reading
-              : "";
+            : fileChanged
+              ? messages.changedOnDisk
+              : pending || building
+                ? messages.reading
+                : "";
   return (
     <div className="vg-statusbar">
       <span className="vg-statusbar__cell">

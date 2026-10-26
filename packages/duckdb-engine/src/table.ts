@@ -98,6 +98,10 @@ export class LoadedTable {
   revision: string;
   /** Handles that `open` gave and `close` did not take back. */
   handles = 0;
+  /** Whether the file changed on disk since it was read, while the table kept its written cells (§7.6). */
+  fileChanged = false;
+  /** Whether its handles left it for the file as it is now (§7.6): writes to it fail then. */
+  replaced = false;
   lastUsed = Date.now();
   /** The cells written into the table (§7.2), which its relation reads over the file's values. */
   readonly edits: Edits;

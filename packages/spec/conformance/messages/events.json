@@ -21,6 +21,25 @@
       }
     },
     {
+      "id": "event.changed-file",
+      "section": "7.6",
+      "kind": "event",
+      "message": {
+        "v": 2,
+        "event": "changed",
+        "table": "t1",
+        "revision": "r2",
+        "edits": {
+          "version": 3,
+          "cells": 1
+        },
+        "fileChanged": true
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
       "id": "event.progress",
       "section": "8.5",
       "kind": "event",

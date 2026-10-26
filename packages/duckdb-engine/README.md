@@ -50,8 +50,13 @@ createServer(createHttpHandler(engine, { path: "/api" })).listen(8080);
   renamed over it once complete, so that a failed or cancelled save leaves it as it was; a file changed by someone
   else since it was read is refused (`file_changed`). Afterwards the table reads the saved values as the file's
   own, with the same revision and row IDs. Saving two cells takes about 60 ms in a 200,000-row file (6 MB) and 0.3 s in a 2-million-row file (65 MB) on an Apple-silicon laptop.
-- **Not yet.** Exporting and following changes of files on disk are the next steps of the rebuild
-  ([#33](https://github.com/yhay81/vastgrid/issues/33)).
+- **Following files.** The folders of open files are watched (`watchFiles`, on by default), and `changes` and
+  `open` check the file too (§7.6). A file that changes on disk is loaded again, and the handles move to the new
+  revision once it has loaded, reading the table as it was meanwhile. A table with written cells is kept instead,
+  with `fileChanged: true` in `info`, `changes` and the `changed` event; `reload` moves a handle to the file as it
+  is now, without them. A file that is removed, or cannot be read while it is being written, keeps its table the
+  same way until it can be read again.
+- **Not yet.** Exporting is the next step of the rebuild ([#33](https://github.com/yhay81/vastgrid/issues/33)).
 
 `node --conditions=vastgrid-source --import tsx packages/duckdb-engine/bench/open.ts` measures opening and
 reading the files of the benches; [`examples/files`](../../examples/files) shows them in v2's grid.

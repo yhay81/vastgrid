@@ -588,6 +588,52 @@
       }
     },
     {
+      "id": "response.changes-file-changed",
+      "section": "7.6",
+      "kind": "response",
+      "op": "changes",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "revision": "r2",
+          "edits": {
+            "version": 3,
+            "cells": 1
+          },
+          "fileChanged": true
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.changes-file-changed-type",
+      "section": "7.6",
+      "kind": "response",
+      "op": "changes",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "revision": "r2",
+          "edits": {
+            "version": 3,
+            "cells": 1
+          },
+          "fileChanged": "yes"
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/result/fileChanged"
+        }
+      }
+    },
+    {
       "id": "response.close",
       "section": "8.2",
       "kind": "response",

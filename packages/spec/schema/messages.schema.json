@@ -432,6 +432,27 @@
         {
           "type": "object",
           "additionalProperties": false,
+          "required": ["v", "id", "op", "table"],
+          "properties": {
+            "v": {
+              "const": 2
+            },
+            "id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "op": {
+              "const": "reload"
+            },
+            "table": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
           "required": ["v", "id", "op", "request"],
           "properties": {
             "v": {
@@ -566,6 +587,9 @@
             },
             "edits": {
               "$ref": "#/$defs/edits"
+            },
+            "fileChanged": {
+              "type": "boolean"
             }
           }
         },
@@ -910,8 +934,14 @@
             },
             "edits": {
               "$ref": "#/$defs/edits"
+            },
+            "fileChanged": {
+              "type": "boolean"
             }
           }
+        },
+        "reload": {
+          "$ref": "#/$defs/tableInfo"
         },
         "close": {
           "type": "null"
@@ -1018,6 +1048,9 @@
         },
         "error": {
           "type": "string"
+        },
+        "fileChanged": {
+          "type": "boolean"
         }
       }
     },

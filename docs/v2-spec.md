@@ -990,14 +990,14 @@ Engines keep written values apart from the source until they are saved, and ever
 client (rows, plans, summaries, find, export) sees them. Writes keep row IDs and the revision, and increment
 the edits version.
 
-Written values belong to the table that the handles share: every handle open on the same file (with the same
-read options) sees them, and `vastgrid-duckdb` drops them when the last of those handles closes, so that the
-file opens again as it is. A file that changes on disk opens as a new table with a new revision and no written
-values, while handles opened before keep reading, and writing, the table as it was read; saving it is then
-refused (`file_changed`, §7.5). A write to a table that is still loading waits until it has loaded, and fails
-with `revision_changed` when its types changed meanwhile (§9). An engine whose source holds a narrower range
-than §2.2 (DuckDB keeps the ends of the 64-bit range of nanosecond timestamps for its infinities) fails the
-write with `invalid_value` for a value beyond it.
+Written values belong to the table that the handles share: every handle open on the same file (with the same read
+options) sees them, and `vastgrid-duckdb` drops them when the last of those handles closes, so that the file opens
+again as it is. A file that changes on disk opens as a new table with a new revision and no written values;
+handles opened before follow it when the table has no written values, and otherwise keep reading, and writing, the
+table as it was read, whose saving is then refused (`file_changed`, §7.6). A write to a table that is still
+loading waits until it has loaded, and fails with `revision_changed` when its types changed meanwhile (§9). An
+engine whose source holds a narrower range than §2.2 (DuckDB keeps the ends of the 64-bit range of nanosecond
+timestamps for its infinities) fails the write with `invalid_value` for a value beyond it.
 
 ### 7.3 Reading typed text
 
@@ -1065,6 +1065,23 @@ was.
   and TSV files that are not compressed. Files of other formats are never written: their `save` fails with
   `save_unsupported`.
 
+### 7.6 Files that change on disk
+
+Engines that read files follow the files of the tables that handles have open: the Node.js DuckDB engine watches
+their folders, and checks the file again on `changes` and `open`. A file changes when its revision (its size,
+modification time and first bytes) does; a save of the engine itself is not a change.
+
+- A table without written values is read again: every handle open on it moves to the new table, which has a new
+  revision, and gets a `changed` event (§8.5) once the new table's first rows can be read. Clients read `info`
+  again, and the core applies §5.4: row-ID keys and the history belong to the old revision.
+- A table with written values stays as it was read, so that they are not lost: its `TableInfo`, its `changed`
+  event and `changes` carry `fileChanged: true`. Its handles read and write it as before, and `save` fails with
+  `file_changed`. A file that is removed is the same, until it comes back.
+- `reload` moves a handle to the file as it is now, with a new revision and without the written values, which
+  stay with the other handles of the old table until the last one closes. When the file has not changed, it
+  answers the handle's `TableInfo` and changes nothing.
+- A write that waited for a table that its handles left fails with `revision_changed`.
+
 ## 8. Messages
 
 [`messages.schema.json`](../packages/spec/schema/messages.schema.json) gives the form of every message.
@@ -1101,16 +1118,18 @@ take included. Clients check responses and events in the same way; one that does
 | `write` | `table`, `revision`, `updates`: `[{ "key", "column", "value", "previous"? }]`; `rowKey` | `{ "updated", "edits" }` |
 | `save` | `table` | `{ "records", "edits" }` |
 | `export` | `table`, `revision`, `plan`, `format`; `target`, `columns`, `headers`, `numberFormats` | `{ "target", "rows", "data"? }` |
-| `changes` | `table` | `{ "revision", "edits" }` |
+| `changes` | `table` | `{ "revision", "edits", "fileChanged"? }` |
+| `reload` | `table` | `TableInfo` |
 | `cancel` | `request`: an `id` | no response |
 | `close` | `table` | `null` |
 
 - `TableInfo` is `{ "table", "revision", "edits", "status", "progress", "rowCount", "readableRows",
-  "columns", "capabilities", "format"?, "byteSize"?, "notes"?, "sheets"?, "sheet"?, "error"? }`: `table` is an
-  opaque id for later requests; `revision` a string or null; `edits` `{ "version", "cells" }`; `status`
-  `loading`, `ready` or `error`; `progress` from 0 to 1 or null; `rowCount` null while the table loads;
+  "columns", "capabilities", "format"?, "byteSize"?, "notes"?, "sheets"?, "sheet"?, "error"?, "fileChanged"? }`:
+  `table` is an opaque id for later requests; `revision` a string or null; `edits` `{ "version", "cells" }`;
+  `status` `loading`, `ready` or `error`; `progress` from 0 to 1 or null; `rowCount` null while the table loads;
   `readableRows` the rows that can be read now; `columns` §2.1; `capabilities` §4.10; `sheets`
-  `[{ "name", "hidden"? }]` for workbooks.
+  `[{ "name", "hidden"? }]` for workbooks; `fileChanged` true when the file changed on disk since the table,
+  which has written values, was read (§7.6).
 - `rows` reads positions `[start, end)` of the plan's view: `columns` are names of the view's columns, at most
   1,000,000 rows and 1,000,000 cells. Positions beyond the view are left out: the answer's `end` is at most the
   view's row count, and a request whose `start` is at or beyond it is answered with no rows (`end` equal to
@@ -1172,7 +1191,7 @@ column's name to the offsets, from `start`, of its cut values; the core shows th
 
 | `event` | Members | When |
 | --- | --- | --- |
-| `changed` | `table`, `revision`, `edits` | the table's data changed (§7.2 writes included) |
+| `changed` | `table`, `revision`, `edits`, `fileChanged`? | the table's data changed (§7.2 writes included), or its file changed on disk (§7.6) |
 | `progress` | `table`, `status`, `progress`, `readableRows`, `rowCount` | while a table loads |
 | `view` | `table`, `hash`, `status`, `readableRows`, `rowCount`, `rowCountExact` | while a view builds (§9) |
 
@@ -1194,7 +1213,7 @@ answer it. `cancel` itself has no response.
 | `not_ready` | the table is still loading and the request needs all of it | 409 |
 | `revision_changed` | §7.2, §8.3 | 409 |
 | `edit_conflict` | §7.2 | 409 |
-| `file_changed` | §7.5 | 409 |
+| `file_changed` | §7.5, §7.6 | 409 |
 | `read_only` | §7.2 | 403 |
 | `not_allowed` | a `ref` or `target` outside what the host allows | 403 |
 | `invalid_value` | §7.2, or a source value that cannot be represented in a block (§8.4) | 422 |

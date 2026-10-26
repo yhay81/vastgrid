@@ -7,6 +7,13 @@
   formats; every other byte stays. The file is replaced through a temporary file next to it, and files changed by
   someone else since they were read (`file_changed`), links that lead elsewhere (`not_allowed`) and other formats
   (`save_unsupported`) are refused. After a save the table keeps its revision, row IDs and history.
+- `vastgrid-spec`, `vastgrid-duckdb-engine`, `vastgrid-js` (unreleased v2): files that change on disk are followed
+  (§7.6). The DuckDB engine watches the folders of open files (option `watchFiles`, on by default) and checks them
+  on `changes` and `open`; a table without written cells is loaded again and its handles move to the new revision
+  once it has loaded, while one with written cells is kept with `fileChanged: true` (in `TableInfo`, `changes` and
+  the `changed` event). The new `reload` request moves a handle to the file as it is now.
+- `vastgrid-grid` (unreleased v2): a file that changes on disk is shown anew; with unsaved edits, the status bar says
+  that the file changed and the toolbar offers "Discard edits and reload" (`store.reload()`).
 - `vastgrid-grid` (unreleased v2): ⌘S or Ctrl+S saves (from the cell editor too), the toolbar has a Save button,
   and the status bar counts the cells not saved and shows the outcome of the last save.
 - `vastgrid-duckdb-engine` (unreleased v2): `write` writes cells of open files (§7.2). Written cells are kept

@@ -35,6 +35,8 @@ export interface TableInfo {
   sheets?: { name: string; hidden?: boolean }[];
   sheet?: string;
   error?: string;
+  /** The file changed on disk since the table, which has written cells, was read (§7.6); `reload` reads it again. */
+  fileChanged?: boolean;
 }
 
 /** A view as `rows` reports it (§8.2, §9). */

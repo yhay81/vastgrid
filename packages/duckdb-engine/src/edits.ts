@@ -64,6 +64,10 @@ export class Edits {
 
   private async apply(request: Json, signal?: AbortSignal) {
     const table = this.table;
+    if (table.replaced) {
+      // The handles left the table while the write waited (§7.6).
+      throw new EngineError("revision_changed", "The table has another revision: read its TableInfo again.");
+    }
     if (table.status === "loading") {
       // The rows read so far may have other types than those of the whole file (§9): the write waits for it.
       const revision = table.revision;

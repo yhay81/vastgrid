@@ -311,6 +311,11 @@ class Engine implements MemoryEngine {
       }
       case "changes":
         return { revision: this.table(request).revision, edits: { ...this.table(request).edits } };
+      case "reload": {
+        // Tables in memory have no file that changes (§7.6): the table is as it is.
+        const id = request.table as string;
+        return this.info(id, this.table(request));
+      }
       case "close": {
         const table = this.table(request);
         this.tables.delete(request.table as string);
