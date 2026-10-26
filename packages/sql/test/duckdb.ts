@@ -5,7 +5,7 @@
 import type { DuckDBConnection } from "@duckdb/node-api";
 import { type Column, type JsonValue, timestampText } from "vastgrid-spec";
 import type { CorpusTable } from "vastgrid-spec/conformance";
-import { duckdbType, floatParam, quoteIdentifier, type SqlValue } from "../src/index.ts";
+import { duckdbType, floatParam, quoteIdentifier, type SqlValue, textSql } from "../src/index.ts";
 
 /** The column of row IDs in the tables of the corpus: the position of each row. */
 export const ROW_ID = "vg_corpus_row";
@@ -53,8 +53,9 @@ export function output(column: Column, sql: string): string {
   switch (column.type) {
     case "string":
       return `('.' || ${sql})`;
-    case "bigint":
     case "decimal":
+      return textSql(sql, column);
+    case "bigint":
     case "date":
     case "time":
     case "timestamp":

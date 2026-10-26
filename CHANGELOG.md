@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- `vastgrid-spec` (unreleased v2): formulas (§4.11). `compileFormula` compiles v1's formula language, with every
+  function of §4.4 by its name and literals of every type (`DATE '2024-01-31'`), to a plan expression, converting
+  values as v1 did and reporting errors with a reason of §4.7 and the characters at fault; `formulaText` writes any
+  expression of a derived column back as a formula that compiles to it. `migrateGridState` migrates v1's formulas
+  into `plan.derive`, ordered by what they use, with the filters, sort keys, groups and measures that use them, and
+  gives a reason for each part it drops (`reasons`). `checkExpression` checks one expression.
+- `vastgrid-grid` (unreleased v2): the toolbar's Formulas menu adds, changes, renames and removes derived columns
+  written as formulas (`derive.add`, `derive.update`, `derive.remove`), and shows why a formula does not compile.
+  The accessibility rows follow columns that come and go.
+- `vastgrid-sql`, `vastgrid-duckdb-engine` (unreleased v2): decimals without whole digits, such as a
+  `DECIMAL(1,1)` column, read and have the text form `0.5` (DuckDB writes `.5`, which failed to read), also in
+  `text`, `concat`, search, `find` and pivot names (`textSql`); and `left`, `right` and `substr` give null for a
+  null count or start (§3.6) instead of reading it as 0. Reads that began on the first rows of a file still loading
+  (§9) no longer fail with a missing table when the whole file has loaded: its preview is kept until the table is
+  closed.
 - `vastgrid-duckdb-engine` (unreleased v2): `export` writes views as CSV, TSV, Parquet, JSON and Excel workbooks
   (§8.2), with the written cells, on the server: DuckDB writes the first four, and workbooks are streamed by a
   writer ported from v1 (numbers, dates and booleans as such cells, text never as a formula, Excel's limits as

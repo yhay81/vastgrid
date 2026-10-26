@@ -39,6 +39,15 @@ export interface GridMessages {
   exportAllColumns: string;
   exporting: string;
   exported: (rows: string) => string;
+  /** The menu of derived columns written as formulas (§4.11), and its fields and buttons. */
+  formulas: string;
+  newFormula: string;
+  formulaName: string;
+  formula: string;
+  formulaExample: string;
+  addFormula: string;
+  applyFormula: string;
+  removeFormula: string;
 }
 
 const en: GridMessages = {
@@ -74,6 +83,14 @@ const en: GridMessages = {
   exportAllColumns: "Hidden columns too",
   exporting: "Exporting…",
   exported: (rows) => `Exported ${rows} rows`,
+  formulas: "Formulas",
+  newFormula: "New column",
+  formulaName: "Column name",
+  formula: "Formula",
+  formulaExample: "qty * price",
+  addFormula: "Add",
+  applyFormula: "Apply",
+  removeFormula: "Remove",
 };
 
 const ja: GridMessages = {
@@ -109,6 +126,14 @@ const ja: GridMessages = {
   exportAllColumns: "非表示の列も含める",
   exporting: "書き出しています…",
   exported: (rows) => `${rows} 行を書き出しました`,
+  formulas: "計算列",
+  newFormula: "新しい列",
+  formulaName: "列名",
+  formula: "式",
+  formulaExample: "qty * price",
+  addFormula: "追加",
+  applyFormula: "適用",
+  removeFormula: "削除",
 };
 
 /** The built-in texts for a language tag: Japanese for `ja`, English otherwise. */

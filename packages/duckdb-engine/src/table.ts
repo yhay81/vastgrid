@@ -421,8 +421,7 @@ export class LoadedTable {
         return;
       }
       const changed = this.relation !== null && !sameColumns(this.columns, loaded.columns);
-      await this.drop(connection, this.preview);
-      this.preview = [];
+      // The preview stays until the table is disposed: reads that began on it may still be running.
       this.objects.push(...loaded.objects);
       this.columns = loaded.columns;
       this.relation = loaded.relation;

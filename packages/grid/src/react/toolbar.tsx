@@ -3,6 +3,7 @@ import { type Expr, partsOf } from "vastgrid-spec";
 import { isApple } from "../canvas/keys.js";
 import { LocaleContext, SaveContext } from "./context.js";
 import { ExportMenu } from "./export-menu.js";
+import { FormulaMenu } from "./formula-menu.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 
 /** How long typing must pause before the search is set. */
@@ -15,8 +16,9 @@ function searchOf(where: Expr | undefined): string {
 }
 
 /**
- * The toolbar: a search box when the engine searches (§3.5), a button that saves the written cells when the engine
- * saves (§7.5), and one that reads the file again when it changed on disk while cells were written (§7.6). The
+ * The toolbar: a search box when the engine searches (§3.5), the formula menu when it derives columns (§4.11), a
+ * button that saves the written cells when the engine saves (§7.5), and one that reads the file again when it
+ * changed on disk while cells were written (§7.6). The
  * search's text is React state, which updates as the person types; `search.set` follows through
  * `useDeferredValue` once typing pauses.
  */
@@ -57,7 +59,10 @@ export function Toolbar({ announce }: { announce: (text: string) => void }) {
   }, [store, deferred, current]);
   const showsSave = saves && saving !== null;
   const exports = useGridSelector((snapshot) => (snapshot.table?.capabilities.export?.formats.length ?? 0) > 0);
-  if (!searches && !showsSave && !fileChanged && !exports) return null;
+  const derives = useGridSelector(
+    (snapshot) => snapshot.table !== null && snapshot.table.capabilities.plan?.derive !== false,
+  );
+  if (!searches && !showsSave && !fileChanged && !exports && !derives) return null;
   return (
     <div className="vg-toolbar">
       {searches && (
@@ -76,6 +81,7 @@ export function Toolbar({ announce }: { announce: (text: string) => void }) {
           {unsaved > 0 ? messages.discardAndReload : messages.reload}
         </button>
       )}
+      <FormulaMenu />
       <ExportMenu announce={announce} />
       {showsSave && (
         <button

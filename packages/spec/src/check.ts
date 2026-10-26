@@ -703,6 +703,16 @@ class Checker {
   }
 }
 
+/**
+ * Checks one expression over columns as a derived column is checked (§4.7) and gives its typed tree, for
+ * front ends such as formulas (§4.11) that need the types of what they build. Paths of errors start at the
+ * expression: `/args/0`.
+ */
+export function checkExpression(expr: unknown, columns: readonly Column[], options: CheckOptions = {}): TypedExpr {
+  const scope = new Map(columns.map((column) => [column.name, column]));
+  return new Checker(columns, options).expression(expr, scope, "", "derive");
+}
+
 function columnOf(name: string, type: ValueType): Column {
   return { name, ...valueType(type) };
 }

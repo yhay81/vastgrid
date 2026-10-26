@@ -25,6 +25,7 @@ export {
   type CheckedSortKey,
   type CheckOptions,
   type ColumnExpr,
+  checkExpression,
   checkPlan,
   type ExprType,
   type LiteralExpr,
@@ -56,6 +57,14 @@ export {
   WRITE_LIMIT,
 } from "./commands.js";
 export { excelNumberFormat } from "./excel.js";
+export {
+  compileFormula,
+  FormulaError,
+  formulaColumns,
+  formulaReference,
+  formulaText,
+  MAX_FORMULA_LENGTH,
+} from "./formula.js";
 export { canonicalJson, normalizePlan, planHash } from "./hash.js";
 export { editText, type InputError, type InputOptions, type InputResult, readCellText } from "./input.js";
 export {

@@ -341,6 +341,11 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
 - When the engine exports (`capabilities.export`), the toolbar has an Export menu: the rows of the view or the
   whole table, with the hidden columns or not, in each format the engine offers. The export runs as an Action;
   its file is downloaded from `exportUrl`, and the rows exported are announced.
+- When the engine derives columns (`capabilities.plan.derive`), the toolbar has a Formulas menu: a row per derived
+  column with its name and its expression written as a formula (§4.11 of the specification), and a row for a new
+  one. A formula compiles against the columns before it; one that does not compile is not dispatched, and its error
+  is shown with the characters at fault selected. Otherwise the row dispatches `derive.add` or `derive.update`
+  (with `rename` when the name changed), and Remove dispatches `derive.remove`, which removes what uses the column.
 - The store shows a written value at once, before the engine answers, and shows the cell's value again when the
   write fails; commands read the written values too. It drops them once the rows of the new edits version are on
   screen (§4.2).

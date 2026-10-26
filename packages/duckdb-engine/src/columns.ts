@@ -10,7 +10,7 @@ import {
   timestampText,
   type ValueType,
 } from "vastgrid-spec";
-import { duckdbType, quoteIdentifier } from "vastgrid-sql";
+import { duckdbType, quoteIdentifier, textSql } from "vastgrid-sql";
 
 /** A column of a source as DuckDB describes it. */
 export interface SourceColumn {
@@ -104,7 +104,7 @@ export function readExpression(column: Column, sql: string, textLimit: number): 
     case "binary":
       return `to_base64(${sql})`;
     default:
-      return `CAST(${sql} AS VARCHAR)`;
+      return textSql(sql, column);
   }
 }
 

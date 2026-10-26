@@ -16,6 +16,10 @@
     },
     "emoji": { "columns": [{ "name": "s", "type": "string" }], "rows": [["😀abc"]] },
     "repeats": { "columns": [{ "name": "s", "type": "string" }], "rows": [["aaa"]] },
+    "fractions": {
+      "columns": [{ "name": "d", "type": "decimal", "precision": 2, "scale": 2 }],
+      "rows": [["0.50"], ["-0.05"], [null]]
+    },
     "floats": {
       "columns": [{ "name": "x", "type": "float" }],
       "rows": [
@@ -146,6 +150,46 @@
       },
       "read": { "columns": ["l", "r", "m", "z", "w"] },
       "expect": { "rowCount": 1, "rows": [["😀a", "bc", "ab", "", "😀a"]] }
+    },
+    {
+      "id": "text.parts-null-counts",
+      "section": "3.6",
+      "description": "left, right and substr give null when a count or a start is null.",
+      "table": "emoji",
+      "plan": {
+        "derive": [
+          { "name": "l", "expr": { "fn": "left", "args": [{ "col": "s" }, { "lit": null, "type": "bigint" }] } },
+          { "name": "r", "expr": { "fn": "right", "args": [{ "col": "s" }, { "lit": null, "type": "bigint" }] } },
+          { "name": "s1", "expr": { "fn": "substr", "args": [{ "col": "s" }, { "lit": null, "type": "bigint" }] } },
+          {
+            "name": "s2",
+            "expr": { "fn": "substr", "args": [{ "col": "s" }, { "lit": 1 }, { "lit": null, "type": "bigint" }] }
+          }
+        ]
+      },
+      "read": { "columns": ["l", "r", "s1", "s2"] },
+      "expect": { "rowCount": 1, "rows": [[null, null, null, null]] }
+    },
+    {
+      "id": "text.decimal-without-whole-digits",
+      "section": "2.4",
+      "description": "A decimal without whole digits reads, and its text form has a 0 before the point.",
+      "table": "fractions",
+      "plan": {
+        "derive": [{ "name": "t", "expr": { "fn": "text", "args": [{ "col": "d" }] } }],
+        "where": { "search": "0.5" }
+      },
+      "read": { "columns": ["d", "t"] },
+      "expect": { "rowCount": 1, "rows": [["0.50", "0.50"]] }
+    },
+    {
+      "id": "text.decimal-without-whole-digits-negative",
+      "section": "2.4",
+      "description": "A negative decimal without whole digits has -0 before the point.",
+      "table": "fractions",
+      "plan": { "derive": [{ "name": "t", "expr": { "fn": "concat", "args": [{ "col": "d" }] } }] },
+      "read": { "columns": ["t"] },
+      "expect": { "rowCount": 3, "rows": [["0.50"], ["-0.05"], [""]] }
     },
     {
       "id": "text.replace",

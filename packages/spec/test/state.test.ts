@@ -409,18 +409,114 @@ test("v1's groups migrate into aggregate, having and sort, with v1's names", () 
   assert.doesNotThrow(() => checkPlan(migrated.plan, v1Table));
 });
 
-test("v1's formulas are reported as dropped, with what uses them", () => {
+test("v1's formulas migrate into derived columns, each after the ones it uses (§4.11, §5.6)", () => {
   const { document: migrated, dropped } = migrateGridState(
     {
       version: 1,
-      schema: ["id", "f"],
-      formulas: [{ name: "f", expression: "id * 2" }],
-      query: { sort: [{ column: 1, direction: "asc" }], filters: [{ type: "compare", column: 1, op: "gt", value: 1 }] },
+      schema: ["id", "name", "amount", "d", "note", "big", "total", "label"],
+      formulas: [
+        { name: "big", expression: "total > 100" },
+        { name: "total", expression: "id * amount" },
+        { name: "label", expression: "UPPER(name) & ' ' & YEAR(d)" },
+      ],
+      query: {
+        sort: [{ column: 6, direction: "desc" }],
+        filters: [{ type: "values", column: 5, values: [true] }],
+      },
+      columns: [{ name: "total", width: 90 }],
     },
     v1Table,
   );
-  assert.deepEqual(dropped, ["/formulas", "/query/filters/0", "/query/sort/0"]);
-  assert.deepEqual(migrated.plan, {});
+  assert.deepEqual(dropped, []);
+  assert.deepEqual(migrated.plan, {
+    derive: [
+      { name: "total", expr: fn("mul", col("id"), col("amount")) },
+      { name: "big", expr: fn("gt", col("total"), lit(100)) },
+      {
+        name: "label",
+        expr: fn("concat", fn("upper", col("name")), lit(" "), fn("year", col("d"))),
+      },
+    ],
+    where: fn("in", col("big"), { lit: true }),
+    sort: [{ column: "total", direction: "desc" }],
+  });
+  assert.deepEqual(migrated.columns, [{ name: "total", width: 90 }]);
+  assert.doesNotThrow(() => checkPlan(migrated.plan, v1Table));
+});
+
+test("formulas group, measure and pivot as v1's columns did", () => {
+  const { document: migrated, dropped } = migrateGridState(
+    {
+      version: 1,
+      formulas: [
+        { name: "year", expression: "YEAR(d)" },
+        { name: "net", expression: "amount * 0.9" },
+      ],
+      group: { keys: ["year"], aggregates: [{ fn: "sum", column: "net" }], pivot: ["name"] },
+    },
+    v1Table,
+  );
+  assert.deepEqual(dropped, []);
+  assert.deepEqual(migrated.plan.aggregate, {
+    keys: ["year"],
+    measures: [{ name: "sum(net)", fn: "sum", column: "net" }],
+    pivot: { columns: ["name"] },
+  });
+  assert.doesNotThrow(() => checkPlan(migrated.plan, v1Table));
+});
+
+test("formulas that do not compile are reported with their reasons, with what uses them", () => {
+  const {
+    document: migrated,
+    dropped,
+    reasons,
+  } = migrateGridState(
+    {
+      version: 1,
+      // Without a schema, v1's columns were the table's, then the formulas.
+      formulas: [
+        { name: "bad", expression: "id + name" },
+        { name: "uses", expression: "bad * 2" },
+        { name: "a", expression: "b + 1" },
+        { name: "b", expression: "a + 1" },
+        { name: "note", expression: "1" },
+        { name: "ok", expression: "id * 2" },
+        { name: 3 },
+      ],
+      query: {
+        sort: [{ column: 5, direction: "asc" }],
+        filters: [
+          { type: "compare", column: 6, op: "gt", value: 1 },
+          { type: "compare", column: 10, op: "gt", value: 1 },
+        ],
+      },
+      group: { keys: ["uses", "name"], aggregates: [{ fn: "sum", column: "a" }, { fn: "count" }] },
+    },
+    v1Table,
+  );
+  assert.deepEqual(dropped, [
+    "/formulas/0",
+    "/formulas/1",
+    "/formulas/2",
+    "/formulas/3",
+    "/formulas/4",
+    "/formulas/6",
+    "/query/filters/0",
+    "/query/sort/0",
+    "/group/keys/0",
+    "/group/aggregates/0",
+  ]);
+  assert.equal(reasons["/formulas/0"], "Expected a number, not string.");
+  assert.equal(reasons["/formulas/1"], 'The formula uses "bad", which was not migrated.');
+  assert.equal(reasons["/formulas/2"], "The formula uses itself through other formulas.");
+  assert.equal(reasons["/formulas/4"], 'Another column is named "note".');
+  assert.equal(reasons["/formulas/6"], "This is not a v1 formula.");
+  assert.equal(reasons["/query/filters/0"], reasons["/group/keys/0"]);
+  assert.deepEqual(migrated.plan, {
+    derive: [{ name: "ok", expr: fn("mul", col("id"), lit(2)) }],
+    where: fn("gt", col("ok"), lit(1)),
+    aggregate: { keys: ["name"], measures: [{ name: "count(*)", fn: "count" }] },
+  });
 });
 
 test("a v1 query saved without a state migrates, and other versions are refused", () => {

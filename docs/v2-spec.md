@@ -504,6 +504,89 @@ Engines report what they evaluate (in `TableInfo`, §8.2):
 The core offers only what the engine reports, and a plan that uses anything else fails with
 `invalid_plan` (`unsupported`).
 
+### 4.11 Formulas
+
+People write derived columns as **formulas**, which compile to expressions; documents hold only the
+expressions (§5.1), and grids write them back as formulas to show and change them. The language is v1's,
+with every function of §4.4 and literals of every type. `vastgrid-spec` gives `compileFormula` and
+`formulaText`.
+
+A formula is made of:
+
+- **Column names**: `price`, or in brackets when the name is not a letter or `_` followed by letters,
+  digits, marks and `_`, or when it is a word of the language: `[unit price]`, `[and]` (`]]` is a `]`).
+- **Numbers**, kept exact (§2.5): digits are a bigint (beyond 64 bits, a decimal), digits with a point a
+  decimal (`1.50` is a decimal(3, 2)), and a number with an exponent a float (`1.5e0`, `2e3`). A minus
+  written before a number is part of it.
+- **Text** in single or double quotes, with the quote doubled inside (`'it''s'`); `TRUE`, `FALSE` and
+  `NULL`.
+- **Literals of a type**: the type's name, then its text form (§2.4) in quotes, or `NULL`:
+  `DATE '2024-01-31'`, `TIMESTAMP '2024-01-31 12:00:00'`, `FLOAT 'nan'`, `UUID '…'`, `DATE NULL`. Dates and
+  timestamps may also be written as v1 read them: `2024-1-5`, with `T` or a space before the time, without
+  seconds.
+- **Operators**, from the lowest precedence; chains of `AND`, `OR` and `&` are one call, and the others
+  group from the left:
+
+| Operators | Function |
+| --- | --- |
+| `OR` | `or` |
+| `AND` | `and` |
+| `NOT` | `not` |
+| `=` (`==`), `<>` (`!=`), `<`, `<=`, `>`, `>=` | `eq`, `ne`, `lt`, `le`, `gt`, `ge` |
+| `&` | `concat` |
+| `+`, `-` | `add`, `sub` |
+| `*`, `/`, `%` | `mul`, `div`, `mod` |
+| `-` before a value | `neg` |
+
+- **Calls**, with names in any letter case: every function of §4.4 other than `and`, `or` and `not` by its
+  own name (`STARTS_WITH(name, 'A')`, `IN(region, 'east', 'west')`, `DATE_DIFF_DAYS(start, end)`), and v1's
+  functions. Those of v1 that have the name of a function of §4.4 (`ABS`, `ROUND`, `LEFT`, `TEXT`, `IF` with 3
+  arguments, …) are that function; the others are:
+
+| v1 | Expression |
+| --- | --- |
+| `CEILING(x)`, `LEN(s)`, `MID(s, start, n)`, `STARTSWITH`, `ENDSWITH`, `ADDDAYS`, `ISBLANK` | `ceil`, `length`, `substr`, `starts_with`, `ends_with`, `add_days`, `is_blank` |
+| `WEEKDAY(d)` | `isodow(d)`: Monday is 1 |
+| `DAYS(end, start)` | `date_diff_days(start, end)` |
+| `MIN(a, …)`, `MAX(a, …)` | `least`, `greatest`; with one argument, that argument |
+| `IF(c, a)` | `if(c, a, null)` |
+| `VALUE(x)` | `to_number(x)`; a number as it is |
+| `DATE(x)` | text in quotes: a date literal; text: `to_date(x)`; a timestamp: `to_date(left(text(x), 10))` |
+| `DATETIME(x)` | text in quotes: a timestamp literal; text: `to_timestamp(x)`; a date: `to_timestamp(concat(text(x), ' 00:00'))`; a timestamptz: `to_timestamp(replace(text(x), '+00', ''))` |
+
+Like v1, a formula converts some values where its functions take another kind (other mixtures are type errors,
+§4.7):
+
+- Text in quotes beside a date, a timestamp or a timestamptz (compared, or in `least`, `greatest`,
+  `coalesce`, `if` and `in`), or where a date or a timestamp is taken (`YEAR('2024-03-01')`), is a literal of
+  that type when it reads as one.
+- Times, intervals, UUIDs and binary values, which v1 read as text, are taken through `text` where a string is
+  taken or compared with text.
+- A date where a time or a timestamp is taken (`HOUR(day)`) is its midnight, and a timestamptz where a date or a
+  timestamp is taken is its timestamp in UTC, as with `DATETIME`.
+- A whole number written with a point (`3.0`) where an integer is taken (`left`, `right`, `substr`, `add_days`,
+  and the digits of `round`) is that integer.
+
+Every expression other than `search` is written as a formula that compiles back to it: functions with an
+operator as operators, in parentheses where precedence needs them (`(a & b) & c` stays two calls), the others
+by their names in capitals, and literals as above, with a type and quotes when the plain form would read as
+another literal (`FLOAT '0.5'`, `BIGINT '5'`; a whole float is `2e0`).
+
+A formula that does not compile has a reason of §4.7 (`syntax`, `unknown_column`, `unknown_function`,
+`arity`, `type`, `literal`, `limit` or `unsupported`) and the characters it is about. Formulas have at most
+100,000 characters and 64 levels of nesting, and their expressions the limits of §4.9.
+
+v1 computed every number as a 64-bit float. With the rules of §2–§4, some formulas give other results than in
+v1 (the tests of `vastgrid-duckdb-engine` run v1's formula tests through DuckDB):
+
+| Formula | v1 | v2 | Why |
+| --- | --- | --- | --- |
+| `ROUND(0.285, 2)`, `[unit price] * 2` (a decimal(10, 2) of 1.50) | 0.28, 3 | `"0.29"`, `"3.00"` | exact numbers stay exact (§3.7) |
+| `TRIM(name) & ok`, `TEXT(price * 2)`, `TEXT(0.00001)` | `…TRUE`, `5`, `1e-05` | `…true`, `5.0`, `0.00001` | the text forms of §2.4 |
+| `LEFT('abc', NULL)` | `""` | null | a null argument gives null (§3.6) |
+| `VALUE('1_000')`, `DATE(text)` of `2024-1-5` | 1000, a date | null, null | `to_number` and `to_date` read the forms of §4.4 |
+| `ROUND(x, 400)`, `NULL = NULL` | x, null | refused (`type`) | `round`'s digits go from −18 to 18; two nulls have no type |
+
 ## 5. State
 
 The state is JSON in two parts with their own versions: the **document** (what a person saves, shares or
@@ -710,7 +793,7 @@ v1's `GridState` (version 1) migrates into a document by these rules; Appendix A
 | `schema` | `schema` |
 | `query.sort` (indexes into `schema`) | `plan.sort` (names) |
 | `query.search`, `query.filters`, `query.where` | `plan.where`: an `and` of the search, the filters and the parts of the tree (§6.2.1), in that order |
-| `formulas` | not migrated: the formula language does not have its v2 form yet (§12); they and what uses them are reported as dropped |
+| `formulas` | `plan.derive`, compiled by §4.11, each after the formulas it uses (in v1's order otherwise); a formula that does not compile, that uses itself through others or that has the name of a table column is not migrated, and neither is what uses it |
 | `columns[].{name, width, hidden, total}` | `columns[].{name, width, hidden, total: { fn }}` |
 | `frozenColumns`, `frozenRightColumns` | `pin: "left"` on the first n shown columns, `pin: "right"` on the last n |
 | `group.keys`, `group.aggregates`, `group.pivot` | `plan.aggregate`: measures named as v1 named their columns (`count(*)`, `sum(amount)`, then ` (2)`, …) |
@@ -720,8 +803,8 @@ v1's `GridState` (version 1) migrates into a document by these rules; Appendix A
 
 A v1 query saved without a state (an object of `sort`, `filters`, `where` and `search` only) migrates as a
 state with that query. Indexes into `schema` name its columns; without `schema`, they are positions of the
-table's columns. The migration reports the JSON Pointers (into the v1 state) of what it could not migrate,
-and the document is then repaired for the table (§5.5).
+table's columns, then of the formulas. The migration reports the JSON Pointers (into the v1 state) of what it
+could not migrate, each with why, and the document is then repaired for the table (§5.5).
 
 ## 6. Commands
 
@@ -1347,9 +1430,6 @@ against DuckDB, and the JS engine follows in the same change.
 - Collations and folding (reading order of Japanese, full-width and half-width forms) as capabilities.
 - `quantile` and `count_distinct` over dates and times; a `histogram` measure instead of `derive` then
   `aggregate`.
-- The formula language in v2: the table that maps v1's formula language (`ROUND`, `MID`, `WEEKDAY`, `DAYS`,
-  …) onto §4.4, a front end that compiles it to expressions, and with it the migration of v1's formulas
-  (§5.6).
 - Plans over a table that is still loading (`partialViews`): what `rowCount` and `where` mean there.
 - Whether the key of the group of −0.0 and 0.0 reads as 0.0.
 - `copy` with `values: "formatted"` (§6.6): the display formatting of `number` and `date` formats, so that
@@ -1387,7 +1467,7 @@ Found while writing the memory engine of [`vastgrid-js`](../packages/js), which 
 | `filters`, `where` (`FilterNode`), `search` | `plan.where` (expressions, `search`) |
 | `{ type: "values", values, exclude }` | `in`, with `coalesce` and `not`; blanks with `is_blank` |
 | `{ type: "compare" }`, `between`, `text`, `blank` | comparisons; `contains`, `starts_with`, `ends_with` (with `lower` when letter case does not matter); `is_blank` |
-| `formulas` (the formula language) | `plan.derive` (the formula language compiles to expressions) |
+| `formulas` (the formula language) | `plan.derive`, written as formulas (§4.11) |
 | `group`, `pivot`, the totals row | `plan.aggregate` and `pivot`; totals are `aggregate` without keys |
 | `GroupedSource` (sorting and filtering groups) | `having` and `sort` of an aggregated plan |
 | `columnStats` | plans with `count`, `count_distinct`, `min`, `max`, `avg`, `stddev` and `quantile`; the histogram is a bin made with `derive`, then `aggregate` |
@@ -1450,6 +1530,8 @@ DuckDB 1.5 through `@duckdb/node-api` 1.5.6-r.1, on 2026-10-24:
 | `isodow(DATE '2024-01-07')` (a Sunday), `date_diff('day', TIMESTAMP '2024-01-01 23:00', TIMESTAMP '2024-01-02 01:00')` | 7, 1 |
 | `round(9223372036854775807::BIGINT, -1)`, `round(2147483647::INTEGER, -1)` | `-9223372036854775800`, `-2147483646`: the result wraps around instead of failing, so `vastgrid-sql` rounds integers through `DECIMAL(19,0)`, where overflow fails (and gives null, §3.6) |
 | `TRY(sum(x))` | refused (`aggregates are not allowed inside the TRY expression`), so measures use `TRY_CAST` |
+| `CAST(0.5::DECIMAL(1,1) AS VARCHAR)`, `CAST(-0.10::DECIMAL(2,2) AS VARCHAR)` | `.5`, `-.10`: decimals without whole digits lose the 0 of §2.4, which `vastgrid-sql` puts back (`textSql`) |
+| `greatest(NULL, 0)`, `left('abc', NULL)` | 0, NULL: `greatest` leaves nulls out, so the counts of `left`, `right` and `substr` are not bounded with it (§3.6) |
 
 Two behaviors of `@duckdb/node-api` 1.5.6-r.1 matter to engines built on it:
 

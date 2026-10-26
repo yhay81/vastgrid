@@ -117,6 +117,25 @@ export function duckdbType(type: ValueType): string {
   }
 }
 
+/**
+ * The SQL of the text form (§2.4) of a value of a type. DuckDB writes a decimal without whole digits, such as a
+ * decimal(1, 1), as `.5` and `-.5`, where §2.4 writes `0.5` and `-0.5` (Appendix B).
+ */
+export function textSql(sql: string, type: ValueType): string {
+  if (type.type === "string") return sql;
+  const text = `CAST(${sql} AS VARCHAR)`;
+  const scale = type.scale ?? 0;
+  if (type.type === "decimal" && scale > 0 && scale === (type.precision ?? 38)) {
+    return `regexp_replace(${text}, '^(-?)\\.', '\\10.')`;
+  }
+  return text;
+}
+
+/** A whole number, or `low` when it is below; null stays null (§3.6), where DuckDB's `greatest` would skip it. */
+function atLeast(sql: string, low: number) {
+  return `(CASE WHEN CAST(${sql} AS BIGINT) < ${low} THEN ${low} ELSE CAST(${sql} AS BIGINT) END)`;
+}
+
 function cast(sql: string, type: ValueType) {
   return `CAST(${sql} AS ${duckdbType(type)})`;
 }
@@ -152,7 +171,7 @@ class Compiler {
         const text = `CAST(${this.params.add(node.text)} AS VARCHAR)`;
         const matches = node.columns.map(
           (column) =>
-            `coalesce(contains(lower(CAST(${quoteIdentifier(column.name)} AS VARCHAR)), lower(${text})), FALSE)`,
+            `coalesce(contains(lower(${textSql(quoteIdentifier(column.name), column)}), lower(${text})), FALSE)`,
         );
         return `(${matches.join(" OR ")})`;
       }
@@ -205,7 +224,7 @@ class Compiler {
 
   private text(node: TypedExpr) {
     const sql = this.expression(node);
-    return node.type.type === "string" || node.type.type === "null" ? sql : `CAST(${sql} AS VARCHAR)`;
+    return node.type.type === "null" ? sql : textSql(sql, node.type);
   }
 
   private call(node: CallExpr): string {
@@ -302,11 +321,11 @@ class Compiler {
         return `${node.fn}(${arg(0)})`;
       case "left":
       case "right":
-        return `${node.fn}(${arg(0)}, greatest(CAST(${arg(1)} AS BIGINT), 0))`;
+        return `${node.fn}(${arg(0)}, ${atLeast(arg(1), 0)})`;
       case "substr": {
-        const start = `greatest(CAST(${arg(1)} AS BIGINT), 1)`;
+        const start = atLeast(arg(1), 1);
         return args.length === 3
-          ? `substring(${arg(0)}, ${start}, greatest(CAST(${arg(2)} AS BIGINT), 0))`
+          ? `substring(${arg(0)}, ${start}, ${atLeast(arg(2), 0)})`
           : `substring(${arg(0)}, ${start})`;
       }
       case "replace":
@@ -431,7 +450,7 @@ export function pivotQuery(plan: CheckedPlan, source: SqlSource): SqlQuery {
   const entries = rowsWith(plan, source, compiler, rowIdAlias(plan));
   const names = pivot.columns.map((column) => quoteIdentifier(column.name));
   const texts = pivot.columns.map(
-    (column, index) => `CAST(${quoteIdentifier(column.name)} AS VARCHAR) AS "vg_value${index}"`,
+    (column, index) => `${textSql(quoteIdentifier(column.name), column)} AS "vg_value${index}"`,
   );
   const limit = Math.floor(pivot.maxColumns / plan.aggregate.measures.length) + 1;
   const sql = `WITH ${entries.join(", ")} SELECT ${texts.join(", ")} FROM (SELECT DISTINCT ${names.join(", ")} FROM vg_rows) ORDER BY ${pivot.columns.flatMap(keyTerms).join(", ")} LIMIT ${limit}`;

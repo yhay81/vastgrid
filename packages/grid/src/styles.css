@@ -293,6 +293,41 @@
   outline: none;
 }
 
+/* The formula menu: a row per derived column, then one for a new column. */
+
+.vg-formulas {
+  width: min(640px, calc(100vw - 16px));
+}
+
+.vg-formulas__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 2px;
+}
+
+.vg-formulas__row + .vg-formulas__row {
+  border-top: 1px solid var(--vg-line);
+}
+
+.vg-formulas__name {
+  flex: 0 1 9em;
+  min-width: 6em;
+}
+
+.vg-formulas__formula {
+  flex: 1 1 16em;
+  min-width: 10em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.vg-formulas__error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--vg-error-fg);
+}
+
 .vg-button:focus-visible {
   outline: 2px solid var(--vg-focus);
   outline-offset: 1px;

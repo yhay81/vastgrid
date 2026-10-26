@@ -2,8 +2,18 @@
  * Migrating v1's `GridState` (version 1) into a v2 document (docs/v2-spec.md §5.6, Appendix A). The
  * document is then repaired for the table (§5.5), which removes what does not validate.
  */
-import { checkPlan } from "./check.js";
-import type { Aggregate, Expr, FunctionName, Measure, Plan, SortKey } from "./plan.js";
+import { checkPlan, valueType } from "./check.js";
+import { compileFormula, FormulaError, formulaColumns } from "./formula.js";
+import {
+  type Aggregate,
+  type Derived,
+  type Expr,
+  type FunctionName,
+  type Measure,
+  type Plan,
+  PlanError,
+  type SortKey,
+} from "./plan.js";
 import { type ColumnSetting, emptyDocument, type GridDocument, StateError } from "./state.js";
 import type { Column, JsonValue, LogicalType } from "./types.js";
 
@@ -72,13 +82,15 @@ function uniqueNames(names: readonly string[]): string[] {
   });
 }
 
+const NOT_MIGRATED = "The column is not in the table, or it is a formula that was not migrated.";
+
 class Migration {
   readonly dropped: string[] = [];
+  readonly reasons: Record<string, string> = {};
 
-  constructor(readonly table: readonly Column[]) {}
-
-  drop(path: string) {
+  drop(path: string, reason: string) {
     this.dropped.push(path);
+    this.reasons[path] = reason;
   }
 
   /** A v1 filter or condition tree as an expression, or null when it is dropped or keeps every row. */
@@ -89,12 +101,12 @@ class Migration {
     columns: readonly Column[],
   ): Expr | null {
     if (!isObject(node)) {
-      this.drop(path);
+      this.drop(path, "This is not a v1 filter.");
       return null;
     }
     if (node.type === "and" || node.type === "or") {
       if (!Array.isArray(node.filters)) {
-        this.drop(path);
+        this.drop(path, "This is not a v1 filter.");
         return null;
       }
       const parts = node.filters.flatMap(
@@ -105,7 +117,7 @@ class Migration {
     }
     const name = typeof node.column === "number" ? names(node.column) : null;
     if (name === null) {
-      this.drop(path);
+      this.drop(path, NOT_MIGRATED);
       return null;
     }
     const column = columns.find((item) => item.name === name);
@@ -147,7 +159,7 @@ class Migration {
       case "blank":
         return node.blank === false ? call("not", call("is_blank", c)) : call("is_blank", c);
     }
-    this.drop(path);
+    this.drop(path, "This is not a v1 filter.");
     return null;
   }
 
@@ -162,7 +174,7 @@ class Migration {
     const where: Expr[] = [];
     if (typeof query.search === "string" && query.search.trim() !== "") {
       if (search) where.push({ search: query.search });
-      else this.drop(`${path}/search`);
+      else this.drop(`${path}/search`, "A search applies to the table's rows, not to groups.");
     }
     if (Array.isArray(query.filters)) {
       query.filters.forEach((item, index) => {
@@ -179,7 +191,7 @@ class Migration {
       query.sort.forEach((key, index) => {
         const name = isObject(key) && typeof key.column === "number" ? names(key.column) : null;
         if (name === null || !isObject(key) || (key.direction !== "asc" && key.direction !== "desc")) {
-          this.drop(`${path}/sort/${index}`);
+          this.drop(`${path}/sort/${index}`, name === null ? NOT_MIGRATED : "This is not a v1 sort key.");
           return;
         }
         sort.push({ column: name, direction: key.direction });
@@ -192,11 +204,11 @@ class Migration {
     if (!Array.isArray(columns)) return;
     columns.forEach((item, index) => {
       if (!isObject(item) || typeof item.name !== "string") {
-        this.drop(`${path}/${index}`);
+        this.drop(`${path}/${index}`, "This is not a v1 column setting.");
         return;
       }
       if (into.some((setting) => setting.name === item.name)) {
-        if (path === "/columns") this.drop(`${path}/${index}`);
+        if (path === "/columns") this.drop(`${path}/${index}`, "The column is listed twice.");
         return;
       }
       const setting: ColumnSetting = { name: item.name };
@@ -208,6 +220,66 @@ class Migration {
       into.push(setting);
     });
   }
+
+  /**
+   * v1's formulas as derived columns (§4.11), in an order where each uses only the ones before it: v1's
+   * order where it can be. Gives the derived columns and the columns of the rows, and the names of the
+   * formulas that were not migrated.
+   */
+  formulas(value: unknown, table: readonly Column[]): { derive: Derived[]; rows: Column[]; failed: Set<string> } {
+    const derive: Derived[] = [];
+    const rows = [...table];
+    const failed = new Set<string>();
+    if (!Array.isArray(value)) return { derive, rows, failed };
+    // Reported in the order of v1's formulas.
+    const reasons: string[] = [];
+    const items = value.map((item, index) => {
+      const valid = isObject(item) && typeof item.name === "string" && typeof item.expression === "string";
+      if (!valid) reasons[index] = "This is not a v1 formula.";
+      return valid ? { index, name: item.name as string, expression: item.expression as string } : null;
+    });
+    const formulaNames = new Set(items.flatMap((item) => item?.name ?? []));
+    const pending = items.flatMap((item) => item ?? []);
+    while (pending.length > 0) {
+      // The first formula whose formulas are all migrated or dropped; on a cycle, the first one left.
+      const ready = pending.findIndex((item) =>
+        formulaColumns(item.expression).every(
+          (name) => !formulaNames.has(name) || name === item.name || !pending.some((other) => other.name === name),
+        ),
+      );
+      const [item] = pending.splice(Math.max(ready, 0), 1);
+      const fail = (reason: string) => {
+        failed.add(item.name);
+        reasons[item.index] = reason;
+      };
+      if (ready < 0) {
+        fail("The formula uses itself through other formulas.");
+        continue;
+      }
+      if (rows.some((column) => column.name === item.name)) {
+        fail(`Another column is named "${item.name}".`);
+        continue;
+      }
+      const missing = formulaColumns(item.expression).find((name) => failed.has(name));
+      if (missing !== undefined) {
+        fail(`The formula uses "${missing}", which was not migrated.`);
+        continue;
+      }
+      try {
+        const { expr, type } = compileFormula(item.expression, rows);
+        checkPlan({ derive: [...derive, { name: item.name, expr }] }, table);
+        derive.push({ name: item.name, expr });
+        rows.push({ name: item.name, ...valueType(type) });
+      } catch (error) {
+        if (!(error instanceof FormulaError || error instanceof PlanError)) throw error;
+        fail(error.message);
+      }
+    }
+    reasons.forEach((reason, index) => {
+      this.drop(`/formulas/${index}`, reason);
+    });
+    return { derive, rows, failed };
+  }
 }
 
 /**
@@ -217,7 +289,7 @@ class Migration {
 export function migrateGridState(
   value: unknown,
   table: readonly Column[],
-): { document: GridDocument; dropped: string[] } {
+): { document: GridDocument; dropped: string[]; reasons: Record<string, string> } {
   if (!isObject(value)) throw new StateError("", "syntax", "A v1 state is an object.");
   // A plain query, as v1 saved it before states existed, is a state with that query.
   const state =
@@ -226,29 +298,31 @@ export function migrateGridState(
       ? { version: 1, query: value }
       : value;
   if (state.version !== 1) throw new StateError("/version", "version", "This reader migrates version 1.");
-  const migration = new Migration(table);
+  const migration = new Migration();
   const document = emptyDocument();
   const schema =
     Array.isArray(state.schema) && state.schema.every((name) => typeof name === "string")
       ? (state.schema as string[])
       : undefined;
   if (schema) document.schema = schema;
-  const formulas = new Set<string>();
-  if (Array.isArray(state.formulas) && state.formulas.length > 0) {
-    migration.drop("/formulas");
-    for (const item of state.formulas) if (isObject(item) && typeof item.name === "string") formulas.add(item.name);
-  }
+  const { derive, rows, failed: formulas } = migration.formulas(state.formulas, table);
+  const v1Formulas = Array.isArray(state.formulas) ? state.formulas : [];
+  // Without a schema, v1's views had the table's columns, then the formulas.
   const tableNames = (index: number) => {
-    const name = schema ? schema[index] : table[index]?.name;
+    const formula = v1Formulas[index - table.length];
+    const name = schema
+      ? schema[index]
+      : (table[index]?.name ?? (isObject(formula) && typeof formula.name === "string" ? formula.name : undefined));
     return name === undefined || formulas.has(name) ? null : name;
   };
   const plan: Plan = {};
+  if (derive.length > 0) plan.derive = derive;
   const group = isObject(state.group) ? state.group : null;
   if (isObject(state.query)) {
-    const { where, sort } = migration.query(state.query, "/query", tableNames, table, true);
+    const { where, sort } = migration.query(state.query, "/query", tableNames, rows, true);
     if (where.length > 0) plan.where = where.length === 1 ? where[0] : call("and", ...where);
     if (sort.length > 0) {
-      if (group) migration.drop("/query/sort");
+      if (group) migration.drop("/query/sort", "With groups, the sort of the groups is migrated.");
       else plan.sort = sort;
     }
   }
@@ -260,18 +334,18 @@ export function migrateGridState(
     const aggregates = Array.isArray(group.aggregates) ? group.aggregates : [];
     const used = keys.filter((key) => !formulas.has(key));
     keys.forEach((key, index) => {
-      if (formulas.has(key)) migration.drop(`/group/keys/${index}`);
+      if (formulas.has(key)) migration.drop(`/group/keys/${index}`, NOT_MIGRATED);
     });
     const measures: Measure[] = [];
     const measureNames: string[] = [];
     aggregates.forEach((item, index) => {
       if (!isObject(item) || !isV1Measure(item.fn) || (item.column !== undefined && typeof item.column !== "string")) {
-        migration.drop(`/group/aggregates/${index}`);
+        migration.drop(`/group/aggregates/${index}`, "This is not a v1 aggregate.");
         return;
       }
       const column = item.column as string | undefined;
       if (column !== undefined && formulas.has(column)) {
-        migration.drop(`/group/aggregates/${index}`);
+        migration.drop(`/group/aggregates/${index}`, NOT_MIGRATED);
         return;
       }
       measureNames.push(column === undefined ? `${item.fn}(*)` : `${item.fn}(${column})`);
@@ -286,7 +360,7 @@ export function migrateGridState(
       if (Array.isArray(group.pivot) && group.pivot.length > 0) {
         const pivot = group.pivot.filter((name): name is string => typeof name === "string" && !formulas.has(name));
         if (pivot.length === group.pivot.length && measures.length > 0) aggregate.pivot = { columns: pivot };
-        else migration.drop("/group/pivot");
+        else migration.drop("/group/pivot", NOT_MIGRATED);
       }
       plan.aggregate = aggregate;
       const inner = isObject(group.state) ? group.state : null;
@@ -298,7 +372,7 @@ export function migrateGridState(
         };
         let groups: readonly Column[] = [];
         try {
-          groups = checkPlan({ where: plan.where, aggregate }, table).columns;
+          groups = checkPlan({ derive: plan.derive, where: plan.where, aggregate }, table).columns;
         } catch {
           groups = [];
         }
@@ -309,16 +383,18 @@ export function migrateGridState(
         }
         migration.settings(inner.columns, "/group/state/columns", columns);
         for (const member of ["frozenColumns", "frozenRightColumns"]) {
-          if (typeof inner[member] === "number" && inner[member] > 0) migration.drop(`/group/state/${member}`);
+          if (typeof inner[member] === "number" && inner[member] > 0) {
+            migration.drop(`/group/state/${member}`, "Frozen columns of groups are not migrated.");
+          }
         }
       }
     } else {
-      migration.drop("/group");
+      migration.drop("/group", "The groups have no keys or measures left.");
     }
   }
   document.plan = plan;
   if (columns.length > 0) document.columns = columns;
-  return { document, dropped: migration.dropped };
+  return { document, dropped: migration.dropped, reasons: migration.reasons };
 }
 
 /** `frozenColumns` and `frozenRightColumns` as pins of the first and last shown columns (§5.6). */

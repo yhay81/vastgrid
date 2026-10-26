@@ -29,6 +29,7 @@ import {
   quoteIdentifier,
   type SqlSource,
   type SqlView,
+  textSql,
 } from "vastgrid-sql";
 import { readExpression, readValue, valueExpression } from "./columns.js";
 import { cancelled, EngineError } from "./errors.js";
@@ -487,7 +488,7 @@ export class Views {
     const params: unknown[] = [...view.sql.params, text];
     const needle = sensitive ? `$${params.length}` : `lower($${params.length})`;
     const tests = columns.map((column) => {
-      const value = `CAST(${quoteIdentifier(column.name)} AS VARCHAR)`;
+      const value = textSql(quoteIdentifier(column.name), column);
       return `coalesce(contains(${sensitive ? value : `lower(${value})`}, ${needle}), false)`;
     });
     return this.session.withConnection(signal, async (connection) => {

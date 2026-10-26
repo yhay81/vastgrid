@@ -12,4 +12,5 @@ export {
   type SqlSource,
   type SqlValue,
   type SqlView,
+  textSql,
 } from "./compile.js";

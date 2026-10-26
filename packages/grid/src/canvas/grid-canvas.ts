@@ -259,6 +259,9 @@ export class GridCanvas {
       elements.sizer.style.height = `${height}px`;
     }
     this.updateViewport();
+    // Columns that came or went (a derived column, a hidden one) change the columns on screen.
+    const [first, last] = this.visibleScrollColumns();
+    if (!this.scrolling && (first !== this.settled.left || last !== this.settled.right)) this.bumpSettled();
     this.schedule();
   }
 
