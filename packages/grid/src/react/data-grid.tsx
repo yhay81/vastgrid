@@ -20,6 +20,7 @@ import { createGridStore, type GridStore } from "../core/store.js";
 import type { GridError, InitialView, OpenOptions } from "../core/types.js";
 import { GridContext, LocaleContext, SaveContext } from "./context.js";
 import { DetailPanel, type DetailPanelProps } from "./detail-panel.js";
+import { FindBar } from "./find-bar.js";
 import { type CellActionEvent, GridBody } from "./grid-body.js";
 import { type GridMessages, messagesFor } from "./messages.js";
 import { useSaveAction } from "./save.js";
@@ -202,6 +203,7 @@ function Frame({
   const label = ariaLabel ?? messages.grid;
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [notice, setNotice] = useState("");
+  const [finding, setFinding] = useState(false);
   const saving = useSaveAction(store, language, setNotice);
   const status = useGridSelectorOf(store, (snapshot) => snapshot.status);
   useControlled(store, "document", document, onDocumentChange);
@@ -223,6 +225,7 @@ function Frame({
         <SaveContext value={saving}>
           <div className={className ? `vg-root ${className}` : "vg-root"} style={style} data-status={status}>
             {toolbar && <Toolbar announce={setNotice} />}
+            {finding && <FindBar onClose={() => setFinding(false)} scrollerRef={scrollerRef} />}
             <div className="vg-main">
               <Suspense fallback={<StaticRows label={label} />}>
                 <GridBody
@@ -234,6 +237,7 @@ function Frame({
                   wrapLines={wrapLines}
                   hooks={{ cellText, cellStyle, drawCell, cellAction }}
                   onCellAction={onCellAction}
+                  onFind={() => setFinding(true)}
                   label={label}
                   scrollerRef={scrollerRef}
                   announce={setNotice}

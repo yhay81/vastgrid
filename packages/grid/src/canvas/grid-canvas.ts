@@ -137,6 +137,8 @@ export class GridCanvas {
   gutterWidth = 48;
   /** The height of the totals row at the bottom (§5.1 of the specification), 0 without totals. */
   footer = 0;
+  /** Where dragged columns would go, while a header is dragged. */
+  private dropX: number | null = null;
   /** Whether the gutter has a check box for each row. */
   private checkboxes = false;
   private wrapLines = DEFAULT_WRAP_LINES;
@@ -186,6 +188,13 @@ export class GridCanvas {
   private readonly frameListeners = new Set<() => void>();
 
   constructor(private options: CanvasOptions = {}) {}
+
+  /** Shows where dragged columns would go, a line at `x`, or nothing. */
+  previewDrop(x: number | null) {
+    if (this.dropX === x) return;
+    this.dropX = x;
+    this.schedule();
+  }
 
   /** Text, colors, drawing and actions of cells from the host (§5.1: they win over the document). */
   setHooks(hooks: CellHooks) {
@@ -843,6 +852,10 @@ export class GridCanvas {
       const x = this.columnX(this.resizing.column) + this.layout.width(this.resizing.column);
       ctx.fillStyle = theme.accent;
       ctx.fillRect(x - 1, 0, 2, this.height);
+    }
+    if (this.dropX !== null) {
+      ctx.fillStyle = theme.accent;
+      ctx.fillRect(this.dropX - 1.5, 0, 3, this.height);
     }
   }
 

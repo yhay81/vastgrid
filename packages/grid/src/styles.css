@@ -820,3 +820,42 @@
     border-left: none;
   }
 }
+
+/* The find bar (⌘F), under the toolbar. */
+
+.vg-find {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--vg-line);
+}
+
+.vg-find__input {
+  flex: 1 1 12em;
+  min-width: 8em;
+}
+
+.vg-find__status {
+  color: var(--vg-muted);
+}
+
+/* The cell menu, and a value shown in full. */
+
+.vg-cell-menu {
+  max-width: min(480px, calc(100vw - 16px));
+}
+
+.vg-cell-menu__value {
+  max-height: min(50vh, 360px);
+  margin: 6px 0;
+  padding: 6px 8px;
+  overflow: auto;
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--vg-surface-muted);
+  border-radius: var(--vg-radius);
+}

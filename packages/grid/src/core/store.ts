@@ -1037,6 +1037,65 @@ export class GridStore {
     };
   }
 
+  /**
+   * Finds the next cell of the view on screen after `from` (before it with `direction` −1) whose text contains
+   * `text` (`find`, §8.2), among the displayed columns in display order, wrapping around; null when none does.
+   */
+  async find(
+    text: string,
+    {
+      from,
+      direction = 1,
+      caseSensitive = false,
+    }: { from: { row: number; column: string }; direction?: 1 | -1; caseSensitive?: boolean },
+    signal?: AbortSignal,
+  ): Promise<{ row: number; column: string } | null> {
+    const view = this.current;
+    const table = this.snapshot.table;
+    const client = this.client;
+    if (!view || !table || !client || !this.opened) throw new GridError("not_ready", "The table is not open yet.");
+    const columns = this.snapshot.displayed.map((item) => item.column.name);
+    const column = Math.max(0, columns.indexOf(from.column));
+    const found = await client.request<{ row: number; column: number } | null>(
+      "find",
+      {
+        table: table.table,
+        revision: view.revision,
+        plan: view.plan,
+        text,
+        columns,
+        from: { row: from.row, column },
+        direction,
+        ...(caseSensitive ? { caseSensitive: true } : {}),
+      },
+      signal,
+    );
+    return found ? { row: found.row, column: columns[found.column] } : null;
+  }
+
+  /** The whole value of a cell of the view on screen, also when the engine cut its text (§8.4), and its type. */
+  async fullValue(row: number, column: string, signal?: AbortSignal): Promise<{ value: JsonValue; column: Column }> {
+    const view = this.current;
+    const table = this.snapshot.table;
+    const client = this.client;
+    if (!view || !table || !client || !this.opened) throw new GridError("not_ready", "The table is not open yet.");
+    const result = await client.request<RowsResult>(
+      "rows",
+      {
+        table: table.table,
+        revision: view.revision,
+        plan: view.plan,
+        start: row,
+        end: row + 1,
+        columns: [column],
+        textLimit: 1_000_000,
+      },
+      signal,
+    );
+    const block = decodeBlock(result.block.bytes);
+    return { value: block.rows[0]?.[0] ?? null, column: block.columns[0] };
+  }
+
   /** Reads the rows that a command needs (`not_loaded`, §6.1), in whole blocks. */
   private async load(view: View, details: { rows: [number, number][]; columns: string[] }) {
     const rowCount = view.info?.rowCount ?? 0;

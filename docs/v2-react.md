@@ -481,6 +481,22 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   they must be cheap, and stable (module functions, or `useCallback`) so that the canvas does not measure again.
 - ⌘/Ctrl+D and ⌘/Ctrl+R fill the selection down and right from its first row or column (`edit.fill`, §6.5).
 
+### 6.13 Find, the cell menu and moving columns
+
+- ⌘F or Ctrl+F on the grid opens a find bar under the toolbar when the engine finds (`capabilities.find`): Enter
+  finds the next cell after the active cell whose text contains what is typed (ignoring letter case unless Match
+  case is on), Shift+Enter the one before, in the displayed columns, wrapping around (`GridStore.find`, `find` of
+  §8.2), and the cell found becomes the active cell. Esc closes the bar and gives the focus back to the grid.
+- A right click on a cell (selecting it first when it is outside the selection), Shift+F10 and the context menu
+  key open the cell menu: Copy (the selection, through the asynchronous clipboard), Filter to this value and
+  Exclude this value (`filter.column` with the column's values filter, replacing its conditions; not on a grouped
+  view), Show full value (read again without the text limit when the engine cut it, `GridStore.fullValue`), and
+  Details.
+- A click on a column's name sorts by it (on the pointer's release, Shift adding a key). Dragging the name moves
+  the column, or every column of a selection of whole columns that holds it, and dragging a group's header moves
+  the group's columns (`column.move`): a line shows where they go, before the column under the pointer or after it
+  past its middle, and they take the pin of where they go.
+
 ### 6.5 Theming
 
 Colors, fonts and sizes are CSS custom properties on `.vg-root`, which the canvas reads (and reads again when the

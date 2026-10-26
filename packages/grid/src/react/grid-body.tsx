@@ -20,12 +20,13 @@ import { allState, checkedCount, checkState } from "../core/checked.js";
 import type { GridStore } from "../core/store.js";
 import { AccessibleRows, cellId } from "./accessible-rows.js";
 import { CellEditor, type EditorControl } from "./cell-editor.js";
+import { CellMenu, type CellMenuTarget } from "./cell-menu.js";
 import { ColumnMenu, type MenuTarget } from "./column-menu.js";
 import { LocaleContext, SaveContext } from "./context.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 
 interface Drag {
-  kind: "cells" | "rows" | "resize";
+  kind: "cells" | "rows" | "resize" | "move";
   pointer: number;
   /** The last cell or row the pointer was over, so that moves within it dispatch nothing. */
   last: string;
@@ -33,6 +34,12 @@ interface Drag {
   column: number;
   width: number;
   x: number;
+  /** For a move: the columns dragged, whether the pointer moved enough to drag, and where they would go. */
+  names?: string[];
+  moving?: boolean;
+  before?: string | null;
+  /** Shift was held when a header was pressed: a click adds a sort key. */
+  shift?: boolean;
 }
 
 /** The members of a keyboard event that the grid's keys read. */
@@ -151,6 +158,8 @@ export interface GridBodyProps {
   wrapLines?: number;
   hooks: CellHooks;
   onCellAction?: (event: CellActionEvent) => void;
+  /** Opens the find bar (⌘F or Ctrl+F). */
+  onFind?: () => void;
   label: string;
   /** Receives the scroller, which has the focus of the grid. */
   scrollerRef: RefObject<HTMLDivElement | null>;
@@ -171,6 +180,7 @@ export function GridBody({
   wrapLines,
   hooks,
   onCellAction,
+  onFind,
   label,
   scrollerRef,
   announce,
@@ -197,7 +207,8 @@ export function GridBody({
       !snapshot.document.plan?.aggregate && snapshot.displayed.some((item) => item.setting.total !== undefined),
   );
   const pressed = useRef(false);
-  const later = useRef<MenuTarget | null>(null);
+  const later = useRef<(() => void) | null>(null);
+  const [cellMenu, setCellMenu] = useState<CellMenuTarget | null>(null);
 
   useLayoutEffect(() => {
     canvas.setSizes(rowHeight, headerHeight);
@@ -282,7 +293,12 @@ export function GridBody({
       const span = canvas.groupSpan(hit.column, hit.level);
       const from = span && nameOf(span[0]);
       const to = span && nameOf(span[1]);
-      if (from && to) void store.dispatch({ command: "select.columns", from, to, mode });
+      if (from && to && span) {
+        void store.dispatch({ command: "select.columns", from, to, mode });
+        // Dragging a group's header moves its columns.
+        const names = columns.slice(span[0], span[1] + 1).map((item) => item.column.name);
+        start("move", "", { column: span[0], names });
+      }
     } else if (hit.area === "gutter") {
       void store.dispatch({ command: "select.rows", from: hit.row, to: hit.row, mode });
       start("rows", String(hit.row));
@@ -294,7 +310,8 @@ export function GridBody({
       // The menu opens on the click, after the pointer is up: a popover shown before closes as the pointer goes up.
       if (hit.menu) return;
       if (hit.edge) start("resize", "", { column: hit.column, width: canvas.columnWidth(hit.column) });
-      else void store.dispatch({ command: "sort.toggle", column, ...(event.shiftKey ? { add: true } : {}) });
+      // A click sorts by the column; dragging it moves it (with the other columns selected whole with it).
+      else start("move", "", { column: hit.column, names: movedWith(column), shift: event.shiftKey });
     }
   };
 
@@ -369,19 +386,42 @@ export function GridBody({
       canvas.previewWidth(current.column, current.width + event.clientX - current.x);
       return;
     }
+    if (current.kind === "move") {
+      if (!current.moving && Math.abs(event.clientX - current.x) < 5) return;
+      current.moving = true;
+      const target = dropAt(x, current.names ?? []);
+      current.before = target?.before;
+      canvas.previewDrop(target ? target.x : null);
+      return;
+    }
     extendTo(event.currentTarget, current, x, y);
     followPointer(event.currentTarget, x, y);
   };
 
   const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
     pressed.current = false;
-    if (later.current && event.type === "pointerup") setMenu(later.current);
+    if (later.current && event.type === "pointerup") later.current();
     later.current = null;
     const current = drag.current;
     if (!current || current.pointer !== event.pointerId) return;
     drag.current = null;
     stopFollowing();
     event.currentTarget.releasePointerCapture(event.pointerId);
+    if (current.kind === "move") {
+      canvas.previewDrop(null);
+      const name = nameOf(current.column);
+      if (!current.moving) {
+        // A click on a column's name sorts by it; a click on a group's header only selected its columns.
+        if (current.names?.length === 1 && name !== undefined && event.type === "pointerup") {
+          void store.dispatch({ command: "sort.toggle", column: name, ...(current.shift ? { add: true } : {}) });
+        }
+        return;
+      }
+      if (current.before !== undefined && current.names && event.type === "pointerup") {
+        void store.dispatch({ command: "column.move", names: current.names, before: current.before });
+      }
+      return;
+    }
     if (current.kind !== "resize") return;
     const name = nameOf(current.column);
     const width = Math.max(40, Math.min(100_000, Math.round(current.width + event.clientX - current.x)));
@@ -420,6 +460,36 @@ export function GridBody({
     dispatchCheck({ command: state === "checked" ? "uncheck" : "check", keys: [key] });
   };
 
+  /** The columns a header drags: the column, or every column of a selection of whole columns that holds it. */
+  const movedWith = (name: string): string[] => {
+    const last = store.getSnapshot().session.selection?.at(-1);
+    if (last && last.rows === "all" && last.columns !== "all" && last.columns.includes(name)) {
+      return columns.map((item) => item.column.name).filter((item) => (last.columns as string[]).includes(item));
+    }
+    return [name];
+  };
+
+  /**
+   * Where dragged columns would go for a pointer at `x`: before the column under it (after it past its middle), as
+   * `column.move`'s `before` (null after the last), and the x of the line that shows it; undefined where they stay.
+   */
+  const dropAt = (x: number, names: readonly string[]): { before: string | null; x: number } | undefined => {
+    if (columns.length === 0) return undefined;
+    let at = canvas.columnAt(Math.max(canvas.gutterWidth, x));
+    if (at < 0) at = x < canvas.gutterWidth ? 0 : columns.length - 1;
+    const middle = canvas.columnX(at) + canvas.columnWidth(at) / 2;
+    const index = x < middle ? at : at + 1;
+    const before = index < columns.length ? columns[index].column.name : null;
+    const moved = names.map((name) => columns.findIndex((item) => item.column.name === name));
+    // Before one of the moved columns, or right after the last of them, they stay.
+    if (before !== null && names.includes(before)) return undefined;
+    if (moved.length > 0 && index === Math.max(...moved) + 1 && moved.every((item, i) => item === moved[0] + i)) {
+      return undefined;
+    }
+    const lineX = index < columns.length ? canvas.columnX(index) : canvas.columnX(at) + canvas.columnWidth(at);
+    return { before, x: lineX };
+  };
+
   /** Opens the menu of a column under its header. */
   const openMenu = (column: string, index: number) => {
     const scroller = scrollerRef.current;
@@ -453,12 +523,69 @@ export function GridBody({
     const rect = event.currentTarget.getBoundingClientRect();
     const hit = canvas.hit(event.clientX - rect.left, event.clientY - rect.top);
     const column = nameOf(hit.column);
-    if (hit.area !== "header" || column === undefined) return;
+    if ((hit.area !== "header" && hit.area !== "cell") || column === undefined) return;
     event.preventDefault();
-    const target = { column, x: event.clientX, y: event.clientY };
+    const at = { x: event.clientX, y: event.clientY };
+    let open: () => void;
+    if (hit.area === "header") {
+      open = () => setMenu({ column, ...at });
+    } else {
+      // A cell outside the selection is selected first, as spreadsheets do.
+      if (!isSelected(hit.row, column)) void store.dispatch({ command: "select", row: hit.row, column });
+      open = () => setCellMenu({ row: hit.row, column, ...at });
+    }
     // Where the menu comes as the button goes down (macOS), it opens once the button is up.
-    if (pressed.current) later.current = target;
-    else setMenu(target);
+    if (pressed.current) later.current = open;
+    else open();
+  };
+
+  /** Whether a cell is in the selection. */
+  const isSelected = (row: number, column: string) => {
+    const { selection, active } = store.getSnapshot().session;
+    if (!selection) return active?.row === row && active.column === column;
+    return selection.some(
+      (range) =>
+        (range.rows === "all" || (row >= range.rows[0] && row < range.rows[1])) &&
+        (range.columns === "all" || range.columns.includes(column)),
+    );
+  };
+
+  /** Copies the selection from a menu, through the asynchronous clipboard. */
+  const copySelection = () => {
+    void store.dispatch({ command: "copy" }).then(async (outcome) => {
+      if (!outcome.ok) {
+        announce(messages.failed(outcome.error.message));
+        return;
+      }
+      try {
+        await writeClipboardLater(outcome.output);
+        announce(messages.copied(number.format(countCells(outcome.output))));
+      } catch (error) {
+        announce(messages.failed(error instanceof Error ? error.message : String(error)));
+      }
+    });
+  };
+
+  /** Opens the cell menu of the active cell, under it. */
+  const openCellMenu = () => {
+    const scroller = scrollerRef.current;
+    const active = store.getSnapshot().session.active;
+    if (!scroller || !active) return;
+    const index = columns.findIndex((item) => item.column.name === active.column);
+    if (index < 0) return;
+    const box = canvas.cellBox(active.row, index);
+    const rect = scroller.getBoundingClientRect();
+    setCellMenu({
+      row: active.row,
+      column: active.column,
+      x: rect.left + box.left,
+      y: rect.top + box.top + box.height,
+    });
+  };
+
+  const closeCellMenu = () => {
+    setCellMenu(null);
+    scrollerRef.current?.focus({ preventScroll: true });
   };
 
   const closeMenu = () => {
@@ -508,6 +635,19 @@ export function GridBody({
       if (!checkboxes) return;
       event.preventDefault();
       toggleCheck(active.row);
+      return;
+    }
+    // ⌘F or Ctrl+F opens the find bar, when the engine finds.
+    if ((isApple() ? event.metaKey : event.ctrlKey) && (event.key === "f" || event.key === "F") && !event.altKey) {
+      if (!onFind || store.getSnapshot().table?.capabilities.find !== true) return;
+      event.preventDefault();
+      onFind();
+      return;
+    }
+    // Shift+F10 and the context menu key open the menu of the active cell.
+    if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
+      event.preventDefault();
+      openCellMenu();
       return;
     }
     // Alt+Enter opens the detail panel of the active row, or closes it.
@@ -578,6 +718,7 @@ export function GridBody({
       </div>
       <CellEditor canvas={canvas} scrollerRef={scrollerRef} announce={announce} ref={editor} />
       <ColumnMenu target={menu} onClose={closeMenu} />
+      <CellMenu target={cellMenu} onClose={closeCellMenu} copy={copySelection} />
     </div>
   );
 }

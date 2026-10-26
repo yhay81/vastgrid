@@ -28,7 +28,7 @@ The specifications are [v2-spec.md](v2-spec.md) (§) and [v2-react.md](v2-react.
 | [#22](https://github.com/yhay81/vastgrid/issues/22) | The first rows of a large sort before it ends | Ported: progressive views (§9), [#35](https://github.com/yhay81/vastgrid/issues/35). |
 | [#23](https://github.com/yhay81/vastgrid/issues/23) | Columns frozen at the right | Ported: `pin: "right"` (§5.1, §6.3). |
 | [#24](https://github.com/yhay81/vastgrid/issues/24) | The totals row (v1 left out freezing data rows) | Ported: `total` (§5.1) and the totals row (React §6.8). |
-| [#25](https://github.com/yhay81/vastgrid/issues/25) | Column groups and headers of several rows | Ported: `columnGroups` (React §6.12); clicking a group selects its columns. Moving columns by dragging headers is not in v2's grid yet: the Columns menu moves them (React §6.9). |
+| [#25](https://github.com/yhay81/vastgrid/issues/25) | Column groups and headers of several rows | Ported: `columnGroups` (React §6.12); clicking a group selects its columns, and dragging it moves them (React §6.13). |
 | [#26](https://github.com/yhay81/vastgrid/issues/26) | Wrapped text (v1: rows of one height, `maxLines`) | Ported: `wrap` (§5.1) and `wrapLines` (React §6.10). |
 | [#27](https://github.com/yhay81/vastgrid/issues/27) | Grouping rows, subtotals and totals | Ported: `aggregate` (§4.1), the Group menu and the totals row (React §6.8). |
 | [#28](https://github.com/yhay81/vastgrid/issues/28) | Pivot tables | Ported: `pivot` (§4.6) in the Group menu. |
@@ -39,8 +39,9 @@ The specifications are [v2-spec.md](v2-spec.md) (§) and [v2-react.md](v2-react.
 
 ## Not in these issues
 
-v1 features that no issue above names, and that #42 still has to bring to v2's grid:
+v1 features that no issue above names:
 
-- Find (⌘F) with a find bar. The engine has `find` (§8.2); the grid has no bar yet.
-- The cell menu: filtering to a cell's value or excluding it, and showing a value in full.
-- Moving columns by dragging their headers, and resizing several at once.
+- Find (⌘F) with a find bar: ported (React §6.13).
+- The cell menu, filtering to a cell's value or excluding it, and showing a value in full: ported (React §6.13).
+- Moving columns by dragging their headers: ported (React §6.13). Resizing several columns at once is not in v2's
+  grid: each column is resized, or fitted to its values from its menu.

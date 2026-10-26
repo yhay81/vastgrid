@@ -155,6 +155,19 @@ export interface GridMessages {
   /** Checked rows (§5.2.1): how many, or that the view may not match them. */
   checkedRows: (count: string) => string;
   checkedUnknown: string;
+  /** The find bar (⌘F) and the cell menu. */
+  find: string;
+  matchCase: string;
+  findNext: string;
+  findPrevious: string;
+  closeFind: string;
+  noMatches: string;
+  cellMenu: string;
+  copy: string;
+  filterToValue: string;
+  excludeValue: string;
+  fullValue: string;
+  close: string;
 }
 
 const en: GridMessages = {
@@ -323,6 +336,18 @@ const en: GridMessages = {
   closeDetails: "Close details",
   checkedRows: (count) => `${count} checked`,
   checkedUnknown: "Some rows of this view may not be checked: filter as when they were checked, or clear the checks.",
+  find: "Find",
+  matchCase: "Match case",
+  findNext: "Find next",
+  findPrevious: "Find previous",
+  closeFind: "Close find",
+  noMatches: "No matches",
+  cellMenu: "Cell menu",
+  copy: "Copy",
+  filterToValue: "Filter to this value",
+  excludeValue: "Exclude this value",
+  fullValue: "Show full value",
+  close: "Close",
 };
 
 const ja: GridMessages = {
@@ -492,6 +517,18 @@ const ja: GridMessages = {
   checkedRows: (count) => `${count} 行をチェック`,
   checkedUnknown:
     "このビューにはチェックの状態が分からない行があります。チェックしたときの絞り込みに戻すか、チェックを解除してください。",
+  find: "検索",
+  matchCase: "大文字と小文字を区別",
+  findNext: "次を検索",
+  findPrevious: "前を検索",
+  closeFind: "検索を閉じる",
+  noMatches: "見つかりません",
+  cellMenu: "セルのメニュー",
+  copy: "コピー",
+  filterToValue: "この値で絞り込む",
+  excludeValue: "この値を除く",
+  fullValue: "値の全体を表示",
+  close: "閉じる",
 };
 
 /** The built-in texts for a language tag: Japanese for `ja`, English otherwise. */
