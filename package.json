@@ -29,7 +29,8 @@
     "format": "biome check --write .",
     "dev": "npm run dev -w vastgrid-playground",
     "bench": "node --conditions=vastgrid-source --import tsx packages/duckdb/bench/run.ts",
-    "e2e": "npm run build -w vastgrid-bench && playwright test"
+    "e2e": "npm run build -w vastgrid-bench && playwright test",
+    "size": "node scripts/bundle-size.mjs"
   },
   "devDependencies": {
     "@babel/core": "7.29.7",
@@ -43,6 +44,7 @@
     "@types/react-dom": "19.3.0",
     "ajv": "8.20.0",
     "babel-plugin-react-compiler": "1.0.0",
+    "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-plugin-react-hooks": "7.1.1",
     "react": "19.3.1",

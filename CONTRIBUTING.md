@@ -45,6 +45,7 @@ npm run lint        # Biome; npm run format fixes what it can
 npm run typecheck
 npm test
 npm run build
+npm run size        # after the build: what a page loads first of v2's grid, within 100 KB with gzip
 npm run build -w vastgrid-site   # when you changed the site, docs/ or the grid
 ```
 

@@ -11,7 +11,8 @@
 - `vastgrid-grid` (unreleased v2): the column and cell menus, the toolbar's menus, the find bar and the detail panel
   load when they first open, which takes 18 KB with gzip off what a page loads first; the toolbar's menus start
   from the state as it is when they open. Keys leave an IME's composition alone, and closing the detail panel from
-  inside it (× or Esc) gives the focus back to the grid. `scripts/bundle-size.mjs` measures the bundle.
+  inside it (× or Esc) gives the focus back to the grid. `npm run size` (`scripts/bundle-size.mjs`) measures what a
+  page loads first and fails over 100 KB with gzip; CI runs it.
 - `vastgrid-grid` (unreleased v2): a find bar (⌘F or Ctrl+F; `GridStore.find`), a cell menu (right click,
   Shift+F10) that copies, filters to a value or excludes it, shows a value in full (`GridStore.fullValue`) and opens
   the details, and moving columns by dragging their headers; a click on a header sorts on release.

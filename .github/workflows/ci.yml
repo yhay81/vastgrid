@@ -22,6 +22,7 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
+      - run: npm run size
   test:
     name: Test (${{ matrix.os }}, Node.js ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
