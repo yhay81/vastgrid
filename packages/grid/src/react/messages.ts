@@ -31,6 +31,14 @@ export interface GridMessages {
   reload: string;
   /** Reading the file again drops the cells written into the table as it was read. */
   discardAndReload: string;
+  /** The menu that exports the view (§6.6), its choices, and what an export did. */
+  export: string;
+  exportFormats: Record<string, string>;
+  exportView: string;
+  exportTable: string;
+  exportAllColumns: string;
+  exporting: string;
+  exported: (rows: string) => string;
 }
 
 const en: GridMessages = {
@@ -59,6 +67,13 @@ const en: GridMessages = {
   changedOnDisk: "The file changed on disk. Your unsaved edits are kept.",
   reload: "Reload",
   discardAndReload: "Discard edits and reload",
+  export: "Export",
+  exportFormats: { csv: "CSV", tsv: "TSV", xlsx: "Excel (.xlsx)", parquet: "Parquet", json: "JSON" },
+  exportView: "Rows of the view",
+  exportTable: "Whole table",
+  exportAllColumns: "Hidden columns too",
+  exporting: "Exporting…",
+  exported: (rows) => `Exported ${rows} rows`,
 };
 
 const ja: GridMessages = {
@@ -87,6 +102,13 @@ const ja: GridMessages = {
   changedOnDisk: "ディスク上のファイルが変更されました。未保存の編集は残っています。",
   reload: "再読み込み",
   discardAndReload: "編集を破棄して再読み込み",
+  export: "書き出し",
+  exportFormats: { csv: "CSV", tsv: "TSV", xlsx: "Excel (.xlsx)", parquet: "Parquet", json: "JSON" },
+  exportView: "ビューの行",
+  exportTable: "表全体",
+  exportAllColumns: "非表示の列も含める",
+  exporting: "書き出しています…",
+  exported: (rows) => `${rows} 行を書き出しました`,
 };
 
 /** The built-in texts for a language tag: Japanese for `ja`, English otherwise. */

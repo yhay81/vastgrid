@@ -56,7 +56,21 @@ createServer(createHttpHandler(engine, { path: "/api" })).listen(8080);
   with `fileChanged: true` in `info`, `changes` and the `changed` event; `reload` moves a handle to the file as it
   is now, without them. A file that is removed, or cannot be read while it is being written, keeps its table the
   same way until it can be read again.
-- **Not yet.** Exporting is the next step of the rebuild ([#33](https://github.com/yhay81/vastgrid/issues/33)).
+- **Exporting.** `export` (§8.2) writes the whole view, with the written cells, as CSV, TSV, Parquet, JSON or an
+  Excel workbook, on the server: DuckDB writes the first four (`COPY`), and workbooks are streamed one chunk of
+  rows at a time. Files are written under a temporary name and renamed once complete. With `resolveTarget`, an
+  export may name a `target` where the host lets it be written (inside the allowed folders, never a file that a
+  table reads). Without a target, the engine keeps the file (at most 16, for an hour) and answers its name, which
+  `exportFile(name)` and the HTTP handler (`GET <path>/exports/<name>`, as a download named after the table)
+  serve, so that no row goes through the browser. On an Apple-silicon laptop, a sorted view of a million rows of
+  four columns exports in 0.3 s as CSV (39 MB, with the sort), 0.1 s as Parquet, 0.2 s as JSON and 2.2 s as a
+  workbook (27 MB).
+
+| Format | Limits |
+| --- | --- |
+| CSV, TSV | none; repeated headers are written as they are |
+| Parquet, JSON | none; columns keep their names (headers are not used) |
+| Excel (`.xlsx`) | 1,048,575 rows and 16,384 columns (`export_too_large`), 32,767 characters a cell, 4 GB; text is never written as a formula |
 
 `node --conditions=vastgrid-source --import tsx packages/duckdb-engine/bench/open.ts` measures opening and
 reading the files of the benches; [`examples/files`](../../examples/files) shows them in v2's grid.

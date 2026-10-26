@@ -5,6 +5,7 @@
  */
 import { checkPlan, planOptions } from "./check.js";
 import { parseHtmlTable, parseTsv, toHtmlTable, toMarkdownTable, toTsv } from "./clipboard.js";
+import { excelNumberFormat } from "./excel.js";
 import { canonicalJson } from "./hash.js";
 import { editText, readCellText } from "./input.js";
 import {
@@ -44,7 +45,7 @@ import {
   sameKey,
   type Total,
 } from "./state.js";
-import type { Column, JsonValue, ValueType } from "./types.js";
+import type { Column, JsonValue, LogicalType, ValueType } from "./types.js";
 import { floatOf, sameType, textOf, trimSpaces } from "./values.js";
 
 /** Rows of the view that the core has read (§6.1). */
@@ -148,7 +149,7 @@ export type GridCommand =
   | { command: "edit.commit"; move?: Direction | null }
   | { command: "edit.fill"; direction: "down" | "right" }
   | { command: "copy"; headers?: boolean; values?: "raw" | "formatted" }
-  | { command: "export"; format: string; columns?: "displayed" | "all"; target?: string }
+  | { command: "export"; format: string; columns?: "displayed" | "all"; rows?: "view" | "table"; target?: string }
   | { command: "view.update"; hash: string; located?: { key: RowKey; row: number | null }[] }
   | { command: "history.push"; updates: HistoryUpdate[] }
   | { command: "history.undone" | "history.redone" | "history.clear" };
@@ -1789,31 +1790,39 @@ const HANDLERS: Record<CommandName, Handler> = {
   },
 
   export(run, command) {
-    takes(command, ["format", "columns", "target"]);
+    takes(command, ["format", "columns", "rows", "target"]);
     const format = stringArgument(command, "format");
     const columns = choice(command, "columns", ["displayed", "all"] as const, "displayed");
+    const rows = choice(command, "rows", ["view", "table"] as const, "view");
     const target = optionalString(command, "target");
     const capabilities = run.context.capabilities;
     if (capabilities && !capabilities.export?.formats.includes(format)) {
       fail("/format", "unsupported", `The engine does not export ${format}.`);
     }
-    const displayed = run.displayed();
+    // The whole table is its rows as they are, without the plan, in the displayed order of its columns.
+    const source = rows === "view" ? run.context.view.columns : run.context.table;
+    const known = new Set(source.map((column) => column.name));
+    let displayed = run.displayed().filter((name) => known.has(name));
+    if (displayed.length === 0 && rows === "table") displayed = source.map((column) => column.name);
     const names =
       columns === "displayed"
         ? displayed
-        : [
-            ...displayed,
-            ...run.context.view.columns.map((column) => column.name).filter((name) => !displayed.includes(name)),
-          ];
+        : [...displayed, ...source.map((column) => column.name).filter((name) => !displayed.includes(name))];
     const settings = new Map((run.document.columns ?? []).map((setting) => [setting.name, setting]));
     const request: CommandRequest = {
       op: "export",
       revision: run.context.revision,
-      plan: run.plan,
+      plan: rows === "view" ? run.plan : {},
       format,
       columns: names,
       headers: names.map((name) => settings.get(name)?.format?.label ?? name),
     };
+    if (format === "xlsx") {
+      // A workbook shows numbers and dates as the grid formats them.
+      const types = new Map(source.map((column) => [column.name, column.type]));
+      const codes = names.map((name) => excelNumberFormat(types.get(name) as LogicalType, settings.get(name)?.format));
+      if (codes.some((code) => code !== null)) request.numberFormats = codes;
+    }
     if (target !== undefined) request.target = target;
     run.requests.push(request);
   },

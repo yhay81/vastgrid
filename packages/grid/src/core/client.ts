@@ -16,6 +16,11 @@ export interface Transport {
    * when the signal given to `send` aborts (an HTTP request is aborted).
    */
   cancels?: "message" | "signal";
+  /**
+   * Where the file of an `export` without a target can be downloaded, by the `target` of its answer (§8.2): the
+   * HTTP transport's `<url>/exports/<target>`. Absent when the transport has no such place.
+   */
+  exportUrl?(target: string): string;
 }
 
 function cancelled(op: Operation) {

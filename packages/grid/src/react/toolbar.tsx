@@ -2,6 +2,7 @@ import { use, useDeferredValue, useEffect, useState, useTransition } from "react
 import { type Expr, partsOf } from "vastgrid-spec";
 import { isApple } from "../canvas/keys.js";
 import { LocaleContext, SaveContext } from "./context.js";
+import { ExportMenu } from "./export-menu.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 
 /** How long typing must pause before the search is set. */
@@ -55,7 +56,8 @@ export function Toolbar({ announce }: { announce: (text: string) => void }) {
     return () => clearTimeout(timer);
   }, [store, deferred, current]);
   const showsSave = saves && saving !== null;
-  if (!searches && !showsSave && !fileChanged) return null;
+  const exports = useGridSelector((snapshot) => (snapshot.table?.capabilities.export?.formats.length ?? 0) > 0);
+  if (!searches && !showsSave && !fileChanged && !exports) return null;
   return (
     <div className="vg-toolbar">
       {searches && (
@@ -74,6 +76,7 @@ export function Toolbar({ announce }: { announce: (text: string) => void }) {
           {unsaved > 0 ? messages.discardAndReload : messages.reload}
         </button>
       )}
+      <ExportMenu announce={announce} />
       {showsSave && (
         <button
           type="button"

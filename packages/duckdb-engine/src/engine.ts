@@ -2,7 +2,8 @@
  * The DuckDB engine of vastgrid v2 (docs/v2-spec.md §8): answers request messages with responses whose blocks are
  * bytes (the structured encoding of §8.8), and sends events (§8.5) to its subscribers.
  */
-import { realpath, stat } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { realpath, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import {
   BlockValueError,
@@ -15,6 +16,7 @@ import {
   SpecError,
 } from "vastgrid-spec";
 import { EngineError, errorMessage } from "./errors.js";
+import { type ExportFormat, ExportStore, type KeptExport, writeExport } from "./export.js";
 import { isSavable, saveTable } from "./save.js";
 import { Session } from "./session.js";
 import { fileRevision, LoadedTable, type TableFormat, tableFormatOf } from "./table.js";
@@ -31,6 +33,12 @@ export interface DuckDBEngineOptions extends ViewOptions {
    * inside the first allowed folder.
    */
   resolve?: (ref: string) => string | Promise<string>;
+  /**
+   * The file that the `target` of `export` names (§8.2), where the host lets exports be written: a path inside the
+   * allowed folders, which is not a file that a table was read from. Throw to refuse it (`not_allowed`). Without
+   * it, exports name no target: the engine keeps each one for the host to serve (`exportFile`).
+   */
+  resolveTarget?: (target: string) => string | Promise<string>;
   /**
    * Where the engine keeps its database file, data spilled from memory and converted files: a folder of its own
    * inside, deleted by `dispose`; folders left by processes that ended without it are deleted on the next start.
@@ -106,6 +114,7 @@ export class DuckDBEngine {
   private readonly told = new WeakMap<LoadedTable, string>();
   private readonly views: Views;
   private readonly watcher: FileWatcher;
+  private readonly exports: ExportStore;
   /** Stops watching the file of each table. */
   private readonly unwatch = new Map<LoadedTable, () => void>();
   private nextHandle = 1;
@@ -118,6 +127,7 @@ export class DuckDBEngine {
     private readonly tableHash: string,
   ) {
     this.watcher = new FileWatcher(WATCH_DELAY, options.log);
+    this.exports = new ExportStore((name) => session.file(name));
     this.views = new Views(session, options.textLimit ?? 2000, options, (table, view) => {
       for (const [id, item] of this.handles) {
         if (item !== table) continue;
@@ -298,8 +308,7 @@ export class DuckDBEngine {
       case "save":
         return this.save(this.table(request), signal);
       case "export":
-        this.table(request);
-        throw new EngineError("not_allowed", "This engine does not export yet.");
+        return this.exportView(this.table(request), request, signal);
       default:
         throw new EngineError("internal", `The engine does not answer ${request.op}.`);
     }
@@ -321,6 +330,85 @@ export class DuckDBEngine {
     const result = await saveTable(this.session, table, signal);
     if (result.edits.version !== version) this.tellChanged(table);
     return result;
+  }
+
+  /**
+   * Writes the view of a request (§8.2) into the host's `target`, or, without one, into a file that the engine
+   * keeps (`exportFile`), whose name the answer gives as its `target`. The file is written under a temporary name
+   * and renamed once complete, so that a failed or cancelled export leaves nothing behind.
+   */
+  private async exportView(table: LoadedTable, request: Json, signal: AbortSignal) {
+    const format = request.format as ExportFormat;
+    const destination = request.target === undefined ? null : await this.resolveTarget(request.target as string);
+    const kept = destination === null ? this.exports.reserve(format) : null;
+    const file = destination ?? (kept as { path: string }).path;
+    const temporary =
+      destination === null
+        ? file
+        : path.join(path.dirname(file), `.${path.basename(file)}.${randomBytes(6).toString("hex")}.tmp`);
+    try {
+      const rows = await this.views.export(table, request, signal, async (view, columns) => {
+        await this.session.withConnection(signal, (connection) =>
+          writeExport(
+            connection,
+            {
+              view,
+              format,
+              columns,
+              headers: (request.headers as string[] | undefined) ?? columns.map((column) => column.name),
+              numberFormats: request.numberFormats as (string | null)[] | undefined,
+              signal,
+            },
+            temporary,
+          ),
+        );
+        return view.rowCount;
+      });
+      if (signal.aborted) throw new EngineError("cancelled", "The request was cancelled.");
+      if (table.replaced) {
+        throw new EngineError("revision_changed", "The file changed while it was exported: export it again.");
+      }
+      if (destination !== null) {
+        await rename(temporary, destination);
+        return { target: request.target, rows };
+      }
+      const { name } = kept as { name: string };
+      const base = path.basename(table.path).replace(/\.[^.]+(\.(gz|zst))?$/i, "");
+      await this.exports.keep(name, file, `${base}.${format}`, format);
+      return { target: name, rows };
+    } catch (error) {
+      await rm(temporary, { force: true });
+      throw error;
+    }
+  }
+
+  /** The file of an `export` that named no target (§8.2), by the name its answer gave; null when it is gone. */
+  exportFile(name: string): KeptExport | null {
+    return this.exports.get(name);
+  }
+
+  /** Where the host lets an export's `target` be written: inside the allowed folders, and no table's file. */
+  private async resolveTarget(target: string): Promise<string> {
+    const refuse = (message: string) => new EngineError("not_allowed", message);
+    if (!this.options.resolveTarget) {
+      throw refuse("This engine keeps exports for the host to serve: leave out the target.");
+    }
+    let file: string;
+    try {
+      file = path.resolve(await this.options.resolveTarget(target));
+    } catch (error) {
+      throw refuse(errorMessage(error) || "The host does not write exports there.");
+    }
+    // The folder may be a link: the file is written at its real location, which must be allowed.
+    const folder = await realpath(path.dirname(file)).catch(() => {
+      throw refuse("The folder of the target does not exist.");
+    });
+    const destination = path.join(folder, path.basename(file));
+    if (!this.session.allows(destination)) throw refuse("The target is outside the folders this engine may write.");
+    const real = await realpath(destination).catch(() => destination);
+    const tables = [...this.tables.values(), ...this.retired];
+    if (tables.some((table) => table.path === real)) throw refuse("An export does not replace a file that is open.");
+    return destination;
   }
 
   private async resolve(ref: string): Promise<string> {

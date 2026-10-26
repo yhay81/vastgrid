@@ -993,6 +993,9 @@
             "columns": {
               "enum": ["displayed", "all"]
             },
+            "rows": {
+              "enum": ["view", "table"]
+            },
             "target": {
               "type": "string"
             }

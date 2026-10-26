@@ -930,7 +930,7 @@ range:
 | Command | Arguments | Effect |
 | --- | --- | --- |
 | `copy` | `headers`: boolean; `values`: `raw` (default) or `formatted` | `output` is `{ "tsv", "html", "markdown" }` of the selected cells |
-| `export` | `format`; `columns`: `displayed` (default) or `all`; `target` | an `export` request (§8.2) of the view: the displayed columns in display order (with `all`, then the other columns of the view in view order) and their labels (`format.label`, or the name) as `headers`; `unsupported` when the engine does not export the format |
+| `export` | `format`; `columns`: `displayed` (default) or `all`; `rows`: `view` (default) or `table`; `target` | an `export` request (§8.2) of the view: the displayed columns in display order (with `all`, then the other columns of the view in view order) and their labels (`format.label`, or the name) as `headers`; for `xlsx`, the Excel codes of the columns' `format.number` and `format.date` as `numberFormats`, when one has a code. With `rows: table`, the request is of the plan `{}` (every row of the table, with the written values) and its columns are the table's: the displayed ones in display order, all of them when none is displayed. `unsupported` when the engine does not export the format |
 | `save` | | a `save` request; `unsupported` when the engine does not save |
 
 `copy` places the ranges as spreadsheets do: ranges with the same rows side by side, ranges with the same
@@ -1153,8 +1153,18 @@ take included. Clients check responses and events in the same way; one that does
   (default all), `headers` replace their names in the header of CSV, TSV and xlsx, and `numberFormats` (one
   Excel format code or null per column) apply to xlsx; both have one item per column. An engine whose
   `capabilities.export.delivery` is `file` writes the file at `target` as the host resolves it and answers
-  that `target`; one whose delivery is `data` answers `data`, the file's bytes, as a block is carried (§8.8),
-  and `target` null.
+  that `target`; without a `target`, it keeps the file where the host can serve it and answers a name for it as
+  `target` (over HTTP, a `GET` of `exports/<target>` next to the requests' URL, §8.8). One whose delivery is
+  `data` answers `data`, the file's bytes, as a block is carried (§8.8), and `target` null. `rows` is the view's
+  row count. The rows are those of the whole view, in its order, with the written values (§7.2); a file is
+  complete or not there: a failed or cancelled export leaves nothing behind.
+
+  | Format | Written as | Limits |
+  | --- | --- | --- |
+  | `csv`, `tsv` | a header line of `headers`, then the rows; values as their text, quoted when they need it | none |
+  | `parquet` | the columns under their names, with their types | none |
+  | `json` | an array of objects by column name; numbers as JSON numbers, with all their digits | none |
+  | `xlsx` | one sheet: a bold, frozen header row of `headers`; numbers, booleans and dates as such cells, with `numberFormats` or a date format; text always as text, never a formula; numbers that a double cannot hold exactly as text | 1,048,575 rows and 16,384 columns (`export_too_large`), 32,767 characters a cell (cut), 4 GB |
 
 ### 8.3 Identity
 

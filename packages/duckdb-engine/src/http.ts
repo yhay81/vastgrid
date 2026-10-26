@@ -1,8 +1,10 @@
 /**
  * The engine over HTTP (docs/v2-spec.md §8.8): a request is a `POST` of its JSON; the response is JSON with blocks
  * in base64, or, to a client that accepts `application/vnd.vastgrid.v2+arrow`, that type with its block attached;
- * errors have the statuses of §8.7; events go out as Server-Sent Events.
+ * errors have the statuses of §8.7; events go out as Server-Sent Events; the files of exports without a target are
+ * downloaded with a `GET` of `<path>/exports/<name>`.
  */
+import { createReadStream } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { ARROW_MEDIA_TYPE, ERROR_STATUS, type ErrorCode, frameAttached, toTextEncoding } from "vastgrid-spec";
 import type { DuckDBEngine } from "./engine.js";
@@ -12,6 +14,11 @@ export interface HttpHandlerOptions {
   path?: string;
   /** The path of the events. The path of requests and `events` by default (`/events`, `/api/events`). */
   events?: string;
+  /**
+   * The path under which the files of exports without a target are downloaded, by the `target` that their answer
+   * gave. The path of requests and `exports/` by default (`/exports/`, `/api/exports/`).
+   */
+  exports?: string;
   /** The largest body of a request, in bytes; larger ones are answered with 413. 64 MiB by default. */
   maxBody?: number;
   /** Milliseconds between the comments that keep a stream of events open. 15 seconds by default. */
@@ -60,12 +67,18 @@ function hasBlock(answer: Json) {
  */
 export function createHttpHandler(engine: DuckDBEngine, options: HttpHandlerOptions = {}) {
   const base = options.path ?? "/";
-  const events = options.events ?? `${base.endsWith("/") ? base : `${base}/`}events`;
+  const prefix = base.endsWith("/") ? base : `${base}/`;
+  const events = options.events ?? `${prefix}events`;
+  const exportsPath = options.exports ?? `${prefix}exports/`;
   const limit = options.maxBody ?? 64 * 1024 * 1024;
   return async (request: IncomingMessage, response: ServerResponse, next?: (error?: unknown) => void) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     if (url.pathname === events && request.method === "GET") {
       streamEvents(engine, response, options.keepAlive ?? 15_000);
+      return;
+    }
+    if (url.pathname.startsWith(exportsPath) && (request.method === "GET" || request.method === "HEAD")) {
+      sendExport(engine, decodeURIComponent(url.pathname.slice(exportsPath.length)), request, response);
       return;
     }
     if (url.pathname !== base) {
@@ -116,6 +129,31 @@ export function createHttpHandler(engine: DuckDBEngine, options: HttpHandlerOpti
     }
     sendJson(response, 200, toTextEncoding(answer));
   };
+}
+
+/** Sends the file of an export as a download, or 404 when the engine does not keep one of that name (any more). */
+function sendExport(engine: DuckDBEngine, name: string, request: IncomingMessage, response: ServerResponse) {
+  const kept = engine.exportFile(name);
+  if (!kept) {
+    // Not a message of §8: a download, whose answer is the file or not found.
+    send(response, 404, "text/plain; charset=utf-8", "There is no such export (any more).\n");
+    return;
+  }
+  // The name in ASCII for old clients, and in UTF-8 (RFC 6266, RFC 8187).
+  const ascii = kept.fileName.replace(/[^\x20-\x7e]|["\\]/g, "_");
+  response.writeHead(200, {
+    "content-type": kept.mediaType,
+    "content-length": kept.size,
+    "content-disposition": `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(kept.fileName)}`,
+    "cache-control": "no-store",
+  });
+  if (request.method === "HEAD") {
+    response.end();
+    return;
+  }
+  const stream = createReadStream(kept.path);
+  stream.on("error", () => response.destroy());
+  stream.pipe(response);
 }
 
 /** Sends the engine's events (§8.5) as Server-Sent Events until the client goes away. */

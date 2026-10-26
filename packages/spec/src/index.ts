@@ -55,6 +55,7 @@ export {
   sameCellValue,
   WRITE_LIMIT,
 } from "./commands.js";
+export { excelNumberFormat } from "./excel.js";
 export { canonicalJson, normalizePlan, planHash } from "./hash.js";
 export { editText, type InputError, type InputOptions, type InputResult, readCellText } from "./input.js";
 export {

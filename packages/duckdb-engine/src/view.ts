@@ -44,6 +44,7 @@ export const CAPABILITIES: Capabilities = {
   locate: true,
   write: true,
   save: false,
+  export: { formats: ["csv", "tsv", "parquet", "json", "xlsx"], delivery: "file" },
   preview: true,
   partialViews: false,
   changes: "push",
@@ -282,6 +283,21 @@ export class Views {
   }
 
   /** The answer of `rows` (§8.2): positions `[start, end)` of the view, cut at its row count, as a block (§8.4). */
+  /**
+   * Runs an export (§8.2) of the whole view of a request: `write` gets the view, once it is complete, and the
+   * columns of `request.columns` (all of the view's by default).
+   */
+  async export<T>(
+    table: LoadedTable,
+    request: Json,
+    signal: AbortSignal | undefined,
+    write: (view: View, columns: Column[]) => Promise<T>,
+  ): Promise<T> {
+    return this.use(table, { ...request, preview: false }, signal, (view) =>
+      write(view, request.columns === undefined ? view.sql.columns : columnsOf(view, request.columns as string[])),
+    );
+  }
+
   async rows(table: LoadedTable, request: Json, signal?: AbortSignal): Promise<Json> {
     return this.use(table, request, signal, (view) => this.rowsOf(table, view, request, signal));
   }

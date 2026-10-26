@@ -876,6 +876,11 @@ export class GridStore {
     return applied.result.output === undefined ? { ok: true } : { ok: true, output: applied.result.output };
   }
 
+  /** Where the file of an `export` without a target can be downloaded (`Transport.exportUrl`), or null. */
+  exportUrl(target: string): string | null {
+    return this.options.transport.exportUrl?.(target) ?? null;
+  }
+
   /**
    * Reads the table's file as it is now (`reload`, §7.6), without the cells written into the table as it was read:
    * for a file that changed on disk while the table had written cells (`fileChanged` of the table).

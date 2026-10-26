@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `vastgrid-duckdb-engine` (unreleased v2): `export` writes views as CSV, TSV, Parquet, JSON and Excel workbooks
+  (§8.2), with the written cells, on the server: DuckDB writes the first four, and workbooks are streamed by a
+  writer ported from v1 (numbers, dates and booleans as such cells, text never as a formula, Excel's limits as
+  `export_too_large`). Files are complete or not there. The option `resolveTarget` lets exports be written where
+  the host allows, never over a file that a table reads; without a target the engine keeps the file, which
+  `exportFile` and the HTTP handler (`GET <path>/exports/<name>`) serve as a download.
+- `vastgrid-spec` (unreleased v2): the `export` command takes `rows: "table"` for every row of the table, and gives
+  workbooks the Excel codes of the columns' number and date formats (`excelNumberFormat`).
+- `vastgrid-grid` (unreleased v2): the toolbar's Export menu exports the view or the whole table in the engine's
+  formats, and `httpTransport` downloads the file (`Transport.exportUrl`, `store.exportUrl`).
 - `vastgrid-duckdb-engine` (unreleased v2): `save` writes the written cells into CSV and TSV files with the new
   option `saveFiles` (§7.5). Only the fields that changed are written anew, in the file's encoding and date
   formats; every other byte stays. The file is replaced through a temporary file next to it, and files changed by

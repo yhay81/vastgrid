@@ -816,6 +816,152 @@
       }
     },
     {
+      "id": "copy.export-table",
+      "section": "6.6",
+      "description": "The whole table: its rows without the plan, the displayed table columns in display order.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "gt",
+              "args": [
+                {
+                  "col": "qty"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            },
+            "sort": [
+              {
+                "column": "id",
+                "direction": "desc"
+              }
+            ]
+          },
+          "columns": [
+            {
+              "name": "price",
+              "format": {
+                "label": "Price"
+              }
+            },
+            {
+              "name": "note",
+              "hidden": true
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "export",
+          "format": "csv",
+          "rows": "table"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "export",
+            "revision": "r1",
+            "plan": {},
+            "format": "csv",
+            "columns": [
+              "price",
+              "id",
+              "region",
+              "qty",
+              "shipped"
+            ],
+            "headers": [
+              "Price",
+              "id",
+              "region",
+              "qty",
+              "shipped"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "copy.export-number-formats",
+      "section": "6.6",
+      "description": "A workbook gets the Excel codes of the columns' number and date formats.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "price",
+              "format": {
+                "label": "Price",
+                "number": {
+                  "fractionDigits": 2
+                }
+              }
+            },
+            {
+              "name": "shipped",
+              "format": {
+                "date": {
+                  "pattern": "yyyy/MM/dd"
+                }
+              }
+            },
+            {
+              "name": "note",
+              "hidden": true
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "export",
+          "format": "xlsx"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "export",
+            "revision": "r1",
+            "plan": {},
+            "format": "xlsx",
+            "columns": [
+              "price",
+              "shipped",
+              "id",
+              "region",
+              "qty"
+            ],
+            "headers": [
+              "Price",
+              "shipped",
+              "id",
+              "region",
+              "qty"
+            ],
+            "numberFormats": [
+              "#,##0.00",
+              "yyyy\"/\"mm\"/\"dd",
+              null,
+              null,
+              null
+            ]
+          }
+        ]
+      }
+    },
+    {
       "id": "copy.export-unsupported",
       "section": "6.6",
       "state": {},

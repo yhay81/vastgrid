@@ -79,8 +79,12 @@ interface GridStore {
   setDocument(document: GridDocument): void;
   setSession(session: GridSession): void;
   reload(): Promise<void>;
+  exportUrl(target: string): string | null;
 }
 ```
+
+`exportUrl` gives where the file of an `export` without a target can be downloaded, from the transport
+(`Transport.exportUrl`; `httpTransport` gives `<url>/exports/<target>`), or null.
 
 `reload` reads the table's file as it is now (`reload`, §7.6 of the specification), for a file that changed on disk
 while the table had written cells (`fileChanged` of the table); a new revision is applied as an engine's `changed`
@@ -334,6 +338,9 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
 - A file that changes on disk (§7.6 of the specification) is shown as it is now once the engine has read it again.
   When the table has written cells, it stays as it was: the status bar says that the file changed and the edits
   are kept, and the toolbar's "Discard edits and reload" button calls `reload`.
+- When the engine exports (`capabilities.export`), the toolbar has an Export menu: the rows of the view or the
+  whole table, with the hidden columns or not, in each format the engine offers. The export runs as an Action;
+  its file is downloaded from `exportUrl`, and the rows exported are announced.
 - The store shows a written value at once, before the engine answers, and shows the cell's value again when the
   write fails; commands read the written values too. It drops them once the rows of the new edits version are on
   screen (§4.2).

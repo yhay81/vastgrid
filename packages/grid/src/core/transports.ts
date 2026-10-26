@@ -98,6 +98,8 @@ export interface HttpTransportOptions {
   headers?: Record<string, string>;
   /** A URL of Server-Sent Events that carries the engine's events (§8.8). */
   events?: string;
+  /** The URL under which exports without a target are downloaded; `<url>/exports/` by default. */
+  exports?: string;
 }
 
 /**
@@ -106,8 +108,10 @@ export interface HttpTransportOptions {
  */
 export function httpTransport(url: string, options: HttpTransportOptions = {}): Transport {
   const request = options.fetch ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
+  const exports = options.exports ?? `${url.replace(/\/+$/, "")}/exports/`;
   const transport: Transport = {
     cancels: "signal",
+    exportUrl: (target) => `${exports}${encodeURIComponent(target)}`,
     async send(message, { signal }) {
       const response = await request(url, {
         method: "POST",

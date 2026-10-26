@@ -242,6 +242,57 @@
   cursor: default;
 }
 
+/* The export menu: a popover under its button. */
+
+.vg-menu {
+  position: fixed;
+  inset: auto;
+  min-width: 200px;
+  margin: 0;
+  padding: 6px;
+  color: var(--vg-fg);
+  font: inherit;
+  background: var(--vg-surface);
+  border: 1px solid var(--vg-border);
+  border-radius: var(--vg-radius);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.25);
+}
+
+.vg-menu__group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 6px;
+  padding: 2px 4px 8px;
+  border: none;
+  border-bottom: 1px solid var(--vg-line);
+}
+
+.vg-menu__group label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.vg-menu__item {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: var(--vg-radius);
+  cursor: pointer;
+}
+
+.vg-menu__item:hover,
+.vg-menu__item:focus-visible {
+  background: var(--vg-line);
+  outline: none;
+}
+
 .vg-button:focus-visible {
   outline: 2px solid var(--vg-focus);
   outline-offset: 1px;
