@@ -201,7 +201,8 @@ test("the saved file keeps its mode", async () => {
   // A change of mode alone is not a change of the file's revision.
   await write(info, [[0, "b", "y"]]);
   await save(info);
-  assert.equal((await stat(path.join(workspace, "mode.csv"))).mode & 0o777, 0o640);
+  // Windows has no POSIX modes: chmod sets only the read-only flag, and stat reports 0o666 or 0o444.
+  if (process.platform !== "win32") assert.equal((await stat(path.join(workspace, "mode.csv"))).mode & 0o777, 0o640);
   assert.equal((await bytes("mode.csv")).toString(), "a,b\n1,y\n");
 });
 

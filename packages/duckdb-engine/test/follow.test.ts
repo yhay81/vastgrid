@@ -46,7 +46,18 @@ function changedEvents(table: string) {
 async function replace(name: string, content: string) {
   const temporary = path.join(workspace, `.${name}.new`);
   await writeFile(temporary, content);
-  await rename(temporary, path.join(workspace, name));
+  // On Windows a rename over a file that another reader has open (DuckDB reading it again, a virus scanner)
+  // fails with EPERM until the reader closes it; editors there try again, and so does this.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rename(temporary, path.join(workspace, name));
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (process.platform !== "win32" || (code !== "EPERM" && code !== "EACCES") || attempt >= 50) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
 }
 
 test("a file without written cells is read again when it changes, and its handles follow it (§7.6)", async () => {
