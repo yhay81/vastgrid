@@ -37,7 +37,8 @@ function sendJson(response: ServerResponse, status: number, body: unknown) {
 }
 
 function invalid(response: ServerResponse, status: number, message: string, reason: string) {
-  sendJson(response, status, { v: 2, id: 0, error: { code: "invalid_request", message, path: "", reason } });
+  // No request was read, so none is answered (§8.1).
+  sendJson(response, status, { v: 2, id: null, error: { code: "invalid_request", message, path: "", reason } });
 }
 
 /**

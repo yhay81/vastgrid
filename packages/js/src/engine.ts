@@ -3,12 +3,15 @@
  * its host gives it as arrays of typed JSON values (§2.2), with views in the order of §3.3.
  */
 import {
+  answerId,
   type Capabilities,
   type CheckedPlan,
   type Column,
   checkPlan,
   checkRequest,
+  type ErrorCode,
   encodeBlock,
+  errorResponse,
   type JsonValue,
   keyText,
   MESSAGE_LIMITS,
@@ -79,7 +82,7 @@ type Request = Json & { v: 2; id: number; op: Operation };
 /** An error of §8.7 that a request is answered with. */
 class Failure extends Error {
   constructor(
-    readonly code: string,
+    readonly code: ErrorCode,
     message: string,
     readonly extra: { path?: string; reason?: string; details?: Json } = {},
   ) {
@@ -151,67 +154,6 @@ function isObject(value: unknown): value is Json {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-/** The `id` of a message that does not follow §8, when it has one that can be answered. */
-function idOf(message: unknown): number {
-  const id = isObject(message) ? message.id : undefined;
-  return typeof id === "number" && Number.isSafeInteger(id) && id >= 0 ? id : 0;
-}
-
-/** Code points of an error's message at most: messages of errors may quote what a request holds. */
-const ERROR_TEXT = 1000;
-
-/**
- * An error message (§8.1) that a message can carry: its text cut to 1,000 code points, and a path longer
- * than the limit of §8.1 (one through a name that is too long) cut to the member that holds the name.
- */
-function errorMessage(id: number, code: string, message: string, extra: Failure["extra"] = {}): Json {
-  const error: Json = {
-    code,
-    message: cut(message, ERROR_TEXT) === null ? message : `${cut(message, ERROR_TEXT - 1)}…`,
-  };
-  let path = extra.path;
-  while (path !== undefined && path.length > MESSAGE_LIMITS.text && [...path].length > MESSAGE_LIMITS.text) {
-    path = path.slice(0, path.lastIndexOf("/"));
-  }
-  if (path !== undefined) error.path = path;
-  if (extra.reason !== undefined) error.reason = extra.reason;
-  if (extra.details !== undefined) error.details = extra.details;
-  return { v: 2, id, error };
-}
-
-/** A member name or index as one step of a JSON Pointer. */
-function pointer(key: string | number): string {
-  return `/${String(key).replaceAll("~", "~0").replaceAll("/", "~1")}`;
-}
-
-/**
- * Checks that the names and strings of a request hold at most 1,000,000 code points (§8.1), where
- * `checkRequest` does not look: in plans, keys and values. Walks without recursion, whatever the depth.
- */
-function checkStrings(request: Json) {
-  const limit = MESSAGE_LIMITS.text;
-  const long = (text: string) => text.length > limit && [...text].length > limit;
-  const pending: [unknown, string][] = [[request, ""]];
-  for (let item = pending.pop(); item !== undefined; item = pending.pop()) {
-    const [value, path] = item;
-    if (typeof value === "string") {
-      if (long(value))
-        throw new ProtocolError("invalid_request", path, "limit", "A string holds at most 1,000,000 code points.");
-    } else if (Array.isArray(value)) {
-      value.forEach((child, index) => {
-        pending.push([child, `${path}${pointer(index)}`]);
-      });
-    } else if (isObject(value) && !ArrayBuffer.isView(value)) {
-      for (const [key, child] of Object.entries(value)) {
-        // A pointer to a name that is too long would be too long itself: the error names the object.
-        if (long(key))
-          throw new ProtocolError("invalid_request", path, "limit", "A name holds at most 1,000,000 code points.");
-        pending.push([child, `${path}${pointer(key)}`]);
-      }
-    }
-  }
-}
-
 /**
  * The string cut to `limit` code points, or null when it has no more than that (§8.4). A string of no more
  * UTF-16 units than the limit has no more code points either.
@@ -268,15 +210,14 @@ class Engine implements MemoryEngine {
     let request: Request;
     try {
       request = checkRequest(message);
-      checkStrings(request);
     } catch (error) {
       if (error instanceof ProtocolError) {
-        return errorMessage(idOf(message), "invalid_request", error.message, {
+        return errorResponse(answerId(message), "invalid_request", error.message, {
           path: error.path,
           reason: error.reason,
         });
       }
-      return errorMessage(idOf(message), "internal", String(error));
+      return errorResponse(answerId(message), "internal", String(error));
     }
     if (request.op === "cancel") {
       const running = this.running.get(request.request as number);
@@ -288,14 +229,14 @@ class Engine implements MemoryEngine {
     try {
       return { v: 2, id: request.id, result: await this.answer(request, running) };
     } catch (error) {
-      if (error instanceof Failure) return errorMessage(request.id, error.code, error.message, error.extra);
+      if (error instanceof Failure) return errorResponse(request.id, error.code, error.message, error.extra);
       if (error instanceof PlanError) {
-        return errorMessage(request.id, "invalid_plan", error.message, { path: error.path, reason: error.reason });
+        return errorResponse(request.id, "invalid_plan", error.message, { path: error.path, reason: error.reason });
       }
       if (error instanceof ProtocolError) {
-        return errorMessage(request.id, "invalid_request", error.message, { path: error.path, reason: error.reason });
+        return errorResponse(request.id, "invalid_request", error.message, { path: error.path, reason: error.reason });
       }
-      return errorMessage(request.id, "internal", error instanceof Error ? error.message : String(error));
+      return errorResponse(request.id, "internal", error instanceof Error ? error.message : String(error));
     } finally {
       if (this.running.get(request.id) === running) this.running.delete(request.id);
     }

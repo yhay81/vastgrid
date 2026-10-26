@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `vastgrid-spec`, `vastgrid-js`, `vastgrid-duckdb-engine` (unreleased v2): messages are checked to their limits
+  (§8.1) all through, plans, keys and values included: names and strings of at most 1,000,000 code points, 256
+  levels of objects and lists, and 1,000,000 items in a list or members in an object. Errors follow the limits
+  themselves: messages are cut to 1,000 code points and quote names shortened (`quoted`), and a path to a name
+  beyond the limit names the object that holds it; paths escape `~` and `/`. A message without a valid `id` is
+  answered with the `id` null instead of 0, which a request may have (`answerId`, `errorResponse`; the HTTP
+  handler too). The DuckDB engine's `summarize` counts the cells of a column named twice once, as the memory
+  engine does.
 - `vastgrid-spec` (unreleased v2): formulas (§4.11). `compileFormula` compiles v1's formula language, with every
   function of §4.4 by its name and literals of every type (`DATE '2024-01-31'`), to a plan expression, converting
   values as v1 did and reporting errors with a reason of §4.7 and the characters at fault; `formulaText` writes any

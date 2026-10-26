@@ -6,9 +6,11 @@ import { randomBytes } from "node:crypto";
 import { realpath, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import {
+  answerId,
   BlockValueError,
   checkRequest,
   type ErrorCode,
+  errorResponse,
   type Operation,
   PlanError,
   ProtocolError,
@@ -227,12 +229,10 @@ export class DuckDBEngine {
       request = checkRequest(message) as Request;
     } catch (error) {
       if (!(error instanceof ProtocolError)) throw error;
-      const id = (message as { id?: unknown } | null)?.id;
-      return {
-        v: 2,
-        id: typeof id === "number" && Number.isSafeInteger(id) && id >= 0 ? id : 0,
-        error: { code: error.code, message: error.message, path: error.path, reason: error.reason },
-      };
+      return errorResponse(answerId(message), "invalid_request", error.message, {
+        path: error.path,
+        reason: error.reason,
+      });
     }
     if (request.op === "cancel") {
       this.running.get(request.request as number)?.abort();
@@ -248,7 +248,8 @@ export class DuckDBEngine {
       if (controller.signal.aborted) throw new EngineError("cancelled", "The request was cancelled.");
       return { v: 2, id: request.id, result };
     } catch (error) {
-      return { v: 2, id: request.id, error: this.errorOf(error) };
+      const { code, message, ...extra } = this.errorOf(error);
+      return errorResponse(request.id, code as ErrorCode, message as string, extra);
     } finally {
       options.signal?.removeEventListener("abort", abort);
       if (this.running.get(request.id) === controller) this.running.delete(request.id);

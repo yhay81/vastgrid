@@ -1175,18 +1175,27 @@ modification time and first bytes) does; a save of the engine itself is not a ch
 | --- | --- |
 | Request | `{ "v": 2, "id": n, "op": name, …arguments }` |
 | Response | `{ "v": 2, "id": n, "result": … }` |
-| Error | `{ "v": 2, "id": n, "error": { "code", "message", "path"?, "reason"?, "details"? } }` |
+| Error | `{ "v": 2, "id": n or null, "error": { "code", "message", "path"?, "reason"?, "details"? } }` |
 | Event | `{ "v": 2, "event": name, … }` |
 
 `id` is an integer from 0 to 2^53 − 1 that the client chooses, unique among its requests in flight; the
-response carries it back. Messages hold no SQL, no paths of the server and no code. Names and strings in
-messages are at most 1,000,000 code points.
+response carries it back. A message without a valid `id` (one that is not an object, or whose `id` is missing or
+not such an integer) is answered with `invalid_request` and the `id` null, which no request has; only that error
+has a null `id`. Messages hold no SQL, no paths of the server and no code.
+
+Messages, with their plans, keys and values, hold names (of members) and strings of at most 1,000,000 code
+points, nest at most 256 objects and lists (the message itself is the first), and have at most 1,000,000 items in
+a list or members in an object. Errors follow these limits themselves, whatever the request holds: their
+`message` has at most 1,000 code points and quotes names and values of the request shortened, and a `path` that
+would be longer than a string may be (one to a name of 1,000,000 code points) is cut to the object that holds the
+name. Paths are JSON Pointers (RFC 6901): `~` and `/` in names are written `~0` and `~1`.
 
 A request that does not follow §8 is answered with `invalid_request`, with `path` (a JSON Pointer into the
 request) and `reason`: `version` for a message whose `v` is not 2, `unknown_op` for an `op` that §8.2 does not
 have, `limit` for one beyond a limit of §8, and `syntax` for anything else, members that the request does not
-take included. Clients check responses and events in the same way; one that does not follow §8 is
-`invalid_response` for the client, which treats it as an `internal` error.
+take included; a name beyond its limit fails with `limit` at the object that holds it. Clients check responses
+and events in the same way; one that does not follow §8 is `invalid_response` for the client, which treats it as
+an `internal` error.
 
 ### 8.2 Operations
 
@@ -1222,13 +1231,18 @@ take included. Clients check responses and events in the same way; one that does
   "rowCount", "rowCountExact", "readableRows", "columns", "edits", "partial"? }` (§9); `rowIds` lists the rows'
   row IDs, or is null for views without them; `block` holds the values (§8.4); `textLimit` is 1 to 1,000,000
   (default 2,000).
-- `summarize` counts the cells of `ranges` × `columns` that are not blank (`count`), and the numbers among
-  them that are finite (`numericCount`), with their `sum`, `min`, `max` and `average` as floats (§2.2; a sum
-  beyond the largest float is `"Infinity"`), null without numbers. At most 1,000 ranges.
+- `summarize` counts the cells of `ranges` × `columns` that are not blank (`count`, each cell once), and the
+  numbers among them that are finite (`numericCount`), with their `sum`, `min`, `max` and `average` as floats
+  (§2.2; a sum beyond the largest float is `"Infinity"`), null without numbers. At most 1,000 ranges.
 - `find` searches the cells of the view row by row and, in a row, in the order of `columns` (at least one),
   from the cell after `from` (before it with −1), wrapping around at the ends and ending with `from` itself,
   for a value whose text form contains `text` (by `lower` unless `caseSensitive`, §3.4); null matches nothing,
   and an empty `text` finds nothing. `from.column` and the result's `column` are indexes into `columns`.
+- The `columns` of `rows`, `summarize`, `find` and `export` name columns of the plan's view, and `rowKey` one of
+  the table: a name that the view or the table does not have is `invalid_request` with the reason `syntax` and
+  the `path` of the name (`/columns/1`, `/rowKey`). A name may repeat: `rows` and `export` give the column once
+  for each time it is named, `find` searches it so, and `summarize` counts each cell once, as it does where
+  ranges overlap.
 - `locate` gives the positions in the plan's view of rows by key (`rowId`, or values of `rowKey`), null for
   keys that the view does not have. At most 10,000 keys.
 - `write` follows §7.2; `edits` is the table's new `{ "version", "cells" }`.
@@ -1445,16 +1459,10 @@ Found while writing the memory engine of [`vastgrid-js`](../packages/js), which 
   truncating toward zero, then compares months, days and nanoseconds; `vastgrid-js` does the same.
 - An operation that the capabilities do not offer (`find`, `export`) has no error code in §8.7; `vastgrid-js`
   answers `invalid_request` with the reason `unknown_op`.
-- `summarize`: whether cells of overlapping ranges count once (`vastgrid-js`) or once per range, whether exact
-  sums are exact before they become floats (`0.10 + 0.20` is `0.3`), and the average when the sum is beyond the
-  largest float.
+- `summarize`: whether exact sums are exact before they become floats (`0.10 + 0.20` is `0.3`), and the average
+  when the sum is beyond the largest float.
 - `locate` by a value that rows repeat: `vastgrid-js` gives its first position in the view. And whether a key
   `"1.5"` finds the decimal(4, 2) value `"1.50"`.
-- `checkRequest` repeats an unknown member's name in the error's `path` and message, so a name beyond the limit
-  of §8.1 makes an error that breaks §8.1; and the limit is not checked inside plans, keys and values
-  ([#46](https://github.com/yhay81/vastgrid/issues/46)).
-- Column names that a `rows` request repeats, and the error for a column that the view does not have (#46).
-- The `id` of the answer to a message whose `id` is not valid: 0 may be a request's (#46).
 - `planHash` needs `crypto.subtle`, which browsers give only to secure pages; a client can take hashes from the
   engine's answers (as `vastgrid-grid` does), but an engine in such a page cannot make them.
 

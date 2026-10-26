@@ -54,6 +54,11 @@ export type ErrorCode = keyof typeof ERROR_STATUS;
 export const MESSAGE_LIMITS = {
   /** Code points of a name or a string. */
   text: 1_000_000,
+  /** Levels of objects and lists in a message, and the items of one list or the members of one object. */
+  depth: 256,
+  items: 1_000_000,
+  /** Code points of an error's message: it quotes names and values of the request shortened. */
+  errorText: 1000,
   /** Rows of one `rows` request, and its cells. */
   rows: 1_000_000,
   cells: 1_000_000,
@@ -107,12 +112,98 @@ function isObject(value: unknown): value is Json {
   return value !== null && typeof value === "object" && !Array.isArray(value) && !(value instanceof Uint8Array);
 }
 
+/** Whether a text holds more than `limit` code points. A string of no more UTF-16 units has no more code points. */
+function longer(text: string, limit: number) {
+  return text.length > limit && [...text].length > limit;
+}
+
+/** A member name or an index as one step of a JSON Pointer. */
+function step(key: string | number) {
+  return `/${String(key).replaceAll("~", "~0").replaceAll("/", "~1")}`;
+}
+
+/** A path beyond the limit of §8.1 (one through a name that is too long) cut to the member that holds the name. */
+function fitPath(path: string) {
+  while (longer(path, MESSAGE_LIMITS.text)) path = path.slice(0, path.lastIndexOf("/"));
+  return path;
+}
+
+/** A text cut to `limit` code points, with "…" for what is left out. */
+function fitText(text: string, limit: number) {
+  if (!longer(text, limit)) return text;
+  return `${[...text.slice(0, 2 * limit)].slice(0, limit - 1).join("")}…`;
+}
+
+/** A name or a value as an error's message quotes it: its JSON, cut to 60 code points. */
+export function quoted(value: unknown): string {
+  return fitText(value === undefined ? "undefined" : (JSON.stringify(value) ?? String(value)), 60);
+}
+
+/**
+ * The `id` that answers a message (§8.1): the message's own, or null when the message has no valid `id`, so that
+ * the answer is not taken for that of a request whose `id` is 0.
+ */
+export function answerId(message: unknown): number | null {
+  const id = isObject(message) ? message.id : undefined;
+  return typeof id === "number" && Number.isSafeInteger(id) && id >= 0 ? id : null;
+}
+
+/**
+ * An error response (§8.1, §8.7) that follows §8 whatever it quotes of a request: its message cut to 1,000 code
+ * points, and its path to the limit of §8.1.
+ */
+export function errorResponse(
+  id: number | null,
+  code: ErrorCode,
+  message: string,
+  extra: { path?: string; reason?: string; details?: Json } = {},
+): Json {
+  const error: Json = { code, message: fitText(message, MESSAGE_LIMITS.errorText) };
+  if (extra.path !== undefined) error.path = fitPath(extra.path);
+  if (extra.reason !== undefined) error.reason = extra.reason;
+  if (extra.details !== undefined) error.details = extra.details;
+  return { v: 2, id, error };
+}
+
 /** Checks one message, failing with the checker's code. */
 class Checker {
   constructor(readonly code: "invalid_request" | "invalid_response") {}
 
   fail(path: string, reason: ProtocolErrorReason, message: string): never {
-    throw new ProtocolError(this.code, path, reason, message);
+    throw new ProtocolError(this.code, fitPath(path), reason, fitText(message, MESSAGE_LIMITS.errorText));
+  }
+
+  /**
+   * Checks the limits of §8.1 through the whole message, plans, keys and values included: names and strings,
+   * levels, and items of lists and members of objects. Walks without recursion, whatever the depth.
+   */
+  bounds(message: unknown) {
+    const pending: [unknown, string, number][] = [[message, "", 1]];
+    for (let item = pending.pop(); item !== undefined; item = pending.pop()) {
+      const [value, path, level] = item;
+      if (typeof value === "string") {
+        if (longer(value, MESSAGE_LIMITS.text))
+          this.fail(path, "limit", "A string holds at most 1,000,000 code points.");
+        continue;
+      }
+      if (value === null || typeof value !== "object" || ArrayBuffer.isView(value)) continue;
+      if (level > MESSAGE_LIMITS.depth) this.fail(path, "limit", "A message nests at most 256 objects and lists.");
+      const keys = Array.isArray(value) ? null : Object.keys(value);
+      if ((keys ?? (value as unknown[])).length > MESSAGE_LIMITS.items) {
+        this.fail(path, "limit", "A list or an object holds at most 1,000,000 items.");
+      }
+      if (keys === null) {
+        (value as unknown[]).forEach((child, index) => {
+          pending.push([child, `${path}${step(index)}`, level + 1]);
+        });
+        continue;
+      }
+      for (const key of keys) {
+        // A pointer to a name that is too long would be too long itself: the error names the object.
+        if (longer(key, MESSAGE_LIMITS.text)) this.fail(path, "limit", "A name holds at most 1,000,000 code points.");
+        pending.push([(value as Json)[key], `${path}${step(key)}`, level + 1]);
+      }
+    }
   }
 
   object(value: unknown, path: string, what: string): Json {
@@ -123,7 +214,7 @@ class Checker {
   members(value: Json, required: readonly string[], optional: readonly string[], path: string) {
     for (const key of Object.keys(value)) {
       if (!required.includes(key) && !optional.includes(key))
-        this.fail(`${path}/${key}`, "syntax", `"${key}" is not a member here.`);
+        this.fail(`${path}${step(key)}`, "syntax", `${quoted(key)} is not a member here.`);
     }
     for (const key of required) {
       if (value[key] === undefined) this.fail(`${path}/${key}`, "syntax", `"${key}" is required.`);
@@ -332,6 +423,7 @@ class Checker {
 function envelope(checker: Checker, message: unknown): Json {
   const value = checker.object(message, "", "A message");
   if (value.v !== PROTOCOL_VERSION) checker.fail("/v", "version", "This reader knows messages of version 2.");
+  checker.bounds(value);
   return value;
 }
 
@@ -365,7 +457,7 @@ export function checkRequest(message: unknown): Json & { v: 2; id: number; op: O
   check.integer(request.id, "/id");
   if (typeof request.op !== "string") check.fail("/op", "syntax", "op is a string.");
   if (!(OPERATIONS as readonly string[]).includes(request.op))
-    check.fail("/op", "unknown_op", `There is no operation "${request.op}".`);
+    check.fail("/op", "unknown_op", `There is no operation ${quoted(request.op)}.`);
   const op = request.op as Operation;
   const [required, optional] = REQUESTS[op];
   check.members(request, ["v", "id", "op", ...required], optional, "");
@@ -604,18 +696,22 @@ function checkResult(check: Checker, op: Operation, value: unknown) {
  * Checks that a response to a request of `op`, or an error, follows §8.1 and §8.2. Throws a `ProtocolError`
  * (`invalid_response`).
  */
-export function checkResponse(message: unknown, op: Operation): Json & { v: 2; id: number } {
+export function checkResponse(message: unknown, op: Operation): Json & { v: 2; id: number | null } {
   const check: Checker = new Checker("invalid_response");
   const response = envelope(check, message);
-  check.integer(response.id, "/id");
+  // A null id answers a request without a valid id, which is invalid (§8.1).
+  if (response.id !== null || response.error === undefined) check.integer(response.id, "/id");
   if (response.error !== undefined) {
     check.members(response, ["v", "id", "error"], [], "");
     checkError(check, response.error);
+    if (response.id === null && (response.error as Json).code !== "invalid_request") {
+      check.fail("/id", "syntax", "Only invalid_request answers with a null id.");
+    }
   } else {
     check.members(response, ["v", "id", "result"], [], "");
     checkResult(check, op, response.result);
   }
-  return response as Json & { v: 2; id: number };
+  return response as Json & { v: 2; id: number | null };
 }
 
 /** Checks that an event follows §8.5. Throws a `ProtocolError` (`invalid_response`). */

@@ -3,10 +3,13 @@ import { test } from "node:test";
 import { readMessageCorpus, runMessageCase } from "../src/conformance.ts";
 import {
   ARROW_MEDIA_TYPE,
+  answerId,
   checkRequest,
+  checkResponse,
   decodeBlock,
   ERROR_STATUS,
   encodeBlock,
+  errorResponse,
   frameAttached,
   ProtocolError,
   readAttached,
@@ -68,6 +71,63 @@ test("requests beyond the limits of §8 fail with limit", () => {
   limited({ v: 2, id: 1, op: "open", ref: "x".repeat(1_000_001) }, "/ref");
   // Strings are limited by code points: 600,000 astral characters are 1,200,000 UTF-16 units.
   assert.doesNotThrow(() => checkRequest({ v: 2, id: 1, op: "open", ref: "😀".repeat(600_000) }));
+});
+
+/** A list in `levels` lists. */
+function nested(levels: number): unknown {
+  let value: unknown = 0;
+  for (let level = 0; level < levels; level++) value = [value];
+  return value;
+}
+
+test("the limits of §8.1 hold inside plans, keys and values, and for names, levels and items", () => {
+  const rows = { ...view, op: "rows", start: 0, end: 1, columns: ["a"] };
+  limited(
+    { ...rows, plan: { where: { fn: "eq", args: [{ col: "a" }, { lit: "x".repeat(1_000_001) }] } } },
+    "/plan/where/args/1/lit",
+  );
+  limited({ ...view, op: "locate", keys: [{ value: "x".repeat(1_000_001) }], rowKey: "a" }, "/keys/0/value");
+  const update = { key: { rowId: 0 }, column: "a", value: "x".repeat(1_000_001) };
+  limited({ v: 2, id: 1, op: "write", table: "t1", revision: null, updates: [update] }, "/updates/0/value");
+  limited({ ...rows, plan: { sort: Array(1_000_001).fill(0) } }, "/plan/sort");
+  // The message is the first level: a plan's list 254 levels below the plan is the 257th.
+  limited({ ...rows, plan: { where: nested(255) } }, `/plan/where${"/0".repeat(254)}`);
+  // One level fewer is within the limit (and the engine's checks of plans, §4.9, refuse it).
+  assert.doesNotThrow(() => checkRequest({ ...rows, plan: { where: nested(254) } }));
+  // A name beyond the limit cannot be in a path: the error names the object that holds it.
+  limited({ ...rows, plan: { ["x".repeat(1_000_001)]: 1 } }, "/plan");
+  limited({ ...rows, ["x".repeat(1_000_001)]: 1 }, "");
+});
+
+test("errors of requests follow §8.1 themselves, whatever the request quotes", () => {
+  const fail = (message: unknown) => {
+    try {
+      checkRequest(message);
+    } catch (error) {
+      if (error instanceof ProtocolError) return error;
+    }
+    throw new Error("The request is valid.");
+  };
+  // A name of 1,000,000 code points is within the limit; the path to it is not, and the message quotes it cut.
+  const named = fail({ v: 2, id: 1, op: "info", table: "t1", ["x".repeat(1_000_000)]: 1 });
+  assert.deepEqual([named.path, named.reason], ["", "syntax"]);
+  assert.ok(named.message.length < 100, named.message);
+  const op = fail({ v: 2, id: 1, op: "y".repeat(1_000_000) });
+  assert.deepEqual([op.reason, op.message.length < 100], ["unknown_op", true]);
+  // Paths are JSON Pointers: "/" and "~" in names are escaped.
+  assert.equal(fail({ v: 2, id: 1, op: "info", table: "t1", "a/b~c": 1 }).path, "/a~1b~0c");
+  // An answer to it is checked as a response, with the request's id or null.
+  for (const id of [3, null]) {
+    const answer = errorResponse(id, "invalid_request", named.message, { path: named.path, reason: named.reason });
+    assert.equal(checkResponse(answer, "info").id, id);
+  }
+  assert.equal(answerId({ v: 2, id: 0 }), 0);
+  for (const message of [null, "rows", { id: -1 }, { id: 1.5 }, { id: "1" }]) assert.equal(answerId(message), null);
+  const long = errorResponse(1, "internal", "z".repeat(5000), { path: `/${"p".repeat(1_000_001)}` });
+  assert.deepEqual(
+    [[...(long.error as { message: string }).message].length, (long.error as { path: string }).path],
+    [1000, ""],
+  );
 });
 
 test("every error code of §8.7 has its HTTP status", () => {

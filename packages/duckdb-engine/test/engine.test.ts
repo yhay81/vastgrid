@@ -3,7 +3,7 @@ import { mkdir, readdir, symlink, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { DuckDBInstance } from "@duckdb/node-api";
-import { planHash } from "vastgrid-spec";
+import { checkResponse, MESSAGE_LIMITS, planHash } from "vastgrid-spec";
 import { DuckDBEngine, tableFormatOf } from "../src/index.ts";
 import { type Client, type Json, setUp, type TableInfo } from "./client.ts";
 
@@ -319,6 +319,8 @@ test("summarize counts the cells that are not blank and sums the finite numbers 
     max: 2.5,
     average: 2,
   });
+  // A repeated column counts its cells once, as overlapping ranges do.
+  assert.deepEqual(await summarize([[0, 5]], ["s", "x", "x"]), await summarize([[0, 5]], ["s", "x"]));
   assert.deepEqual(
     await summarize(
       [
@@ -637,8 +639,17 @@ test("requests that do not follow §8 are answered with invalid_request", async 
     reason: "unknown_op",
   });
   assert.equal((await answer({ v: 1, id: 6, op: "info", table: "t1" })).error.reason, "version");
+  // A message without a valid id is answered with a null id, which no request has (§8.1).
   const bad = await answer("rows");
-  assert.deepEqual([bad.id, bad.error.reason], [0, "syntax"]);
+  assert.deepEqual([bad.id, bad.error.reason], [null, "syntax"]);
+  assert.equal((await answer({ v: 2, id: -1, op: "info", table: "t1" })).id, null);
+  assert.equal((await answer({ v: 2, id: 0, op: "info" })).id, 0);
+  // What an error quotes of a request is cut: it follows the limits of §8.1 itself. The path to a name of 1,000,000
+  // code points is beyond them, and names the object that holds it.
+  const long = await answer({ v: 2, id: 7, op: "info", table: "t1", ["x".repeat(MESSAGE_LIMITS.text)]: 1 });
+  assert.deepEqual([long.error.path, long.error.reason], ["", "syntax"]);
+  assert.ok(String(long.error.message).length < 100);
+  checkResponse(long, "info");
   const info = await client.open("fruit.csv");
   assert.equal(
     (await client.error("rows", { table: info.table, revision: "r0", plan: {}, start: 0, end: 1, columns: ["id"] }))

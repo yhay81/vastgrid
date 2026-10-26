@@ -1432,6 +1432,67 @@
           "path": "/result/sum"
         }
       }
+    },
+    {
+      "id": "response.error-null-id",
+      "section": "8.1",
+      "description": "A message without a valid id is answered with a null id, which no request has.",
+      "kind": "response",
+      "op": "info",
+      "message": {
+        "v": 2,
+        "id": null,
+        "error": {
+          "code": "invalid_request",
+          "message": "id is an integer from 0 to 2^53 − 1.",
+          "path": "/id",
+          "reason": "syntax"
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "response.null-id-code",
+      "section": "8.1",
+      "description": "Only invalid_request answers with a null id.",
+      "kind": "response",
+      "op": "info",
+      "message": {
+        "v": 2,
+        "id": null,
+        "error": {
+          "code": "internal",
+          "message": "Something failed."
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/id"
+        }
+      }
+    },
+    {
+      "id": "response.null-id-result",
+      "section": "8.1",
+      "description": "A result answers a request, whose id it has.",
+      "kind": "response",
+      "op": "close",
+      "message": {
+        "v": 2,
+        "id": null,
+        "result": null
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_response",
+          "reason": "syntax",
+          "path": "/id"
+        }
+      }
     }
   ]
 }

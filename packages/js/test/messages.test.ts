@@ -154,6 +154,13 @@ test("a table that does not follow §2 fails to load, with the place at fault", 
   assert.throws(() => memoryEngine({} as never), TypeError);
 });
 
+/** A list in `levels` lists. */
+function nested(levels: number): unknown {
+  let value: unknown = 0;
+  for (let level = 0; level < levels; level++) value = [value];
+  return value;
+}
+
 test("requests that do not follow §8 are answered with invalid_request, its path and reason", async () => {
   const { client, info } = await opened();
   const engine = client.engine;
@@ -188,7 +195,21 @@ test("requests that do not follow §8 are answered with invalid_request, its pat
     ],
     // A name that is too long cannot be in a path: the error names the object that holds it.
     [{ v: 2, id: 1, op: "rows", ...rows, plan: { ["x".repeat(1_000_001)]: 1 } }, "limit", "/plan"],
-    [{ v: 2, id: 1, op: "rows", ...rows, ["y".repeat(1_000_001)]: 1 }, "syntax", ""],
+    [{ v: 2, id: 1, op: "rows", ...rows, ["y".repeat(1_000_001)]: 1 }, "limit", ""],
+    // Values, levels and items are checked through the whole message (§8.1).
+    [
+      {
+        v: 2,
+        id: 1,
+        op: "write",
+        ...base,
+        updates: [{ key: { rowId: 0 }, column: "region", value: "z".repeat(1_000_001) }],
+      },
+      "limit",
+      "/updates/0/value",
+    ],
+    [{ v: 2, id: 1, op: "rows", ...rows, plan: { where: nested(300) } }, "limit", `/plan/where${"/0".repeat(254)}`],
+    [{ v: 2, id: 1, op: "rows", ...rows, plan: { sort: new Array(1_000_001).fill(0) } }, "limit", "/plan/sort"],
   ];
   for (const [message, reason, path] of cases) {
     const response = (await engine.handle(message)) as Json;
@@ -209,14 +230,16 @@ test("requests that do not follow §8 are answered with invalid_request, its pat
   const error = named.error as { code: string; reason: string; path: string; message: string };
   assert.deepEqual([error.code, error.reason, error.path], ["invalid_plan", "syntax", ""]);
   assert.equal([...error.message].length, 1000);
-  // A message without an id that can be answered is answered with id 0; the engine never throws.
+  // A message without an id that can be answered is answered with a null id, which no request has (§8.1); the
+  // engine never throws.
   for (const message of [undefined, null, 42, "rows", [], { v: 2 }, { v: 2, id: -1, op: "info" }, new Uint8Array(4)]) {
     const response = (await engine.handle(message)) as Json;
     checkResponse(response, "info");
-    assert.equal(response.id, 0);
+    assert.equal(response.id, null);
     assert.equal((response.error as Json).code, "invalid_request");
   }
   assert.equal(((await engine.handle({ v: 2, id: 7, op: "info" })) as Json).id, 7);
+  assert.equal(((await engine.handle({ v: 2, id: 0, op: "info" })) as Json).id, 0);
 });
 
 test("plans are checked against the table and the engine's capabilities (§4.7, §4.10)", async () => {

@@ -19,6 +19,7 @@ import {
   normalizePlan,
   planHash,
   planOptions,
+  quoted,
   type RowKey,
 } from "vastgrid-spec";
 import {
@@ -97,7 +98,7 @@ function columnsOf(view: View, names: readonly string[]): Column[] {
   return names.map((name, index) => {
     const column = view.sql.columns.find((item) => item.name === name);
     if (!column) {
-      throw new EngineError("invalid_request", `The view has no column "${name}".`, {
+      throw new EngineError("invalid_request", `The view has no column ${quoted(name)}.`, {
         path: `/columns/${index}`,
         reason: "syntax",
       });
@@ -419,7 +420,8 @@ export class Views {
   }
 
   private async summarizeOf(view: View, request: Json, signal?: AbortSignal): Promise<Json> {
-    const columns = columnsOf(view, request.columns as string[]);
+    // Each cell counts once, however the ranges overlap or a column repeats (§8.2).
+    const columns = [...new Set(columnsOf(view, request.columns as string[]))];
     const ranges = request.ranges as [number, number][];
     const empty = { count: 0, numericCount: 0, sum: null, min: null, max: null, average: null };
     if (ranges.every(([start, end]) => end <= start)) return empty;

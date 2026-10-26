@@ -980,6 +980,49 @@
           "path": "/read/headerRow"
         }
       }
+    },
+    {
+      "id": "request.rows-repeated-columns",
+      "section": "8.2",
+      "description": "A column may be read more than once: the block has a field for each item of columns.",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "rows",
+        "table": "t1",
+        "revision": "r1",
+        "plan": {},
+        "start": 0,
+        "end": 10,
+        "columns": [
+          "id",
+          "id"
+        ]
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "request.member-pointer",
+      "section": "8.1",
+      "description": "Paths are JSON Pointers: / and ~ in a member's name are escaped.",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "info",
+        "table": "t1",
+        "a/b~c": 1
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_request",
+          "reason": "syntax",
+          "path": "/a~1b~0c"
+        }
+      }
     }
   ]
 }

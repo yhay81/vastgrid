@@ -69,6 +69,7 @@ export { canonicalJson, normalizePlan, planHash } from "./hash.js";
 export { editText, type InputError, type InputOptions, type InputResult, readCellText } from "./input.js";
 export {
   ARROW_MEDIA_TYPE,
+  answerId,
   type BlockValue,
   checkEvent,
   checkRequest,
@@ -76,6 +77,7 @@ export {
   ERROR_STATUS,
   type ErrorCode,
   EXPORT_FORMATS,
+  errorResponse,
   frameAttached,
   MESSAGE_LIMITS,
   OPERATIONS,
@@ -83,6 +85,7 @@ export {
   PROTOCOL_VERSION,
   ProtocolError,
   type ProtocolErrorReason,
+  quoted,
   readAttached,
   toStructuredEncoding,
   toTextEncoding,

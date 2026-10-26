@@ -4,7 +4,7 @@
  * (rows, plans, summaries, find) sees them.
  */
 import type { DuckDBConnection } from "@duckdb/node-api";
-import { type Column, isValueOf, type JsonValue, keyText, type RowKey, sameCellValue } from "vastgrid-spec";
+import { type Column, isValueOf, type JsonValue, keyText, quoted, type RowKey, sameCellValue } from "vastgrid-spec";
 import { duckdbType, quoteIdentifier } from "vastgrid-sql";
 import { readExpression, readValue, valueExpression } from "./columns.js";
 import { cancelled, EngineError } from "./errors.js";
@@ -22,10 +22,6 @@ export interface Update {
 
 /** The longest text that a message holds (§8.1): `previous` is compared with the whole value up to it. */
 const MESSAGE_TEXT = 1_000_000;
-
-function shown(value: unknown) {
-  return JSON.stringify(value) ?? String(value);
-}
 
 /** Whether a column's cells are written (§7.1). */
 export function isWritable(column: Column) {
@@ -83,7 +79,7 @@ export class Edits {
     if (request.rowKey !== undefined) {
       keyColumn = columns.find((column) => column.name === request.rowKey);
       if (!keyColumn) {
-        throw new EngineError("invalid_request", `The table has no column ${shown(request.rowKey)}.`, {
+        throw new EngineError("invalid_request", `The table has no column ${quoted(request.rowKey)}.`, {
           path: "/rowKey",
           reason: "syntax",
         });
@@ -92,12 +88,12 @@ export class Edits {
     const indexes = updates.map((update, at) => {
       const index = columns.findIndex((column) => column.name === update.column);
       if (index < 0 || !isWritable(columns[index])) {
-        throw new EngineError("read_only", `The cells of ${shown(update.column)} are not written (§7.1).`, {
+        throw new EngineError("read_only", `The cells of ${quoted(update.column)} are not written (§7.1).`, {
           details: { column: update.column },
         });
       }
       if (!isValueOf(update.value, columns[index])) {
-        throw new EngineError("invalid_value", `${shown(update.value)} is not a value of ${shown(update.column)}.`, {
+        throw new EngineError("invalid_value", `${quoted(update.value)} is not a value of ${quoted(update.column)}.`, {
           path: `/updates/${at}/value`,
           reason: "type",
           details: { update: at },
@@ -243,7 +239,7 @@ export class Edits {
     if (at === null || at === undefined) return;
     throw new EngineError(
       "invalid_value",
-      `${shown(updates[Number(at)].value)} is beyond the timestamps DuckDB holds.`,
+      `${quoted(updates[Number(at)].value)} is beyond the timestamps DuckDB holds.`,
       {
         path: `/updates/${Number(at)}/value`,
         reason: "type",

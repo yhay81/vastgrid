@@ -113,6 +113,8 @@ test("errors have the HTTP statuses of §8.7", async () => {
   assert.deepEqual(await status({ v: 2, id: 4, op: "open", ref: "../outside.csv" }), [403, "not_allowed"]);
   assert.deepEqual(await status({ v: 2, id: 5, op: "open", ref: "missing.csv" }), [422, "load_failed"]);
   assert.deepEqual(await status("{"), [400, "invalid_request"]);
+  // No request was read: the answer's id is null, which no request has (§8.1).
+  assert.equal(((await (await post("{")).json()) as { id: unknown }).id, null);
   const get = await fetch(`${base}/api`);
   assert.equal(get.status, 405);
   assert.equal(get.headers.get("allow"), "POST");
