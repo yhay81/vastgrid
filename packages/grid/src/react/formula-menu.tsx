@@ -1,4 +1,4 @@
-import { type FormEvent, type ToggleEvent, use, useId, useRef, useState, useTransition } from "react";
+import { type FormEvent, use, useId, useRef, useState, useTransition } from "react";
 import {
   type CheckOptions,
   type Column,
@@ -125,15 +125,12 @@ function FormulaForm({
 }
 
 /**
- * The toolbar's formula menu: the derived columns of the plan (§4.1) as formulas (§4.11), which can be changed,
+ * The content of the toolbar's formula menu, loaded when it first opens: the derived columns of the plan (§4.1) as formulas (§4.11), which can be changed,
  * renamed and removed, and a form that adds one. It is there when the engine derives columns.
  */
-export function FormulaMenu() {
-  const { messages } = use(LocaleContext);
+export default function FormulaPanel() {
   const table = useGridSelector((snapshot) => snapshot.table);
   const derive = useGridSelector((snapshot) => snapshot.document.plan?.derive);
-  const id = useId();
-  const buttonRef = useRef<HTMLButtonElement>(null);
   if (!table || table.capabilities.plan?.derive === false) return null;
   const options = planOptions(table.capabilities);
   const list = derive ?? [];
@@ -149,39 +146,18 @@ export function FormulaMenu() {
     }
   }
 
-  const place = (event: ToggleEvent<HTMLDivElement>) => {
-    const button = buttonRef.current;
-    if (event.newState !== "open" || !button) return;
-    const rect = button.getBoundingClientRect();
-    const menu = event.currentTarget;
-    menu.style.top = `${rect.bottom + 4}px`;
-    menu.style.left = `${Math.max(8, rect.right - menu.offsetWidth)}px`;
-  };
-
   return (
     <>
-      <button ref={buttonRef} type="button" className="vg-button" popoverTarget={id}>
-        {messages.formulas}
-      </button>
-      <div
-        id={id}
-        popover="auto"
-        role="dialog"
-        className="vg-menu vg-formulas"
-        aria-label={messages.formulas}
-        onToggle={place}
-      >
-        {list.map((derived, index) => (
-          // A formula changed elsewhere (an agent, undo) shows anew.
-          <FormulaForm
-            key={`${derived.name}\u0000${textOf(derived)}`}
-            derived={derived}
-            columns={scopes[index]}
-            options={options}
-          />
-        ))}
-        <FormulaForm key={list.length} derived={null} columns={rows} options={options} />
-      </div>
+      {list.map((derived, index) => (
+        // A formula changed elsewhere (an agent, undo) shows anew.
+        <FormulaForm
+          key={`${derived.name}\u0000${textOf(derived)}`}
+          derived={derived}
+          columns={scopes[index]}
+          options={options}
+        />
+      ))}
+      <FormulaForm key={list.length} derived={null} columns={rows} options={options} />
     </>
   );
 }

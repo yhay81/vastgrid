@@ -1,6 +1,7 @@
 import {
   type ComponentType,
   type CSSProperties,
+  lazy,
   type ReactNode,
   type Ref,
   Suspense,
@@ -19,14 +20,17 @@ import type { Transport } from "../core/client.js";
 import { createGridStore, type GridStore } from "../core/store.js";
 import type { GridError, InitialView, OpenOptions } from "../core/types.js";
 import { GridContext, LocaleContext, SaveContext } from "./context.js";
-import { DetailPanel, type DetailPanelProps } from "./detail-panel.js";
-import { FindBar } from "./find-bar.js";
+import type { DetailPanelProps } from "./detail-panel.js";
 import { type CellActionEvent, GridBody } from "./grid-body.js";
 import { type GridMessages, messagesFor } from "./messages.js";
 import { useSaveAction } from "./save.js";
 import { StaticRows } from "./static-rows.js";
 import { StatusBar } from "./status-bar.js";
 import { Toolbar } from "./toolbar.js";
+
+// The find bar and the detail panel load when they first open (§10 of v2-react.md).
+const FindBar = lazy(() => import("./find-bar.js").then((module) => ({ default: module.FindBar })));
+const DetailPanel = lazy(() => import("./detail-panel.js").then((module) => ({ default: module.DetailPanel })));
 
 /** What `ref` gives (§5.5 of v2-react.md). */
 export interface DataGridHandle {
@@ -204,6 +208,7 @@ function Frame({
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [notice, setNotice] = useState("");
   const [finding, setFinding] = useState(false);
+  const detailOpen = useGridSelectorOf(store, (snapshot) => snapshot.session.detail?.open === true);
   const saving = useSaveAction(store, language, setNotice);
   const status = useGridSelectorOf(store, (snapshot) => snapshot.status);
   useControlled(store, "document", document, onDocumentChange);
@@ -225,7 +230,11 @@ function Frame({
         <SaveContext value={saving}>
           <div className={className ? `vg-root ${className}` : "vg-root"} style={style} data-status={status}>
             {toolbar && <Toolbar announce={setNotice} />}
-            {finding && <FindBar onClose={() => setFinding(false)} scrollerRef={scrollerRef} />}
+            {finding && (
+              <Suspense fallback={null}>
+                <FindBar onClose={() => setFinding(false)} scrollerRef={scrollerRef} />
+              </Suspense>
+            )}
             <div className="vg-main">
               <Suspense fallback={<StaticRows label={label} />}>
                 <GridBody
@@ -243,7 +252,14 @@ function Frame({
                   announce={setNotice}
                 />
               </Suspense>
-              <DetailPanel custom={detailPanel} />
+              {detailOpen && (
+                <Suspense fallback={null}>
+                  <DetailPanel
+                    custom={detailPanel}
+                    onClosed={() => scrollerRef.current?.focus({ preventScroll: true })}
+                  />
+                </Suspense>
+              )}
             </div>
             {statusBar && <StatusBar />}
             <div className="vg-sr-only" aria-live="polite">

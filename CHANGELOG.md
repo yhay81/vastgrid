@@ -8,6 +8,10 @@
   expression of a derived column back as a formula that compiles to it. `migrateGridState` migrates v1's formulas
   into `plan.derive`, ordered by what they use, with the filters, sort keys, groups and measures that use them, and
   gives a reason for each part it drops (`reasons`). `checkExpression` checks one expression.
+- `vastgrid-grid` (unreleased v2): the column and cell menus, the toolbar's menus, the find bar and the detail panel
+  load when they first open, which takes 18 KB with gzip off what a page loads first; the toolbar's menus start
+  from the state as it is when they open. Keys leave an IME's composition alone, and closing the detail panel from
+  inside it (× or Esc) gives the focus back to the grid. `scripts/bundle-size.mjs` measures the bundle.
 - `vastgrid-grid` (unreleased v2): a find bar (⌘F or Ctrl+F; `GridStore.find`), a cell menu (right click,
   Shift+F10) that copies, filters to a value or excludes it, shows a value in full (`GridStore.fullValue`) and opens
   the details, and moving columns by dragging their headers; a click on a header sorts on release.

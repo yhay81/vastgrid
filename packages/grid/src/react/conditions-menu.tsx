@@ -1,5 +1,5 @@
-import { type ToggleEvent, use, useId, useRef, useState, useTransition } from "react";
-import { type Column, type Expr, formulaText, partsOf } from "vastgrid-spec";
+import { use, useState, useTransition } from "react";
+import { type Column, type Expr, formulaText } from "vastgrid-spec";
 import { ConditionError, type ConditionNode, nodeId, readConditions, writeConditions } from "../core/conditions.js";
 import { type FilterOperator, operatorsFor, takesNoValue } from "../core/filters.js";
 import { rowColumns } from "../core/measures.js";
@@ -216,45 +216,23 @@ function GroupBlock({ node, columns, invalid, messages, onChange, top }: NodePro
 }
 
 /**
- * The toolbar's conditions menu (§6.2.1 of the specification): every condition of the plan, those across columns
- * included, as groups of conditions that all hold or one of which holds, nested. It reads `where` when it opens,
- * and applying dispatches `filter.set`, which keeps the search. Expressions that it does not take apart are shown
- * as formulas and kept, or removed.
+ * The content of the toolbar's conditions menu (§6.2.1 of the specification): every condition of the plan, those
+ * across columns included, as groups of conditions that all hold or one of which holds, nested. It reads `where`
+ * when it opens, and applying dispatches `filter.set`, which keeps the search. Expressions that it does not take
+ * apart are shown as formulas and kept, or removed. The toolbar loads it when the menu first opens.
  */
-export function ConditionsMenu() {
+export default function ConditionsPanel({ close }: { close: () => void }) {
   const store = useGridStore();
   const { messages } = use(LocaleContext);
   const table = useGridSelector((snapshot) => snapshot.table);
   const plan = useGridSelector((snapshot) => snapshot.document.plan);
-  const count = useGridSelector(
-    (snapshot) => partsOf(snapshot.document.plan?.where).filter((part) => !("search" in part)).length,
-  );
-  const [draft, setDraft] = useState<Group | null>(null);
+  // The conditions as they are when the menu opens, an agent's or the column menu's included.
+  const [draft, setDraft] = useState<Group>(() => readConditions(store.getSnapshot().document.plan?.where));
   const [invalid, setInvalid] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startApply] = useTransition();
-  const id = useId();
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  if (!table || table.capabilities.plan?.where === false) return null;
+  if (!table) return null;
   const columns = rowColumns(plan, table);
-
-  const onToggle = (event: ToggleEvent<HTMLDivElement>) => {
-    // A closed menu holds no draft, so that nothing is typed into the one before while the menu opens.
-    if (event.newState !== "open") {
-      setDraft(null);
-      return;
-    }
-    // The conditions as they are now, an agent's or the column menu's included.
-    setDraft(readConditions(store.getSnapshot().document.plan?.where));
-    setInvalid(null);
-    setError(null);
-    const button = buttonRef.current;
-    if (!button) return;
-    const rect = button.getBoundingClientRect();
-    const menu = event.currentTarget;
-    menu.style.top = `${rect.bottom + 4}px`;
-    menu.style.left = `${Math.max(8, rect.right - menu.offsetWidth)}px`;
-  };
 
   const apply = (group: Group) => {
     let where: Expr | null;
@@ -274,59 +252,38 @@ export function ConditionsMenu() {
       }
       setInvalid(null);
       setError(null);
-      document.getElementById(id)?.hidePopover();
+      close();
     });
   };
 
   return (
-    <>
-      <button ref={buttonRef} type="button" className="vg-button" popoverTarget={id} aria-pressed={count > 0}>
-        {count > 0 ? messages.conditionsCount(String(count)) : messages.conditions}
-      </button>
-      <div
-        id={id}
-        popover="auto"
-        role="dialog"
-        className="vg-menu vg-conditions"
-        aria-label={messages.conditionsTitle}
-        onToggle={onToggle}
-      >
-        {draft && (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              apply(draft);
-            }}
-          >
-            <GroupBlock
-              top
-              node={draft}
-              columns={columns}
-              invalid={invalid}
-              messages={messages}
-              onChange={(target, change) => setDraft((current) => current && changed(current, target, change))}
-            />
-            {error !== null && (
-              <p role="alert" className="vg-filter__error">
-                {error}
-              </p>
-            )}
-            <div className="vg-filter__actions">
-              <button
-                type="button"
-                className="vg-button"
-                disabled={pending}
-                onClick={() => apply({ ...draft, items: [] })}
-              >
-                {messages.clearConditions}
-              </button>
-              <button type="submit" className="vg-button vg-button--primary" disabled={pending}>
-                {messages.apply}
-              </button>
-            </div>
-          </form>
-        )}
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        apply(draft);
+      }}
+    >
+      <GroupBlock
+        top
+        node={draft}
+        columns={columns}
+        invalid={invalid}
+        messages={messages}
+        onChange={(target, change) => setDraft((current) => changed(current, target, change))}
+      />
+      {error !== null && (
+        <p role="alert" className="vg-filter__error">
+          {error}
+        </p>
+      )}
+      <div className="vg-filter__actions">
+        <button type="button" className="vg-button" disabled={pending} onClick={() => apply({ ...draft, items: [] })}>
+          {messages.clearConditions}
+        </button>
+        <button type="submit" className="vg-button vg-button--primary" disabled={pending}>
+          {messages.apply}
+        </button>
       </div>
-    </>
+    </form>
   );
 }

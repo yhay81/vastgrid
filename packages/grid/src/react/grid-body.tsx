@@ -1,8 +1,10 @@
 import {
   type KeyboardEvent,
+  lazy,
   type MouseEvent,
   type PointerEvent,
   type RefObject,
+  Suspense,
   use,
   useEffect,
   useEffectEvent,
@@ -20,10 +22,14 @@ import { allState, checkedCount, checkState } from "../core/checked.js";
 import type { GridStore } from "../core/store.js";
 import { AccessibleRows, cellId } from "./accessible-rows.js";
 import { CellEditor, type EditorControl } from "./cell-editor.js";
-import { CellMenu, type CellMenuTarget } from "./cell-menu.js";
-import { ColumnMenu, type MenuTarget } from "./column-menu.js";
+import type { CellMenuTarget } from "./cell-menu.js";
+import type { MenuTarget } from "./column-menu.js";
 import { LocaleContext, SaveContext } from "./context.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
+
+// The menus load when they first open (§10 of v2-react.md).
+const ColumnMenu = lazy(() => import("./column-menu.js").then((module) => ({ default: module.ColumnMenu })));
+const CellMenu = lazy(() => import("./cell-menu.js").then((module) => ({ default: module.CellMenu })));
 
 interface Drag {
   kind: "cells" | "rows" | "resize" | "move";
@@ -623,8 +629,10 @@ export function GridBody({
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
+    // While an IME composes, keys are its own (the editor takes them, §6.6 of v2-react.md).
+    const composing = event.nativeEvent.isComposing || event.keyCode === 229;
     // Space acts on a link or a button of the active cell; otherwise it checks the active row, or unchecks it.
-    if (event.key === " " && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+    if (!composing && event.key === " " && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
       const active = store.getSnapshot().session.active;
       if (!active) return;
       const column = columns.findIndex((item) => item.column.name === active.column);
@@ -651,7 +659,7 @@ export function GridBody({
       return;
     }
     // Alt+Enter opens the detail panel of the active row, or closes it.
-    if (event.altKey && event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+    if (!composing && event.altKey && event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
       event.preventDefault();
       const open = store.getSnapshot().session.detail?.open === true;
       void store.dispatch({ command: open ? "detail.close" : "detail.open" });
@@ -717,8 +725,16 @@ export function GridBody({
         <AccessibleRows canvas={canvas} id={id} />
       </div>
       <CellEditor canvas={canvas} scrollerRef={scrollerRef} announce={announce} ref={editor} />
-      <ColumnMenu target={menu} onClose={closeMenu} />
-      <CellMenu target={cellMenu} onClose={closeCellMenu} copy={copySelection} />
+      {menu && (
+        <Suspense fallback={null}>
+          <ColumnMenu target={menu} onClose={closeMenu} />
+        </Suspense>
+      )}
+      {cellMenu && (
+        <Suspense fallback={null}>
+          <CellMenu target={cellMenu} onClose={closeCellMenu} copy={copySelection} />
+        </Suspense>
+      )}
     </div>
   );
 }

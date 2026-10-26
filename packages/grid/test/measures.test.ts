@@ -65,3 +65,29 @@ test("the store reads the totals row for the view on screen and follows its sett
   assert.equal(store.getSnapshot().totals, null);
   disconnect();
 });
+
+test("with a controlled document, the totals row follows the document the host passes back (§5.2 of v2-react.md)", async () => {
+  const engine = fakeEngine(numbers(10), {
+    ...CAPABILITIES,
+    plan: { ...CAPABILITIES.plan, aggregate: true },
+    measures: ["count", "sum", "min", "max"],
+  });
+  const store = createGridStore({ transport: localTransport(engine), table: "numbers" });
+  store.control("document", true);
+  const reported: GridDocument[] = [];
+  const off = store.on("document", (document) => reported.push(document));
+  const disconnect = store.connect();
+  store.setViewport({ top: 0, rows: 20, columns: ["id", "name", "score"] });
+  for (let attempt = 0; attempt < 200 && store.getSnapshot().view === null; attempt++) await settle(1);
+  await store.dispatch({ command: "column.total", name: "id", total: { fn: "sum" } });
+  // The command is reported, and nothing changes until the host passes the document back.
+  assert.deepEqual(reported.at(-1)?.columns?.[0], { name: "id", total: { fn: "sum" } });
+  await settle(5);
+  assert.equal(store.getSnapshot().totals, null);
+  assert.equal(store.getSnapshot().document.columns, undefined);
+  store.setDocument(reported.at(-1) as GridDocument);
+  for (let attempt = 0; attempt < 200 && store.getSnapshot().totals === null; attempt++) await settle(1);
+  assert.deepEqual(store.getSnapshot().totals?.values, { id: 45 });
+  off();
+  disconnect();
+});

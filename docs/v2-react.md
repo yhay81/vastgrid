@@ -332,7 +332,11 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
 - The row of the active cell is always among them, also when it is not on screen, so that the active cell is
   always `aria-activedescendant`; `aria-selected` follows the selection. Each row is a component of its own, so
   that moving the selection renders again only the rows whose selected cells changed.
-- The keyboard follows §6.4 of the specification (the grid pattern of the ARIA Authoring Practices).
+- The keyboard follows §6.4 of the specification (the grid pattern of the ARIA Authoring Practices), and adds:
+  Space (a cell's link or button, or checking the row), Alt+Enter (the detail panel), Alt+↓ (the column menu),
+  Shift+F10 and the context menu key (the cell menu), ⌘/Ctrl+F (find), ⌘/Ctrl+D and R (fill) and ⌘/Ctrl+S (save).
+  While an IME composes, its keys are its own: none of these act. Menus and panels give the focus back to the grid
+  when they close from the keyboard.
 - Results and failures are announced in a polite live region.
 
 ### 6.6 Editing
@@ -554,8 +558,11 @@ Playwright. The tests fail when v2 exceeds a budget:
 | From mount to the first rows on screen (1,000,000 rows in memory) | under 300 ms |
 
 Counts of commits are exact; times allow for the machine. The size of `DataGrid` with its dependencies, minified
-and compressed with gzip, stays under 60 KB, measured with esbuild as in Appendix A. Appendix A gives what was
-measured.
+and compressed with gzip, stays under 60 KB, measured with esbuild as in Appendix A
+([`scripts/bundle-size.mjs`](../scripts/bundle-size.mjs), after `npm run build`). The column and cell menus, the
+toolbar's menus, the find bar and the detail panel load when they first open, so that what a page loads first is
+the grid itself. Appendix A gives what was measured; the first load is over this budget at present (A.1), and
+[#42](https://github.com/yhay81/vastgrid/issues/42) records what to do about it.
 
 ## 11. Compiler and lint
 
@@ -581,7 +588,7 @@ main at `a925cb3`.
 | `eslint-plugin-react-hooks` `recommended-latest` | 51 problems: `refs` 20, `immutability` 17, `preserve-manual-memoization` 9, `exhaustive-deps` 3, `set-state-in-effect` 2 | none |
 | How the state reaches React | a mutable `GridController` with a version counter: every change renders all of `DataGrid` (63 hooks); 13 effects copy props into the controller after render | immutable snapshots and selectors (§4) |
 | API | `forwardRef`; the handle has getters | `ref` as a prop; typed commands |
-| `DataGrid` and an in-memory table, minified (esbuild) | 300.9 KB, 92.6 KB with gzip, all of it whatever is used | 170.7 KB, 57.0 KB with gzip, of which `vastgrid-spec` (the commands, checks and messages that every surface shares) and Flechette are 107 KB minified. v2 has no panels yet; they will load when opened |
+| `DataGrid` and an in-memory table, minified (esbuild) | 300.9 KB, 92.6 KB with gzip, all of it whatever is used | On 2026-10-24, before editing, saving, exports, formulas and the panels: 170.7 KB, 57.0 KB with gzip. On 2026-10-26: 289.9 KB and 98.7 KB with gzip loaded first, 350.9 KB and 123.0 KB in all; the menus and panels (61 KB minified) load when they open. Of the first load, `vastgrid-spec` is one chunk of 181 KB minified (esbuild keeps a package's files together when they are shared, so its formula compiler comes too), the canvas, the store and the grid's body 59 KB, and Flechette 31 KB |
 | Server rendering | an empty canvas and "Loading…", with `aria-rowcount="1"`, also for a table in memory | the first rows as an HTML table, streamed when `initial` is a promise |
 
 ### A.2 In the browser

@@ -1,13 +1,17 @@
-import { use, useDeferredValue, useEffect, useState, useTransition } from "react";
+import { lazy, use, useDeferredValue, useEffect, useState, useTransition } from "react";
 import { type Expr, partsOf } from "vastgrid-spec";
 import { isApple } from "../canvas/keys.js";
-import { ColumnsMenu } from "./columns-menu.js";
-import { ConditionsMenu } from "./conditions-menu.js";
+import { offers } from "../core/measures.js";
 import { LocaleContext, SaveContext } from "./context.js";
 import { ExportMenu } from "./export-menu.js";
-import { FormulaMenu } from "./formula-menu.js";
-import { GroupMenu } from "./group-menu.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
+import { ToolbarPopover } from "./toolbar-popover.js";
+
+// The menus load when they first open (§10 of v2-react.md).
+const ConditionsPanel = lazy(() => import("./conditions-menu.js"));
+const ColumnsPanel = lazy(() => import("./columns-menu.js"));
+const GroupPanel = lazy(() => import("./group-menu.js"));
+const FormulaPanel = lazy(() => import("./formula-menu.js"));
 
 /** How long typing must pause before the search is set. */
 const SEARCH_DELAY = 200;
@@ -67,8 +71,13 @@ export function Toolbar({ announce }: { announce: (text: string) => void }) {
   const derives = useGridSelector(
     (snapshot) => snapshot.table !== null && snapshot.table.capabilities.plan?.derive !== false,
   );
-  const groups = useGridSelector(
-    (snapshot) => snapshot.table !== null && snapshot.table.capabilities.plan?.aggregate !== false,
+  const groups = useGridSelector((snapshot) => snapshot.table !== null && offers(snapshot.table.capabilities, "count"));
+  const grouped = useGridSelector((snapshot) => snapshot.document.plan?.aggregate !== undefined);
+  const filters = useGridSelector(
+    (snapshot) => snapshot.table !== null && snapshot.table.capabilities.plan?.where !== false,
+  );
+  const conditions = useGridSelector(
+    (snapshot) => partsOf(snapshot.document.plan?.where).filter((part) => !("search" in part)).length,
   );
   const opened = useGridSelector((snapshot) => snapshot.view !== null);
   const detail = useGridSelector((snapshot) => snapshot.session.detail?.open === true);
@@ -101,10 +110,31 @@ export function Toolbar({ announce }: { announce: (text: string) => void }) {
           {messages.details}
         </button>
       )}
-      <ConditionsMenu />
-      <ColumnsMenu />
-      <GroupMenu />
-      <FormulaMenu />
+      {filters && (
+        <ToolbarPopover
+          label={conditions > 0 ? messages.conditionsCount(String(conditions)) : messages.conditions}
+          title={messages.conditionsTitle}
+          className="vg-conditions"
+          pressed={conditions > 0}
+        >
+          {(close) => <ConditionsPanel close={close} />}
+        </ToolbarPopover>
+      )}
+      {opened && (
+        <ToolbarPopover label={messages.columns} title={messages.columns} className="vg-columns">
+          {() => <ColumnsPanel />}
+        </ToolbarPopover>
+      )}
+      {groups && (
+        <ToolbarPopover label={messages.groups} title={messages.groups} className="vg-groups" pressed={grouped}>
+          {() => <GroupPanel />}
+        </ToolbarPopover>
+      )}
+      {derives && (
+        <ToolbarPopover label={messages.formulas} title={messages.formulas} className="vg-formulas">
+          {() => <FormulaPanel />}
+        </ToolbarPopover>
+      )}
       <ExportMenu announce={announce} />
       {showsSave && (
         <button

@@ -8,12 +8,19 @@ import { useGridRows, useGridSelector, useGridStore } from "./hooks.js";
  * The detail panel of the active row (§5.2 of the specification, `detail`): every column of the view, hidden ones
  * included, with its label and its value in full, by the column's format. It follows the active cell, reads the
  * row's values that the canvas did not (`useGridRows`), and is opened and closed by `detail.open` and
- * `detail.close`; the focus stays in the grid.
+ * `detail.close`; the focus stays in the grid, and goes back to it when the panel is closed from inside (× or Esc).
  */
-export function DetailPanel({ custom }: { custom?: ComponentType<DetailPanelProps> }) {
+export function DetailPanel({
+  custom,
+  onClosed,
+}: {
+  custom?: ComponentType<DetailPanelProps>;
+  /** Called when the panel is closed from inside it, to give the focus back to the grid. */
+  onClosed: () => void;
+}) {
   const open = useGridSelector((snapshot) => snapshot.session.detail?.open === true);
   // Closed, it follows no rows: scrolling commits nothing (§10 of v2-react.md).
-  return open ? <OpenDetail Custom={custom} /> : null;
+  return open ? <OpenDetail Custom={custom} onClosed={onClosed} /> : null;
 }
 
 /** What a host's own detail panel (`detailPanel`) gets: the active row's position, the view's columns and values. */
@@ -25,7 +32,7 @@ export interface DetailPanelProps {
   rowKey: RowKey | undefined;
 }
 
-function OpenDetail({ Custom }: { Custom?: ComponentType<DetailPanelProps> }) {
+function OpenDetail({ Custom, onClosed }: { Custom?: ComponentType<DetailPanelProps>; onClosed: () => void }) {
   const store = useGridStore();
   const { messages, number, locale } = use(LocaleContext);
   const row = useGridSelector((snapshot) => snapshot.session.active?.row ?? 0);
@@ -44,20 +51,28 @@ function OpenDetail({ Custom }: { Custom?: ComponentType<DetailPanelProps> }) {
     return formatterFor(column, format, locale)?.(value) ?? textOf(value, column) ?? "";
   };
   const title = rowCount > 0 ? messages.detailOf(number.format(row + 1)) : messages.details;
+  const close = () => {
+    void store.dispatch({ command: "detail.close" });
+    onClosed();
+  };
   return (
-    <aside className="vg-detail" aria-label={title}>
+    // biome-ignore lint/a11y/noStaticElementInteractions: Esc closes the panel from anywhere in it.
+    <aside
+      className="vg-detail"
+      aria-label={title}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
+        event.preventDefault();
+        close();
+      }}
+    >
       <header className="vg-detail__header">
         <h2 className="vg-detail__title">{title}</h2>
-        <button
-          type="button"
-          className="vg-button vg-button--small"
-          aria-label={messages.closeDetails}
-          onClick={() => void store.dispatch({ command: "detail.close" })}
-        >
+        <button type="button" className="vg-button vg-button--small" aria-label={messages.closeDetails} onClick={close}>
           ×
         </button>
       </header>
-      {rowCount > 0 && Custom && values && values.every((value) => value !== undefined) ? (
+      {rowCount > 0 && Custom && values?.every((value) => value !== undefined) ? (
         <Custom row={row} columns={columns} values={values as JsonValue[]} rowKey={store.rowKey(row)} />
       ) : rowCount > 0 && Custom ? (
         <p className="vg-filter__note">{messages.loading}</p>
