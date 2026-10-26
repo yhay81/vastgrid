@@ -1,4 +1,5 @@
 import {
+  type ComponentType,
   type CSSProperties,
   type ReactNode,
   type Ref,
@@ -13,12 +14,13 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { GridDocument, GridSession } from "vastgrid-spec";
+import type { CellHooks, ColumnGroup } from "../canvas/hooks.js";
 import type { Transport } from "../core/client.js";
 import { createGridStore, type GridStore } from "../core/store.js";
 import type { GridError, InitialView, OpenOptions } from "../core/types.js";
 import { GridContext, LocaleContext, SaveContext } from "./context.js";
-import { DetailPanel } from "./detail-panel.js";
-import { GridBody } from "./grid-body.js";
+import { DetailPanel, type DetailPanelProps } from "./detail-panel.js";
+import { type CellActionEvent, GridBody } from "./grid-body.js";
 import { type GridMessages, messagesFor } from "./messages.js";
 import { useSaveAction } from "./save.js";
 import { StaticRows } from "./static-rows.js";
@@ -56,6 +58,23 @@ export interface DataGridProps {
   statusBar?: boolean;
   /** A check box for each row in the gutter, and Space to check the active row (§5.2.1). */
   checkboxes?: boolean;
+  /** Groups of columns named in header rows above the column names; nested groups add rows. */
+  columnGroups?: readonly ColumnGroup[];
+  /** The height of each row of groups, instead of `--vg-group-header-height`. */
+  groupHeaderHeight?: number;
+  /** How many lines rows have while a displayed column wraps its text (2 by default). */
+  wrapLines?: number;
+  /** The text of a cell instead of the grid's (§5.1: functions win over the document's formats). */
+  cellText?: CellHooks["cellText"];
+  /** The colors of a cell instead of the column's style rules. */
+  cellStyle?: CellHooks["cellStyle"];
+  /** Draws cells on the canvas, with the grid's drawing at hand (`drawDefault`). */
+  drawCell?: CellHooks["drawCell"];
+  /** Makes cells links or buttons; a click or Space on them calls `onCellAction`. */
+  cellAction?: CellHooks["cellAction"];
+  onCellAction?: (event: CellActionEvent) => void;
+  /** Shows the active row in the detail panel your own way, instead of a list of its columns. */
+  detailPanel?: ComponentType<DetailPanelProps>;
   rowHeight?: number;
   headerHeight?: number;
   /** The language of the UI, a BCP 47 tag; the browser's by default. */
@@ -152,6 +171,15 @@ function Frame({
   toolbar = true,
   statusBar = true,
   checkboxes = false,
+  columnGroups,
+  groupHeaderHeight,
+  wrapLines,
+  cellText,
+  cellStyle,
+  drawCell,
+  cellAction,
+  onCellAction,
+  detailPanel,
   className,
   style,
   ref,
@@ -201,12 +229,17 @@ function Frame({
                   rowHeight={rowHeight}
                   headerHeight={headerHeight}
                   checkboxes={checkboxes}
+                  columnGroups={columnGroups}
+                  groupHeaderHeight={groupHeaderHeight}
+                  wrapLines={wrapLines}
+                  hooks={{ cellText, cellStyle, drawCell, cellAction }}
+                  onCellAction={onCellAction}
                   label={label}
                   scrollerRef={scrollerRef}
                   announce={setNotice}
                 />
               </Suspense>
-              <DetailPanel />
+              <DetailPanel custom={detailPanel} />
             </div>
             {statusBar && <StatusBar />}
             <div className="vg-sr-only" aria-live="polite">

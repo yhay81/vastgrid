@@ -81,4 +81,10 @@ test("rows are checked by key, and the detail panel shows the active row", async
   await expect(page.getByRole("complementary", { name: "Row 2" }).locator("dd").nth(1)).toHaveText("Tokyo");
   await page.getByRole("button", { name: "Close details" }).click();
   await expect(page.getByRole("complementary")).toHaveCount(0);
+  // Alt+Enter opens and closes it from the grid.
+  await grid.focus();
+  await page.keyboard.press("Alt+Enter");
+  await expect(page.getByRole("complementary")).toHaveCount(1);
+  await page.keyboard.press("Alt+Enter");
+  await expect(page.getByRole("complementary")).toHaveCount(0);
 });

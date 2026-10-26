@@ -26,6 +26,8 @@ interface Cell extends Box {
   text: string;
   /** What the colors of a style rule mean (§5.1), read by screen readers. */
   description?: string;
+  /** A link or a button (`cellAction`), with its name for screen readers. */
+  action?: { kind: "link" | "button"; label?: string };
 }
 
 interface ShownRow {
@@ -66,6 +68,7 @@ function readRow(
       name: item.name,
       text: value === undefined || value === null ? "" : canvas.text(row, item, value),
       description: canvas.styleOf(row, item.name)?.description,
+      action: canvas.actionAt(row, column)?.action,
       ...boxOf(canvas, canvas.columnX(column), y, canvas.columnWidth(column), canvas.rowHeight),
     };
   });
@@ -83,6 +86,7 @@ function readScreen(canvas: GridCanvas, store: GridStore, settled: Settled, colu
     column,
     name: columns[column].column.name,
     text: columns[column].setting.format?.label ?? columns[column].column.name,
+    groups: canvas.groupNames(column).join(" › "),
     ...boxOf(canvas, canvas.columnX(column), 0, canvas.columnWidth(column), canvas.headerHeight),
   }));
   const rows: ShownRow[] = [];
@@ -131,7 +135,21 @@ function AccessibleRow({ id, row, selected }: { id: string; row: ShownRow; selec
           aria-description={cell.description}
           style={style(cell)}
         >
-          {cell.text}
+          {cell.action?.kind === "link" ? (
+            // biome-ignore lint/a11y/useSemanticElements: the cell's link is drawn on the canvas; this names it.
+            // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
+            <span role="link" aria-label={cell.action.label}>
+              {cell.text}
+            </span>
+          ) : cell.action?.kind === "button" ? (
+            // biome-ignore lint/a11y/useSemanticElements: the cell's button is drawn on the canvas; this names it.
+            // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
+            <span role="button" aria-label={cell.action.label}>
+              {cell.text}
+            </span>
+          ) : (
+            cell.text
+          )}
         </div>
       ))}
     </div>
@@ -178,6 +196,7 @@ export function AccessibleRows({ canvas, id }: { canvas: GridCanvas; id: string 
             role="columnheader"
             aria-colindex={cell.column + 1}
             aria-sort={sortOf(sort, cell.name)}
+            aria-description={cell.groups || undefined}
             style={style(cell)}
           >
             {cell.text}

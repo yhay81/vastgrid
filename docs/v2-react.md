@@ -211,6 +211,10 @@ export function Orders() {
 | `initial` | an `InitialView` or a promise of one | rows read on the server, shown before the first read (§7) |
 | `toolbar`, `statusBar` | booleans | the built-in toolbar and status bar |
 | `checkboxes` | boolean (default false) | a check box for each row in the gutter (§6.11) |
+| `columnGroups`, `groupHeaderHeight` | `ColumnGroup[]`, CSS pixels | groups of columns in header rows above the names (§6.12) |
+| `wrapLines` | a number (default 2) | the lines of a row while a displayed column wraps (§6.10) |
+| `cellText`, `cellStyle`, `drawCell`, `cellAction`, `onCellAction` | functions | the text, colors, drawing and actions of cells (§6.12) |
+| `detailPanel` | a component of `DetailPanelProps` | the detail panel's content (§6.11) |
 | `rowHeight`, `headerHeight` | CSS pixels | instead of `--vg-row-height` and `--vg-header-height` |
 | `locale`, `messages` | a BCP 47 tag, texts | the language of the UI; English and Japanese are built in |
 | `onError` | `(error: GridError) => void` | failures that belong to no command (§4.2) |
@@ -434,7 +438,7 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   The columns that the rules read are read with the rows on screen.
 - `wrap` wraps a column's text at spaces and between CJK characters, ending with "…" when it needs more lines. Rows
   keep one height, so that a view of any size scrolls (§6.3): while a displayed column wraps, every row has room
-  for two lines.
+  for `wrapLines` lines (two by default).
 - Format… in the column menu edits the label, the alignment, wrapping, the number format (number, percent or
   currency, decimal places and digit grouping) of number columns, the date pattern of dates and times, and the rules
   of conditional colors: a condition on a column of the view as in the column's filter (§6.7), a text color and a
@@ -455,8 +459,27 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   `--vg-detail-width` and `--vg-detail-height`) shows every column of the view for the active row, hidden ones
   included, with labels and formats, the text in full; it follows the active cell and reads the row's values that
   the canvas did not (`useGridRows`). The toolbar's Details button dispatches `detail.open` and `detail.close`.
+  Alt+Enter on the grid opens and closes it too. `detailPanel` shows the row with a component of the host's, which
+  gets the row's position, the view's columns, its values once they are all read, and its key.
   Only an open panel follows the rows, so a closed one keeps scrolling free of commits (§10); an open one renders
   again when rows of the view arrive.
+
+### 6.12 Column groups and the cells' hooks
+
+- `columnGroups` names groups of columns, `{ name, children }` with column names and nested groups, in header rows
+  above the names (`groupHeaderHeight` or `--vg-group-header-height` high each, the innermost just above the
+  names). Groups change only the header: a group is drawn over the run of its columns that are next to each other
+  in one region, so a group whose columns are moved apart, hidden or pinned apart is split and each part shows its
+  name. Clicking a group's header selects its columns (`select.columns`, with Shift and the primary modifier as for
+  cells), and screen readers hear a column's groups as its header's description.
+- Functions are props, not state (§5.1 of the specification), and win over the document: `cellText` gives a
+  cell's text, `cellStyle` its colors instead of the style rules, and `drawCell` draws it on the canvas with
+  `drawDefault` at hand (the canvas's state is restored after it). `cellAction` makes cells links (drawn
+  underlined, in the link color) or buttons: the pointer changes over them, screen readers hear them as links or
+  buttons with their `label`, and a click or Space calls `onCellAction` with the cell and its row's key; Space on
+  other cells keeps checking rows. The hooks run for the loaded cells on screen, at every frame that draws them:
+  they must be cheap, and stable (module functions, or `useCallback`) so that the canvas does not measure again.
+- ⌘/Ctrl+D and ⌘/Ctrl+R fill the selection down and right from its first row or column (`edit.fill`, §6.5).
 
 ### 6.5 Theming
 

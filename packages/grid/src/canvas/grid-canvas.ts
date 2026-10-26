@@ -5,6 +5,7 @@ import { formatterFor } from "../core/format.js";
 import type { GridStore } from "../core/store.js";
 import { now, track } from "../core/trace.js";
 import type { GridSnapshot } from "../core/types.js";
+import type { CellAction, CellHooks, CellStyle, ColumnGroup, GridCell } from "./hooks.js";
 import { ColumnLayout, fitFrozen } from "./layout.js";
 import { ScrollAxis } from "./scroll.js";
 import { TextFitter } from "./text.js";
@@ -14,7 +15,7 @@ const PADDING = 8;
 const MIN_WIDTH = 40;
 const MAX_AUTO_WIDTH = 360;
 /** Lines of a row while a displayed column wraps its text (§5.1 of the specification). */
-const WRAP_LINES = 2;
+const DEFAULT_WRAP_LINES = 2;
 /** The width of the check boxes at the left of the gutter (§5.2.1 of the specification). */
 const CHECK_WIDTH = 24;
 /** The width of the button at the right of a header that opens the column menu. */
@@ -24,7 +25,7 @@ export const SETTLE_MS = 150;
 
 /** What is under a point of the grid. */
 export interface Hit {
-  area: "cell" | "header" | "gutter" | "corner" | "none";
+  area: "cell" | "header" | "group" | "gutter" | "corner" | "none";
   /** A view position, for cells and the gutter; clamped to the rows. */
   row: number;
   /** A display position, for cells and headers. */
@@ -35,6 +36,8 @@ export interface Hit {
   menu: boolean;
   /** On the check box of a row (the gutter) or of every row (the corner). */
   check?: boolean;
+  /** For a group header: its row of groups, from the top. */
+  level?: number;
 }
 
 /** The rows on screen once scrolling pauses, for the accessibility rows. */
@@ -57,6 +60,7 @@ export interface CanvasElements {
 export interface CanvasOptions {
   rowHeight?: number;
   headerHeight?: number;
+  groupHeaderHeight?: number;
 }
 
 function isNumeric(column: Column) {
@@ -84,6 +88,40 @@ function defaultWidth(column: Column) {
   }
 }
 
+/** The rows of groups that a list of groups needs: the depth of its nesting. */
+function depthOf(groups: readonly (string | ColumnGroup)[]): number {
+  let depth = 0;
+  for (const item of groups) if (typeof item !== "string") depth = Math.max(depth, 1 + depthOf(item.children));
+  return depth;
+}
+
+/**
+ * The group of each displayed column in each of `rows` rows of groups, the innermost group in the row just above the
+ * names. A column named in several groups takes the first.
+ */
+function groupPaths(
+  groups: readonly ColumnGroup[],
+  columns: readonly DisplayedColumn[],
+  rows: number,
+): ({ id: number; name: string } | null)[][] {
+  const paths = new Map<string, { id: number; name: string }[]>();
+  let id = 0;
+  const walk = (items: readonly (string | ColumnGroup)[], path: { id: number; name: string }[]) => {
+    for (const item of items) {
+      if (typeof item === "string") {
+        if (!paths.has(item)) paths.set(item, path);
+      } else {
+        walk(item.children, [...path, { id: id++, name: item.name }]);
+      }
+    }
+  };
+  walk(groups, []);
+  return columns.map((item) => {
+    const path = paths.get(item.column.name) ?? [];
+    return Array.from({ length: rows }, (_, level) => path[level - (rows - path.length)] ?? null);
+  });
+}
+
 /**
  * Draws the view on screen of a store onto a canvas and scrolls it, without React (§1 and §6 of v2-react.md):
  * cells, headers, row numbers, the selection and the columns pinned at each side, at most once per frame and only
@@ -101,6 +139,16 @@ export class GridCanvas {
   footer = 0;
   /** Whether the gutter has a check box for each row. */
   private checkboxes = false;
+  private wrapLines = DEFAULT_WRAP_LINES;
+  private hooks: CellHooks = {};
+  private groups: readonly ColumnGroup[] = [];
+  /** The height of the row of column names; `headerHeight` adds the rows of groups above it. */
+  private nameHeight = 32;
+  private groupHeight = 24;
+  /** Rows of groups above the column names. */
+  private groupRows = 0;
+  /** By display position: its group in each row of groups (an id and a name), or null. */
+  private groupPaths: ({ id: number; name: string } | null)[][] = [];
   /** The row height of the theme or the props; rows are taller while a column wraps. */
   private baseRowHeight = 24;
   private locale: string | undefined = undefined;
@@ -139,6 +187,34 @@ export class GridCanvas {
 
   constructor(private options: CanvasOptions = {}) {}
 
+  /** Text, colors, drawing and actions of cells from the host (§5.1: they win over the document). */
+  setHooks(hooks: CellHooks) {
+    this.hooks = hooks;
+    this.texts.clear();
+    this.schedule();
+  }
+
+  /** Groups of columns in header rows above the names, each `groupHeight` pixels high (or the CSS's). */
+  setColumnGroups(groups: readonly ColumnGroup[] | undefined, groupHeight: number | undefined) {
+    this.groups = groups ?? [];
+    this.options = { ...this.options, groupHeaderHeight: groupHeight };
+    this.refreshTheme();
+    this.relayout();
+  }
+
+  /** How many lines rows have while a displayed column wraps its text. */
+  setWrapLines(lines: number | undefined) {
+    const next = Math.max(1, Math.floor(lines ?? DEFAULT_WRAP_LINES));
+    if (next === this.wrapLines) return;
+    this.wrapLines = next;
+    this.relayout();
+  }
+
+  /** The top of the row of column names: the rows of groups are above it. */
+  get groupTop() {
+    return this.groupRows * this.groupHeight;
+  }
+
   /** Shows a check box for each row in the gutter, and one for every row in the corner. */
   setCheckboxes(on: boolean) {
     if (this.checkboxes === on) return;
@@ -157,13 +233,13 @@ export class GridCanvas {
   private wrappedHeight(columns: readonly DisplayedColumn[]) {
     const wraps = columns.some((item) => item.setting.format?.wrap === true);
     const lineHeight = this.theme?.lineHeight ?? 16;
-    return wraps ? Math.max(this.baseRowHeight, Math.ceil(lineHeight * WRAP_LINES + 8)) : this.baseRowHeight;
+    return wraps ? Math.max(this.baseRowHeight, Math.ceil(lineHeight * this.wrapLines + 8)) : this.baseRowHeight;
   }
 
   /** Row and header heights given as props, instead of the CSS custom properties. */
   setSizes(rowHeight: number | undefined, headerHeight: number | undefined) {
     if (this.options.rowHeight === rowHeight && this.options.headerHeight === headerHeight) return;
-    this.options = { rowHeight, headerHeight };
+    this.options = { ...this.options, rowHeight, headerHeight };
     this.refreshTheme();
     this.relayout();
   }
@@ -236,7 +312,10 @@ export class GridCanvas {
     this.headerText = new TextFitter(this.context, theme.headerFont);
     this.baseRowHeight = this.options.rowHeight ?? cssLength(elements.root, "--vg-row-height", 24);
     this.rowHeight = this.wrappedHeight(this.columns);
-    this.headerHeight = this.options.headerHeight ?? cssLength(elements.root, "--vg-header-height", 32);
+    this.nameHeight = this.options.headerHeight ?? cssLength(elements.root, "--vg-header-height", 32);
+    this.groupHeight = this.options.groupHeaderHeight ?? cssLength(elements.root, "--vg-group-header-height", 24);
+    this.groupRows = depthOf(this.groups);
+    this.headerHeight = this.groupTop + this.nameHeight;
     this.texts.clear();
     this.schedule();
   }
@@ -313,6 +392,7 @@ export class GridCanvas {
       if (rules.length > 0) this.rules.set(item.column.name, rules);
     }
     this.ruleColumns = [...read];
+    this.groupPaths = groupPaths(this.groups, columns, this.groupRows);
     this.texts.clear();
     const left = columns.filter((item) => item.setting.pin === "left").length;
     const right = columns.filter((item) => item.setting.pin === "right").length;
@@ -547,7 +627,8 @@ export class GridCanvas {
     // Kept with its value: a cell shows another value while a write of it is being answered.
     const kept = this.texts.get(key);
     if (kept !== undefined && kept.value === value) return kept.text;
-    const text = this.formatters.get(column.name)?.(value) ?? textOf(value, column) ?? "";
+    const shown = this.formatters.get(column.name)?.(value) ?? textOf(value, column) ?? "";
+    const text = this.hooks.cellText?.({ row, column, value, text: shown }) ?? shown;
     if (this.texts.size > 50_000) this.texts.clear();
     this.texts.set(key, { value, text });
     return text;
@@ -607,6 +688,17 @@ export class GridCanvas {
     if (column < 0) return none;
     const right = this.columnX(column) + this.layout.width(column);
     const edge = Math.abs(x - right) <= 4;
+    if (y < this.groupTop) {
+      const level = Math.floor(y / this.groupHeight);
+      return {
+        area: this.groupPaths[column]?.[level] ? "group" : "none",
+        row: 0,
+        column,
+        edge: false,
+        menu: false,
+        level,
+      };
+    }
     if (y < this.headerHeight) {
       return { area: "header", row: 0, column, edge, menu: !edge && x >= right - MENU_WIDTH - 4 };
     }
@@ -717,7 +809,12 @@ export class GridCanvas {
     ctx.fillRect(0, 0, this.gutterWidth, top);
     if (this.checkboxes) {
       const all = allState(snapshot.session.checked, snapshot.document.plan, snapshot.view.rowCount);
-      this.drawCheck(ctx, theme, top / 2, all === "all" ? "checked" : all === "none" ? "unchecked" : "unknown");
+      this.drawCheck(
+        ctx,
+        theme,
+        this.groupTop + this.nameHeight / 2,
+        all === "all" ? "checked" : all === "none" ? "unchecked" : "unknown",
+      );
     }
     ctx.strokeStyle = theme.lineStrong;
     ctx.lineWidth = 1;
@@ -795,30 +892,54 @@ export class GridCanvas {
         ctx.fillRect(x + PADDING, y + this.rowHeight / 2 - 4, Math.max(0, Math.min(width - PADDING * 2, 64)), 8);
         continue;
       }
-      const style = this.styleOf(row, item.column.name);
-      if (style?.background) {
-        ctx.fillStyle = style.background;
-        ctx.fillRect(x, y, width, this.rowHeight);
-      }
-      if (value === null) continue;
-      let text = this.text(row, item.column, value);
-      if (store.isCut(row, item.column.name)) text = `${text}…`;
-      ctx.fillStyle = style?.color ?? theme.text;
-      if (wrap) {
-        const lineHeight = theme.lineHeight;
-        const lines = fitter.lines(
-          text,
-          width - PADDING * 2,
-          Math.max(1, Math.floor((this.rowHeight - 4) / lineHeight)),
-        );
+      const style = this.cellStyleOf(row, item.column, value);
+      const text = value === null ? "" : this.text(row, item.column, value);
+      const action = value === null ? null : this.actionOf(row, item.column, value, text);
+      const drawDefault = () => {
+        if (style?.background) {
+          ctx.fillStyle = style.background;
+          ctx.fillRect(x, y, width, this.rowHeight);
+        }
+        if (value === null) return;
+        const shown = store.isCut(row, item.column.name) ? `${text}…` : text;
+        ctx.fillStyle = style?.color ?? (action?.kind === "link" ? theme.link : theme.text);
+        const lines = wrap
+          ? fitter.lines(shown, width - PADDING * 2, Math.max(1, Math.floor((this.rowHeight - 4) / theme.lineHeight)))
+          : [fitter.fit(shown, width - PADDING * 2)];
+        const lineHeight = wrap ? theme.lineHeight : this.rowHeight;
         const top = y + (this.rowHeight - lines.length * lineHeight) / 2 + lineHeight / 2;
         lines.forEach((line, index) => {
-          ctx.fillText(line, textX, top + index * lineHeight);
+          if (!line) return;
+          const middle = top + index * lineHeight;
+          ctx.fillText(line, textX, middle);
+          // Links are underlined.
+          if (action?.kind !== "link") return;
+          const lineWidth = fitter.width(line);
+          const start = align === "right" ? textX - lineWidth : align === "center" ? textX - lineWidth / 2 : textX;
+          ctx.fillRect(start, middle + theme.fontSize / 2, lineWidth, 1);
         });
+      };
+      const draw = this.hooks.drawCell;
+      if (!draw || value === null) {
+        drawDefault();
         continue;
       }
-      const fitted = fitter.fit(text, width - PADDING * 2);
-      if (fitted) ctx.fillText(fitted, textX, y + this.rowHeight / 2);
+      ctx.save();
+      draw({
+        row,
+        column: item.column,
+        value,
+        text,
+        ctx,
+        rect: { x, y, width, height: this.rowHeight },
+        style: style ?? null,
+        theme,
+        drawDefault,
+      });
+      ctx.restore();
+      ctx.font = fitter.font;
+      ctx.textBaseline = "middle";
+      ctx.textAlign = align;
     }
     ctx.textAlign = "left";
   }
@@ -923,6 +1044,7 @@ export class GridCanvas {
       const width = this.layout.width(column);
       ctx.fillStyle = theme.headerBackground;
       ctx.fillRect(x, 0, width, this.headerHeight);
+      const nameMiddle = this.groupTop + this.nameHeight / 2;
       const at = sort.findIndex((key) => key.column === item.column.name);
       const mark = at < 0 ? "" : `${sort[at].direction === "asc" ? "▲" : "▼"}${sort.length > 1 ? at + 1 : ""}`;
       ctx.font = fitter.font;
@@ -930,18 +1052,14 @@ export class GridCanvas {
       ctx.fillStyle = theme.headerText;
       ctx.textAlign = "left";
       const space = width - PADDING * 2 - MENU_WIDTH - (mark ? 18 : 0);
-      ctx.fillText(
-        fitter.fit(item.setting.format?.label ?? item.column.name, space),
-        x + PADDING,
-        this.headerHeight / 2,
-      );
+      ctx.fillText(fitter.fit(item.setting.format?.label ?? item.column.name, space), x + PADDING, nameMiddle);
       if (mark) {
         ctx.fillStyle = theme.accent;
         ctx.textAlign = "right";
-        ctx.fillText(mark, x + width - PADDING - MENU_WIDTH, this.headerHeight / 2);
+        ctx.fillText(mark, x + width - PADDING - MENU_WIDTH, nameMiddle);
         ctx.textAlign = "left";
       }
-      const middle = this.headerHeight / 2;
+      const middle = nameMiddle;
       const center = x + width - PADDING / 2 - MENU_WIDTH / 2;
       ctx.beginPath();
       if (filtered.has(item.column.name)) {
@@ -964,21 +1082,89 @@ export class GridCanvas {
       ctx.lineWidth = 1;
       ctx.beginPath();
       const edge = this.snap(x + width) - 0.5 / this.ratio;
-      ctx.moveTo(edge, 6);
+      ctx.moveTo(edge, this.groupTop + 6);
       ctx.lineTo(edge, this.headerHeight - 6);
       ctx.stroke();
+    };
+    const groups = (from: number, to: number) => {
+      if (this.groupRows > 0 && to >= from) this.drawGroups(ctx, theme, from, to);
     };
     const scrollLeft = this.gutterWidth + this.frozenWidth;
     const scrollRight = this.width - this.frozenRightWidth;
     this.clipped(ctx, scrollLeft, 0, scrollRight - scrollLeft, this.headerHeight, () => {
       for (let column = left; column <= right; column++) draw(column);
+      groups(left, right);
     });
     this.clipped(ctx, this.gutterWidth, 0, this.frozenWidth, this.headerHeight, () => {
       for (let column = 0; column < this.frozenLeft; column++) draw(column);
+      groups(0, this.frozenLeft - 1);
     });
     this.clipped(ctx, scrollRight, 0, this.frozenRightWidth, this.headerHeight, () => {
       for (let column = this.rightStart; column < this.columns.length; column++) draw(column);
+      groups(this.rightStart, this.columns.length - 1);
     });
+  }
+
+  /** The columns of a group header: the run of display positions next to `column` in the same group. */
+  groupSpan(column: number, level: number): [number, number] | null {
+    const id = this.groupPaths[column]?.[level]?.id;
+    if (id === undefined) return null;
+    const region = (at: number) => (at < this.frozenLeft ? 0 : at >= this.rightStart ? 2 : 1);
+    let first = column;
+    let last = column;
+    while (first > 0 && this.groupPaths[first - 1]?.[level]?.id === id && region(first - 1) === region(column)) first--;
+    while (
+      last < this.columns.length - 1 &&
+      this.groupPaths[last + 1]?.[level]?.id === id &&
+      region(last + 1) === region(column)
+    ) {
+      last++;
+    }
+    return [first, last];
+  }
+
+  /** The names of a column's groups, from the outermost, for screen readers. */
+  groupNames(column: number): string[] {
+    return (this.groupPaths[column] ?? []).flatMap((group) => (group ? [group.name] : []));
+  }
+
+  /**
+   * The rows of groups over display positions `[from, to]` of one region: each group over the run of its columns
+   * that are next to each other there, so a group whose columns were moved apart, hidden or pinned is split, and
+   * each part shows its name.
+   */
+  private drawGroups(ctx: CanvasRenderingContext2D, theme: GridTheme, from: number, to: number) {
+    const fitter = this.headerText;
+    if (!fitter) return;
+    ctx.font = fitter.font;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    ctx.lineWidth = 1;
+    for (let level = 0; level < this.groupRows; level++) {
+      const top = level * this.groupHeight;
+      let column = from;
+      while (column <= to) {
+        const group = this.groupPaths[column]?.[level];
+        let last = column;
+        while (last < to && group && this.groupPaths[last + 1]?.[level]?.id === group.id) last++;
+        if (group) {
+          const x = this.columnX(column);
+          const width = this.columnX(last) + this.layout.width(last) - x;
+          ctx.fillStyle = theme.headerText;
+          ctx.fillText(fitter.fit(group.name, width - PADDING * 2), x + PADDING, top + this.groupHeight / 2);
+          ctx.strokeStyle = theme.line;
+          ctx.beginPath();
+          const bottom = this.snap(top + this.groupHeight) - 0.5 / this.ratio;
+          ctx.moveTo(x + 4, bottom);
+          ctx.lineTo(x + width - 4, bottom);
+          const edge = this.snap(x + width) - 0.5 / this.ratio;
+          ctx.moveTo(edge, top + 4);
+          ctx.lineTo(edge, top + this.groupHeight);
+          ctx.stroke();
+        }
+        column = last + 1;
+      }
+    }
   }
 
   private drawGutter(
@@ -1020,8 +1206,35 @@ export class GridCanvas {
     });
   }
 
+  /** The colors of a cell: the host's `cellStyle`, or else the column's style rules. */
+  private cellStyleOf(row: number, column: Column, value: JsonValue): CellStyle | undefined {
+    const hook = this.hooks.cellStyle;
+    if (hook) {
+      const style = hook({ row, column, value, text: value === null ? "" : this.text(row, column, value) });
+      if (style) return style;
+    }
+    return this.styleOf(row, column.name);
+  }
+
+  /** What a cell does, by the host's `cellAction`. */
+  private actionOf(row: number, column: Column, value: JsonValue, text: string): CellAction | null {
+    return this.hooks.cellAction?.({ row, column, value, text }) ?? null;
+  }
+
+  /** The action of a cell at a display position, while its value is read; null for plain cells. */
+  actionAt(row: number, columnIndex: number): { action: CellAction; cell: GridCell } | null {
+    const column = this.columns[columnIndex]?.column;
+    const store = this.store;
+    if (!column || !store || !this.hooks.cellAction) return null;
+    const value = store.cell(row, column.name);
+    if (value === undefined || value === null) return null;
+    const text = this.text(row, column, value);
+    const action = this.actionOf(row, column, value, text);
+    return action ? { action, cell: { row, column, value, text } } : null;
+  }
+
   /** The style rule that colors a cell: the first whose `when` is true for its row (§5.1); undefined for none. */
-  styleOf(row: number, name: string): { color?: string; background?: string; description?: string } | undefined {
+  styleOf(row: number, name: string): CellStyle | undefined {
     const rules = this.rules.get(name);
     const store = this.store;
     if (!rules || !store) return undefined;

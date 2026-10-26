@@ -1,21 +1,26 @@
 import { createRoot } from "react-dom/client";
-import { DataGrid, type DataGridHandle, httpTransport } from "vastgrid-grid";
+import { type CellActionEvent, type ColumnGroup, DataGrid, type DataGridHandle, httpTransport } from "vastgrid-grid";
 import "vastgrid-grid/styles.css";
 
 /**
  * A file of the server's folder in v2's grid: `?file=sales-100000000.parquet`. The DuckDB engine reads it on the
  * server (`vite.config.ts`), and the grid reads blocks of it over HTTP (docs/v2-spec.md §8.8). The end-to-end tests
- * read `window.files`.
+ * read `window.files`; `?groups=` (JSON) names column groups, and `?links=` a column whose cells are links, whose
+ * clicks go to `window.files.actions`.
  */
 declare global {
   interface Window {
-    files: { handle: DataGridHandle | null };
+    files: { handle: DataGridHandle | null; actions: CellActionEvent[] };
   }
 }
 
-window.files = { handle: null };
+window.files = { handle: null, actions: [] };
 
-const file = new URLSearchParams(location.search).get("file");
+const params = new URLSearchParams(location.search);
+const file = params.get("file");
+const groups = params.get("groups");
+const columnGroups = groups ? (JSON.parse(groups) as ColumnGroup[]) : undefined;
+const links = params.get("links");
 const element = document.getElementById("root");
 if (!element) throw new Error("There is no #root.");
 const transport = httpTransport("/api", { events: "/api/events" });
@@ -30,6 +35,11 @@ createRoot(element).render(
       table={file}
       locale="en"
       checkboxes
+      columnGroups={columnGroups}
+      cellAction={
+        links ? (cell) => (cell.column.name === links ? { kind: "link", label: `Open ${cell.text}` } : null) : undefined
+      }
+      onCellAction={(event) => window.files.actions.push(event)}
       aria-label={file}
       style={{ height: "100%" }}
     />

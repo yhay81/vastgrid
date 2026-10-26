@@ -2,6 +2,7 @@
 
 export type { CommandName, CommandOutputs, GridCommand, GridDocument, GridSession } from "vastgrid-spec";
 export { GridCanvas, type Hit, type Settled } from "./canvas/grid-canvas.js";
+export type { CellAction, CellHooks, CellStyle, ColumnGroup, DrawCellArgs, GridCell } from "./canvas/hooks.js";
 export { isApple, type KeyInput, keyCommand } from "./canvas/keys.js";
 /**
  * vastgrid v2 for React (v2-react.md): `DataGrid`, the hooks that read and change its store, and what the store
@@ -9,6 +10,8 @@ export { isApple, type KeyInput, keyCommand } from "./canvas/keys.js";
  */
 export * from "./core.js";
 export { DataGrid, type DataGridHandle, type DataGridProps, GridProvider } from "./react/data-grid.js";
+export type { DetailPanelProps } from "./react/detail-panel.js";
+export type { CellActionEvent } from "./react/grid-body.js";
 export {
   readRows,
   shallowEqual,

@@ -33,6 +33,9 @@ test("keys give the commands of the grid pattern (§6.4)", () => {
     [key("s", { ctrlKey: true }), false, { command: "save" }],
     [key("S", { ctrlKey: true, shiftKey: true }), false, null],
     [key("ArrowDown", { altKey: true }), true, null],
+    [key("d", { metaKey: true }), true, { command: "edit.fill", direction: "down" }],
+    [key("r", { ctrlKey: true }), false, { command: "edit.fill", direction: "right" }],
+    [key("d", { ctrlKey: true }), true, null],
   ];
   for (const [input, apple, expected] of cases)
     assert.deepEqual(keyCommand(input, apple), expected, JSON.stringify(input));

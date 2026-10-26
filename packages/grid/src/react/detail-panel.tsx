@@ -1,5 +1,5 @@
-import { use } from "react";
-import { type JsonValue, textOf } from "vastgrid-spec";
+import { type ComponentType, use } from "react";
+import { type Column, type JsonValue, type RowKey, textOf } from "vastgrid-spec";
 import { formatterFor } from "../core/format.js";
 import { LocaleContext } from "./context.js";
 import { useGridRows, useGridSelector, useGridStore } from "./hooks.js";
@@ -10,13 +10,22 @@ import { useGridRows, useGridSelector, useGridStore } from "./hooks.js";
  * row's values that the canvas did not (`useGridRows`), and is opened and closed by `detail.open` and
  * `detail.close`; the focus stays in the grid.
  */
-export function DetailPanel() {
+export function DetailPanel({ custom }: { custom?: ComponentType<DetailPanelProps> }) {
   const open = useGridSelector((snapshot) => snapshot.session.detail?.open === true);
   // Closed, it follows no rows: scrolling commits nothing (§10 of v2-react.md).
-  return open ? <OpenDetail /> : null;
+  return open ? <OpenDetail Custom={custom} /> : null;
 }
 
-function OpenDetail() {
+/** What a host's own detail panel (`detailPanel`) gets: the active row's position, the view's columns and values. */
+export interface DetailPanelProps {
+  row: number;
+  columns: readonly Column[];
+  values: readonly JsonValue[];
+  /** The row's key (§5.3), when it is read. */
+  rowKey: RowKey | undefined;
+}
+
+function OpenDetail({ Custom }: { Custom?: ComponentType<DetailPanelProps> }) {
   const store = useGridStore();
   const { messages, number, locale } = use(LocaleContext);
   const row = useGridSelector((snapshot) => snapshot.session.active?.row ?? 0);
@@ -48,15 +57,21 @@ function OpenDetail() {
           ×
         </button>
       </header>
-      {rowCount > 0 && (
-        <dl className="vg-detail__list">
-          {columns.map((column, index) => (
-            <div key={column.name} className="vg-detail__item">
-              <dt>{byName.get(column.name)?.format?.label ?? column.name}</dt>
-              <dd>{text(values?.[index], index)}</dd>
-            </div>
-          ))}
-        </dl>
+      {rowCount > 0 && Custom && values && values.every((value) => value !== undefined) ? (
+        <Custom row={row} columns={columns} values={values as JsonValue[]} rowKey={store.rowKey(row)} />
+      ) : rowCount > 0 && Custom ? (
+        <p className="vg-filter__note">{messages.loading}</p>
+      ) : (
+        rowCount > 0 && (
+          <dl className="vg-detail__list">
+            {columns.map((column, index) => (
+              <div key={column.name} className="vg-detail__item">
+                <dt>{byName.get(column.name)?.format?.label ?? column.name}</dt>
+                <dd>{text(values?.[index], index)}</dd>
+              </div>
+            ))}
+          </dl>
+        )
       )}
     </aside>
   );

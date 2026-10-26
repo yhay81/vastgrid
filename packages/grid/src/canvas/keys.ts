@@ -29,7 +29,7 @@ const ARROWS: Record<string, "up" | "down" | "left" | "right"> = {
  * Down move by a page; Home and End go to the first and last column (with the modifier, also row); Tab and
  * Enter walk through the selection; the modifier and A selects everything. Delete and Backspace clear the selected
  * cells, F2 edits the active cell, the modifier and Z undoes (with Shift, or Ctrl+Y off Apple platforms,
- * redoes), and the modifier and S saves. Null for other keys: a key that types text starts editing (`typesText`).
+ * redoes), the modifier and D or R fills down or right, and the modifier and S saves. Null for other keys: a key that types text starts editing (`typesText`).
  */
 export function keyCommand(event: KeyInput, apple: boolean): GridCommand | null {
   const primary = apple ? event.metaKey : event.ctrlKey;
@@ -75,6 +75,13 @@ export function keyCommand(event: KeyInput, apple: boolean): GridCommand | null 
     case "s":
     case "S":
       return primary && !event.shiftKey ? { command: "save" } : null;
+    // Fill down and right from the first row or column of the selection (§6.5).
+    case "d":
+    case "D":
+      return primary && !event.shiftKey ? { command: "edit.fill", direction: "down" } : null;
+    case "r":
+    case "R":
+      return primary && !event.shiftKey ? { command: "edit.fill", direction: "right" } : null;
     default:
       return null;
   }

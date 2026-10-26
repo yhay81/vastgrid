@@ -12,8 +12,9 @@ import {
   useState,
 } from "react";
 import { browser } from "react-dom";
-import { CommandError, type GridCommand } from "vastgrid-spec";
+import { CommandError, type GridCommand, type RowKey } from "vastgrid-spec";
 import { GridCanvas, type Hit } from "../canvas/grid-canvas.js";
+import type { CellAction, CellHooks, ColumnGroup, GridCell } from "../canvas/hooks.js";
 import { isApple, type KeyInput, keyCommand, typesText } from "../canvas/keys.js";
 import { allState, checkedCount, checkState } from "../core/checked.js";
 import type { GridStore } from "../core/store.js";
@@ -133,11 +134,23 @@ function countCells(output: unknown) {
   return tsv.split("\n").reduce((count, line) => count + line.split("\t").length, 0);
 }
 
+/** A click or Space on a cell that is a link or a button (`cellAction`). */
+export interface CellActionEvent extends GridCell {
+  action: CellAction;
+  /** The key of the cell's row (§5.3), when it is read. */
+  key: RowKey | undefined;
+}
+
 export interface GridBodyProps {
   rowHeight?: number;
   headerHeight?: number;
   /** A check box for each row in the gutter (§5.2.1 of the specification). */
   checkboxes?: boolean;
+  columnGroups?: readonly ColumnGroup[];
+  groupHeaderHeight?: number;
+  wrapLines?: number;
+  hooks: CellHooks;
+  onCellAction?: (event: CellActionEvent) => void;
   label: string;
   /** Receives the scroller, which has the focus of the grid. */
   scrollerRef: RefObject<HTMLDivElement | null>;
@@ -149,7 +162,19 @@ export interface GridBodyProps {
  * the store without rendering React, and the accessibility rows follow when scrolling pauses. Rendered only in
  * the browser: on the server, the nearest Suspense boundary sends its fallback, the first rows as HTML.
  */
-export function GridBody({ rowHeight, headerHeight, checkboxes = false, label, scrollerRef, announce }: GridBodyProps) {
+export function GridBody({
+  rowHeight,
+  headerHeight,
+  checkboxes = false,
+  columnGroups,
+  groupHeaderHeight,
+  wrapLines,
+  hooks,
+  onCellAction,
+  label,
+  scrollerRef,
+  announce,
+}: GridBodyProps) {
   use(browser("The grid draws on a canvas, which only the browser has."));
   const store = useGridStore();
   const [canvas] = useState(() => new GridCanvas({ rowHeight, headerHeight }));
@@ -185,6 +210,19 @@ export function GridBody({ rowHeight, headerHeight, checkboxes = false, label, s
   useLayoutEffect(() => {
     canvas.setCheckboxes(checkboxes);
   }, [canvas, checkboxes]);
+
+  useLayoutEffect(() => {
+    canvas.setWrapLines(wrapLines);
+  }, [canvas, wrapLines]);
+
+  useLayoutEffect(() => {
+    canvas.setColumnGroups(columnGroups, groupHeaderHeight);
+  }, [canvas, columnGroups, groupHeaderHeight]);
+
+  const { cellText, cellStyle, drawCell, cellAction } = hooks;
+  useLayoutEffect(() => {
+    canvas.setHooks({ cellText, cellStyle, drawCell, cellAction });
+  }, [canvas, cellText, cellStyle, drawCell, cellAction]);
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -239,6 +277,12 @@ export function GridBody({ rowHeight, headerHeight, checkboxes = false, label, s
       const all = allState(session.checked, document.plan, view?.rowCount ?? 0);
       // The header's box checks every row of the view, or none once they all are.
       dispatchCheck(all === "all" ? { command: "check.clear" } : { command: "check.all" });
+    } else if (hit.area === "group" && hit.level !== undefined) {
+      // A group's header selects its columns.
+      const span = canvas.groupSpan(hit.column, hit.level);
+      const from = span && nameOf(span[0]);
+      const to = span && nameOf(span[1]);
+      if (from && to) void store.dispatch({ command: "select.columns", from, to, mode });
     } else if (hit.area === "gutter") {
       void store.dispatch({ command: "select.rows", from: hit.row, to: hit.row, mode });
       start("rows", String(hit.row));
@@ -316,7 +360,9 @@ export function GridBody({ rowHeight, headerHeight, checkboxes = false, label, s
     const { x, y } = point(event);
     if (!current) {
       const hit = canvas.hit(x, y);
-      event.currentTarget.style.cursor = hit.area === "header" && hit.edge ? "col-resize" : "";
+      const action = hit.area === "cell" ? canvas.actionAt(hit.row, hit.column)?.action : undefined;
+      event.currentTarget.style.cursor =
+        hit.area === "header" && hit.edge ? "col-resize" : action ? (action.cursor ?? "pointer") : "";
       return;
     }
     if (current.kind === "resize") {
@@ -391,6 +437,16 @@ export function GridBody({ rowHeight, headerHeight, checkboxes = false, label, s
     const hit = canvas.hit(event.clientX - rect.left, event.clientY - rect.top);
     const column = nameOf(hit.column);
     if (hit.area === "header" && hit.menu && column !== undefined) openMenu(column, hit.column);
+    // A click on a link or a button of a cell acts, after selecting the cell.
+    if (hit.area === "cell" && !event.shiftKey && !event.metaKey && !event.ctrlKey) act(hit.row, hit.column);
+  };
+
+  /** Calls `onCellAction` for a cell that is a link or a button. */
+  const act = (row: number, column: number) => {
+    const found = canvas.actionAt(row, column);
+    if (!found || !onCellAction) return false;
+    onCellAction({ ...found.cell, action: found.action, key: store.rowKey(row) });
+    return true;
   };
 
   const onContextMenu = (event: MouseEvent<HTMLDivElement>) => {
@@ -440,12 +496,25 @@ export function GridBody({ rowHeight, headerHeight, checkboxes = false, label, s
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
-    // Space checks the active row, or unchecks it.
-    if (checkboxes && event.key === " " && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
-      const row = store.getSnapshot().session.active?.row;
-      if (row === undefined) return;
+    // Space acts on a link or a button of the active cell; otherwise it checks the active row, or unchecks it.
+    if (event.key === " " && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+      const active = store.getSnapshot().session.active;
+      if (!active) return;
+      const column = columns.findIndex((item) => item.column.name === active.column);
+      if (act(active.row, column)) {
+        event.preventDefault();
+        return;
+      }
+      if (!checkboxes) return;
       event.preventDefault();
-      toggleCheck(row);
+      toggleCheck(active.row);
+      return;
+    }
+    // Alt+Enter opens the detail panel of the active row, or closes it.
+    if (event.altKey && event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+      event.preventDefault();
+      const open = store.getSnapshot().session.detail?.open === true;
+      void store.dispatch({ command: open ? "detail.close" : "detail.open" });
       return;
     }
     // Alt+↓ opens the menu of the active cell's column.
