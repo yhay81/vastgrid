@@ -90,7 +90,7 @@ test("the store reads the totals row for a view read on a server once the table 
   disconnect();
 });
 
-test("a totals row that fails to read goes to onError and the snapshot's error (§4.2 of v2-react.md)", async () => {
+test("a totals row that fails to read goes to onError and the snapshot's error (§4.2 of react.md)", async () => {
   const engine = fakeEngine(numbers(10), {
     ...CAPABILITIES,
     plan: { ...CAPABILITIES.plan, aggregate: true },
@@ -151,7 +151,7 @@ test("a new connection reads the totals row again", async () => {
   disconnect();
 });
 
-test("with a controlled document, the totals row follows the document the host passes back (§5.2 of v2-react.md)", async () => {
+test("with a controlled document, the totals row follows the document the host passes back (§5.2 of react.md)", async () => {
   const engine = fakeEngine(numbers(10), {
     ...CAPABILITIES,
     plan: { ...CAPABILITIES.plan, aggregate: true },

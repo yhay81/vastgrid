@@ -1,6 +1,6 @@
 /**
- * The page of `vastgrid` (docs/cli.md): the files that the command was started with, in v2's grid, read by DuckDB
- * in the command over HTTP (docs/v2-spec.md §8.8). `?file=` names the file shown and `&sheet=` a sheet of a
+ * The page of `vastgrid` (docs/cli.md): the files that the command was started with, in 0.2's grid, read by DuckDB
+ * in the command over HTTP (docs/spec.md §8.8). `?file=` names the file shown and `&sheet=` a sheet of a
  * workbook: the address keeps them, for loading the page again and for the browser's back and forward.
  */
 import { useEffect, useState, useSyncExternalStore } from "react";

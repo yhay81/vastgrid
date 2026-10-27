@@ -9,7 +9,7 @@ before such a change.
 - `packages/spec` (vastgrid-spec: types, plan checking, commands, schemas, conformance corpus), `packages/sql`
   (vastgrid-sql: plans as DuckDB SQL), `packages/js` (vastgrid-js: the engine in memory), `packages/duckdb-engine`
   (vastgrid-duckdb: the DuckDB engine for Node.js), `packages/grid` (vastgrid: the React grid; `vastgrid/core` without
-  React). Specified by `docs/v2-spec.md` and `docs/v2-react.md`.
+  React). Specified by `docs/spec.md` and `docs/react.md`.
 - Entry points: `packages/cli` (vastgrid-cli), `packages/mcp` (vastgrid-mcp), `packages/vscode` (the extension),
   `packages/notebook` (the Python package, with its widget).
 - `examples/` (bench, files), `site/` (Astro on Cloudflare), `e2e/` (Playwright), `scripts/` (build, release,
@@ -39,8 +39,8 @@ Find the lines with `rg -n`, then read only those lines.
 - Over 1,000 lines: `packages/notebook/python/src/vastgrid/_engine.py` (1,400), `packages/js/src/text.ts`,
   `packages/grid/src/canvas/grid-canvas.ts`, `packages/js/src/engine.ts`, `packages/grid/src/core/store.ts`; check
   others with `wc -l` first.
-- Code and tests cite the specs by section (§2.4). `rg -n '^#' docs/v2-spec.md` is the outline of its 1,400
-  lines; read only the section. The same goes for `docs/v2-react.md`.
+- Code and tests cite the specs by section (§2.4). `rg -n '^#' docs/spec.md` is the outline of its 1,400
+  lines; read only the section. The same goes for `docs/react.md`.
 - `packages/spec/conformance/` holds JSON files of up to 80 KB: query them with `jq` or `rg`.
 - Never read `package-lock.json` (`npm ls <name>` instead). README.md, README.ja.md, CHANGELOG.md and the
   site's reference pages are 35–50 KB: read only the section you change.

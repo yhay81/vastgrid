@@ -105,7 +105,7 @@ test("documents that do not have the form of §5.1 are refused", () => {
 
 test("sessions that do not have the form of §5.2 are refused", () => {
   refused(() => checkSession({ kind: "vastgrid/session", version: 3 }), "version", "/version");
-  refused(() => checkSession(session({ view: "v1" })), "syntax", "/view");
+  refused(() => checkSession(session({ view: "0.1" })), "syntax", "/view");
   refused(() => checkSession(session({ selection: [] })), "syntax", "/selection");
   refused(
     () => checkSession(session({ selection: Array(1001).fill({ rows: [0, 1], columns: ["a"] }) })),
@@ -285,7 +285,7 @@ test("repair removes a where that is not an and, having without aggregate, and a
 
 const v1Table: Column[] = [...table, { name: "note", type: "string" }];
 
-test("v1's query migrates into where and sort (§5.6, Appendix A)", () => {
+test("0.1's query migrates into where and sort (§5.6, Appendix A)", () => {
   const { document: migrated, dropped } = migrateGridState(
     {
       version: 1,
@@ -338,7 +338,7 @@ test("v1's query migrates into where and sort (§5.6, Appendix A)", () => {
   assert.doesNotThrow(() => checkPlan(migrated.plan, v1Table));
 });
 
-test("v1's columns and frozen columns migrate into settings with pins", () => {
+test("0.1's columns and frozen columns migrate into settings with pins", () => {
   const { document: migrated } = migrateGridState(
     {
       version: 1,
@@ -368,7 +368,7 @@ test("v1's columns and frozen columns migrate into settings with pins", () => {
   ]);
 });
 
-test("v1's groups migrate into aggregate, having and sort, with v1's names", () => {
+test("0.1's groups migrate into aggregate, having and sort, with 0.1's names", () => {
   const { document: migrated, dropped } = migrateGridState(
     {
       version: 1,
@@ -409,7 +409,7 @@ test("v1's groups migrate into aggregate, having and sort, with v1's names", () 
   assert.doesNotThrow(() => checkPlan(migrated.plan, v1Table));
 });
 
-test("v1's formulas migrate into derived columns, each after the ones it uses (§4.11, §5.6)", () => {
+test("0.1's formulas migrate into derived columns, each after the ones it uses (§4.11, §5.6)", () => {
   const { document: migrated, dropped } = migrateGridState(
     {
       version: 1,
@@ -444,7 +444,7 @@ test("v1's formulas migrate into derived columns, each after the ones it uses (�
   assert.doesNotThrow(() => checkPlan(migrated.plan, v1Table));
 });
 
-test("formulas group, measure and pivot as v1's columns did", () => {
+test("formulas group, measure and pivot as 0.1's columns did", () => {
   const { document: migrated, dropped } = migrateGridState(
     {
       version: 1,
@@ -473,7 +473,7 @@ test("formulas that do not compile are reported with their reasons, with what us
   } = migrateGridState(
     {
       version: 1,
-      // Without a schema, v1's columns were the table's, then the formulas.
+      // Without a schema, 0.1's columns were the table's, then the formulas.
       formulas: [
         { name: "bad", expression: "id + name" },
         { name: "uses", expression: "bad * 2" },
@@ -510,7 +510,7 @@ test("formulas that do not compile are reported with their reasons, with what us
   assert.equal(reasons["/formulas/1"], 'The formula uses "bad", which was not migrated.');
   assert.equal(reasons["/formulas/2"], "The formula uses itself through other formulas.");
   assert.equal(reasons["/formulas/4"], 'Another column is named "note".');
-  assert.equal(reasons["/formulas/6"], "This is not a v1 formula.");
+  assert.equal(reasons["/formulas/6"], "This is not a 0.1 formula.");
   assert.equal(reasons["/query/filters/0"], reasons["/group/keys/0"]);
   assert.deepEqual(migrated.plan, {
     derive: [{ name: "ok", expr: fn("mul", col("id"), lit(2)) }],
@@ -519,7 +519,7 @@ test("formulas that do not compile are reported with their reasons, with what us
   });
 });
 
-test("a v1 query saved without a state migrates, and other versions are refused", () => {
+test("a 0.1 query saved without a state migrates, and other versions are refused", () => {
   assert.deepEqual(migrateGridState({ sort: [{ column: 0, direction: "asc" }] }, v1Table).document.plan, {
     sort: [{ column: "id", direction: "asc" }],
   });

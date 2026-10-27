@@ -40,7 +40,7 @@ import Architecture from "../../../../components/Architecture.astro";
 
 ドキュメントのプラン（計算列、条件、グループ、並べ替え）がビューで、プランの正規形のハッシュで区別します。プランが変わると、ストアは前のビューを画面に残したまま新しいビューを読み、新しい行の表示と、同じレコードへの選択範囲の移動を一度に行います。並べ替えで空の行がちらつくことはありません。
 
-変更はすべてコマンド（`sort.set`、`filter.column`、`edit.set`、`select` など）で、`vastgrid-spec` の `applyCommand` が、ドキュメントとセッションに純粋な関数として適用します。グリッドのメニューとキー、自作のボタン、VS Code の拡張機能、AI のエージェントが同じコマンドを送るので、どれも同じ動きになります。プラン、コマンド、メッセージは[仕様](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md)が定め、適合性のテストの一式で、エンジンが同じ答えを返すことを確かめています。
+変更はすべてコマンド（`sort.set`、`filter.column`、`edit.set`、`select` など）で、`vastgrid-spec` の `applyCommand` が、ドキュメントとセッションに純粋な関数として適用します。グリッドのメニューとキー、自作のボタン、VS Code の拡張機能、AI のエージェントが同じコマンドを送るので、どれも同じ動きになります。プラン、コマンド、メッセージは[仕様](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md)が定め、適合性のテストの一式で、エンジンが同じ答えを返すことを確かめています。
 
 ## メモリエンジン
 

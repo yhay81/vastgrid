@@ -1,5 +1,5 @@
 /**
- * One file that the engine opened (docs/v2-spec.md §8.2): loading it, and the relation that its views read.
+ * One file that the engine opened (docs/spec.md §8.2): loading it, and the relation that its views read.
  *
  * Parquet files are read in place, by their row numbers. Delimited and JSON files and the sheets of workbooks are
  * loaded into tables of the session's database; their first rows are readable as soon as a preview of them is

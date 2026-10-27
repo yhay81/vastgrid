@@ -34,7 +34,7 @@ function sizeOf(value: JsonValue): number {
 
 /**
  * The rows of one view that the store has read, in blocks of `BLOCK_ROWS` rows, with a budget of bytes beyond
- * which the blocks used least recently leave (§4.1 of v2-react.md: rows are not in snapshots).
+ * which the blocks used least recently leave (§4.1 of react.md: rows are not in snapshots).
  */
 export class ViewCache {
   private readonly blocks = new Map<number, Block>();

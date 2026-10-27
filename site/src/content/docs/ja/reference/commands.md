@@ -3,7 +3,7 @@ title: コマンド
 description: グリッドの状態を変えるすべてのコマンドをグループごとに。ディスパッチのしかたと、失敗する理由。
 ---
 
-コマンドは `{ command: 名前, …引数 }` という JSON オブジェクトです（[§6.1](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#61-applying-a-command)）。グリッドのキー操作、メニュー、ツールバーはすべてコマンドで動いていて、ホストやエージェントも同じコマンドをディスパッチします。並べ替え、フィルター、選択、書き込み、書き出しはそれぞれ一つのコマンドです。コマンドをドキュメントとセッションに適用すると、新しい状態と、ストアがエンジンに送るリクエストと、コマンドによっては出力が得られます。コマンドは決定的で、失敗したコマンドは何も変えません。
+コマンドは `{ command: 名前, …引数 }` という JSON オブジェクトです（[§6.1](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#61-applying-a-command)）。グリッドのキー操作、メニュー、ツールバーはすべてコマンドで動いていて、ホストやエージェントも同じコマンドをディスパッチします。並べ替え、フィルター、選択、書き込み、書き出しはそれぞれ一つのコマンドです。コマンドをドキュメントとセッションに適用すると、新しい状態と、ストアがエンジンに送るリクエストと、コマンドによっては出力が得られます。コマンドは決定的で、失敗したコマンドは何も変えません。
 
 ```ts
 { command: "sort.set", keys: [{ column: "total", direction: "desc" }] }
@@ -57,7 +57,7 @@ const outcome = await grid.current?.dispatch({ command: "search.set", text: "Tok
 
 ## プラン
 
-[§6.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#62-the-plan)。ドキュメントの `plan` を変えます。ストアはその後で新しいビューを読み、アクティブな行をできるだけ保ちます。
+[§6.2](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#62-the-plan)。ドキュメントの `plan` を変えます。ストアはその後で新しいビューを読み、アクティブな行をできるだけ保ちます。
 
 | コマンド | 引数 | 効果 |
 | --- | --- | --- |
@@ -75,11 +75,11 @@ const outcome = await grid.current?.dispatch({ command: "search.set", text: "Tok
 | `group.clear` | | グループと `having` を外します。 |
 | `having.set` | `having`：式か null | グループの条件を設定するか外します。 |
 
-式は JSON です（`{ col }`、`{ lit }`、`{ fn, args }`、[§4.3](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#43-expressions)）。グリッドに入力した数式はこれにコンパイルされます（[数式](/ja/guides/formulas/)）。
+式は JSON です（`{ col }`、`{ lit }`、`{ fn, args }`、[§4.3](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#43-expressions)）。グリッドに入力した数式はこれにコンパイルされます（[数式](/ja/guides/formulas/)）。
 
 ## 列
 
-[§6.3](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#63-columns)。ドキュメントの `columns` を変えます。
+[§6.3](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#63-columns)。ドキュメントの `columns` を変えます。
 
 | コマンド | 引数 | 効果 |
 | --- | --- | --- |
@@ -93,7 +93,7 @@ const outcome = await grid.current?.dispatch({ command: "search.set", text: "Tok
 
 ## 選択、スクロール、チェックした行
 
-[§6.4](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#64-selection-scrolling-and-checked-rows)。セッションを変えます。行はビューの中の位置、列は表示している列の名前です。
+[§6.4](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#64-selection-scrolling-and-checked-rows)。セッションを変えます。行はビューの中の位置、列は表示している列の名前です。
 
 | コマンド | 引数 | 効果 |
 | --- | --- | --- |
@@ -112,7 +112,7 @@ const outcome = await grid.current?.dispatch({ command: "search.set", text: "Tok
 
 ## 編集
 
-[§6.5](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#65-editing)。書き込みは各セルの元の値を付けた一つの `write` リクエストとしてエンジンに届き、元に戻す履歴の一つのステップになります。
+[§6.5](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#65-editing)。書き込みは各セルの元の値を付けた一つの `write` リクエストとしてエンジンに届き、元に戻す履歴の一つのステップになります。
 
 | コマンド | 引数 | 効果 |
 | --- | --- | --- |
@@ -129,7 +129,7 @@ const outcome = await grid.current?.dispatch({ command: "search.set", text: "Tok
 
 ## コピー、書き出し、保存
 
-[§6.6](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#66-copying-and-exporting)。
+[§6.6](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#66-copying-and-exporting)。
 
 | コマンド | 引数 | 効果 |
 | --- | --- | --- |
@@ -141,14 +141,14 @@ const outcome = await grid.current?.dispatch({ command: "search.set", text: "Tok
 
 ## コアのコマンド
 
-`view.update`、`history.push`、`history.undone`、`history.redone`、`history.clear`（[§6.7](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#67-commands-of-the-core)）は、応答が届いたときにストア自身が適用します。ホストやエージェントが使う必要はありません。
+`view.update`、`history.push`、`history.undone`、`history.redone`、`history.clear`（[§6.7](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#67-commands-of-the-core)）は、応答が届いたときにストア自身が適用します。ホストやエージェントが使う必要はありません。
 
 ## ドキュメントとセッション
 
 コマンドが変える状態は二つの部分からなり、どちらもバージョンを持つただの JSON です。
 
-- **ドキュメント**（[§5.1](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#51-document)）は、人が保存したり共有したりエージェントに渡したりするものです。`rowKey`、`plan`（派生列、条件、グループ、並べ替え）、列の設定（`width`、`hidden`、`pin`、`format`、`total`）を持ちます。
-- **セッション**（[§5.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#52-session)）は、人が今いる場所です。アクティブセル、選択、スクロール位置、チェックした行、詳細パネル、エディター、元に戻す履歴を持ちます。
+- **ドキュメント**（[§5.1](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#51-document)）は、人が保存したり共有したりエージェントに渡したりするものです。`rowKey`、`plan`（派生列、条件、グループ、並べ替え）、列の設定（`width`、`hidden`、`pin`、`format`、`total`）を持ちます。
+- **セッション**（[§5.2](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#52-session)）は、人が今いる場所です。アクティブセル、選択、スクロール位置、チェックした行、詳細パネル、エディター、元に戻す履歴を持ちます。
 
 ```json
 {
@@ -159,7 +159,7 @@ const outcome = await grid.current?.dispatch({ command: "search.set", text: "Tok
 }
 ```
 
-グリッドはどちらの部分も、制御することも自分に任せることもできます（[状態](/ja/guides/state/)）。別のバージョンのドキュメントは受け付けません。v1 で保存した状態は、`vastgrid-spec` の `migrateGridState` でドキュメントに変換できます（[§5.6](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#56-versions-and-migration)、[v1 からの移行](/ja/migrating-from-v1/)）。
+グリッドはどちらの部分も、制御することも自分に任せることもできます（[状態](/ja/guides/state/)）。別のバージョンのドキュメントは受け付けません。0.1 で保存した状態は、`vastgrid-spec` の `migrateGridState` でドキュメントに変換できます（[§5.6](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#56-versions-and-migration)、[0.1 からの移行](/ja/migrating-from-0-1/)）。
 
 ## エージェントとホストのために
 

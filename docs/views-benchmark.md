@@ -1,8 +1,8 @@
-# v2 saved views: measurements / 大容量ビューの計測
+# 0.2 saved views: measurements / 大容量ビューの計測
 
 2026-10-25, Issue [#35](https://github.com/yhay81/vastgrid/issues/35). Baseline: main
 `740b00e54097609ee29884e32229099aead7588b`; after: the implementation accompanying this report.
-The original files and their values are unchanged. [Raw measurements](v2-views-benchmark.json).
+The original files and their values are unchanged. [Raw measurements](views-benchmark.json).
 
 ## Method
 

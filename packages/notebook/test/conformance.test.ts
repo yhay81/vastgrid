@@ -1,5 +1,5 @@
 /**
- * The plan corpus of vastgrid-spec (docs/v2-spec.md §10) through the notebook's engine, the Python package in
+ * The plan corpus of vastgrid-spec (docs/spec.md §10) through the notebook's engine, the Python package in
  * `python/`, over its messages: every case runs and conforms, and every response is one of §8. The engine runs in a
  * Python process of its own (`kernel.ts`); without uv, the tests are skipped.
  */

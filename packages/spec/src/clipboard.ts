@@ -1,5 +1,5 @@
 /**
- * Text and HTML that spreadsheets copy and paste as cells (docs/v2-spec.md §6.6): TSV, HTML tables and
+ * Text and HTML that spreadsheets copy and paste as cells (docs/spec.md §6.6): TSV, HTML tables and
  * Markdown tables.
  */
 
@@ -95,7 +95,7 @@ export function parseTsv(text: string): string[][] {
   return rows;
 }
 
-// A non-breaking space is pasted as a space, as v1 does.
+// A non-breaking space is pasted as a space, as 0.1 does.
 const entities: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
 
 function decodeEntities(text: string) {

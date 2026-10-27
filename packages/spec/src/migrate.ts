@@ -1,5 +1,5 @@
 /**
- * Migrating v1's `GridState` (version 1) into a v2 document (docs/v2-spec.md §5.6, Appendix A). The
+ * Migrating 0.1's `GridState` (version 1) into a 0.2 document (docs/spec.md §5.6, Appendix A). The
  * document is then repaired for the table (§5.5), which removes what does not validate.
  */
 import { checkPlan, valueType } from "./check.js";
@@ -31,7 +31,7 @@ function isV1Measure(value: unknown): value is V1Measure {
 const decimalDigits = /^-?(0|[1-9][0-9]*)(\.[0-9]+)?$/;
 const TYPED: readonly LogicalType[] = ["date", "time", "timestamp", "timestamptz", "uuid"];
 
-/** A literal of a v1 value for a column (Appendix A): exact digits stay exact, and dates keep their type. */
+/** A literal of a 0.1 value for a column (Appendix A): exact digits stay exact, and dates keep their type. */
 function literal(value: unknown, column: Column | undefined): Expr {
   const type = column?.type;
   if (typeof value === "string" && (type === "integer" || type === "bigint" || type === "decimal")) {
@@ -59,7 +59,7 @@ function notMatching(expr: Expr): Expr {
   return call("not", call("coalesce", expr, { lit: false }));
 }
 
-/** v1's text filters (Appendix A). */
+/** 0.1's text filters (Appendix A). */
 const TEXT_FUNCTIONS: Record<string, [FunctionName, boolean]> = {
   contains: ["contains", false],
   notContains: ["contains", true],
@@ -71,7 +71,7 @@ const TEXT_FUNCTIONS: Record<string, [FunctionName, boolean]> = {
 
 const COMPARISONS = ["eq", "ne", "lt", "le", "gt", "ge"] as const;
 
-/** The names of v1's aggregate columns: `count(*)`, `sum(amount)`, and ` (2)`, ` (3)`, … for repeated names. */
+/** The names of 0.1's aggregate columns: `count(*)`, `sum(amount)`, and ` (2)`, ` (3)`, … for repeated names. */
 function uniqueNames(names: readonly string[]): string[] {
   const used = new Set<string>();
   return names.map((name) => {
@@ -93,7 +93,7 @@ class Migration {
     this.reasons[path] = reason;
   }
 
-  /** A v1 filter or condition tree as an expression, or null when it is dropped or keeps every row. */
+  /** A 0.1 filter or condition tree as an expression, or null when it is dropped or keeps every row. */
   filter(
     node: unknown,
     path: string,
@@ -101,12 +101,12 @@ class Migration {
     columns: readonly Column[],
   ): Expr | null {
     if (!isObject(node)) {
-      this.drop(path, "This is not a v1 filter.");
+      this.drop(path, "This is not a 0.1 filter.");
       return null;
     }
     if (node.type === "and" || node.type === "or") {
       if (!Array.isArray(node.filters)) {
-        this.drop(path, "This is not a v1 filter.");
+        this.drop(path, "This is not a 0.1 filter.");
         return null;
       }
       const parts = node.filters.flatMap(
@@ -159,11 +159,11 @@ class Migration {
       case "blank":
         return node.blank === false ? call("not", call("is_blank", c)) : call("is_blank", c);
     }
-    this.drop(path, "This is not a v1 filter.");
+    this.drop(path, "This is not a 0.1 filter.");
     return null;
   }
 
-  /** v1's `query` as a plan's `where` (search, filters, tree) and `sort`. */
+  /** 0.1's `query` as a plan's `where` (search, filters, tree) and `sort`. */
   query(
     query: Record<string, unknown>,
     path: string,
@@ -191,7 +191,7 @@ class Migration {
       query.sort.forEach((key, index) => {
         const name = isObject(key) && typeof key.column === "number" ? names(key.column) : null;
         if (name === null || !isObject(key) || (key.direction !== "asc" && key.direction !== "desc")) {
-          this.drop(`${path}/sort/${index}`, name === null ? NOT_MIGRATED : "This is not a v1 sort key.");
+          this.drop(`${path}/sort/${index}`, name === null ? NOT_MIGRATED : "This is not a 0.1 sort key.");
           return;
         }
         sort.push({ column: name, direction: key.direction });
@@ -204,7 +204,7 @@ class Migration {
     if (!Array.isArray(columns)) return;
     columns.forEach((item, index) => {
       if (!isObject(item) || typeof item.name !== "string") {
-        this.drop(`${path}/${index}`, "This is not a v1 column setting.");
+        this.drop(`${path}/${index}`, "This is not a 0.1 column setting.");
         return;
       }
       if (into.some((setting) => setting.name === item.name)) {
@@ -222,7 +222,7 @@ class Migration {
   }
 
   /**
-   * v1's formulas as derived columns (§4.11), in an order where each uses only the ones before it: v1's
+   * 0.1's formulas as derived columns (§4.11), in an order where each uses only the ones before it: 0.1's
    * order where it can be. Gives the derived columns and the columns of the rows, and the names of the
    * formulas that were not migrated.
    */
@@ -231,11 +231,11 @@ class Migration {
     const rows = [...table];
     const failed = new Set<string>();
     if (!Array.isArray(value)) return { derive, rows, failed };
-    // Reported in the order of v1's formulas.
+    // Reported in the order of 0.1's formulas.
     const reasons: string[] = [];
     const items = value.map((item, index) => {
       const valid = isObject(item) && typeof item.name === "string" && typeof item.expression === "string";
-      if (!valid) reasons[index] = "This is not a v1 formula.";
+      if (!valid) reasons[index] = "This is not a 0.1 formula.";
       return valid ? { index, name: item.name as string, expression: item.expression as string } : null;
     });
     const formulaNames = new Set(items.flatMap((item) => item?.name ?? []));
@@ -283,15 +283,15 @@ class Migration {
 }
 
 /**
- * Migrates v1's `GridState` into a document for a table (§5.6). Gives the document and the JSON Pointers,
- * into the v1 state, of what could not be migrated. Throws a `StateError` for a value that is not v1's state.
+ * Migrates 0.1's `GridState` into a document for a table (§5.6). Gives the document and the JSON Pointers,
+ * into the 0.1 state, of what could not be migrated. Throws a `StateError` for a value that is not 0.1's state.
  */
 export function migrateGridState(
   value: unknown,
   table: readonly Column[],
 ): { document: GridDocument; dropped: string[]; reasons: Record<string, string> } {
-  if (!isObject(value)) throw new StateError("", "syntax", "A v1 state is an object.");
-  // A plain query, as v1 saved it before states existed, is a state with that query.
+  if (!isObject(value)) throw new StateError("", "syntax", "A 0.1 state is an object.");
+  // A plain query, as 0.1 saved it before states existed, is a state with that query.
   const state =
     value.version === undefined &&
     Object.keys(value).every((key) => ["sort", "filters", "where", "search"].includes(key))
@@ -307,7 +307,7 @@ export function migrateGridState(
   if (schema) document.schema = schema;
   const { derive, rows, failed: formulas } = migration.formulas(state.formulas, table);
   const v1Formulas = Array.isArray(state.formulas) ? state.formulas : [];
-  // Without a schema, v1's views had the table's columns, then the formulas.
+  // Without a schema, 0.1's views had the table's columns, then the formulas.
   const tableNames = (index: number) => {
     const formula = v1Formulas[index - table.length];
     const name = schema
@@ -340,7 +340,7 @@ export function migrateGridState(
     const measureNames: string[] = [];
     aggregates.forEach((item, index) => {
       if (!isObject(item) || !isV1Measure(item.fn) || (item.column !== undefined && typeof item.column !== "string")) {
-        migration.drop(`/group/aggregates/${index}`, "This is not a v1 aggregate.");
+        migration.drop(`/group/aggregates/${index}`, "This is not a 0.1 aggregate.");
         return;
       }
       const column = item.column as string | undefined;
@@ -407,7 +407,7 @@ function pinColumns(columns: ColumnSetting[], table: readonly Column[], state: R
   const right = count("frozenRightColumns");
   if (left === 0 && right === 0) return;
   if (columns.length === 0) {
-    // Without columns, v1 froze the table's first and last columns.
+    // Without columns, 0.1 froze the table's first and last columns.
     for (const column of table) columns.push({ name: column.name });
   }
   const shown = columns.filter((setting) => !setting.hidden);

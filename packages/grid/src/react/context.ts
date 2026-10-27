@@ -18,7 +18,7 @@ export const LocaleContext = createContext<GridLocale>({
   number: new Intl.NumberFormat("en"),
 });
 
-/** Saving in the nearest `DataGrid` (§6.2 of v2-react.md): an Action, with its pending state and last outcome. */
+/** Saving in the nearest `DataGrid` (§6.2 of react.md): an Action, with its pending state and last outcome. */
 export interface GridSave {
   /** Saves the written cells (the `save` command); a save asked for while one runs waits for it. */
   save: () => void;

@@ -28,7 +28,7 @@ import type { MenuTarget } from "./column-menu.js";
 import { LocaleContext, SaveContext } from "./context.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 
-// The menus load when they first open (§10 of v2-react.md).
+// The menus load when they first open (§10 of react.md).
 const ColumnMenu = lazy(() => import("./column-menu.js").then((module) => ({ default: module.ColumnMenu })));
 const CellMenu = lazy(() => import("./cell-menu.js").then((module) => ({ default: module.CellMenu })));
 
@@ -174,7 +174,7 @@ export interface GridBodyProps {
 }
 
 /**
- * The canvas and the scroller over it (§6 of v2-react.md): keys and pointers become commands, the canvas draws
+ * The canvas and the scroller over it (§6 of react.md): keys and pointers become commands, the canvas draws
  * the store without rendering React, and the accessibility rows follow when scrolling pauses. Rendered only in
  * the browser: on the server, the nearest Suspense boundary sends its fallback, the first rows as HTML.
  */
@@ -633,7 +633,7 @@ export function GridBody({
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
-    // While an IME composes, keys are its own (the editor takes them, §6.6 of v2-react.md).
+    // While an IME composes, keys are its own (the editor takes them, §6.6 of react.md).
     const composing = event.nativeEvent.isComposing || event.keyCode === 229;
     // Space acts on a link or a button of the active cell; otherwise it checks the active row, or unchecks it.
     if (!composing && event.key === " " && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {

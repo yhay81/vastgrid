@@ -1,5 +1,5 @@
 /**
- * The commands that the core applies when data arrives (docs/v2-spec.md §6.7): a new view, and the history of
+ * The commands that the core applies when data arrives (docs/spec.md §6.7): a new view, and the history of
  * writes.
  */
 import {

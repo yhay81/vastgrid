@@ -1,5 +1,5 @@
 /**
- * The grids that an MCP server shows (docs/mcp-app.md): each one a store without a screen (§4 of v2-react.md) on a
+ * The grids that an MCP server shows (docs/mcp-app.md): each one a store without a screen (§4 of react.md) on a
  * table of the engine, which the agent reads and changes with commands, and which the Apps that show it follow.
  * An App reads rows through the engine itself (`message`), and keeps its document and session in step with the
  * grid's (`sync`): what the person does reaches the grid, and what the agent does reaches the person.

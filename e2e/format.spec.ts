@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { benchDirectory } from "../packages/duckdb-engine/bench/files.ts";
 
 /**
- * A column's format (docs/v2-react.md §6.10) on a file read by the DuckDB engine over HTTP (`examples/files`):
+ * A column's format (docs/react.md §6.10) on a file read by the DuckDB engine over HTTP (`examples/files`):
  * a number format, a conditional color with what it means, a date pattern and wrapped text, set from the column
  * menu as `column.format` and read back when it opens again.
  */

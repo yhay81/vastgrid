@@ -1,5 +1,5 @@
 /**
- * Reads Excel workbooks (`.xlsx`, `.xlsm`) for `open` (docs/v2-spec.md §8.2) without dependencies: the ZIP archive is
+ * Reads Excel workbooks (`.xlsx`, `.xlsm`) for `open` (docs/spec.md §8.2) without dependencies: the ZIP archive is
  * read by ranges of its bytes, and a sheet is parsed as a stream into lines of CSV with one type per column, which an
  * engine then reads like any other delimited file. Only the shared strings stay in memory. Both engines read
  * workbooks with it: the DuckDB engine from files on disk, the memory engine from a `Blob` or a `File`.

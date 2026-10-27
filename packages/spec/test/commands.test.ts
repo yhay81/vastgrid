@@ -157,7 +157,7 @@ function deepFreeze<T>(value: T): T {
 
 for (const file of files) {
   test(`commands change nothing they are given: ${file.file}`, async (t) => {
-    // Results share what a command does not change with the state it was given (§4.1 of v2-react.md), so a
+    // Results share what a command does not change with the state it was given (§4.1 of react.md), so a
     // command must copy before it changes: every case runs again on frozen states, commands and contexts.
     const frozen = (state: GridState, command: unknown, context: CommandContext) =>
       applyCommand(

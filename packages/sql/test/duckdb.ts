@@ -1,5 +1,5 @@
 /**
- * Tables of typed JSON in DuckDB, and reading their values back as typed JSON (docs/v2-spec.md §2.2), for the
+ * Tables of typed JSON in DuckDB, and reading their values back as typed JSON (docs/spec.md §2.2), for the
  * tests of this package.
  */
 import type { DuckDBConnection } from "@duckdb/node-api";

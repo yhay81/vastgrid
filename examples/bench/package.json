@@ -2,7 +2,7 @@
   "name": "vastgrid-bench",
   "private": true,
   "type": "module",
-  "description": "v2's grid on a generated table in the memory engine, in the page or in a Web Worker, measured in the browser (v2-react.md §10).",
+  "description": "0.2's grid on a generated table in the memory engine, in the page or in a Web Worker, measured in the browser (react.md §10).",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

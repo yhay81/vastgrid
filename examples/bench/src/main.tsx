@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { benchTable } from "./data.ts";
 
 /**
- * The bench (v2-react.md §10): `?rows=…&columns=…&engine=main|worker` mounts the grid on a generated table and gives
+ * The bench (react.md §10): `?rows=…&columns=…&engine=main|worker` mounts the grid on a generated table and gives
  * `window.bench` to the end-to-end tests, which scroll it, press keys and read what React and the frames did.
  */
 interface Commit {

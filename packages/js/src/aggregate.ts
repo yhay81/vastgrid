@@ -1,5 +1,5 @@
 /**
- * Groups (docs/v2-spec.md §3.8, §3.9, §4.5, §4.6): the rows that `where` keeps, one group for each combination
+ * Groups (docs/spec.md §3.8, §3.9, §4.5, §4.6): the rows that `where` keeps, one group for each combination
  * of the ranks of their keys, with the measures of each group and the generated columns of a pivot.
  *
  * Ranks make groups by §3.1 equality (all NaNs are one value, −0.0 and 0.0 are one) and order them as §3.9 does:

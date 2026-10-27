@@ -1,5 +1,5 @@
 /**
- * The plan cases of the conformance corpus (docs/v2-spec.md §10), answered by the engine over messages: each table
+ * The plan cases of the conformance corpus (docs/spec.md §10), answered by the engine over messages: each table
  * of the corpus is a Parquet file, whose row numbers are the table's row IDs (its positions).
  */
 import assert from "node:assert/strict";

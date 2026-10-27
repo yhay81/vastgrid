@@ -1,5 +1,5 @@
 /**
- * The conformance corpus (docs/v2-spec.md §10): reading its files and comparing an engine's answers with
+ * The conformance corpus (docs/spec.md §10): reading its files and comparing an engine's answers with
  * them. Uses Node.js.
  */
 import { readdirSync, readFileSync } from "node:fs";

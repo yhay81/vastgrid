@@ -1,5 +1,5 @@
 """The grid of a notebook (docs/notebook.md): an anywidget whose page shows vastgrid's grid, and whose engine runs in
-the kernel. The page sends the messages of docs/v2-spec.md §8 as the widget's custom messages; the kernel answers them
+the kernel. The page sends the messages of docs/spec.md §8 as the widget's custom messages; the kernel answers them
 on threads of its own, so that the notebook runs cells meanwhile and `cancel` reaches a running request.
 
 A grid lives as long as its cell's output: running the cell again closes the grids it made before, and so does the
@@ -191,12 +191,12 @@ class Grid(anywidget.AnyWidget):
 
     @property
     def edits(self) -> dict[str, int]:
-        """The written cells: `{"version", "cells"}` (docs/v2-spec.md §8.2)."""
+        """The written cells: `{"version", "cells"}` (docs/spec.md §8.2)."""
         return self._table().edits.state
 
     @property
     def plan(self) -> dict[str, Any]:
-        """The plan of the grid's view (docs/v2-spec.md §4): its filters, sort, groups and derived columns."""
+        """The plan of the grid's view (docs/spec.md §4): its filters, sort, groups and derived columns."""
         return dict((self.document or {}).get("plan") or {})
 
     def _table(self):

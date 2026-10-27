@@ -1,4 +1,4 @@
-/** The commands of copying and exporting (docs/v2-spec.md §6.6): copy, export and save. */
+/** The commands of copying and exporting (docs/spec.md §6.6): copy, export and save. */
 import { toHtmlTable, toMarkdownTable, toTsv } from "../clipboard.js";
 import { excelNumberFormat } from "../excel.js";
 import type { LogicalType } from "../types.js";

@@ -22,7 +22,7 @@ Add the server to a host that shows MCP Apps (Claude Desktop, VS Code, ChatGPT, 
 }
 ```
 
-Before 2.0.0 is released, name the prerelease: `vastgrid-mcp@next`. In VS Code, the same goes into `.vscode/mcp.json`
+Before 0.2.0 is released, name the prerelease: `vastgrid-mcp@next`. In VS Code, the same goes into `.vscode/mcp.json`
 as `"servers": { "vastgrid": { "type": "stdio", "command": "npx", "args": [...] } }`.
 
 ```text

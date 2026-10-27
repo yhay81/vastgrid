@@ -37,7 +37,7 @@ exported once it has loaded.
 
 In Excel files, a column's number format (decimal places, digit grouping, percent, currency) and date pattern
 from Format… become the cells' format codes, so the workbook shows the numbers as the grid does. The rules are in
-[§8.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#82-operations) of the specification.
+[§8.2](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#82-operations) of the specification.
 
 ## Where the file goes
 

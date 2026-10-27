@@ -1,6 +1,6 @@
 /**
  * A client of the engine for the tests: it sends requests and checks every response as a client does
- * (docs/v2-spec.md §8).
+ * (docs/spec.md §8).
  */
 import assert from "node:assert/strict";
 import { type Column, checkResponse, decodeBlock, type JsonValue, type Operation } from "vastgrid-spec";

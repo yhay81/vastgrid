@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://vastgrid.yhay81.com/schema/v2/state.schema.json",
-  "title": "vastgrid v2 state",
-  "description": "The document and the session of a grid (docs/v2-spec.md §5). Names are checked to have 1 to 256 code points by checkDocument and checkSession.",
+  "$id": "https://vastgrid.yhay81.com/schema/0.2/state.schema.json",
+  "title": "vastgrid 0.2 state",
+  "description": "The document and the session of a grid (docs/spec.md §5). Names are checked to have 1 to 256 code points by checkDocument and checkSession.",
   "oneOf": [
     {
       "$ref": "#/$defs/document"

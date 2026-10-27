@@ -1,5 +1,5 @@
 /**
- * Watching the files of open tables (docs/v2-spec.md §7.6). The folders are watched, not the files: editors, and
+ * Watching the files of open tables (docs/spec.md §7.6). The folders are watched, not the files: editors, and
  * the engine's own saves, replace a file by renaming another over it, which a watch of the file would not follow.
  */
 import { type FSWatcher, watch } from "node:fs";

@@ -1,5 +1,5 @@
 /**
- * The memory engine of `vastgrid-js` against this engine (docs/v2-spec.md §10): a generated table with the edges of
+ * The memory engine of `vastgrid-js` against this engine (docs/spec.md §10): a generated table with the edges of
  * every type (NaN, the infinities, −0.0, bigints beyond 2^53, decimals of 38 digits, surrogate pairs, letters whose
  * case JavaScript maps otherwise, leap days), and generated plans that derive, filter, search, group, pivot and
  * sort. Both engines answer each plan, and their views, rows, row IDs and errors must be the same; floats may

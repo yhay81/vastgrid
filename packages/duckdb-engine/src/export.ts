@@ -1,5 +1,5 @@
 /**
- * Exporting views (docs/v2-spec.md §8.2): the rows of a view, in its order, written by DuckDB (`COPY`) as CSV, TSV or
+ * Exporting views (docs/spec.md §8.2): the rows of a view, in its order, written by DuckDB (`COPY`) as CSV, TSV or
  * Parquet, or streamed into JSON (`vastgrid-spec/export`) or a workbook (`vastgrid-spec/xlsx`), into a temporary file that is renamed once it is
  * complete. Nothing goes through the client: an export without a `target` is kept by the engine, for the host to
  * serve (`DuckDBEngine.exportFile`, and `<path>/exports/<name>` of the HTTP handler).

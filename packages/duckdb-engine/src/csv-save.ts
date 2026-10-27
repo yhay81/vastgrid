@@ -3,7 +3,7 @@ import { type FileHandle, open } from "node:fs/promises";
 import type { TextEncoding } from "./encoding.js";
 
 /**
- * Writes edited cells back into a delimited file (docs/v2-spec.md §7.5), keeping every byte of the file that holds no edited
+ * Writes edited cells back into a delimited file (docs/spec.md §7.5), keeping every byte of the file that holds no edited
  * cell: the bytes before the first record (a byte order mark), the header, every record without an edited
  * cell, and in an edited record the fields that were not edited, the delimiters and the line break. Only
  * the edited fields are written anew, quoted when they need it, in the file's encoding.

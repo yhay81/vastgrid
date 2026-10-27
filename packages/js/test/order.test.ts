@@ -1,5 +1,5 @@
 /**
- * The order of views (docs/v2-spec.md §3.1, §3.3) beyond the conformance corpus, through the engine's
+ * The order of views (docs/spec.md §3.1, §3.3) beyond the conformance corpus, through the engine's
  * messages: each order is checked against a reference that compares values one pair at a time, written
  * independently of the engine's ranks and radix sorts. Tables are sorted as rows and as Arrow, whose columns of
  * fixed width are ranked from the numbers that hold them.

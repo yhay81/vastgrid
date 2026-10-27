@@ -1,5 +1,5 @@
 /**
- * Writes Excel workbooks (`.xlsx`) for `export` (docs/v2-spec.md §8.2) without dependencies: one sheet, written as
+ * Writes Excel workbooks (`.xlsx`) for `export` (docs/spec.md §8.2) without dependencies: one sheet, written as
  * a stream of bytes so that only one batch of rows is in memory at a time. The ZIP entries use data descriptors,
  * so their sizes need not be known in advance; they are compressed by `XlsxOptions.deflate`, or stored.
  *
@@ -8,7 +8,7 @@
  * cells. Dates, times and timestamps are date serial numbers with a date format; values Excel cannot show as dates
  * (before 1900-03-01, after 9999) stay text, and timestamps with an offset are written in UTC. Text is always a text
  * cell, never a formula, also when it starts with `=`, `+`, `-` or `@`. Text longer than 32,767 characters is cut.
- * `null` leaves the cell empty. Ported from v1's `xlsx-writer.ts`; both engines write workbooks with it.
+ * `null` leaves the cell empty. Ported from 0.1's `xlsx-writer.ts`; both engines write workbooks with it.
  */
 import { columnLetters, serialOf } from "./excel.js";
 import { SpecError } from "./plan.js";

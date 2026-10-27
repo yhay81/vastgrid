@@ -1,5 +1,5 @@
 """The engine over standard input and output, for the tests of vastgrid-notebook in Node.js
-(packages/notebook/test): one JSON message per line, bytes as `{"base64"}` (docs/v2-spec.md §8.8). A line
+(packages/notebook/test): one JSON message per line, bytes as `{"base64"}` (docs/spec.md §8.8). A line
 `{"tables": {ref: {"arrow"}}}` adds tables, each a block (§8.4) in base64, as the conformance corpus gives them.
 JSON would not carry all of their values: `-0` is `0` in it."""
 

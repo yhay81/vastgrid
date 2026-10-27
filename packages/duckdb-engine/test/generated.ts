@@ -1,5 +1,5 @@
 /**
- * A generated table and generated plans, finds and exports, which engines answer alike (docs/v2-spec.md §10): the
+ * A generated table and generated plans, finds and exports, which engines answer alike (docs/spec.md §10): the
  * tests of this package compare its engine with the memory engine of `vastgrid-js` by them, and those of
  * `vastgrid-notebook` its Python engine with the memory engine. The table holds the edges of every type (NaN, the
  * infinities, −0.0, bigints beyond 2^53, decimals of 38 digits, surrogate pairs, letters whose case JavaScript maps

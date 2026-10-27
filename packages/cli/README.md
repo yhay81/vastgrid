@@ -10,7 +10,7 @@ npx vastgrid-cli sales.parquet
 npx vastgrid-cli --save data/
 ```
 
-Before 2.0.0 is released, run the prerelease: `npx vastgrid-cli@next sales.parquet`. Installed with
+Before 0.2.0 is released, run the prerelease: `npx vastgrid-cli@next sales.parquet`. Installed with
 `npm install -g vastgrid-cli`, the command is `vastgrid`.
 
 ```text

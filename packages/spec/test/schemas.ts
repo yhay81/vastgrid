@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 
 const directory = fileURLToPath(new URL("../schema/", import.meta.url));
-const BASE = "https://vastgrid.yhay81.com/schema/v2/";
+const BASE = "https://vastgrid.yhay81.com/schema/0.2/";
 
 const ajv = new Ajv2020({ allErrors: true, allowUnionTypes: true });
 for (const file of readdirSync(directory).filter((name) => name.endsWith(".json"))) {

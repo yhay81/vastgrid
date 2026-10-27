@@ -117,7 +117,7 @@ export class Session {
       // generated SQL can never reach other files.
       await connection.run(`SET allowed_directories = [${directories.map(quoteLiteral).join(", ")}]`);
       await connection.run("SET enable_external_access = false");
-      // Text forms are those of UTC (docs/v2-spec.md §2.4).
+      // Text forms are those of UTC (docs/spec.md §2.4).
       await connection.run("SET TimeZone = 'UTC'");
     } finally {
       connection.closeSync();

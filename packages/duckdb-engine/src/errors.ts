@@ -1,5 +1,5 @@
 /**
- * The errors of docs/v2-spec.md §8.7 that the engine answers with.
+ * The errors of docs/spec.md §8.7 that the engine answers with.
  */
 import type { ErrorCode } from "vastgrid-spec";
 

@@ -128,7 +128,7 @@ memoryEngine({ tables: { sales: { parquet: "https://data.example.com/sales.parqu
 
 ## 速さ
 
-2026-10-27 に Apple M2 Pro と Node.js 24 で、Worker やページを通さずエンジンのメッセージで計測しました（[計測の記録](https://github.com/yhay81/vastgrid/blob/main/docs/v2-memory-engine-benchmark.md)）。ファイルは 8 列で、時間は 1 回の計測です。
+2026-10-27 に Apple M2 Pro と Node.js 24 で、Worker やページを通さずエンジンのメッセージで計測しました（[計測の記録](https://github.com/yhay81/vastgrid/blob/main/docs/memory-engine-benchmark.md)）。ファイルは 8 列で、時間は 1 回の計測です。
 
 | | 100 万行の CSV（69 MB） | 100 万行の Parquet（13 MB） | 1,000 万行の CSV（701 MB） | 1,000 万行の Parquet（132 MB） |
 | --- | ---: | ---: | ---: | ---: |

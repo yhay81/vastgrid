@@ -2,7 +2,7 @@
 
 `vastgrid-vscode` (`packages/vscode`) is an extension for VS Code: CSV, TSV, Parquet, JSON Lines and Excel files of any
 size open in a grid as a custom editor. DuckDB reads the file in the extension's process, in Node.js; the editor's
-webview shows `DataGrid` (v2-react.md) and reads rows from it through the webview's messages. Cells of CSV and TSV
+webview shows `DataGrid` (react.md) and reads rows from it through the webview's messages. Cells of CSV and TSV
 files are edited and saved with VS Code's own Save, with the bytes that were not edited kept as they are (§7.5 of
 the specification).
 

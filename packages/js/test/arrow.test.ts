@@ -1,5 +1,5 @@
 /**
- * Tables given as Arrow (docs/v2-spec.md §2.3): read from any number of record batches and kept as Arrow holds
+ * Tables given as Arrow (docs/spec.md §2.3): read from any number of record batches and kept as Arrow holds
  * them, with the same answers as the same table given as rows; values that have no typed JSON fail to load when
  * they are read, and writes leave the host's bytes as they were.
  */

@@ -1,4 +1,4 @@
-/** The commands of columns (docs/v2-spec.md §6.3): their widths, order, visibility, pins, formats and totals. */
+/** The commands of columns (docs/spec.md §6.3): their widths, order, visibility, pins, formats and totals. */
 import { type ColumnSetting, checkColumnFormat, checkTotal, measureTakes } from "../state.js";
 import type { Column } from "../types.js";
 import { booleanArgument, checked, choice, fail, namesArgument, takes } from "./command.js";

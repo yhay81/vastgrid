@@ -1,5 +1,5 @@
 /**
- * The grid's tracks in the Performance panel of Chrome's DevTools, next to React's (§9 of v2-react.md):
+ * The grid's tracks in the Performance panel of Chrome's DevTools, next to React's (§9 of react.md):
  * requests, commands and canvas frames, in development builds only. `console.timeStamp` costs little when
  * nothing records.
  */

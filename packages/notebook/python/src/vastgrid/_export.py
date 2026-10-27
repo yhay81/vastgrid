@@ -1,4 +1,4 @@
-"""Writes the files of `export` (docs/v2-spec.md §8.2) from rows of typed JSON (§2.2), as vastgrid-spec's
+"""Writes the files of `export` (docs/spec.md §8.2) from rows of typed JSON (§2.2), as vastgrid-spec's
 `export.ts` (JSON) and `xlsx.ts` (Excel workbooks) write them, so that every engine writes them alike. CSV, TSV and
 Parquet are written by DuckDB (`COPY`), as the DuckDB engine of Node.js writes them."""
 

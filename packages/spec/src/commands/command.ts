@@ -1,5 +1,5 @@
 /**
- * What a command is (docs/v2-spec.md §6.1): its arguments, the context it is applied with, what it gives and why
+ * What a command is (docs/spec.md §6.1): its arguments, the context it is applied with, what it gives and why
  * it fails, with the readers of its arguments.
  */
 import type { Aggregate, Capabilities, Expr, SortKey } from "../plan.js";

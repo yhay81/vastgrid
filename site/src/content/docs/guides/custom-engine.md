@@ -25,18 +25,18 @@ in each.
 
 ## The messages
 
-[§8 of the specification](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#8-messages) defines them:
+[§8 of the specification](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#8-messages) defines them:
 
 | Part | What it says |
 | --- | --- |
-| [Envelope (§8.1)](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#81-envelope) | a request is `{ v: 2, id, op, … }`; a response `{ v: 2, id, result }`; an error `{ v: 2, id, error: { code, message, path?, reason? } }`; an event `{ v: 2, event, … }` |
-| [Operations (§8.2)](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#82-operations) | `open`, `info`, `rows`, `summarize`, `find`, `locate`, `write`, `save`, `export`, `changes`, `reload`, `cancel`, `close` |
+| [Envelope (§8.1)](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#81-envelope) | a request is `{ v: 2, id, op, … }`; a response `{ v: 2, id, result }`; an error `{ v: 2, id, error: { code, message, path?, reason? } }`; an event `{ v: 2, event, … }` |
+| [Operations (§8.2)](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#82-operations) | `open`, `info`, `rows`, `summarize`, `find`, `locate`, `write`, `save`, `export`, `changes`, `reload`, `cancel`, `close` |
 | `TableInfo` (§8.2) | what `open` answers: the table's id, `revision`, `edits`, `status`, `progress`, `rowCount`, `readableRows`, `columns` and `capabilities` |
-| [Blocks (§8.4)](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#84-blocks) | the values of `rows`: an Arrow IPC stream of one record batch, one field per column |
-| [Events (§8.5)](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#85-events) | `changed`, `progress` and `view` |
-| [Cancellation (§8.6)](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#86-cancellation) | `cancel`, or an aborted request; the engine answers `cancelled` or finishes |
-| [Errors (§8.7)](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#87-errors) | the error codes, with their HTTP statuses |
-| [Encodings (§8.8)](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#88-transports) | a block as `{ bytes }` in function calls and workers, `{ base64 }` in text, attached over HTTP |
+| [Blocks (§8.4)](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#84-blocks) | the values of `rows`: an Arrow IPC stream of one record batch, one field per column |
+| [Events (§8.5)](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#85-events) | `changed`, `progress` and `view` |
+| [Cancellation (§8.6)](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#86-cancellation) | `cancel`, or an aborted request; the engine answers `cancelled` or finishes |
+| [Errors (§8.7)](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#87-errors) | the error codes, with their HTTP statuses |
+| [Encodings (§8.8)](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#88-transports) | a block as `{ bytes }` in function calls and workers, `{ base64 }` in text, attached over HTTP |
 
 Views have no handles: each request names the table, its revision and the plan, and the engine may keep or
 forget the views it made.
@@ -44,7 +44,7 @@ forget the views it made.
 ## Offering part of it
 
 `TableInfo` carries the engine's capabilities
-([§4.10](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#410-capabilities)). The grid offers only
+([§4.10](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#410-capabilities)). The grid offers only
 what they report, and a plan that uses anything else fails with `invalid_plan` (`unsupported`). So an engine can
 start small: a minimal one answers `open`, `rows` of the plan `{}` and `close`, and the grid shows the table and
 scrolls it, with no sorting, filters, editing or exports.
@@ -184,7 +184,7 @@ always quoted; the session's time zone must be UTC.
 
 ## Testing against the corpus
 
-The conformance corpus ([§10](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#10-conformance)) ships
+The conformance corpus ([§10](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#10-conformance)) ships
 with `vastgrid-spec`. Its plan cases give a table, a plan and the rows or error expected. `readCorpus()` from
 `vastgrid-spec/conformance` reads them; run each through your engine (`open`, then `rows`), decode the block with
 `decodeBlock`, and `compareResult(expect, got)` lists the differences. A case whose plan uses a member you do not

@@ -1,5 +1,5 @@
 // ESLint runs only the rules of React (Biome lints everything else): `eslint-plugin-react-hooks` with React
-// Compiler's rules, on the v2 React package (v2-react.md §11).
+// Compiler's rules, on the 0.2 React package (react.md §11).
 import babelParser from "@babel/eslint-parser";
 import reactHooks from "eslint-plugin-react-hooks";
 

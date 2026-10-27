@@ -9,7 +9,7 @@ import { defineConfig, type Plugin, type PreviewServer, type ViteDevServer } fro
 const data = path.resolve(process.env.VASTGRID_DATA ?? path.join(import.meta.dirname, "..", "..", ".data", "bench"));
 
 /**
- * The DuckDB engine behind the page: requests at `/api` and events at `/api/events` (docs/v2-spec.md §8.8), in the
+ * The DuckDB engine behind the page: requests at `/api` and events at `/api/events` (docs/spec.md §8.8), in the
  * dev server and in the preview of the build.
  */
 function engine(): Plugin {

@@ -1,5 +1,5 @@
 /**
- * Rules of values (docs/v2-spec.md §2): how JSON writes them, their text form, literals, and when two are the same
+ * Rules of values (docs/spec.md §2): how JSON writes them, their text form, literals, and when two are the same
  * value (§3.1).
  */
 import { parseIntervalText, parseTimestampText } from "./calendar.js";

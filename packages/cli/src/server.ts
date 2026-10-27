@@ -1,6 +1,6 @@
 /**
  * The server of `vastgrid` (docs/cli.md): the page, the list of the files that it opens, and the DuckDB engine over
- * HTTP (docs/v2-spec.md §8.8), on 127.0.0.1 only. The address that the command prints holds a token, which the page
+ * HTTP (docs/spec.md §8.8), on 127.0.0.1 only. The address that the command prints holds a token, which the page
  * keeps in a cookie: other sites in the browser, other people on the computer and names that point at 127.0.0.1
  * (DNS rebinding) reach nothing.
  */

@@ -1,4 +1,4 @@
-"""DuckDB's types as the logical types of docs/v2-spec.md §2.1, and how the engine reads their values as typed JSON
+"""DuckDB's types as the logical types of docs/spec.md §2.1, and how the engine reads their values as typed JSON
 (§2.2): vastgrid-duckdb's `columns.ts` in Python."""
 
 from __future__ import annotations

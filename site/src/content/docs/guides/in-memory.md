@@ -47,10 +47,10 @@ carries the grid's messages to an engine in the same thread, as function calls.
 ## Columns and values
 
 A column is `{ name, type }` with the members of its type
-([§2.1](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#21-logical-types)), and optionally
+([§2.1](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#21-logical-types)), and optionally
 `sourceType` (a type name to show, such as `DECIMAL(12,2)`) and `readOnly`. A row is an array with one value per
 column, written as typed JSON
-([§2.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#22-values-in-json)); `null` is no value.
+([§2.2](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#22-values-in-json)); `null` is no value.
 
 | Type | Members | A value in `rows` |
 | --- | --- | --- |
@@ -101,7 +101,7 @@ engine does not save: written cells last as long as the engine, and an export ke
 ## What the engine offers
 
 The engine reports what it evaluates as capabilities
-([§4.10](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#410-capabilities)), and the grid offers
+([§4.10](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#410-capabilities)), and the grid offers
 only those. `MEMORY_CAPABILITIES` of `vastgrid-js` holds them:
 
 | Capability | The memory engine |
@@ -118,7 +118,7 @@ only those. `MEMORY_CAPABILITIES` of `vastgrid-js` holds them:
 ## How large
 
 Measured on 2026-10-24 on an Apple M2 Pro in Chromium 156, with a table of 1,000,000 rows and 8 columns
-([v2-react.md, Appendix A.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-react.md#a2-in-the-browser)):
+([react.md, Appendix A.2](https://github.com/yhay81/vastgrid/blob/main/docs/react.md#a2-in-the-browser)):
 
 | | Engine in the page | Engine in a Web Worker |
 | --- | ---: | ---: |
@@ -161,7 +161,7 @@ export function Orders({ orders }: { orders: MemoryTable }) {
 ```
 
 Each new store starts from the last document. A document names its columns, and is repaired for the new table
-([§5.5](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#55-repairing-a-document-for-a-table)): a
+([§5.5](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#55-repairing-a-document-for-a-table)): a
 sort or filter on a column that is gone is dropped. To hold the document in your own state all the time (to put
 it in the URL, say), control it with `document` and `onDocumentChange` instead ([State](/guides/state/)).
 

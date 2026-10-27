@@ -24,7 +24,7 @@ export interface Hit {
 }
 
 /**
- * Where the parts of the grid are on the canvas (§6 of v2-react.md): the rows of groups and the column names at the
+ * Where the parts of the grid are on the canvas (§6 of react.md): the rows of groups and the column names at the
  * top, the gutter at the left, the rows, the totals row at the bottom, and the columns pinned at each side with those
  * that scroll between them. The canvas lays it out and draws with it; React places what it puts over the canvas
  * with it.

@@ -1,5 +1,5 @@
 /**
- * Plans and expressions (docs/v2-spec.md §4): their JSON form, limits and errors.
+ * Plans and expressions (docs/spec.md §4): their JSON form, limits and errors.
  */
 import type { JsonValue, LogicalType } from "./types.js";
 

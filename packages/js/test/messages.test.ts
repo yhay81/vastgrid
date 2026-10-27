@@ -1,5 +1,5 @@
 /**
- * The engine's messages (docs/v2-spec.md §8): every response follows §8 (the client checks each one), and
+ * The engine's messages (docs/spec.md §8): every response follows §8 (the client checks each one), and
  * each operation answers as §8.2 says, or with the error of §8.7.
  */
 import assert from "node:assert/strict";

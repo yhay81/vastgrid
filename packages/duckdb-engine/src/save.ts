@@ -1,5 +1,5 @@
 /**
- * Saving the written cells into the file a table was read from (docs/v2-spec.md §7.5): CSV and TSV files, of which
+ * Saving the written cells into the file a table was read from (docs/spec.md §7.5): CSV and TSV files, of which
  * only the edited fields of the edited records are written anew (`rewriteCsv`), into a temporary file next to the
  * file that is then renamed over it.
  */

@@ -1,5 +1,5 @@
 /**
- * Tables in memory: what a host gives the engine, and the checks that make them tables of docs/v2-spec.md
+ * Tables in memory: what a host gives the engine, and the checks that make them tables of docs/spec.md
  * §2: columns of §2.1 with unique names, and rows of typed JSON values (§2.2).
  */
 import { type Column, isValueOf, type JsonValue, LOGICAL_TYPES, typeName } from "vastgrid-spec";

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://vastgrid.yhay81.com/schema/v2/messages-corpus.schema.json",
-  "title": "vastgrid v2 message cases",
-  "description": "A file of the message corpus (docs/v2-spec.md §10): messages and whether each follows §8, or the error it gets. Messages are not checked by this schema, so that cases can test messages that do not follow §8.",
+  "$id": "https://vastgrid.yhay81.com/schema/0.2/messages-corpus.schema.json",
+  "title": "vastgrid 0.2 message cases",
+  "description": "A file of the message corpus (docs/spec.md §10): messages and whether each follows §8, or the error it gets. Messages are not checked by this schema, so that cases can test messages that do not follow §8.",
   "type": "object",
   "additionalProperties": false,
   "required": ["cases"],

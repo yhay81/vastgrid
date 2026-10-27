@@ -6,7 +6,7 @@ export { GridCanvas, type Settled } from "./canvas/grid-canvas.js";
 export type { CellAction, CellHooks, CellStyle, ColumnGroup, DrawCellArgs, GridCell } from "./canvas/hooks.js";
 export { isApple, type KeyInput, keyCommand } from "./canvas/keys.js";
 /**
- * vastgrid v2 for React (v2-react.md): `DataGrid`, the hooks that read and change its store, and what the store
+ * vastgrid 0.2 for React (react.md): `DataGrid`, the hooks that read and change its store, and what the store
  * and the transports give (also in `vastgrid/core`, without React).
  */
 export * from "./core.js";

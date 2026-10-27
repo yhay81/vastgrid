@@ -1,5 +1,5 @@
 /**
- * Blocks (docs/v2-spec.md §8.4): rows as an Apache Arrow IPC stream with one schema and one record batch,
+ * Blocks (docs/spec.md §8.4): rows as an Apache Arrow IPC stream with one schema and one record batch,
  * and back. Values are written into and read from the Arrow buffers themselves, so that none changes on
  * the way: 64-bit integers, decimals, timestamps of every unit, intervals, and strings that start with
  * U+FEFF (Appendix B).

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * `vastgrid [--save] [--port <n>] [--no-open] [<file or folder>…]` (docs/cli.md): starts DuckDB and the page that
- * shows the files in v2's grid, on 127.0.0.1, and opens the page in the browser. Ctrl+C stops both, and the engine
+ * shows the files in 0.2's grid, on 127.0.0.1, and opens the page in the browser. Ctrl+C stops both, and the engine
  * deletes its temporary folder.
  */
 import { spawn } from "node:child_process";

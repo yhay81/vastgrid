@@ -75,8 +75,8 @@ grid.to_pandas(view=True)              # the grid's view, with the edited cells
 npm install vastgrid vastgrid-js
 ```
 
-Until 2.0.0 is released, the packages are prereleases on npm's `next` tag, and `npm install vastgrid` still gives
-v1 (0.1.x): try this version with `npm install vastgrid@next vastgrid-js@next` (and `@next` for the other packages).
+Until 0.2.0 is released, the packages are prereleases on npm's `next` tag, and `npm install vastgrid` still gives
+0.1.x: try this version with `npm install vastgrid@next vastgrid-js@next` (and `@next` for the other packages).
 
 ```tsx
 import { DataGrid, localTransport } from "vastgrid";
@@ -109,7 +109,7 @@ export function Orders() {
 ```
 
 Rows are typed JSON: decimals as strings with their exact digits, dates as `YYYY-MM-DD`
-([v2-spec.md §2.2](docs/v2-spec.md#22-values-in-json)). The memory engine also takes Apache Arrow, and CSV, TSV,
+([spec.md §2.2](docs/spec.md#22-values-in-json)). The memory engine also takes Apache Arrow, and CSV, TSV,
 JSON Lines, Excel and Parquet files ([vastgrid-js](packages/js)). With `editable: true`, people write cells; the
 written values are kept apart from `rows`, and every view, total and export sees them.
 
@@ -141,7 +141,7 @@ function ClearSort() {
 }
 ```
 
-The props, hooks and commands are in [docs/v2-react.md](docs/v2-react.md) and [docs/v2-spec.md](docs/v2-spec.md)
+The props, hooks and commands are in [docs/react.md](docs/react.md) and [docs/spec.md](docs/spec.md)
 §5–§6.
 
 ## Large files
@@ -204,11 +204,11 @@ export function Sales() {
 
 The handler also works as middleware (Express, Connect, Vite). `serverFunctionTransport` carries the messages
 through a React Server Function instead, and `readInitialView` of `vastgrid/server` reads the first rows on the
-server, which the grid sends as HTML before the canvas takes over (v2-react.md §7).
+server, which the grid sends as HTML before the canvas takes over (react.md §7).
 
 ## Editing and saving
 
-What the engines guarantee ([v2-spec.md §7](docs/v2-spec.md#7-editing)):
+What the engines guarantee ([spec.md §7](docs/spec.md#7-editing)):
 
 - **Typed checks.** Text that people type or paste is read as the column's type without losing digits (`1,234.5`
   pasted into a number column is 1234.5); a value that does not fit keeps the editor open and says why.
@@ -303,7 +303,7 @@ and musl), macOS (x64, arm64) and Windows (x64, arm64).
 ## Performance
 
 On an Apple M2 Pro. In Chromium, the grid on a table of 1,000,000 rows and 8 columns in the memory engine
-([v2-react.md Appendix A](docs/v2-react.md#a2-in-the-browser), tested against budgets by `e2e/budgets.spec.ts`):
+([react.md Appendix A](docs/react.md#a2-in-the-browser), tested against budgets by `e2e/budgets.spec.ts`):
 
 | Measure | Time |
 | --- | ---: |
@@ -315,7 +315,7 @@ On an Apple M2 Pro. In Chromium, the grid on a table of 1,000,000 rows and 8 col
 | The longest task of the page meanwhile: engine in the page · in a Web Worker | 81–93 ms · none |
 
 The DuckDB engine on Node.js 24 with DuckDB 2.0, 8 threads and 2 GB of memory, the median of three runs
-([v2-views-benchmark.md](docs/v2-views-benchmark.md)); 256 rows of 8 columns at a time, without HTTP:
+([views-benchmark.md](docs/views-benchmark.md)); 256 rows of 8 columns at a time, without HTTP:
 
 | File and view | First rows | 256 rows anywhere in the view, median |
 | --- | ---: | ---: |
@@ -326,16 +326,16 @@ The DuckDB engine on Node.js 24 with DuckDB 2.0, 8 threads and 2 GB of memory, t
 
 Saving two edited cells takes about 60 ms in a 6 MB CSV file and 0.3 s in a 65 MB one; a sorted view of a million
 rows exports in 0.3 s as CSV and 0.1 s as Parquet. The memory engine opens a million-row Parquet file in 26 ms and a
-CSV one in about a second ([v2-memory-engine-benchmark.md](docs/v2-memory-engine-benchmark.md)). What a page loads
+CSV one in about a second ([memory-engine-benchmark.md](docs/memory-engine-benchmark.md)). What a page loads
 first of `DataGrid` and the memory engine is about 100 KB with gzip; menus and panels load when they open.
 
-## Migrating from v1
+## Migrating from 0.1
 
-vastgrid 2.0 replaces 0.1.x. The grid reads through an engine and a transport instead of v1's sources, its state is
+vastgrid 0.2 replaces 0.1.x. The grid reads through an engine and a transport instead of 0.1's sources, its state is
 a document and a session, and the separate core and browser packages are gone: their parts are in `vastgrid/core`
 and `vastgrid-js`. `vastgrid-duckdb` is now the DuckDB engine of this version (`DuckDBEngine`, `createHttpHandler`).
-`migrateGridState` of `vastgrid-spec` reads v1's saved grid state, and formulas keep v1's language.
-[docs/v2-from-v1.md](docs/v2-from-v1.md) maps every v1 feature to its place now.
+`migrateGridState` of `vastgrid-spec` reads 0.1's saved grid state, and formulas keep 0.1's language.
+[docs/migrating-from-0.1.md](docs/migrating-from-0.1.md) maps every 0.1 feature to its place now.
 
 ## Documentation
 
@@ -343,9 +343,9 @@ and `vastgrid-js`. `vastgrid-duckdb` is now the DuckDB engine of this version (`
 - [docs/entries.md](docs/entries.md): the React component, the browser page, the command line, VS Code, the MCP App
   and the notebook compared. [cli.md](docs/cli.md), [vscode.md](docs/vscode.md), [mcp-app.md](docs/mcp-app.md) and
   [notebook.md](docs/notebook.md) describe each.
-- [docs/v2-react.md](docs/v2-react.md): the React API (store, transports, `DataGrid`, hooks, rendering, server
+- [docs/react.md](docs/react.md): the React API (store, transports, `DataGrid`, hooks, rendering, server
   rendering).
-- [docs/v2-spec.md](docs/v2-spec.md): values and types, plans, the document and session, commands, editing and
+- [docs/spec.md](docs/spec.md): values and types, plans, the document and session, commands, editing and
   saving, and the messages between the grid and its engine.
 - [CHANGELOG.md](CHANGELOG.md), and plans in the [GitHub issues](https://github.com/yhay81/vastgrid/issues).
 

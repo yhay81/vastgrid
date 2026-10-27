@@ -1,9 +1,9 @@
-# vastgrid v2 でファイルを開ける場所
+# vastgrid 0.2 でファイルを開ける場所
 
 [English](entries.md)
 
-vastgrid v2 は巨大な CSV・Parquet・Excel ファイルや DataFrame を六つの場所で開きます。どこでも同じグリッド
-（`vastgrid` の `DataGrid`、docs/v2-react.md）が、同じドキュメント・セッション・コマンド（docs/v2-spec.md §5、§6）で
+vastgrid 0.2 は巨大な CSV・Parquet・Excel ファイルや DataFrame を六つの場所で開きます。どこでも同じグリッド
+（`vastgrid` の `DataGrid`、docs/react.md）が、同じドキュメント・セッション・コマンド（docs/spec.md §5、§6）で
 表を示し、同じ電文（§8）でエンジンと話します。違うのはエンジンと電文の運び方、そして書き込んだセルをホストがどう
 扱うかです。エンジンはそれぞれホストの能力に合わせた capabilities を返し（§8.2）、保存の方式をほかの入口に揃えることは
 しません。
@@ -58,7 +58,7 @@ vastgrid v2 は巨大な CSV・Parquet・Excel ファイルや DataFrame を六�
 | MCP App | `npx -y vastgrid-mcp <フォルダー>` をホストの MCP サーバーに加える |
 | ノートブック | `pip install vastgrid`（Python 3.11 以降。JupyterLab 4 または Notebook 7） |
 
-2.0.0 を出すまでは、プレリリースを `vastgrid@next`（ほかの npm パッケージも `@next`）、`pip install --pre
+0.2.0 を出すまでは、プレリリースを `vastgrid@next`（ほかの npm パッケージも `@next`）、`pip install --pre
 vastgrid`、GitHub のリリースの `.vsix` で入れます。リポジトリーを複製したときは、`npm install` と `npm run build` の
 あと、ページは `npm run dev -w vastgrid-site`、コマンドは `node packages/cli/dist/cli.js` と
 `node packages/mcp/dist/cli.js`、VS Code は `code --extensionDevelopmentPath="$PWD/packages/vscode" <フォルダー>`
@@ -72,7 +72,7 @@ vastgrid`、GitHub のリリースの `.vsix` で入れます。リポジトリ�
 
 - **トランスポート**　`workerTransport` は Web Worker に限らず、`postMessage` とメッセージのイベントを持つもの
   （`WorkerLike`）なら何でも受け取ります。VS Code の Webview とノートブックのウィジェットは、それぞれの経路で電文を
-  運びます（v2-react.md §4.4）。コマンドラインは `httpTransport` を使い、MCP App はツールの上に `Transport` を実装します。
+  運びます（react.md §4.4）。コマンドラインは `httpTransport` を使い、MCP App はツールの上に `Transport` を実装します。
 - **capabilities**　グリッドはエンジンができると答えたことだけを示します。保存のボタンと ⌘S は `capabilities.save` の
   ときだけ（コマンドラインでは `--save` のとき）、書き出しは `capabilities.export` の形式で、その `delivery` のとおりに
   書きます。VS Code は自分で保存するので Webview には `save` を false と答え、未保存の状態をファイルに合わせます。

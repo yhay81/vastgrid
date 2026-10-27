@@ -1,5 +1,5 @@
 /**
- * The order of values and views (docs/v2-spec.md §3.1, §3.3).
+ * The order of values and views (docs/spec.md §3.1, §3.3).
  *
  * Each column's values are ranked once: its distinct values that are not blank are numbered from 0 in
  * ascending order, the empty string of a string column ranks `distinct` and null `distinct + 1`. A view is

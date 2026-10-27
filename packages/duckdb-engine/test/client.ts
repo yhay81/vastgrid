@@ -1,5 +1,5 @@
 /**
- * A client of the engine for the tests: it sends request messages (docs/v2-spec.md §8) and checks every answer as
+ * A client of the engine for the tests: it sends request messages (docs/spec.md §8) and checks every answer as
  * a core does (`checkResponse`), so that the tests also check that the engine follows §8.
  */
 import assert from "node:assert/strict";

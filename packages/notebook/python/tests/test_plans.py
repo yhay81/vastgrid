@@ -1,4 +1,4 @@
-"""The plan corpus (docs/v2-spec.md §10, packages/spec/conformance/plans) on DuckDB, as
+"""The plan corpus (docs/spec.md §10, packages/spec/conformance/plans) on DuckDB, as
 packages/sql/test/conformance.test.ts runs it: tables of typed JSON, then each case's plan checked, compiled, counted
 and read back as typed JSON (§2.2), compared as packages/spec/src/conformance.ts compares results."""
 

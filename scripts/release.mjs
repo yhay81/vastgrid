@@ -36,7 +36,7 @@ const commands = {
 const [command, version] = process.argv.slice(2);
 if (!Object.hasOwn(commands, command)) fail("Usage: node scripts/release.mjs version|check|notes|python <version>");
 if (!/^\d+\.\d+\.\d+(-next\.\d+)?$/.test(version ?? "")) {
-  fail(`"${version ?? ""}" is not a version: 2.0.0, or 2.0.0-next.1 for a pre-release.`);
+  fail(`"${version ?? ""}" is not a version: 0.2.0, or 0.2.0-next.1 for a pre-release.`);
 }
 commands[command]();
 
@@ -46,7 +46,7 @@ function versioned() {
 }
 
 /**
- * PEP 440 has no `-next.N`: a pre-release `2.0.0-next.3` is `2.0.0rc3` on PyPI, which sorts before 2.0.0 there
+ * PEP 440 has no `-next.N`: a pre-release `0.2.0-next.3` is `0.2.0rc3` on PyPI, which sorts before 0.2.0 there
  * as on npm.
  */
 function pythonVersion(value) {

@@ -3,7 +3,7 @@ title: エンジン
 description: vastgrid-js のメモリエンジンと vastgrid-duckdb の DuckDB エンジン、それぞれのオプションとできること。
 ---
 
-エンジンは表を開き、グリッドのメッセージ（[仕様の §8](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#8-messages)）に答えます。プランのビューを作り、行のブロックを読み、セルを書き込み、ファイルを書き出します。グリッドはトランスポート（[`vastgrid/core`](/ja/reference/core/#トランスポート)）を通してエンジンに届きます。vastgrid には二つのエンジンがあります。
+エンジンは表を開き、グリッドのメッセージ（[仕様の §8](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#8-messages)）に答えます。プランのビューを作り、行のブロックを読み、セルを書き込み、ファイルを書き出します。グリッドはトランスポート（[`vastgrid/core`](/ja/reference/core/#トランスポート)）を通してエンジンに届きます。vastgrid には二つのエンジンがあります。
 
 | | `vastgrid-js` | `vastgrid-duckdb` |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ interface Engine {
 
 ## ケーパビリティ
 
-`open` は表の `capabilities` を含む `TableInfo` を返します（[§4.10](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#410-capabilities)）。グリッドはそこにあるものだけを出します。`save` がなければ保存ボタンはなく、`plan.aggregate` がなければグループのメニューはなく、書き出しの形式は `export.formats` のものだけです。
+`open` は表の `capabilities` を含む `TableInfo` を返します（[§4.10](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#410-capabilities)）。グリッドはそこにあるものだけを出します。`save` がなければ保存ボタンはなく、`plan.aggregate` がなければグループのメニューはなく、書き出しの形式は `export.formats` のものだけです。
 
 | メンバー | 値 | 意味 |
 | --- | --- | --- |
@@ -84,8 +84,8 @@ const engine = memoryEngine({
 
 | メンバー | 型 | 説明 |
 | --- | --- | --- |
-| `columns` | `Column[]` | `{ name, type }` と型ごとのメンバー（[§2.1](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#21-logical-types)）。`decimal` の `precision` と `scale`、`float` の `bits`、`timestamp` の `unit`。任意で `sourceType` と `readOnly`。 |
-| `rows` | `JsonValue[][]` | 行 ID の順に一行ずつ、型付き JSON の値の配列（[§2.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#22-values-in-json)）。decimal は桁を含む文字列（`"12.50"`）、2^53 を超える bigint は文字列、日付は `"2024-01-31"`、タイムスタンプは `"2024-01-31 12:00:00"`。 |
+| `columns` | `Column[]` | `{ name, type }` と型ごとのメンバー（[§2.1](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#21-logical-types)）。`decimal` の `precision` と `scale`、`float` の `bits`、`timestamp` の `unit`。任意で `sourceType` と `readOnly`。 |
+| `rows` | `JsonValue[][]` | 行 ID の順に一行ずつ、型付き JSON の値の配列（[§2.2](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#22-values-in-json)）。decimal は桁を含む文字列（`"12.50"`）、2^53 を超える bigint は文字列、日付は `"2024-01-31"`、タイムスタンプは `"2024-01-31 12:00:00"`。 |
 | `editable` | `boolean` | `write` で表のセルを書き込めます。書き込んだ値は `rows` とは別に持ちます。 |
 
 行はコピーせずそのまま使うので、後から変えてはいけません。形は表を初めて開くときに、値は読むときに確かめます。§2 に従わない表には、問題の場所の JSON Pointer を付けた `load_failed` を返します。
@@ -195,7 +195,7 @@ Node.js の `http` リクエストのハンドラー `(request, response, next?)
 
 | ルート | 応答 |
 | --- | --- |
-| `POST <path>` | 本文の JSON リクエストへのレスポンス。JSON で返し、`rows` と `export` でリクエストが `application/vnd.vastgrid.v2+arrow` を受け付けるときはブロックを添付した JSON（§8.8）で返します。エラーは [§8.7](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#87-errors) の HTTP ステータスを付けた JSON、`cancel` は 204 です。クライアントが去るとリクエストを取り消します。 |
+| `POST <path>` | 本文の JSON リクエストへのレスポンス。JSON で返し、`rows` と `export` でリクエストが `application/vnd.vastgrid.v2+arrow` を受け付けるときはブロックを添付した JSON（§8.8）で返します。エラーは [§8.7](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#87-errors) の HTTP ステータスを付けた JSON、`cancel` は 204 です。クライアントが去るとリクエストを取り消します。 |
 | `GET <events>` | エンジンのイベントを Server-Sent Events で。 |
 | `GET <exports><name>` | 書き出したファイルを、表にちなんだ名前のダウンロードで返します。なければ 404。 |
 

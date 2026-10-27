@@ -1,5 +1,5 @@
 /**
- * The grid without React (§4 of v2-react.md): the store, the client of the messages and the transports. Runs in
+ * The grid without React (§4 of react.md): the store, the client of the messages and the transports. Runs in
  * browsers, workers and servers.
  */
 export { BLOCK_ROWS } from "./core/cache.js";

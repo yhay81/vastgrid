@@ -23,7 +23,7 @@ keeps the JSON where it likes, and dispatches the same commands as the grid's me
 }
 ```
 
-[§5 of the specification](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#5-state) has every member;
+[§5 of the specification](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#5-state) has every member;
 `GridDocument` and `GridSession` are their types, exported by `vastgrid`.
 
 ## Keep the view
@@ -54,10 +54,10 @@ export function Orders() {
 `onDocumentChange` after each change. A document saved for a table whose columns have changed since is repaired
 when it is opened: conditions, groups, sort keys and derived columns that no longer fit the table are removed,
 and the rest is kept
-([§5.5](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#55-repairing-a-document-for-a-table)).
+([§5.5](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#55-repairing-a-document-for-a-table)).
 
 A document is version 2. A saved state of vastgrid 0.1 is not read as it is: `migrateGridState` of
-`vastgrid-spec` turns it into a document ([Migrating from v1](/migrating-from-v1/)).
+`vastgrid-spec` turns it into a document ([Migrating from 0.1](/migrating-from-0-1/)).
 
 ## Control the view
 

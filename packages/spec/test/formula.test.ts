@@ -49,7 +49,7 @@ function fails(text: string, reason: string, start: number, end: number) {
   );
 }
 
-test("operators compile to the functions of §4.4, with v1's precedence", () => {
+test("operators compile to the functions of §4.4, with 0.1's precedence", () => {
   compiles("qty * price", fn("mul", col("qty"), col("price")), "decimal");
   compiles("qty + 2 * 3 - 1", fn("sub", fn("add", col("qty"), fn("mul", lit(2), lit(3))), lit(1)), "bigint");
   compiles("ratio / 4 % 3", fn("mod", fn("div", col("ratio"), lit(4)), lit(3)), "float");
@@ -101,7 +101,7 @@ test("literals of every type are written TYPE 'text' and TYPE NULL", () => {
   fails("NULL", "type", 0, 4);
 });
 
-test("v1's functions map onto §4.4", () => {
+test("0.1's functions map onto §4.4", () => {
   compiles("CEILING(ratio)", fn("ceil", col("ratio")));
   compiles("LEN(name)", fn("length", col("name")), "bigint");
   compiles("MID(name, 2, 3)", fn("substr", col("name"), lit(2), lit(3)));
@@ -122,7 +122,7 @@ test("v1's functions map onto §4.4", () => {
   compiles("ceil(ratio)", fn("ceil", col("ratio")));
 });
 
-test("v1's conversions: text read as dates, text forms of values v1 read as text, dates as timestamps", () => {
+test("0.1's conversions: text read as dates, text forms of values 0.1 read as text, dates as timestamps", () => {
   compiles("day >= '2024-1-5'", fn("ge", col("day"), lit("2024-01-05", "date")));
   compiles("at < '2024-01-05 10:00'", fn("lt", col("at"), lit("2024-01-05 10:00:00", "timestamp")));
   compiles("atz = '2024-01-05'", fn("eq", col("atz"), lit("2024-01-05 00:00:00+00", "timestamptz")));

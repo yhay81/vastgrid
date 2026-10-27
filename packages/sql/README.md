@@ -1,7 +1,7 @@
 # vastgrid-sql
 
 The plans of [vastgrid](https://www.npmjs.com/package/vastgrid) as DuckDB SQL: the meaning of the
-[specification](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md) in SQL, with every value as a
+[specification](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md) in SQL, with every value as a
 parameter. [`vastgrid-duckdb`](https://www.npmjs.com/package/vastgrid-duckdb) runs its queries; use it directly to
 run vastgrid's plans on a DuckDB of your own.
 

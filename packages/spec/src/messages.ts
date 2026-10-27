@@ -1,5 +1,5 @@
 /**
- * Messages (docs/v2-spec.md §8): requests, responses, errors and events, their checks, and the encodings of
+ * Messages (docs/spec.md §8): requests, responses, errors and events, their checks, and the encodings of
  * blocks on transports (§8.8).
  */
 import { checkRowKey, checkValue, StateError } from "./state.js";

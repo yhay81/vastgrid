@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { benchDirectory } from "../packages/duckdb-engine/bench/files.ts";
 
 /**
- * Checked rows and the detail panel (docs/v2-react.md §6.11) on a file read by the DuckDB engine over HTTP
+ * Checked rows and the detail panel (docs/react.md §6.11) on a file read by the DuckDB engine over HTTP
  * (`examples/files`, which shows the check boxes): rows are checked by key, so a sort keeps them, checking every
  * row of a filtered view is unknown in a wider one, and the detail panel follows the active row.
  */

@@ -1,5 +1,5 @@
 /**
- * The messages of docs/v2-spec.md §8 end to end: a reference engine over DuckDB answers requests with
+ * The messages of docs/spec.md §8 end to end: a reference engine over DuckDB answers requests with
  * blocks, and the reducer of §6 drives it as a core does.
  */
 import assert from "node:assert/strict";

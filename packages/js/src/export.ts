@@ -1,5 +1,5 @@
 /**
- * Exporting views (docs/v2-spec.md §8.2) as the bytes of a file, which the engine answers as `data`: CSV, TSV and
+ * Exporting views (docs/spec.md §8.2) as the bytes of a file, which the engine answers as `data`: CSV, TSV and
  * JSON by `vastgrid-spec/export` and workbooks by `vastgrid-spec/xlsx`, as the DuckDB engine writes them. The rows
  * go to the writer in batches, each written as its bytes, so that no text holds the whole file. Loaded with the
  * first export.

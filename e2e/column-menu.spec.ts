@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { benchDirectory } from "../packages/duckdb-engine/bench/files.ts";
 
 /**
- * The column menu (docs/v2-react.md §6.7) on a file read by the DuckDB engine over HTTP (`examples/files`): the list
+ * The column menu (docs/react.md §6.7) on a file read by the DuckDB engine over HTTP (`examples/files`): the list
  * of a column's values is read by the engine under the other filters, and the filter and the condition are applied
  * with `filter.column` and read back when the menu opens again.
  */

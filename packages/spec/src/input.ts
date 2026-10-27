@@ -1,5 +1,5 @@
 /**
- * Reading typed text as a value of a column's type (docs/v2-spec.md §7.3), and the text an editor starts with.
+ * Reading typed text as a value of a column's type (docs/spec.md §7.3), and the text an editor starts with.
  */
 import { parseDateText, parseTimestampText, timestampText, UNIT_DIGITS, UNIT_PER_SECOND } from "./calendar.js";
 import type { JsonValue, ValueType } from "./types.js";

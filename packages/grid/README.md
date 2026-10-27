@@ -16,7 +16,7 @@ every byte that was not edited kept as it is.
 npm install vastgrid vastgrid-js
 ```
 
-Until 2.0.0 is released, this version is a prerelease on npm's `next` tag: `npm install vastgrid@next vastgrid-js@next`.
+Until 0.2.0 is released, this version is a prerelease on npm's `next` tag: `npm install vastgrid@next vastgrid-js@next`.
 `vastgrid` needs React 19.3 or later and a browser with CSS `light-dark()` (Chrome and Edge 123, Firefox 120,
 Safari 17.5 or later). React is an optional peer dependency: `vastgrid/core` runs on servers and in workers without
 it.
@@ -171,13 +171,13 @@ so that late answers never replace the current view.
 
 ## Documentation
 
-- [docs/v2-react.md](https://github.com/yhay81/vastgrid/blob/main/docs/v2-react.md): the store, the transports,
+- [docs/react.md](https://github.com/yhay81/vastgrid/blob/main/docs/react.md): the store, the transports,
   `DataGrid`, the hooks, rendering, theming and server rendering.
-- [docs/v2-spec.md](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md): the document and session (§5),
+- [docs/spec.md](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md): the document and session (§5),
   the commands (§6), editing and saving (§7) and the messages (§8).
 - [docs/entries.md](https://github.com/yhay81/vastgrid/blob/main/docs/entries.md): the same grid in the command line,
   VS Code, an MCP App and a notebook.
-- [docs/v2-from-v1.md](https://github.com/yhay81/vastgrid/blob/main/docs/v2-from-v1.md): from vastgrid 0.1.x.
+- [docs/migrating-from-0.1.md](https://github.com/yhay81/vastgrid/blob/main/docs/migrating-from-0.1.md): from vastgrid 0.1.x.
 
 The tests run on the sources (`npm test`); the end-to-end tests run the bench of
 [`examples/bench`](https://github.com/yhay81/vastgrid/tree/main/examples/bench) in Chromium against the build

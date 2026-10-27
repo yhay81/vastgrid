@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://vastgrid.yhay81.com/schema/v2/conformance.schema.json",
-  "title": "vastgrid v2 conformance cases",
-  "description": "A file of the conformance corpus (docs/v2-spec.md §10): tables, and cases that run a plan on one of them. Plans are not checked by this schema, so that cases can test invalid plans.",
+  "$id": "https://vastgrid.yhay81.com/schema/0.2/conformance.schema.json",
+  "title": "vastgrid 0.2 conformance cases",
+  "description": "A file of the conformance corpus (docs/spec.md §10): tables, and cases that run a plan on one of them. Plans are not checked by this schema, so that cases can test invalid plans.",
   "type": "object",
   "additionalProperties": false,
   "required": ["tables", "cases"],

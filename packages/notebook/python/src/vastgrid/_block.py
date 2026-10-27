@@ -1,4 +1,4 @@
-"""Blocks (docs/v2-spec.md §8.4): rows of typed JSON (§2.2) as an Apache Arrow IPC stream with one schema and one
+"""Blocks (docs/spec.md §8.4): rows of typed JSON (§2.2) as an Apache Arrow IPC stream with one schema and one
 record batch, written with the Arrow types of §2.1, as vastgrid-spec's `encodeBlock` writes them."""
 
 from __future__ import annotations

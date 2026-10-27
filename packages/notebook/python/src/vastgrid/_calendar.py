@@ -1,4 +1,4 @@
-"""Dates and times as integers and as text (docs/v2-spec.md §2.2): days since 1970-01-01 in the proleptic Gregorian
+"""Dates and times as integers and as text (docs/spec.md §2.2): days since 1970-01-01 in the proleptic Gregorian
 calendar, and counts of seconds, milliseconds, microseconds or nanoseconds. Years are from 1 to 9999, the years that
 the text of §2.2 writes. Python ints stand in for JavaScript's bigints."""
 

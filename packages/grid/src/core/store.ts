@@ -65,7 +65,7 @@ export interface GridStoreOptions {
   document?: GridDocument;
   /** The session to start with (§5.2). */
   session?: GridSession;
-  /** Rows read on a server, shown before the first read (§7 of v2-react.md). */
+  /** Rows read on a server, shown before the first read (§7 of react.md). */
   initial?: InitialView;
   /** Bytes of rows to keep (`CACHE_BYTES` by default). */
   cacheBytes?: number;
@@ -106,7 +106,7 @@ function planKey(plan: Plan): string {
 }
 
 /**
- * The grid without a screen (§4 of v2-react.md): the state of the specification as immutable snapshots, the
+ * The grid without a screen (§4 of react.md): the state of the specification as immutable snapshots, the
  * commands that change it, and the rows of the view on screen, read through a transport. Making a store has
  * no side effects; `connect` opens the table and starts reading.
  */
@@ -120,7 +120,7 @@ export class GridStore {
     error: new Set(),
   };
   private readonly controlled = { document: false, session: false };
-  /** What a command made of a controlled part, until the host passes it back (§5.2 of v2-react.md). */
+  /** What a command made of a controlled part, until the host passes it back (§5.2 of react.md). */
   private readonly proposed: { document?: GridDocument; session?: GridSession } = {};
   private client: GridClient | null = null;
   /** Counts connections, so that answers to an earlier one are dropped. */
@@ -318,7 +318,7 @@ export class GridStore {
 
   /**
    * Opens the table, follows its events and reads the view of the document's plan. Gives the function that
-   * undoes all of it; connecting again afterwards works (Strict Mode does it, §4.3 of v2-react.md).
+   * undoes all of it; connecting again afterwards works (Strict Mode does it, §4.3 of react.md).
    */
   connect(): () => void {
     const connection = ++this.connection;
@@ -450,7 +450,7 @@ export class GridStore {
     this.emit("error", error);
   }
 
-  /** A read failed: unless it was cancelled, the failure belongs to no command (§4.2 of v2-react.md). */
+  /** A read failed: unless it was cancelled, the failure belongs to no command (§4.2 of react.md). */
   private readFailed(error: unknown) {
     if (!isCancelled(error)) this.fail(asGridError(error));
   }
@@ -490,7 +490,7 @@ export class GridStore {
 
   /**
    * Reads the view of a plan while the view on screen stays, and shows it when its first rows arrive, with the
-   * session moved by `view.update` (§5.4; §4.2 of v2-react.md).
+   * session moved by `view.update` (§5.4; §4.2 of react.md).
    */
   private showPlan(plan: Plan) {
     const table = this.snapshot.table;
@@ -764,7 +764,7 @@ export class GridStore {
   }
 
   /**
-   * Applies a command (§4.2 of v2-react.md). The state changes at once when the command has what it needs;
+   * Applies a command (§4.2 of react.md). The state changes at once when the command has what it needs;
    * a command that needs rows that are not read reads them first. Resolves once the command's requests are
    * answered, and never rejects. The same function for the life of the store.
    */
@@ -821,7 +821,7 @@ export class GridStore {
   }
 
   /**
-   * Sends the failed write again (§6.6 of v2-react.md): the same updates, or after an `edit_conflict` without their
+   * Sends the failed write again (§6.6 of react.md): the same updates, or after an `edit_conflict` without their
    * `previous`, so that they write over what the cells hold now. It succeeds as its command would have: the history
    * gets its step, or an undo or a redo whose step is still the last moves it. Resolves as `dispatch` does.
    */
@@ -1104,7 +1104,7 @@ export class GridStore {
   }
 }
 
-/** Makes a store (§4 of v2-react.md). */
+/** Makes a store (§4 of react.md). */
 export function createGridStore(options: GridStoreOptions): GridStore {
   return new GridStore(options);
 }

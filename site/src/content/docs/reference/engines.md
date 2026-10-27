@@ -4,7 +4,7 @@ description: The memory engine of vastgrid-js and the DuckDB engine of vastgrid-
 ---
 
 An engine opens tables and answers the grid's messages
-([§8 of the specification](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#8-messages)): it makes the
+([§8 of the specification](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#8-messages)): it makes the
 views of plans, reads blocks of rows, writes cells and exports files. The grid reaches it through a transport
 ([`vastgrid/core`](/reference/core/#transports)). Two engines come with vastgrid:
 
@@ -30,7 +30,7 @@ interface Engine {
 ## Capabilities
 
 `open` answers a `TableInfo` with the table's `capabilities`
-([§4.10](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#410-capabilities)). The grid offers only
+([§4.10](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#410-capabilities)). The grid offers only
 what they say: no Save button without `save`, no Group menu without `plan.aggregate`, the export formats of
 `export.formats`.
 
@@ -93,8 +93,8 @@ encoding (`{ bytes }`), as `localTransport` and `workerTransport` carry them.
 
 | Member | Type | Description |
 | --- | --- | --- |
-| `columns` | `Column[]` | `{ name, type }` with the members of its type ([§2.1](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#21-logical-types)): `precision` and `scale` of a `decimal`, `bits` of a `float`, `unit` of a `timestamp`; optionally `sourceType` and `readOnly`. |
-| `rows` | `JsonValue[][]` | One array per row, in row ID order, of typed JSON values ([§2.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#22-values-in-json)): decimals as strings with their scale (`"12.50"`), bigints beyond 2^53 as strings, dates as `"2024-01-31"`, timestamps as `"2024-01-31 12:00:00"`. |
+| `columns` | `Column[]` | `{ name, type }` with the members of its type ([§2.1](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#21-logical-types)): `precision` and `scale` of a `decimal`, `bits` of a `float`, `unit` of a `timestamp`; optionally `sourceType` and `readOnly`. |
+| `rows` | `JsonValue[][]` | One array per row, in row ID order, of typed JSON values ([§2.2](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#22-values-in-json)): decimals as strings with their scale (`"12.50"`), bigints beyond 2^53 as strings, dates as `"2024-01-31"`, timestamps as `"2024-01-31 12:00:00"`. |
 | `editable` | `boolean` | `write` writes the table's cells. Written values are kept apart from `rows`. |
 
 The rows are used as they are, without a copy: they must not change afterwards. Their form is checked when the
@@ -221,7 +221,7 @@ middleware: requests to other paths go to `next`, or get 404 without it.
 
 | Route | Answer |
 | --- | --- |
-| `POST <path>` | The response to the JSON request in the body: JSON, or, for `rows` and `export` when the request accepts `application/vnd.vastgrid.v2+arrow`, the JSON with its block attached (§8.8). Errors are JSON with the HTTP status of [§8.7](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#87-errors); `cancel` gets 204. A client that goes away cancels its request. |
+| `POST <path>` | The response to the JSON request in the body: JSON, or, for `rows` and `export` when the request accepts `application/vnd.vastgrid.v2+arrow`, the JSON with its block attached (§8.8). Errors are JSON with the HTTP status of [§8.7](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#87-errors); `cancel` gets 204. A client that goes away cancels its request. |
 | `GET <events>` | The engine's events as Server-Sent Events. |
 | `GET <exports><name>` | The file of an export as a download named after the table, or 404. |
 

@@ -74,7 +74,7 @@ function Bars() {
 
 ## 行ではなくグループを
 
-行そのもののグラフは、描く行の数だけ行を読みます。グループのグラフなら 1 グループ 1 行で、グループはデータのある場所でエンジンが作ります。DuckDB のエンジンならサーバーの SQL で、メモリエンジンならページか Worker の中です。プランの `aggregate` には `keys` と `measures`（`count`、`count_distinct`、`sum`、`avg`、`stddev`、`min`、`max`、`quantile`）を書きます。`aggregate.pivot` はほかの列の値ごとに列を作るので、系列が複数あるグラフに使えます。グリッドのメニューで作れるものは[グループ化と集計](/ja/guides/grouping/)、集計の一覧は[仕様の §4.5](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#45-measures)を参照してください。
+行そのもののグラフは、描く行の数だけ行を読みます。グループのグラフなら 1 グループ 1 行で、グループはデータのある場所でエンジンが作ります。DuckDB のエンジンならサーバーの SQL で、メモリエンジンならページか Worker の中です。プランの `aggregate` には `keys` と `measures`（`count`、`count_distinct`、`sum`、`avg`、`stddev`、`min`、`max`、`quantile`）を書きます。`aggregate.pivot` はほかの列の値ごとに列を作るので、系列が複数あるグラフに使えます。グリッドのメニューで作れるものは[グループ化と集計](/ja/guides/grouping/)、集計の一覧は[仕様の §4.5](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#45-measures)を参照してください。
 
 ## グリッドのないグラフ
 

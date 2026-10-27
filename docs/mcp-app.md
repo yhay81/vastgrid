@@ -3,7 +3,7 @@
 `vastgrid-mcp` (`packages/mcp`) is an MCP server with an [MCP App](https://github.com/modelcontextprotocol/ext-apps):
 an agent opens a CSV, TSV, Parquet, JSON Lines or Excel file of any size in a grid that the person sees in the
 chat, and both work on the same grid. The agent reads the grid's state and rows and applies the commands of the
-specification (docs/v2-spec.md §6); the person scrolls, sorts, filters, selects and edits in the grid. What one
+specification (docs/spec.md §6); the person scrolls, sorts, filters, selects and edits in the grid. What one
 does, the other sees. DuckDB reads the files on the server, in Node.js; the page in the host is plain JavaScript
 and canvas, with no WebAssembly, no workers and no network of its own.
 
@@ -23,7 +23,7 @@ Add the server to a host that shows MCP Apps (Claude Desktop, VS Code, ChatGPT, 
 }
 ```
 
-Before 2.0.0 is released, the pre-release is `vastgrid-mcp@next`. From this repository, `npm install` and `npm run
+Before 0.2.0 is released, the pre-release is `vastgrid-mcp@next`. From this repository, `npm install` and `npm run
 build`, then the command `node` with the arguments `/path/to/vastgrid/packages/mcp/dist/cli.js /path/to/data`.
 
 `vastgrid-mcp [--save] <folder>…` opens the files of the folders it is given (the current folder by default) and no
@@ -53,9 +53,9 @@ Writing a cell is the person's sequence: `select`, `edit.begin` with the text, `
 ## One state for both
 
 The server keeps each grid as a store without a screen (`GridStore` of `vastgrid/core`, §4 of
-v2-react.md) on a table of the DuckDB engine: the agent's commands go to it, exactly as the grid on screen
+react.md) on a table of the DuckDB engine: the agent's commands go to it, exactly as the grid on screen
 dispatches them. The App's `DataGrid` has a store of its own with the same document and session, controlled
-(§5.2 of v2-react.md), and reads its rows through `vastgrid_message`. Both stores read the same loaded table of the
+(§5.2 of react.md), and reads its rows through `vastgrid_message`. Both stores read the same loaded table of the
 engine, so cells that one writes are cells that the other reads.
 
 `grid_sync` joins the two states. The grid has a version, which every change of its document or session raises,

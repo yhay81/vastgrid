@@ -15,7 +15,7 @@ export function Orders() {
 }
 ```
 
-`DataGrid` は表を canvas に描き、スクロールに合わせてトランスポートから行を読み、仕様の[コマンド](/ja/reference/commands/)ですべてを行います。サーバーでもレンダリングできます（canvas はブラウザーでだけ描きます）。このページのもとは [React の仕様の §5](https://github.com/yhay81/vastgrid/blob/main/docs/v2-react.md#5-components-and-hooks) です。
+`DataGrid` は表を canvas に描き、スクロールに合わせてトランスポートから行を読み、仕様の[コマンド](/ja/reference/commands/)ですべてを行います。サーバーでもレンダリングできます（canvas はブラウザーでだけ描きます）。このページのもとは [React の仕様の §5](https://github.com/yhay81/vastgrid/blob/main/docs/react.md#5-components-and-hooks) です。
 
 ## props
 
@@ -34,10 +34,10 @@ export function Orders() {
 
 | props | 型 | 既定値 | 説明 |
 | --- | --- | --- | --- |
-| `document` | `GridDocument` | | ビューとその列（[§5.1](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#51-document)）。制御されます。 |
+| `document` | `GridDocument` | | ビューとその列（[§5.1](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#51-document)）。制御されます。 |
 | `defaultDocument` | `GridDocument` | 空のドキュメント | 最初のドキュメント。非制御です。 |
 | `onDocumentChange` | `(document: GridDocument) => void` | | コマンドが作ったドキュメントを受け取ります。 |
-| `session` | `GridSession` | | 人が今いる場所（[§5.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#52-session)）。制御されます。 |
+| `session` | `GridSession` | | 人が今いる場所（[§5.2](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#52-session)）。制御されます。 |
 | `defaultSession` | `GridSession` | 空のセッション | 最初のセッション。非制御です。 |
 | `onSessionChange` | `(session: GridSession) => void` | | コマンドが作ったセッションを受け取ります。アクティブセルが動くたびに呼ばれます。 |
 | `initial` | `InitialView \| Promise<InitialView>` | | サーバーで読んだ行（[`readInitialView`](/ja/reference/core/#vastgridserver)）。最初のフレームで描きます。Promise を渡すと、解決するまでグリッドはサスペンドし、グリッドと同じ大きさの読み込み中の要素を出します。 |
@@ -101,7 +101,7 @@ export function Orders() {
 
 ## 制御と非制御の状態
 
-[React の仕様の §5.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-react.md#52-controlled-and-uncontrolled-state)。
+[React の仕様の §5.2](https://github.com/yhay81/vastgrid/blob/main/docs/react.md#52-controlled-and-uncontrolled-state)。
 
 - `defaultDocument` と `defaultSession` は最初の状態を与え、その後はグリッドが状態を持ちます。
 - `document`（または `session`）を渡すと、グリッドは props を表示します。コマンドはグリッドがなるはずの状態を `onDocumentChange`（`onSessionChange`）で知らせ、親がそれを渡し返したときに表示します。親が別のものを渡したり、何も渡さなかったりすれば、親が優先されます。

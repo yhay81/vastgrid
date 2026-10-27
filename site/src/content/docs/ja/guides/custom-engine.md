@@ -20,24 +20,24 @@ interface Engine {
 
 ## メッセージ
 
-メッセージは[仕様の §8](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#8-messages) で定めています。
+メッセージは[仕様の §8](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#8-messages) で定めています。
 
 | 項目 | 内容 |
 | --- | --- |
-| [エンベロープ（§8.1）](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#81-envelope) | 要求は `{ v: 2, id, op, … }`、応答は `{ v: 2, id, result }`、エラーは `{ v: 2, id, error: { code, message, path?, reason? } }`、イベントは `{ v: 2, event, … }` |
-| [操作（§8.2）](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#82-operations) | `open`、`info`、`rows`、`summarize`、`find`、`locate`、`write`、`save`、`export`、`changes`、`reload`、`cancel`、`close` |
+| [エンベロープ（§8.1）](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#81-envelope) | 要求は `{ v: 2, id, op, … }`、応答は `{ v: 2, id, result }`、エラーは `{ v: 2, id, error: { code, message, path?, reason? } }`、イベントは `{ v: 2, event, … }` |
+| [操作（§8.2）](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#82-operations) | `open`、`info`、`rows`、`summarize`、`find`、`locate`、`write`、`save`、`export`、`changes`、`reload`、`cancel`、`close` |
 | `TableInfo`（§8.2） | `open` の答え：表の ID、`revision`、`edits`、`status`、`progress`、`rowCount`、`readableRows`、`columns`、`capabilities` |
-| [ブロック（§8.4）](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#84-blocks) | `rows` の値：レコードバッチ 1 つの Arrow IPC ストリームで、列ごとに 1 つのフィールド |
-| [イベント（§8.5）](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#85-events) | `changed`、`progress`、`view` |
-| [取り消し（§8.6）](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#86-cancellation) | `cancel` か要求の中断。エンジンは `cancelled` で答えるか、最後まで処理します |
-| [エラー（§8.7）](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#87-errors) | エラーコードと、それぞれの HTTP ステータス |
-| [エンコーディング（§8.8）](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#88-transports) | ブロックは、関数呼び出しと Worker では `{ bytes }`、テキストでは `{ base64 }`、HTTP では添付 |
+| [ブロック（§8.4）](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#84-blocks) | `rows` の値：レコードバッチ 1 つの Arrow IPC ストリームで、列ごとに 1 つのフィールド |
+| [イベント（§8.5）](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#85-events) | `changed`、`progress`、`view` |
+| [取り消し（§8.6）](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#86-cancellation) | `cancel` か要求の中断。エンジンは `cancelled` で答えるか、最後まで処理します |
+| [エラー（§8.7）](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#87-errors) | エラーコードと、それぞれの HTTP ステータス |
+| [エンコーディング（§8.8）](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#88-transports) | ブロックは、関数呼び出しと Worker では `{ bytes }`、テキストでは `{ base64 }`、HTTP では添付 |
 
 ビューにはハンドルがありません。要求のたびに表とそのリビジョン、プランを指定し、エンジンは作ったビューを保持しても捨ててもかまいません。
 
 ## 一部だけを提供する
 
-`TableInfo` には、エンジンのケイパビリティが入ります（[§4.10](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#410-capabilities)）。グリッドが出す機能はその範囲に限られ、ほかのものを使うプランは `invalid_plan`（`unsupported`）になります。そのため、エンジンは小さく始められます。最小のエンジンは `open`、プラン `{}` の `rows`、`close` に答えるだけです。グリッドは表を表示してスクロールでき、並べ替え・絞り込み・編集・書き出しは出しません。
+`TableInfo` には、エンジンのケイパビリティが入ります（[§4.10](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#410-capabilities)）。グリッドが出す機能はその範囲に限られ、ほかのものを使うプランは `invalid_plan`（`unsupported`）になります。そのため、エンジンは小さく始められます。最小のエンジンは `open`、プラン `{}` の `rows`、`close` に答えるだけです。グリッドは表を表示してスクロールでき、並べ替え・絞り込み・編集・書き出しは出しません。
 
 | ケイパビリティ | グリッドが出す機能 |
 | --- | --- |
@@ -169,7 +169,7 @@ SQL を使うエンジンには、`vastgrid-sql` があります。検証した�
 
 ## コーパスで確かめる
 
-適合性のコーパス（[§10](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#10-conformance)）は `vastgrid-spec` に含まれています。プランのケースは、表とプラン、期待する行かエラーを示します。`vastgrid-spec/conformance` の `readCorpus()` で読み込み、ケースごとにエンジンで `open` と `rows` を実行し、ブロックを `decodeBlock` で読んで、`compareResult(expect, got)` で違いを一覧にします。提供していないメンバーを使うプランのケースは、理由 `unsupported` の `invalid_plan` になるはずです。[メモリエンジンのテスト](https://github.com/yhay81/vastgrid/blob/main/packages/js/test/conformance.test.ts)がまさにこれを行っています。メッセージは `readMessageCorpus` と `runMessageCase` で同じように確かめられます。
+適合性のコーパス（[§10](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#10-conformance)）は `vastgrid-spec` に含まれています。プランのケースは、表とプラン、期待する行かエラーを示します。`vastgrid-spec/conformance` の `readCorpus()` で読み込み、ケースごとにエンジンで `open` と `rows` を実行し、ブロックを `decodeBlock` で読んで、`compareResult(expect, got)` で違いを一覧にします。提供していないメンバーを使うプランのケースは、理由 `unsupported` の `invalid_plan` になるはずです。[メモリエンジンのテスト](https://github.com/yhay81/vastgrid/blob/main/packages/js/test/conformance.test.ts)がまさにこれを行っています。メッセージは `readMessageCorpus` と `runMessageCase` で同じように確かめられます。
 
 ## 自作のトランスポート
 

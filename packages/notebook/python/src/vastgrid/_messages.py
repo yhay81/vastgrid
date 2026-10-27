@@ -1,4 +1,4 @@
-"""Messages (docs/v2-spec.md §8): the checks of requests and the error responses, as vastgrid-spec's `checkRequest`
+"""Messages (docs/spec.md §8): the checks of requests and the error responses, as vastgrid-spec's `checkRequest`
 and `errorResponse` make them, so that an engine in Python answers every request as the others do."""
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 /**
- * Formulas (docs/v2-spec.md §4.11): the language people type for derived columns. A formula compiles to an
+ * Formulas (docs/spec.md §4.11): the language people type for derived columns. A formula compiles to an
  * expression (§4.3) that engines check and run, and every expression of a derived column is written back
- * as a formula. The language is v1's, whose functions map onto §4.4, with the functions of §4.4 under their
+ * as a formula. The language is 0.1's, whose functions map onto §4.4, with the functions of §4.4 under their
  * own names and literals of every type. Nothing is evaluated here.
  */
 import { type CheckOptions, checkExpression, type TypedExpr } from "./check.js";
@@ -358,7 +358,7 @@ const temporalPattern =
   /^ *([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})(?:[ T]([01]?[0-9]|2[0-3]):([0-5][0-9])(?::([0-5][0-9])(?:\.([0-9]{1,9}))?)?)? *$/;
 
 /**
- * A date or a timestamp written as v1 read them (`2024-1-5`, `2024-01-05T10:30`, with spaces around), in the
+ * A date or a timestamp written as 0.1 read them (`2024-1-5`, `2024-01-05T10:30`, with spaces around), in the
  * form of §2.2, or null when it is not one.
  */
 function temporalText(text: string, type: "date" | "timestamp"): string | null {
@@ -429,7 +429,7 @@ function numberLiteral(text: string, range: Range): Expr {
 
 // ----- compiling -----
 
-/** v1's names of functions whose v2 form differs (§4.11); the others are the functions of §4.4. */
+/** 0.1's names of functions whose 0.2 form differs (§4.11); the others are the functions of §4.4. */
 const V1_FUNCTIONS = new Set([
   "CEILING",
   "LEN",
@@ -466,7 +466,7 @@ const OPERATOR_FUNCTION: Record<Exclude<Operator, "and" | "or" | "not" | "neg">,
   ">=": "ge",
 };
 
-/** Types that v1 read as text: functions of text read their text form. */
+/** Types that 0.1 read as text: functions of text read their text form. */
 const TEXT_LIKE = new Set<string>(["time", "interval", "uuid", "binary"]);
 const NUMBER = new Set<string>(["integer", "bigint", "decimal", "float"]);
 
@@ -540,7 +540,7 @@ class Compiler {
     }
   }
 
-  /** v1's conversions of arguments (§4.11): text read as dates, text forms, and whole numbers. */
+  /** 0.1's conversions of arguments (§4.11): text read as dates, text forms, and whole numbers. */
   private convert(fn: FunctionName, args: Part[]): Part[] {
     switch (fn) {
       case "eq":
@@ -613,7 +613,7 @@ class Compiler {
     });
   }
 
-  /** The text form of a value that v1 read as text (a time, a UUID, …). */
+  /** The text form of a value that 0.1 read as text (a time, a UUID, …). */
   private asString(arg: Part): Part {
     return TEXT_LIKE.has(arg.type.type) ? this.check(call("text", arg.expr), arg.range) : arg;
   }
@@ -683,7 +683,7 @@ class Compiler {
       case "ISBLANK":
         return apply("is_blank");
       case "DAYS":
-        // v1's DAYS(end, start) counts from start to end.
+        // 0.1's DAYS(end, start) counts from start to end.
         arity(2);
         return apply("date_diff_days", [args[1], args[0]]);
       case "MIN":

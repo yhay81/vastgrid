@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { benchDirectory } from "../packages/duckdb-engine/bench/files.ts";
 
 /**
- * Column statistics, the totals row and grouping (docs/v2-react.md §6.7, §6.8) on a file read by the DuckDB engine
+ * Column statistics, the totals row and grouping (docs/react.md §6.7, §6.8) on a file read by the DuckDB engine
  * over HTTP (`examples/files`): each is an aggregate that the engine evaluates.
  */
 const site = "http://127.0.0.1:5183";

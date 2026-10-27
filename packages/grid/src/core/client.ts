@@ -4,7 +4,7 @@ import { GridError, type RequestMessage } from "./types.js";
 
 /**
  * Carries messages (§8 of the specification) to an engine and gives back its answers: a function call, a Web
- * Worker, HTTP, a Server Function, an MCP tool call (§4.4 of v2-react.md).
+ * Worker, HTTP, a Server Function, an MCP tool call (§4.4 of react.md).
  */
 export interface Transport {
   /** Sends a request and gives its response; `cancel` has none. */

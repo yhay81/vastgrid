@@ -1,4 +1,4 @@
-// React Compiler over a package's sources (v2-react.md §11), for the build and for the test that checks that
+// React Compiler over a package's sources (react.md §11), for the build and for the test that checks that
 // the compiler gives up on no function.
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";

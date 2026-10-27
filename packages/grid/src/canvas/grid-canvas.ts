@@ -16,7 +16,7 @@ const MIN_WIDTH = 40;
 const MAX_AUTO_WIDTH = 360;
 /** Lines of a row while a displayed column wraps its text (§5.1 of the specification). */
 const DEFAULT_WRAP_LINES = 2;
-/** How long scrolling must pause before the accessibility rows and the session follow (§6.1 of v2-react.md). */
+/** How long scrolling must pause before the accessibility rows and the session follow (§6.1 of react.md). */
 export const SETTLE_MS = 150;
 
 /** The rows on screen once scrolling pauses, for the accessibility rows. */
@@ -102,7 +102,7 @@ function groupPaths(
 }
 
 /**
- * Draws the view on screen of a store onto a canvas and scrolls it, without React (§1 and §6 of v2-react.md):
+ * Draws the view on screen of a store onto a canvas and scrolls it, without React (§1 and §6 of react.md):
  * cells, headers, row numbers, the selection and the columns pinned at each side, at most once per frame and only
  * what is on screen. It tells the store which rows it shows, so that the store reads them.
  */
@@ -671,7 +671,7 @@ export class GridCanvas {
     }
     ctx.stroke();
     if (snapshot.pending) {
-      // The view on screen stays until the new one's first rows arrive (§4.2 of v2-react.md).
+      // The view on screen stays until the new one's first rows arrive (§4.2 of react.md).
       ctx.fillStyle = theme.background;
       ctx.globalAlpha = 0.45;
       ctx.fillRect(

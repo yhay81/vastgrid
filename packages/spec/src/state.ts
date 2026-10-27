@@ -1,5 +1,5 @@
 /**
- * The state of a grid (docs/v2-spec.md §5): the document, the session, displayed columns, row keys, and the
+ * The state of a grid (docs/spec.md §5): the document, the session, displayed columns, row keys, and the
  * repair of a document for a table.
  */
 import { type CheckOptions, checkPlan } from "./check.js";
@@ -16,7 +16,7 @@ import {
 } from "./plan.js";
 import type { Column, JsonValue, ValueType } from "./types.js";
 
-/** How a column shows numbers: v1's `NumberFormat`. */
+/** How a column shows numbers: 0.1's `NumberFormat`. */
 export interface NumberFormat {
   style?: "decimal" | "percent" | "currency";
   currency?: string;
@@ -31,7 +31,7 @@ export interface NumberFormat {
   suffix?: string;
 }
 
-/** How a column shows dates and times: v1's `DateFormat`. */
+/** How a column shows dates and times: 0.1's `DateFormat`. */
 export interface DateFormat {
   pattern?: string;
   dateStyle?: "full" | "long" | "medium" | "short";

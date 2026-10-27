@@ -3,7 +3,7 @@ title: vastgrid/core と vastgrid/server
 description: React なしで動くグリッドのストア、トランスポート、エラーと、サーバーレンダリングのための readInitialView。
 ---
 
-`vastgrid/core` は React を除いたグリッドです。状態を持つストア、メッセージのクライアント、メッセージをエンジンへ運ぶトランスポートがあります。ブラウザー、Web Worker、サーバーで動きます。`vastgrid/server` はサーバーで表の先頭の行を読み、サーバーレンダリングに使います。React のコードは同じ名前を `vastgrid` から import します（`vastgrid` は `vastgrid/core` を再エクスポートしています）。Worker とサーバーは `vastgrid/core` から import します。このページのもとは [React の仕様の §4](https://github.com/yhay81/vastgrid/blob/main/docs/v2-react.md#4-the-store) です。
+`vastgrid/core` は React を除いたグリッドです。状態を持つストア、メッセージのクライアント、メッセージをエンジンへ運ぶトランスポートがあります。ブラウザー、Web Worker、サーバーで動きます。`vastgrid/server` はサーバーで表の先頭の行を読み、サーバーレンダリングに使います。React のコードは同じ名前を `vastgrid` から import します（`vastgrid` は `vastgrid/core` を再エクスポートしています）。Worker とサーバーは `vastgrid/core` から import します。このページのもとは [React の仕様の §4](https://github.com/yhay81/vastgrid/blob/main/docs/react.md#4-the-store) です。
 
 ## ストア
 
@@ -23,8 +23,8 @@ const disconnect = store.connect();
 | `transport` | `Transport` | （必須） | エンジンのある場所。 |
 | `table` | `string` | （必須） | 開く表の `ref`（§8.2）。 |
 | `open` | `OpenOptions` | | `open` の `read` オプション。`sheet`、`headerRow`、`keepEmptyRows`、`keepEmptyColumns`。 |
-| `document` | `GridDocument` | 空のドキュメント | 最初のドキュメント（[§5.1](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#51-document)）。 |
-| `session` | `GridSession` | 空のセッション | 最初のセッション（[§5.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#52-session)）。 |
+| `document` | `GridDocument` | 空のドキュメント | 最初のドキュメント（[§5.1](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#51-document)）。 |
+| `session` | `GridSession` | 空のセッション | 最初のセッション（[§5.2](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#52-session)）。 |
 | `initial` | `InitialView` | | サーバーで読んだ行（`readInitialView`）。最初の読み込みの前に表示します。 |
 | `cacheBytes` | `number` | `CACHE_BYTES`（64 MiB） | 保持する行のバイト数。 |
 
@@ -93,7 +93,7 @@ if (!outcome.ok) console.warn(outcome.error.code, outcome.error.message);
 ```
 
 1. スナップショットはすぐに変わり、購読者に知らせます。キーを押した結果が同じフレームに出ます。
-2. コマンドが生んだリクエストを送ります。コアのコマンド（[§6.7](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#67-commands-of-the-core)）は応答が届いたときに適用します。
+2. コマンドが生んだリクエストを送ります。コアのコマンド（[§6.7](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#67-commands-of-the-core)）は応答が届いたときに適用します。
 3. プランが変わったときは、古いビューを画面に残したまま（`pending` を設定して）新しいビューを読み、新しい行を一度に表示します。新しいプランは古いプランの読み込みを取り消します。
 4. `not_loaded` で失敗したコマンドは、必要な行を読んでからもう一度適用します。
 
@@ -127,11 +127,11 @@ if (!outcome.ok) console.warn(outcome.error.code, outcome.error.message);
 | `cancelled` | リクエストを取り消した | 499 |
 | `internal` | それ以外 | 500 |
 
-一覧は [§8.7](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#87-errors) にあり、`vastgrid-spec` の `ERROR_STATUS` がコードと HTTP ステータスを対応づけます。
+一覧は [§8.7](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#87-errors) にあり、`vastgrid-spec` の `ERROR_STATUS` がコードと HTTP ステータスを対応づけます。
 
 ## トランスポート
 
-トランスポートは [§8](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#8-messages) のメッセージをエンジンへ運びます。行のブロックはバイト列（構造化エンコーディング）で、HTTP では JSON の後ろに添付して運びます。
+トランスポートは [§8](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#8-messages) のメッセージをエンジンへ運びます。行のブロックはバイト列（構造化エンコーディング）で、HTTP では JSON の後ろに添付して運びます。
 
 | トランスポート | エンジン |
 | --- | --- |
@@ -227,7 +227,7 @@ export default function Page() {
 }
 ```
 
-[サーバー上のファイル](/ja/guides/server/)と [React の仕様の §7](https://github.com/yhay81/vastgrid/blob/main/docs/v2-react.md#7-server-rendering-and-server-components) も見てください。
+[サーバー上のファイル](/ja/guides/server/)と [React の仕様の §7](https://github.com/yhay81/vastgrid/blob/main/docs/react.md#7-server-rendering-and-server-components) も見てください。
 
 ## React なしのストア
 

@@ -9,7 +9,7 @@ description: ブラウザーでのグリッド、DuckDB のエンジン、メモ
 
 ベンチマーク（`examples/bench`）は、メモリエンジンがページか Web Worker の中で持つ 100 万行・8 列（整数、文字列、浮動小数点数、日付、真偽値）の表にグリッドをマウントし、エンドツーエンドのテストが Chromium 156 と Playwright（ヘッドレス、60 Hz）で計測します。2026-10-24 に Node.js 24 と React 19.3.1 で計測し、範囲は最後の 4 回のものです。比較のために vastgrid 0.1 も載せています。
 
-| 計測 | vastgrid 0.1 | v2（エンジンはページ） | v2（エンジンは Worker） |
+| 計測 | vastgrid 0.1 | 0.2（エンジンはページ） | 0.2（エンジンは Worker） |
 | --- | ---: | ---: | ---: |
 | マウントから最初の行が画面に出るまで | 46–65 ms | 43–49 ms | 36–49 ms |
 | 矢印キー 1 回の React のコミット | 1 | 1 | 1 |
@@ -54,7 +54,7 @@ description: ブラウザーでのグリッド、DuckDB のエンジン、メモ
 
 Apple シリコンのノートパソコンで、2 つのセルの保存は 20 万行の CSV で約 60 ms、200 万行で 0.3 秒です。100 万行・4 列の並べ替えたビューの書き出しは、CSV で 0.3 秒、Parquet で 0.1 秒、JSON で 0.2 秒、Excel のブックで 2.2 秒です。
 
-方法、このバージョンより前の数値、もう一度計測するコマンドは [`v2-views-benchmark.md`](https://github.com/yhay81/vastgrid/blob/main/docs/v2-views-benchmark.md) にあります。
+方法、このバージョンより前の数値、もう一度計測するコマンドは [`views-benchmark.md`](https://github.com/yhay81/vastgrid/blob/main/docs/views-benchmark.md) にあります。
 
 ## メモリエンジン
 
@@ -73,4 +73,4 @@ Apple シリコンのノートパソコンで、2 つのセルの保存は 20 �
 
 100 万行の CSV は開いた後に約 60 MB、Parquet は列を読むまで 1 MB です。列が `maxBytes` に収まらないファイルも開け、要求は必要な列を読みます。一度に `maxBytes` より多くを必要とする要求は `load_failed` で失敗し、表は開いたままです。そのようなファイルには、ディスクにあふれさせられる DuckDB のエンジンを使ってください。
 
-すべての要求、メモリ、限界、もう一度計測するコマンドは [`v2-memory-engine-benchmark.md`](https://github.com/yhay81/vastgrid/blob/main/docs/v2-memory-engine-benchmark.md) にあります。
+すべての要求、メモリ、限界、もう一度計測するコマンドは [`memory-engine-benchmark.md`](https://github.com/yhay81/vastgrid/blob/main/docs/memory-engine-benchmark.md) にあります。

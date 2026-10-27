@@ -41,7 +41,7 @@ class Selection<T> {
 }
 
 /**
- * A part of the store's snapshot (§5.3 of v2-react.md). The component renders again only when the selected value
+ * A part of the store's snapshot (§5.3 of react.md). The component renders again only when the selected value
  * changes by `isEqual` (`Object.is` by default). Selectors run on every change of the store: they are cheap and
  * make no new objects unless `isEqual` compares them (`shallowEqual`).
  */

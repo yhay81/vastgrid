@@ -159,7 +159,7 @@ function AccessibleRow({ id, row, selected }: { id: string; row: ShownRow; selec
 }
 
 /**
- * The rows on screen as ARIA rows and cells under the canvas (§6.4 of v2-react.md), placed over the cells they
+ * The rows on screen as ARIA rows and cells under the canvas (§6.4 of react.md), placed over the cells they
  * stand for and drawn transparent, with the row of the active cell when it is elsewhere. They follow the canvas
  * when scrolling pauses, in a Transition: one commit at a lower priority than anything the person does.
  */

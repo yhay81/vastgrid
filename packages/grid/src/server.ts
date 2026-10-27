@@ -1,5 +1,5 @@
 /**
- * What a Server Component or a server render calls (§7 of v2-react.md). Imports no React.
+ * What a Server Component or a server render calls (§7 of react.md). Imports no React.
  */
 import {
   checkPlan,
@@ -24,7 +24,7 @@ export interface ReadInitialOptions {
 }
 
 /**
- * Reads the table, the view of a document and its first rows, for `initial` (§7 of v2-react.md): give the result,
+ * Reads the table, the view of a document and its first rows, for `initial` (§7 of react.md): give the result,
  * or the promise of it, to `DataGrid`. Opens the table and closes it again.
  */
 export async function readInitialView(transport: Transport, options: ReadInitialOptions): Promise<InitialView> {

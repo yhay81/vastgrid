@@ -1,8 +1,8 @@
-# vastgrid v2 for React
+# vastgrid 0.2 for React
 
 Status: **draft** (2026-10-24). This document is normative for [`vastgrid`](../packages/grid), the React
-package of v2 (and its `vastgrid/core` and `vastgrid/server`). It builds on
-[the v2 specification](v2-spec.md): the state, the commands and the messages are those of the specification,
+package of 0.2 (and its `vastgrid/core` and `vastgrid/server`). It builds on
+[the 0.2 specification](spec.md): the state, the commands and the messages are those of the specification,
 and this document says how React holds, shows and changes them. Why React comes first is in
 [the reconsideration of the rebuild](rebuild-decision.ja.md#react-を中心に据える) (Japanese).
 
@@ -388,7 +388,7 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   writes over them; the history keeps the values the person wrote over. Discard (`discardWrite`) forgets it. A write
   that the engine refused for its values or cells, or whose table has another revision now, is only discarded. A
   write sent again succeeds as its command would have: the history gets its step, and an undo or a redo whose step
-  is still the last moves it. Both buttons give the focus back to the grid. These are v1's Retry, Overwrite and
+  is still the last moves it. Both buttons give the focus back to the grid. These are 0.1's Retry, Overwrite and
   Discard (#13).
 
 ### 6.7 The column menu
@@ -424,7 +424,7 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   screen stay until the new ones come. Columns are widened to fit them, and the accessibility rows end with them
   (`aria-rowcount` counts them). Totals of a grouped view are not shown: one plan cannot aggregate groups again.
 - When the engine groups rows, the toolbar has a Group menu: the keys, with a list to add a column of the rows,
-  and the measures, each with a measure, a column (none for counting rows) and an Add button that names it as v1
+  and the measures, each with a measure, a column (none for counting rows) and an Add button that names it as 0.1
   did (`sum(qty)`, `count(*)`). Each change dispatches `group.set` with the whole aggregate, or `group.clear` when
   nothing is left; rows grouped for the first time are counted.
 - When the engine pivots (`capabilities.plan.pivot`), the group menu also lists the columns whose values become
@@ -447,7 +447,7 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
 
 ### 6.10 Formats
 
-- The canvas shows a column's values by its `format` (§5.1 of the specification): `number` and `date` as v1's
+- The canvas shows a column's values by its `format` (§5.1 of the specification): `number` and `date` as 0.1's
   `NumberFormat` and `DateFormat` do (Intl formats in the grid's `locale`, the exact digits of decimals, date patterns
   such as `yyyy/MM/dd`, `timestamptz` values moved to `timeZone`), `align`, and `label` in the header. A format that
   Intl refuses (an unknown currency or time zone) shows the text form (§2.4). Columns are fitted to the formatted
@@ -565,7 +565,7 @@ where a bundler turns `light-dark()` into variables for older browsers (Lightnin
 
 The bench ([`examples/bench`](../examples/bench)) mounts the grid on a generated table, with the memory engine in
 the page or in a Web Worker, built for production with React's profiling build, and the end-to-end tests ([`e2e`](../e2e)) measure it in Chromium with
-Playwright. The tests fail when v2 exceeds a budget:
+Playwright. The tests fail when 0.2 exceeds a budget:
 
 | Measure | Budget |
 | --- | --- |
@@ -597,12 +597,12 @@ Appendix A gives what was measured.
 ## Appendix A. Measurements
 
 Measured on 2026-10-24 on an Apple M2 Pro with Node.js 24, React 19.3.1, React Compiler 1.0.0,
-`eslint-plugin-react-hooks` 7.1.1 and, in the browser, Chromium 156 (Playwright 1.64.1, headless, 60 Hz). v1 is
-main at `a925cb3`, when the bench mounted both (v1 was removed later, at 2.0.0).
+`eslint-plugin-react-hooks` 7.1.1 and, in the browser, Chromium 156 (Playwright 1.64.1, headless, 60 Hz). 0.1 is
+main at `a925cb3`, when the bench mounted both (0.1 was removed later, at 0.2.0).
 
 ### A.1 The React layer
 
-| Measure | v1 (`packages/react`) | v2 (`packages/grid`) |
+| Measure | 0.1 (`packages/react`) | 0.2 (`packages/grid`) |
 | --- | --- | --- |
 | React Compiler | compiles 13 functions and gives up on 16 places, among them `DataGrid` itself (a `try` with `finally`, `throw` inside `try`, getters in an object literal) and 5 other components | compiles all 17 components and hooks, and the build fails if it gives up on one |
 | `eslint-plugin-react-hooks` `recommended-latest` | 51 problems: `refs` 20, `immutability` 17, `preserve-manual-memoization` 9, `exhaustive-deps` 3, `set-state-in-effect` 2 | none |
@@ -613,11 +613,11 @@ main at `a925cb3`, when the bench mounted both (v1 was removed later, at 2.0.0).
 
 ### A.2 In the browser
 
-The bench of §10 on a table of 1,000,000 rows and 8 columns (integers, strings, floats, dates, booleans), v1 with
-its `ArraySource` and v2 with `vastgrid-js`'s memory engine in the page or in a Web Worker; ranges are those of
+The bench of §10 on a table of 1,000,000 rows and 8 columns (integers, strings, floats, dates, booleans), 0.1 with
+its `ArraySource` and 0.2 with `vastgrid-js`'s memory engine in the page or in a Web Worker; ranges are those of
 the last four runs.
 
-| Measure | v1 | v2 | v2, engine in a worker |
+| Measure | 0.1 | 0.2 | 0.2, engine in a worker |
 | --- | ---: | ---: | ---: |
 | From mount to the first rows on screen | 46–65 ms | 43–49 ms | 36–49 ms |
 | React commits per arrow key | 1 | 1 | 1 |
@@ -630,7 +630,7 @@ the last four runs.
 | JavaScript heap of the page | 190 MB | 202 MB | 10 MB |
 
 Both draw on a canvas and keep scrolling out of React, so both scroll without dropping frames and commit once per
-key on this screen. v2 sorts six times faster, and with its engine in a worker the page never stops while a million
+key on this screen. 0.2 sorts six times faster, and with its engine in a worker the page never stops while a million
 rows are sorted. The accessibility rows render each row as a component of its own, so that a key renders again only
 the rows whose selection changed (§6.4).
 
@@ -644,6 +644,6 @@ the rows whose selection changed (§6.4).
   dates with a regular expression and an array per date. It now checks the values it reads (a column whole before
   it sorts or sums it), and dates and times are read character by character (215 ms to 22 ms for a million dates):
   opening the table takes 4 ms.
-- Vite 8 turns `light-dark()` into variables that need a `color-scheme` declaration (Lightning CSS); v1's styles
-  have none, so in such a build every color of the canvas is invalid and it draws black. v2's styles declare
+- Vite 8 turns `light-dark()` into variables that need a `color-scheme` declaration (Lightning CSS); 0.1's styles
+  have none, so in such a build every color of the canvas is invalid and it draws black. 0.2's styles declare
   `color-scheme` (§6.5), and the end-to-end tests check the canvas's pixels.

@@ -11,7 +11,7 @@ function alignOf(column: Column) {
 }
 
 /**
- * What the server sends in place of the canvas (§7 of v2-react.md): the first rows that the store has, from
+ * What the server sends in place of the canvas (§7 of react.md): the first rows that the store has, from
  * `initial`, as an HTML table that is readable before any script runs; without rows, an empty body that is
  * busy. It has the size of the body, so that the canvas replaces it without moving anything.
  */

@@ -1,4 +1,4 @@
-"""Checking a plan against a table's columns (docs/v2-spec.md §4.7): its form, its names, the types of its expressions
+"""Checking a plan against a table's columns (docs/spec.md §4.7): its form, its names, the types of its expressions
 (§3.7, §4.4, §4.5) and its limits (§4.9). The checked plan is a typed tree that engines run. Plans, columns and types
 are JSON (dicts); the checked tree is made of dataclasses."""
 

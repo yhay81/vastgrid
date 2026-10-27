@@ -4,7 +4,7 @@ The memory engine of [vastgrid](https://www.npmjs.com/package/vastgrid), for the
 a Web Worker. It opens tables of rows of typed JSON, Apache Arrow, CSV, TSV, JSON Lines and Excel files, and Parquet
 files (also over HTTP Range requests), and sorts, filters, searches, groups, pivots, derives formulas, writes cells
 and exports, answering the grid's messages
-([§8 of the specification](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#8-messages)).
+([§8 of the specification](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#8-messages)).
 
 ```sh
 npm install vastgrid vastgrid-js
@@ -137,7 +137,7 @@ The engine can also be called directly: `await engine.handle({ v: 2, id: 1, op: 
   read more at once fails with `load_failed` at `/maxBytes`, the table stays open, and its rows are read by row
   groups. A million rows of eight columns (13 MB of Parquet) open in
   30 ms into 2 MB, show their first rows in 0.2 seconds, and take 130 MB once every column is read
-  ([measurements](https://github.com/yhay81/vastgrid/blob/main/docs/v2-memory-engine-benchmark.md)).
+  ([measurements](https://github.com/yhay81/vastgrid/blob/main/docs/memory-engine-benchmark.md)).
 - A Parquet file's columns have the types that DuckDB reads them as, with DuckDB's names as `sourceType`: integers
   by their width and sign (UINTEGER as `bigint`, UBIGINT as `decimal(38, 0)`), FLOAT and DOUBLE, decimals,
   BOOLEAN, DATE, TIME, timestamps of their unit (`timestamptz` when adjusted to UTC), INTERVAL, UUID, VARCHAR and
@@ -209,4 +209,4 @@ DuckDB engine's tests compare this engine's answers with its own on a generated 
 (`packages/duckdb-engine/test/memory-engine.test.ts`), with the table as a Parquet file that DuckDB wrote too: the
 same columns, and the same answers. Another test serves a Parquet file over HTTP and counts the bytes that opening,
 reading rows and sorting read. `packages/duckdb-engine/bench/memory-engine.ts` measures a million rows as CSV and as
-Parquet ([results](https://github.com/yhay81/vastgrid/blob/main/docs/v2-memory-engine-benchmark.md)).
+Parquet ([results](https://github.com/yhay81/vastgrid/blob/main/docs/memory-engine-benchmark.md)).

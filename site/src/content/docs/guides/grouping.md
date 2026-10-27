@@ -18,7 +18,7 @@ engine and the DuckDB engine do all three, with the same results.
 - The toolbar's **Group** menu edits the grouping, and each change applies at once:
   - "Group by": the keys, in order, with "Add a column…".
   - "Measures": each a measure and a column ("(rows)" to count rows), with Add. A measure is named after them as
-    v1 named it: `sum(qty)`, `count(*)`.
+    0.1 named it: `sum(qty)`, `count(*)`.
   - "Columns from values of", when the engine pivots: the columns whose values become columns
     (see [Pivots](#pivots)).
 - The grouped view has the keys, then one column per measure. Sort it by any of them as any view; the search box
@@ -50,8 +50,8 @@ Quantile is set from code; the Group menu offers the others.
   are one.
 - Without a sort, groups are in the order of their keys, ascending, with the empty string before null.
 
-The rules are in [§3.8](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#38-aggregates) and
-[§3.9](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#39-groups) of the specification, and the same
+The rules are in [§3.8](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#38-aggregates) and
+[§3.9](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#39-groups) of the specification, and the same
 in every engine.
 
 ## Pivots

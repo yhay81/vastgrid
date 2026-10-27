@@ -1,9 +1,9 @@
-# Where vastgrid v2 opens files
+# Where vastgrid 0.2 opens files
 
 [日本語](entries.ja.md)
 
-vastgrid v2 opens huge CSV, Parquet and Excel files, and DataFrames, in six places. Each shows the same grid,
-`DataGrid` of `vastgrid` (docs/v2-react.md), with the same document, session and commands (docs/v2-spec.md §5,
+vastgrid 0.2 opens huge CSV, Parquet and Excel files, and DataFrames, in six places. Each shows the same grid,
+`DataGrid` of `vastgrid` (docs/react.md), with the same document, session and commands (docs/spec.md §5,
 §6), and talks to its engine with the same messages (§8). What differs is the engine, how the messages travel, and
 what the host does with written cells: each engine answers the capabilities of its host (§8.2), and none is made to
 save as the others do.
@@ -58,7 +58,7 @@ since it was read is not saved over (§7.6). Written cells that are not saved st
 | MCP App | add `npx -y vastgrid-mcp <folder>` to the host's MCP servers |
 | Notebook | `pip install vastgrid` (Python 3.11 or later; JupyterLab 4 or Notebook 7) |
 
-Before 2.0.0 is released, the pre-releases are `vastgrid@next` (and the other npm packages at `@next`), `pip
+Before 0.2.0 is released, the pre-releases are `vastgrid@next` (and the other npm packages at `@next`), `pip
 install --pre vastgrid`, and the `.vsix` files of the GitHub release. From a clone of the repository, `npm install`
 and `npm run build`, then: `npm run dev -w vastgrid-site` for the page, `node packages/cli/dist/cli.js` and
 `node packages/mcp/dist/cli.js` for the commands, `code --extensionDevelopmentPath="$PWD/packages/vscode"
@@ -73,7 +73,7 @@ and what they showed of it:
 
 - **Transports.** `workerTransport` takes anything with `postMessage` and message events (`WorkerLike`), not only a
   Web Worker: VS Code's webview and the notebook's widget carry the messages over their own channels with it
-  (v2-react.md §4.4). The CLI uses `httpTransport`, and the MCP App implements `Transport` over its tools.
+  (react.md §4.4). The CLI uses `httpTransport`, and the MCP App implements `Transport` over its tools.
 - **Capabilities.** The grid offers what the engine answers it can do: the Save button and ⌘S only with
   `capabilities.save` (the command line with `--save`), exports in the formats of `capabilities.export`, written as
   its `delivery` says. VS Code saves itself and answers `save` false to its webview, so that its dirty state follows

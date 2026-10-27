@@ -1,4 +1,4 @@
-/** The commands of the plan (docs/v2-spec.md §6.2): sort keys, filters, search, derived columns and groups. */
+/** The commands of the plan (docs/spec.md §6.2): sort keys, filters, search, derived columns and groups. */
 import { checkPlan } from "../check.js";
 import type { Expr, Plan, Search, SortKey } from "../plan.js";
 import { columnsOf, joinParts, partsOf } from "../state.js";

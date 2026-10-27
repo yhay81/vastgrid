@@ -124,7 +124,7 @@ export function registerVastgrid(server: McpServer, options: VastgridToolsOption
       description:
         "Opens a CSV, TSV, Parquet, JSON Lines or Excel file of the allowed folders in a grid that the person sees " +
         "and works in. Files of any size open: DuckDB reads them on the server. Gives the grid's id, its columns and " +
-        "its state. `document` (§5.1 of the vastgrid v2 specification) sets the view to start with: its plan " +
+        "its state. `document` (§5.1 of the vastgrid 0.2 specification) sets the view to start with: its plan " +
         "(filters, sort, groups, derived columns) and its columns (widths, pins, formats).",
       inputSchema: z.object({
         file: z.string().min(1).max(4096).describe("The file: a path, absolute or in the first allowed folder."),
@@ -176,7 +176,7 @@ export function registerVastgrid(server: McpServer, options: VastgridToolsOption
     {
       title: "Change a grid",
       description:
-        "Applies a command of the vastgrid v2 specification (§6) to a grid, as the person's keys and menus do: " +
+        "Applies a command of the vastgrid 0.2 specification (§6) to a grid, as the person's keys and menus do: " +
         "the person sees the result at once. A command is { command, …arguments }, for example " +
         '{ "command": "sort.set", "keys": [{ "column": "price", "direction": "desc" }] }, ' +
         '{ "command": "filter.column", "column": "region", "where": { "fn": "eq", "args": [{ "col": "region" }, { "lit": "EU" }] } }, ' +
@@ -203,7 +203,7 @@ export function registerVastgrid(server: McpServer, options: VastgridToolsOption
     "vastgrid_message",
     {
       title: "vastgrid request",
-      description: "Carries a request of the vastgrid v2 specification (§8) from the App to the engine.",
+      description: "Carries a request of the vastgrid 0.2 specification (§8) from the App to the engine.",
       inputSchema: z.object({
         grid: z.string().max(100),
         client: z.string().max(100),

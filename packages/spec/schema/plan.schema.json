@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://vastgrid.yhay81.com/schema/v2/plan.schema.json",
-  "title": "vastgrid v2 plan",
-  "description": "A view of a table (docs/v2-spec.md §4.1). This schema checks the JSON form only; names, types and limits are checked against the table (§4.7).",
+  "$id": "https://vastgrid.yhay81.com/schema/0.2/plan.schema.json",
+  "title": "vastgrid 0.2 plan",
+  "description": "A view of a table (docs/spec.md §4.1). This schema checks the JSON form only; names, types and limits are checked against the table (§4.7).",
   "type": "object",
   "additionalProperties": false,
   "properties": {

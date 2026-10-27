@@ -1,5 +1,5 @@
 /**
- * One command being applied (docs/v2-spec.md §6.1): the document and the session it changes, the selection in
+ * One command being applied (docs/spec.md §6.1): the document and the session it changes, the selection in
  * display positions, and the rows that the core has read.
  */
 import { checkPlan, planOptions } from "../check.js";

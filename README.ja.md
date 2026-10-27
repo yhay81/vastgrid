@@ -72,7 +72,7 @@ grid.to_pandas(view=True)              # グリッドのビュー（編集した
 npm install vastgrid vastgrid-js
 ```
 
-2.0.0 を公開するまでは、パッケージは npm の `next` タグのプレリリースで、`npm install vastgrid` では v1（0.1.x）が入ります。
+0.2.0 を公開するまでは、パッケージは npm の `next` タグのプレリリースで、`npm install vastgrid` では 0.1.x が入ります。
 この版は `npm install vastgrid@next vastgrid-js@next` で試せます（ほかのパッケージも `@next` を付けます）。
 
 ```tsx
@@ -106,7 +106,7 @@ export function Orders() {
 ```
 
 行は型の付いた JSON で、decimal は桁をそのまま保つ文字列、日付は `YYYY-MM-DD` で書きます
-（[v2-spec.md §2.2](docs/v2-spec.md#22-values-in-json)）。メモリーエンジンは Apache Arrow と、CSV・TSV・JSON Lines・Excel・
+（[spec.md §2.2](docs/spec.md#22-values-in-json)）。メモリーエンジンは Apache Arrow と、CSV・TSV・JSON Lines・Excel・
 Parquet のファイルも受け取ります（[vastgrid-js](packages/js)）。`editable: true` ならセルを書き込めます。書き込んだ値は `rows`
 とは別に持ち、どのビュー・集計・書き出しもそれを読みます。
 
@@ -138,7 +138,7 @@ function ClearSort() {
 }
 ```
 
-props・フック・コマンドは [docs/v2-react.md](docs/v2-react.md) と [docs/v2-spec.md](docs/v2-spec.md) の §5〜§6 にあります。
+props・フック・コマンドは [docs/react.md](docs/react.md) と [docs/spec.md](docs/spec.md) の §5〜§6 にあります。
 
 ## 大きなファイル
 
@@ -198,11 +198,11 @@ export function Sales() {
 
 この受け口は Express・Connect・Vite のミドルウェアとしても使えます。`serverFunctionTransport` なら React の Server Function を通して
 電文を運び、`vastgrid/server` の `readInitialView` はサーバーで最初の行を読みます。グリッドはそれを HTML で送り、ブラウザーで
-キャンバスに引き継ぎます（v2-react.md §7）。
+キャンバスに引き継ぎます（react.md §7）。
 
 ## 編集と保存
 
-エンジンが守ること（[v2-spec.md §7](docs/v2-spec.md#7-editing)）:
+エンジンが守ること（[spec.md §7](docs/spec.md#7-editing)）:
 
 - **型での検証。** 入力や貼り付けの文字は、桁を失わずに列の型で読みます（数値の列に貼り付けた `1,234.5` は 1234.5）。型に合わない
   値ではエディターを開いたままにし、理由を示します。
@@ -291,7 +291,7 @@ npm のパッケージは同じ版でそろえて公開します。`vastgrid` �
 ## 性能
 
 Apple M2 Pro で測りました。Chromium で、メモリーエンジンの 100 万行 × 8 列の表を示したグリッドの結果です
-（[v2-react.md 付録 A](docs/v2-react.md#a2-in-the-browser)。`e2e/budgets.spec.ts` が予算と照らして確かめます）。
+（[react.md 付録 A](docs/react.md#a2-in-the-browser)。`e2e/budgets.spec.ts` が予算と照らして確かめます）。
 
 | 項目 | 時間 |
 | --- | ---: |
@@ -303,7 +303,7 @@ Apple M2 Pro で測りました。Chromium で、メモリーエンジンの 100
 | その間のページの最長のタスク: エンジンがページの中・Web Worker | 81〜93 ms・なし |
 
 Node.js 24・DuckDB 2.0・8 スレッド・メモリー 2 GB の DuckDB エンジンで、HTTP を含めず、8 列の 256 行ずつ読んだ 3 回の中央値です
-（[v2-views-benchmark.md](docs/v2-views-benchmark.md)）。
+（[views-benchmark.md](docs/views-benchmark.md)）。
 
 | ファイルとビュー | 最初の行 | ビューの任意の位置の 256 行（中央値） |
 | --- | ---: | ---: |
@@ -314,16 +314,16 @@ Node.js 24・DuckDB 2.0・8 スレッド・メモリー 2 GB の DuckDB エン�
 
 編集した 2 セルの保存は、6 MB の CSV で約 60 ms、65 MB で 0.3 秒です。並べ替えた 100 万行のビューの書き出しは CSV で 0.3 秒、
 Parquet で 0.1 秒です。メモリーエンジンは 100 万行の Parquet を 26 ms、CSV を約 1 秒で開きます
-（[v2-memory-engine-benchmark.md](docs/v2-memory-engine-benchmark.md)）。ページが最初に読み込む `DataGrid` とメモリーエンジンは
+（[memory-engine-benchmark.md](docs/memory-engine-benchmark.md)）。ページが最初に読み込む `DataGrid` とメモリーエンジンは
 gzip で約 100 KB で、メニューとパネルは開いたときに読み込みます。
 
-## v1 からの移行
+## 0.1 からの移行
 
-vastgrid 2.0 は 0.1.x を置き換えます。グリッドは v1 の source ではなくエンジンとトランスポートから読み、状態はドキュメントと
+vastgrid 0.2 は 0.1.x を置き換えます。グリッドは 0.1 の source ではなくエンジンとトランスポートから読み、状態はドキュメントと
 セッションになり、別々だった core と browser のパッケージはなくなりました（その中身は `vastgrid/core` と `vastgrid-js` にあります）。
 `vastgrid-duckdb` はこの版の DuckDB エンジン（`DuckDBEngine`、`createHttpHandler`）になりました。`vastgrid-spec` の
-`migrateGridState` は v1 で保存したグリッドの状態を読み、計算式は v1 の書き方のまま使えます。v1 の機能がどこに移ったかは
-[docs/v2-from-v1.md](docs/v2-from-v1.md) にまとめています。
+`migrateGridState` は 0.1 で保存したグリッドの状態を読み、計算式は 0.1 の書き方のまま使えます。0.1 の機能がどこに移ったかは
+[docs/migrating-from-0.1.md](docs/migrating-from-0.1.md) にまとめています。
 
 ## ドキュメント
 
@@ -331,8 +331,8 @@ vastgrid 2.0 は 0.1.x を置き換えます。グリッドは v1 の source で
 - [docs/entries.ja.md](docs/entries.ja.md): React コンポーネント・ブラウザーのページ・コマンドライン・VS Code・MCP App・
   ノートブックの比較。それぞれの詳細は [cli.md](docs/cli.md)・[vscode.md](docs/vscode.md)・[mcp-app.md](docs/mcp-app.md)・
   [notebook.md](docs/notebook.md)（英語）。
-- [docs/v2-react.md](docs/v2-react.md): React の API（ストア、トランスポート、`DataGrid`、フック、描画、サーバーでの描画）。
-- [docs/v2-spec.md](docs/v2-spec.md): 値と型、プラン、ドキュメントとセッション、コマンド、編集と保存、グリッドとエンジンの間の電文。
+- [docs/react.md](docs/react.md): React の API（ストア、トランスポート、`DataGrid`、フック、描画、サーバーでの描画）。
+- [docs/spec.md](docs/spec.md): 値と型、プラン、ドキュメントとセッション、コマンド、編集と保存、グリッドとエンジンの間の電文。
 - [CHANGELOG.md](CHANGELOG.md)。今後の予定は [GitHub の issue](https://github.com/yhay81/vastgrid/issues) で管理しています。
 
 ## 開発

@@ -2,7 +2,7 @@
   "name": "vastgrid-files-example",
   "private": true,
   "type": "module",
-  "description": "v2's grid on files of a folder, read by the DuckDB engine over HTTP: `?file=sales-100000000.parquet`.",
+  "description": "0.2's grid on files of a folder, read by the DuckDB engine over HTTP: `?file=sales-100000000.parquet`.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

@@ -1,5 +1,5 @@
 /**
- * Views of plans that derive, filter or group (docs/v2-spec.md §4.1): derive, where, aggregate, having, then
+ * Views of plans that derive, filter or group (docs/spec.md §4.1): derive, where, aggregate, having, then
  * sort. The engine loads this module with the first such plan, so that pages whose plans only sort do not load
  * it, and gives it the functions of order that those pages load anyway.
  */

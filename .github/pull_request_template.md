@@ -10,6 +10,6 @@
       or an entry point changed
 - [ ] Tests for the change, or a note on why there are none
 - [ ] A line under "Unreleased" in CHANGELOG.md, for changes that users notice
-- [ ] README.md, README.ja.md and the site updated if the API changed; docs/v2-spec.md or docs/v2-react.md if a
+- [ ] README.md, README.ja.md and the site updated if the API changed; docs/spec.md or docs/react.md if a
       specification changed
 - [ ] New texts in both English and Japanese

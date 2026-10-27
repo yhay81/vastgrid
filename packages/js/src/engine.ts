@@ -1,5 +1,5 @@
 /**
- * An engine over tables in memory (docs/v2-spec.md §8): it answers the requests of §8.2 about tables that
+ * An engine over tables in memory (docs/spec.md §8): it answers the requests of §8.2 about tables that
  * its host gives it as arrays of typed JSON values (§2.2), as Arrow, as text files or as Parquet files, with views in
  * the order of §3.3.
  */

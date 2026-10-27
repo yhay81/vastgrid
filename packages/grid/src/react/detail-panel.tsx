@@ -19,7 +19,7 @@ export function DetailPanel({
   onClosed: () => void;
 }) {
   const open = useGridSelector((snapshot) => snapshot.session.detail?.open === true);
-  // Closed, it follows no rows: scrolling commits nothing (§10 of v2-react.md).
+  // Closed, it follows no rows: scrolling commits nothing (§10 of react.md).
   return open ? <OpenDetail Custom={custom} onClosed={onClosed} /> : null;
 }
 

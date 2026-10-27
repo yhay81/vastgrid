@@ -1,4 +1,4 @@
-/** The commands of the selection, scrolling and checked rows (docs/v2-spec.md §6.4). */
+/** The commands of the selection, scrolling and checked rows (docs/spec.md §6.4). */
 import { canonicalJson } from "../hash.js";
 import type { Plan } from "../plan.js";
 import { type Checked, checkRowKey, partsOf, sameKey } from "../state.js";

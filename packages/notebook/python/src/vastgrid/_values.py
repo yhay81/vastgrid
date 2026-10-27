@@ -1,4 +1,4 @@
-"""Types and values (docs/v2-spec.md §2): how JSON writes them, their text form, and literals. Values are JSON as
+"""Types and values (docs/spec.md §2): how JSON writes them, their text form, and literals. Values are JSON as
 Python decodes it; where JavaScript's numbers and strings differ from Python's, the functions here read them as
 JavaScript does, so that both implementations agree: `1.0` is the integer 1, numbers print as `String(number)`, and
 strings are sequences of code points in which a surrogate pair is one."""

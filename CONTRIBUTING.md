@@ -38,7 +38,7 @@ so edits to them apply without building. `npm run bench` writes the large files 
 | `packages/notebook` | The Python package `vastgrid` (PyPI) and the grid's module it carries. |
 | `examples` | `bench` (the performance budgets) and `files` (the DuckDB engine over HTTP on a folder of files). |
 | `site` | The documentation and the demo at https://vastgrid.yhay81.com (Astro Starlight), in English and Japanese. |
-| `docs` | The specifications ([v2-spec.md](docs/v2-spec.md), [v2-react.md](docs/v2-react.md)), the entry points, benchmarks, and [v2-from-v1.md](docs/v2-from-v1.md) for migrating from v1. |
+| `docs` | The specifications ([spec.md](docs/spec.md), [react.md](docs/react.md)), the entry points, benchmarks, and [migrating-from-0.1.md](docs/migrating-from-0.1.md) for migrating from 0.1. |
 | `scripts` | Build and release helpers. |
 
 ## Checks
@@ -67,7 +67,7 @@ engine and compares their answers. After a change to either engine or to `vastgr
 ## Guidelines
 
 - The specifications come first: a change to the document, the session, a command, a plan or a message
-  changes [docs/v2-spec.md](docs/v2-spec.md) (or [docs/v2-react.md](docs/v2-react.md) for the React package),
+  changes [docs/spec.md](docs/spec.md) (or [docs/react.md](docs/react.md) for the React package),
   `vastgrid-spec` and its conformance corpus together, and both engines answer the corpus.
 - `vastgrid-spec`, `vastgrid-js` and `vastgrid/core` use neither React nor Node.js APIs; keep it that way.
 - In `vastgrid-sql` and `vastgrid-duckdb`, SQL is generated and values are always parameters, and files are
@@ -89,21 +89,21 @@ Every package is released together, with one version, from one tag:
 | Package | Where |
 | --- | --- |
 | `vastgrid-spec`, `vastgrid-sql`, `vastgrid-js`, `vastgrid`, `vastgrid-duckdb`, `vastgrid-cli`, `vastgrid-mcp` | npm, in that order, each depending on the others at exactly the same version |
-| `vastgrid` (Python, `packages/notebook/python`) | PyPI; a pre-release `2.0.0-next.3` is `2.0.0rc3` there |
+| `vastgrid` (Python, `packages/notebook/python`) | PyPI; a pre-release `0.2.0-next.3` is `0.2.0rc3` there |
 | `vastgrid-vscode` | the VS Code Marketplace, for versions that are not pre-releases; every version's `.vsix` files are on the GitHub release |
 
-v2 starts at 2.0.0, after v1's 0.1.x. Pre-releases are `2.0.0-next.1`, `2.0.0-next.2`, …, published under npm's
+0.2 starts at 0.2.0, after 0.1.x. Pre-releases are `0.2.0-next.1`, `0.2.0-next.2`, …, published under npm's
 `next` tag, so that `npm install vastgrid` keeps giving the last stable version and `npm install vastgrid@next`
-gives the pre-release. After 2.0.0, a release that breaks compatibility raises the major version, one that adds
-features the minor version, and others the patch version.
+gives the pre-release. After 0.2.0 and until 1.0.0, a release that breaks compatibility raises the minor version
+(0.3.0), and others the patch version.
 
 On an up-to-date `main` with a clean tree, where CI passed:
 
 ```sh
-node scripts/release.mjs version 2.0.0-next.1
-git commit -am "Release 2.0.0-next.1"
-git tag -s v2.0.0-next.1 -m "vastgrid 2.0.0-next.1"
-git push origin main v2.0.0-next.1
+node scripts/release.mjs version 0.2.0-next.1
+git commit -am "Release 0.2.0-next.1"
+git tag -s v0.2.0-next.1 -m "vastgrid 0.2.0-next.1"
+git push origin main v0.2.0-next.1
 ```
 
 The first command sets the version of every package (the npm packages, the extension, the Python package) and of
@@ -119,25 +119,25 @@ pre-release, the extension to the Marketplace; and creates the GitHub release wi
 notes and the `.vsix` and Python files attached, marked as a pre-release for `-next` versions. If a run fails
 half-way, run it again: versions already published are skipped.
 
-### From pre-releases to 2.0.0
+### From pre-releases to 0.2.0
 
-1. Publish `2.0.0-next.1` as above, and try it as users will: `npm install vastgrid@next vastgrid-js@next`, `npx
+1. Publish `0.2.0-next.1` as above, and try it as users will: `npm install vastgrid@next vastgrid-js@next`, `npx
    vastgrid-cli@next <file>`, `npx vastgrid-mcp@next` in an MCP host, the `.vsix` from the GitHub release in VS
    Code, and `pip install --pre vastgrid` in a notebook. Fix what is found and publish `-next.2`, and so on.
-2. When a pre-release has had no fix for a while, release the same commit's code as `2.0.0`: `node
-   scripts/release.mjs version 2.0.0`, which moves "Unreleased" to `## 2.0.0`. Move the notes of the
-   pre-releases' sections into it first, so that the 2.0.0 notes say everything since v1, and set the status of
-   [v2-spec.md](docs/v2-spec.md) and [v2-react.md](docs/v2-react.md) from draft to 2.0.
-3. After 2.0.0 is on npm, mark v1's packages that v2 has no package for as deprecated, pointing at the
+2. When a pre-release has had no fix for a while, release the same commit's code as `0.2.0`: `node
+   scripts/release.mjs version 0.2.0`, which moves "Unreleased" to `## 0.2.0`. Move the notes of the
+   pre-releases' sections into it first, so that the 0.2.0 notes say everything since 0.1, and set the status of
+   [spec.md](docs/spec.md) and [react.md](docs/react.md) from draft to 0.2.
+3. After 0.2.0 is on npm, mark 0.1's packages that 0.2 has no package for as deprecated, pointing at the
    migration guide:
 
    ```sh
-   npm deprecate vastgrid-core "vastgrid 2 replaces vastgrid-core: see https://github.com/yhay81/vastgrid/blob/main/docs/v2-from-v1.md"
-   npm deprecate vastgrid-browser "vastgrid 2 replaces vastgrid-browser with vastgrid-js: see https://github.com/yhay81/vastgrid/blob/main/docs/v2-from-v1.md"
-   npm deprecate "vastgrid-duckdb@<2" "vastgrid-duckdb 2 is the DuckDB engine of vastgrid 2: see https://github.com/yhay81/vastgrid/blob/main/docs/v2-from-v1.md"
+   npm deprecate vastgrid-core "vastgrid 0.2 replaces vastgrid-core: see https://github.com/yhay81/vastgrid/blob/main/docs/migrating-from-0.1.md"
+   npm deprecate vastgrid-browser "vastgrid 0.2 replaces vastgrid-browser with vastgrid-js: see https://github.com/yhay81/vastgrid/blob/main/docs/migrating-from-0.1.md"
+   npm deprecate "vastgrid-duckdb@<0.2" "vastgrid-duckdb 0.2 is the DuckDB engine of vastgrid 0.2: see https://github.com/yhay81/vastgrid/blob/main/docs/migrating-from-0.1.md"
    ```
 
-   v1's `vastgrid` and `vastgrid-duckdb` 0.1.x stay installable; their names continue at 2.0.0.
+   0.1's `vastgrid` and `vastgrid-duckdb` 0.1.x stay installable; their names continue at 0.2.0.
 
 After a release that fixes a vulnerability, publish its GitHub security advisory with the fixed versions
 (see [SECURITY.md](SECURITY.md)).

@@ -1,5 +1,5 @@
 /**
- * Columns of Arrow tables (docs/v2-spec.md §2.3): their values by row as typed JSON, read when they are asked for,
+ * Columns of Arrow tables (docs/spec.md §2.3): their values by row as typed JSON, read when they are asked for,
  * and the numbers that hold the values of fixed width. A module of its own, `vastgrid-spec/columns`, which the
  * package's main module does not export, so that bundles that read only blocks do not load it.
  */

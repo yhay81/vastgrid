@@ -3,8 +3,8 @@
 `vastgrid` (`packages/notebook/python`, a Python package) shows a table of any size in vastgrid's grid in a Jupyter
 notebook: a pandas or Polars DataFrame, a PyArrow table, a DuckDB relation, or a CSV, TSV, Parquet, JSON, JSON Lines
 or Excel file. DuckDB reads it in the kernel; the grid in the cell's output is an [anywidget](https://anywidget.dev)
-module (`packages/notebook/widget`) that shows `DataGrid` (v2-react.md) and reads blocks of rows over the widget's
-messages, a row range at a time, as it does from any engine (docs/v2-spec.md §8). The notebook gets the edited table
+module (`packages/notebook/widget`) that shows `DataGrid` (react.md) and reads blocks of rows over the widget's
+messages, a row range at a time, as it does from any engine (docs/spec.md §8). The notebook gets the edited table
 back as a DataFrame, or exports it.
 
 ## Running it
@@ -13,7 +13,7 @@ back as a DataFrame, or exports it.
 pip install vastgrid
 ```
 
-Before 2.0.0 is released, the pre-release is `pip install --pre vastgrid`. From this repository, build the grid's
+Before 0.2.0 is released, the pre-release is `pip install --pre vastgrid`. From this repository, build the grid's
 module into the package first: `npm install`, `npm run build`, then `pip install ./packages/notebook/python`.
 
 It needs Python 3.11 or later, `anywidget` 0.10 or later, `duckdb` 2.0 or later and `pyarrow` 19 or later;
@@ -92,7 +92,7 @@ menu writes the same files and the browser downloads them: the engine answers ex
 
 The page sends the requests of §8.1 as the widget's custom messages, and the kernel answers them, and sends the
 engine's events, the same way. The bytes of blocks and exports travel as the messages' buffers: the message holds
-`{"vastgrid:buffer": <index>}` in their place. The page's side is `workerTransport` (v2-react.md §4.4) over a port
+`{"vastgrid:buffer": <index>}` in their place. The page's side is `workerTransport` (react.md §4.4) over a port
 that carries these messages; the kernel answers each request on a thread of its own, so that cells run meanwhile and
 `cancel` interrupts a running request.
 
@@ -124,7 +124,7 @@ TypeScript tests skip without it.
 
 ## Not yet
 
-- The package is not on PyPI; publishing it belongs to switching from v1 to v2
+- The package is not on PyPI; publishing it belongs to switching from 0.1 to 0.2
   ([#45](https://github.com/yhay81/vastgrid/issues/45)).
 - `.xlsm` workbooks do not open.
 - The grid does not save into the file it read: export the table, or write it from the DataFrame.

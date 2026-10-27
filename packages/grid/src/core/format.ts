@@ -1,5 +1,5 @@
 /**
- * How cells show their values with the `number` and `date` of a column's format (§5.1 of the specification): v1's
+ * How cells show their values with the `number` and `date` of a column's format (§5.1 of the specification): 0.1's
  * `NumberFormat` and `DateFormat`, ported from `vastgrid-core` (Intl formats, with the exact digits of decimals,
  * and date patterns such as `yyyy/MM/dd`).
  */

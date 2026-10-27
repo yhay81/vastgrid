@@ -47,9 +47,9 @@ description: 行ごとに式で計算する列、式の書き方と関数、コ�
 | 文字列 | `LENGTH`、`LOWER`、`UPPER`、`TRIM`、`LEFT`、`RIGHT`、`SUBSTR(s, 開始, 長さ)`（1 から数える）、`REPLACE`、`CONTAINS`、`STARTS_WITH`、`ENDS_WITH`、`TEXT(x)`、`CONCAT` |
 | 日付 | `TO_DATE(文字列)`、`TO_TIMESTAMP(文字列)`、`YEAR`、`MONTH`、`DAY`、`HOUR`、`MINUTE`、`SECOND`、`ISODOW`（月曜が 1）、`DATE_DIFF_DAYS(開始, 終了)`、`ADD_DAYS(d, n)` |
 
-関数が受け取る型は仕様の [§4.4](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#44-functions) のとおりで、それ以外の組み合わせは型のエラーとしてメニューに表示します。日付を受け取るところでは、日付として読める引用符付きの文字列は日付になります（`YEAR('2024-03-01')`、`day > '2024-01-01'`）。timestamp を受け取るところの日付は、その日の 0 時です。
+関数が受け取る型は仕様の [§4.4](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#44-functions) のとおりで、それ以外の組み合わせは型のエラーとしてメニューに表示します。日付を受け取るところでは、日付として読める引用符付きの文字列は日付になります（`YEAR('2024-03-01')`、`day > '2024-01-01'`）。timestamp を受け取るところの日付は、その日の 0 時です。
 
-v1 の関数名も使えます。`CEILING`、`LEN`、`MID`、`STARTSWITH`、`ENDSWITH`、`ADDDAYS`、`ISBLANK`、`WEEKDAY`、`DAYS(終了, 開始)`、値の `MIN` と `MAX`、引数 2 つの `IF`、`VALUE`、`DATE`、`DATETIME` です。グリッドはこれらを上の表の名前で表示します。
+0.1 の関数名も使えます。`CEILING`、`LEN`、`MID`、`STARTSWITH`、`ENDSWITH`、`ADDDAYS`、`ISBLANK`、`WEEKDAY`、`DAYS(終了, 開始)`、値の `MIN` と `MAX`、引数 2 つの `IF`、`VALUE`、`DATE`、`DATETIME` です。グリッドはこれらを上の表の名前で表示します。
 
 ## コードから使う
 
@@ -88,12 +88,12 @@ const document: GridDocument = {
 };
 ```
 
-## 上限と v1 との違い
+## 上限と 0.1 との違い
 
 - 式は 100,000 文字、入れ子は 64 段までです。1 つのプランの計算列は 32 個までです。
-- v1 はすべての数値を 64 ビットの浮動小数点数で計算していました。v2 は正確な数値を正確なまま扱うので、`ROUND(0.285, 2)` は `0.28` ではなく `0.29`、decimal の `1.50` の 2 倍は `3.00` です。
+- 0.1 はすべての数値を 64 ビットの浮動小数点数で計算していました。0.2 は正確な数値を正確なまま扱うので、`ROUND(0.285, 2)` は `0.28` ではなく `0.29`、decimal の `1.50` の 2 倍は `3.00` です。
 - 文字列にしたときの形は仕様に従います。`TEXT(TRUE)` は `true`、浮動小数点数の 5 は `5.0`、`TEXT(0.00001)` は `0.00001` です。
 - `LEFT('abc', NULL)` は空の文字列ではなく null です。`VALUE('1_000')` や、文字列 `2024-1-5` の `DATE` も null です。
 - `ROUND(x, 400)` と `NULL = NULL` は型のエラーになります。
 
-違いの一覧は [§4.11](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#411-formulas) にあります。
+違いの一覧は [§4.11](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#411-formulas) にあります。

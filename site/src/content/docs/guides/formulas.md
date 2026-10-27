@@ -61,11 +61,11 @@ that fails for a row, such as a division by zero or `SQRT(-1)`, gives null for t
 | Dates | `TO_DATE(text)`, `TO_TIMESTAMP(text)`, `YEAR`, `MONTH`, `DAY`, `HOUR`, `MINUTE`, `SECOND`, `ISODOW` (Monday is 1), `DATE_DIFF_DAYS(start, end)`, `ADD_DAYS(d, n)` |
 
 Each function takes the types in
-[§4.4](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#44-functions) of the specification; another
+[§4.4](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#44-functions) of the specification; another
 mixture is a type error, shown in the menu. Where a function takes a date, text in quotes that reads as one is a
 date (`YEAR('2024-03-01')`, `day > '2024-01-01'`), and a date where a timestamp is taken is its midnight.
 
-v1's names work too: `CEILING`, `LEN`, `MID`, `STARTSWITH`, `ENDSWITH`, `ADDDAYS`, `ISBLANK`, `WEEKDAY`,
+0.1's names work too: `CEILING`, `LEN`, `MID`, `STARTSWITH`, `ENDSWITH`, `ADDDAYS`, `ISBLANK`, `WEEKDAY`,
 `DAYS(end, start)`, `MIN` and `MAX` of values, `IF` with two arguments, `VALUE`, `DATE` and `DATETIME`. The grid
 shows them with the names above.
 
@@ -110,14 +110,14 @@ const document: GridDocument = {
 };
 ```
 
-## Limits and differences from v1
+## Limits and differences from 0.1
 
 - A formula has at most 100,000 characters and 64 levels of nesting, and a plan at most 32 formula columns.
-- v1 computed every number as a 64-bit float. v2 keeps exact numbers exact, so `ROUND(0.285, 2)` is `0.29`, not
+- 0.1 computed every number as a 64-bit float. 0.2 keeps exact numbers exact, so `ROUND(0.285, 2)` is `0.29`, not
   `0.28`, and a decimal of `1.50` times 2 is `3.00`.
 - Text forms follow the specification: `TEXT(TRUE)` is `true`, a float of five is `5.0`, `TEXT(0.00001)` is
   `0.00001`.
 - `LEFT('abc', NULL)` is null, not empty text; `VALUE('1_000')` and `DATE` of `2024-1-5` text are null.
 - `ROUND(x, 400)` and `NULL = NULL` are refused as type errors.
 
-The full list is in [§4.11](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#411-formulas).
+The full list is in [§4.11](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#411-formulas).

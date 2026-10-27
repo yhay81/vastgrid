@@ -1,5 +1,5 @@
 /**
- * The size of v2's `DataGrid` with an in-memory table (v2-react.md §10 and Appendix A): bundled from the packages'
+ * The size of 0.2's `DataGrid` with an in-memory table (react.md §10 and Appendix A): bundled from the packages'
  * builds with esbuild, minified, React left out, code split where the grid loads parts when they are needed. Prints
  * the size of what a page loads first and of everything, minified and with gzip, and fails over the budget.
  * Run after `npm run build`: `npm run size`. CI runs it.
@@ -10,7 +10,7 @@ import path from "node:path";
 import { gzipSync } from "node:zlib";
 import { build } from "esbuild";
 
-/** The first load's budget, with gzip (v2-react.md §10). */
+/** The first load's budget, with gzip (react.md §10). */
 const BUDGET = 200 * 1024;
 const directory = mkdtempSync(path.join(tmpdir(), "vastgrid-size-"));
 const entry = path.join(directory, "entry.js");

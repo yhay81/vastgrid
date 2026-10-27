@@ -59,7 +59,7 @@ interface StatusBarProps {
 }
 
 /**
- * The last write that failed (§6.6 of v2-react.md): why, with Retry (Overwrite after a conflict) while the table
+ * The last write that failed (§6.6 of react.md): why, with Retry (Overwrite after a conflict) while the table
  * has the revision its rows were read at, and Discard. Both give the focus back to the grid.
  */
 function FailedWrite({ announce, onDone }: StatusBarProps) {

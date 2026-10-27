@@ -14,7 +14,7 @@ updates:
       - dependency-name: "@types/vscode"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       # React Compiler (babel-plugin-react-compiler) works on Babel 7's syntax tree: with Babel 8 it gives up on
-      # components whose props have defaults, which fails the build (v2-react.md §11). ESLint 10 needs
+      # components whose props have defaults, which fails the build (react.md §11). ESLint 10 needs
       # @babel/eslint-parser 8, which needs Babel 8. Both wait for a React Compiler that supports Babel 8.
       - dependency-name: "@babel/*"
         update-types: ["version-update:semver-major"]

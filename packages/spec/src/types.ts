@@ -1,5 +1,5 @@
 /**
- * Types and values (docs/v2-spec.md §2). Values are written as JSON and read with the type of their column
+ * Types and values (docs/spec.md §2). Values are written as JSON and read with the type of their column
  * or literal (§2.2).
  */
 

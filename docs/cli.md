@@ -2,7 +2,7 @@
 
 `vastgrid` (`packages/cli`, the package `vastgrid-cli`) opens CSV, TSV, Parquet, JSON Lines and Excel files of any
 size in a grid in the browser with one command. DuckDB reads the files in the command, in Node.js, and the page
-reads blocks of rows from it over HTTP (docs/v2-spec.md §8.8), as the grid does on any server. Nothing leaves the
+reads blocks of rows from it over HTTP (docs/spec.md §8.8), as the grid does on any server. Nothing leaves the
 computer: the server answers on 127.0.0.1 only, to the browser that opened the address it printed.
 
 ## Running it
@@ -14,7 +14,7 @@ npx vastgrid-cli sales.parquet
 npx vastgrid-cli --save data/
 ```
 
-Installed with `npm install --global vastgrid-cli`, the command is `vastgrid`. Before 2.0.0 is released, the
+Installed with `npm install --global vastgrid-cli`, the command is `vastgrid`. Before 0.2.0 is released, the
 pre-release is `npx vastgrid-cli@next`. In this repository, `npm run build` and then `node packages/cli/dist/cli.js`.
 
 ```text

@@ -1,5 +1,5 @@
 /**
- * The views of a table (docs/v2-spec.md §4, §8.2): a plan compiled to SQL by `vastgrid-sql` over the table's
+ * The views of a table (docs/spec.md §4, §8.2): a plan compiled to SQL by `vastgrid-sql` over the table's
  * relation, and what `rows`, `locate`, `summarize` and `find` read from it.
  *
  * A view without `where`, `aggregate` and `sort` holds every row in row ID order, so its positions are the row IDs:

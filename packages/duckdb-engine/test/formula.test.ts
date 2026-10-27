@@ -1,6 +1,6 @@
 /**
- * Formulas (docs/v2-spec.md §4.11) evaluated by DuckDB: v1's formula tests, whose results v2 keeps or changes as
- * §4.11 lists, and a v1 state with formulas migrated (§5.6) and read through the engine.
+ * Formulas (docs/spec.md §4.11) evaluated by DuckDB: 0.1's formula tests, whose results 0.2 keeps or changes as
+ * §4.11 lists, and a 0.1 state with formulas migrated (§5.6) and read through the engine.
  */
 import assert from "node:assert/strict";
 import path from "node:path";
@@ -13,7 +13,7 @@ let context: Awaited<ReturnType<typeof setUp>>;
 let client: Client;
 let info: TableInfo;
 
-// v1's test row, as a Parquet file.
+// 0.1's test row, as a Parquet file.
 before(async () => {
   context = await setUp();
   client = context.client;
@@ -44,7 +44,7 @@ async function value(formula: string, columns: Column[] = info.columns): Promise
   return rows.rows[0][0];
 }
 
-test("v1's formulas give v1's results", async () => {
+test("0.1's formulas give 0.1's results", async () => {
   const same: [string, JsonValue][] = [
     ["qty * price", 7.5],
     ["qty * price + 1 - 2 / 4", 8],
@@ -91,7 +91,7 @@ test("v1's formulas give v1's results", async () => {
   for (const [formula, expected] of same) assert.deepEqual(await value(formula), expected, formula);
 });
 
-test("v1's formulas whose results v2 changes (§4.11)", async () => {
+test("0.1's formulas whose results 0.2 changes (§4.11)", async () => {
   const changed: [string, JsonValue, JsonValue][] = [
     // Exact numbers stay exact: decimals are written as text, and 0.285 is not 0.28499999…
     ["[unit price] * 2", "3.00", 3],
@@ -107,13 +107,13 @@ test("v1's formulas whose results v2 changes (§4.11)", async () => {
     ["VALUE(' 1_000.5 ')", null, 1000.5],
   ];
   for (const [formula, expected] of changed) assert.deepEqual(await value(formula), expected, formula);
-  // Formulas that v2 refuses: round's digits are from −18 to 18, and two nulls have no type to compare.
+  // Formulas that 0.2 refuses: round's digits are from −18 to 18, and two nulls have no type to compare.
   for (const formula of ["ROUND(123.456, 400)", "NULL = NULL"]) {
     assert.throws(() => compileFormula(formula, info.columns), FormulaError, formula);
   }
 });
 
-test("a v1 state with formulas migrates and reads through the engine", async () => {
+test("a 0.1 state with formulas migrates and reads through the engine", async () => {
   const { document, dropped } = migrateGridState(
     {
       version: 1,

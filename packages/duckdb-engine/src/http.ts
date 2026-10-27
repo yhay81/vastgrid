@@ -1,5 +1,5 @@
 /**
- * The engine over HTTP (docs/v2-spec.md §8.8): a request is a `POST` of its JSON; the response is JSON with blocks
+ * The engine over HTTP (docs/spec.md §8.8): a request is a `POST` of its JSON; the response is JSON with blocks
  * in base64, or, to a client that accepts `application/vnd.vastgrid.v2+arrow`, that type with its block attached;
  * errors have the statuses of §8.7; events go out as Server-Sent Events; the files of exports without a target are
  * downloaded with a `GET` of `<path>/exports/<name>`.

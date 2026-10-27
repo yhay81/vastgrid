@@ -1,5 +1,5 @@
 /**
- * Views of groups (docs/v2-spec.md §3.8, §3.9, §4.5, §4.6) beyond the conformance corpus: reading, locating and
+ * Views of groups (docs/spec.md §3.8, §3.9, §4.5, §4.6) beyond the conformance corpus: reading, locating and
  * summarizing groups, the names of a pivot's columns, sums beyond their type, writes, and a million rows.
  */
 import assert from "node:assert/strict";

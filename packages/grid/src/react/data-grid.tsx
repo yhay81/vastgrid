@@ -28,11 +28,11 @@ import { StaticRows } from "./static-rows.js";
 import { StatusBar } from "./status-bar.js";
 import { Toolbar } from "./toolbar.js";
 
-// The find bar and the detail panel load when they first open (§10 of v2-react.md).
+// The find bar and the detail panel load when they first open (§10 of react.md).
 const FindBar = lazy(() => import("./find-bar.js").then((module) => ({ default: module.FindBar })));
 const DetailPanel = lazy(() => import("./detail-panel.js").then((module) => ({ default: module.DetailPanel })));
 
-/** What `ref` gives (§5.5 of v2-react.md). */
+/** What `ref` gives (§5.5 of react.md). */
 export interface DataGridHandle {
   store: GridStore;
   dispatch: GridStore["dispatch"];
@@ -115,7 +115,7 @@ const browserLocale = () => navigator.language;
 const serverLocale = () => undefined;
 
 /**
- * A data grid for tables of any size (§5.1 of v2-react.md): it draws on a canvas, reads rows through a
+ * A data grid for tables of any size (§5.1 of react.md): it draws on a canvas, reads rows through a
  * transport as you scroll, and is driven by the commands of the specification.
  */
 export function DataGrid(props: DataGridProps) {
@@ -280,7 +280,7 @@ function useGridSelectorOf<T>(store: GridStore, selector: (snapshot: ReturnType<
   return useSyncExternalStore(store.subscribe, read, read);
 }
 
-/** Gives a store to the hooks of the components inside (§5.4 of v2-react.md). */
+/** Gives a store to the hooks of the components inside (§5.4 of react.md). */
 export function GridProvider({ store, children }: { store: GridStore; children?: ReactNode }) {
   return <GridContext value={store}>{children}</GridContext>;
 }

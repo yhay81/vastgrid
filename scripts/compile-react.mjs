@@ -1,5 +1,5 @@
 // Compiles a React package's sources with React Compiler into its dist folder, after `tsc -b` wrote the types
-// (v2-react.md §11), so that apps get the compiler's memoization without configuring it. Fails when the
+// (react.md §11), so that apps get the compiler's memoization without configuring it. Fails when the
 // compiler gives up on any function: what ships is what the tests checked.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";

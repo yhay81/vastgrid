@@ -1,5 +1,5 @@
 /**
- * Commands (docs/v2-spec.md §6): a command applied to a state with a context gives a new state, the requests
+ * Commands (docs/spec.md §6): a command applied to a state with a context gives a new state, the requests
  * that the core then sends (§8.2, without `v`, `id` and `table`) and, for some commands, an output. The same
  * state, command and context give the same result, and a command that fails changes nothing. The commands of
  * each section of §6 are in `commands/`, and the command being applied in `commands/run.ts`.

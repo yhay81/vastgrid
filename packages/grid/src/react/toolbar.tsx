@@ -7,7 +7,7 @@ import { ExportMenu } from "./export-menu.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 import { ToolbarPopover } from "./toolbar-popover.js";
 
-// The menus load when they first open (§10 of v2-react.md).
+// The menus load when they first open (§10 of react.md).
 const ConditionsPanel = lazy(() => import("./conditions-menu.js"));
 const ColumnsPanel = lazy(() => import("./columns-menu.js"));
 const GroupPanel = lazy(() => import("./group-menu.js"));

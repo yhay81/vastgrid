@@ -58,7 +58,7 @@ DuckDB エンジンで書き込んだ値は表に属します。同じエンジ�
 | `uuid` | 16 進数 32 桁。ハイフンはあってもなくてもよい |
 | `interval`・`binary` | 入力できない |
 
-文字の前後の空白は、文字列以外では取り除きます。空の文字はどの型でも null です。貼り付ける数値は、カンマの桁区切り（`1,234.5`）があっても読めます。規則の全体は仕様の [§7.3](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#73-reading-typed-text) にあります。
+文字の前後の空白は、文字列以外では取り除きます。空の文字はどの型でも null です。貼り付ける数値は、カンマの桁区切り（`1,234.5`）があっても読めます。規則の全体は仕様の [§7.3](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#73-reading-typed-text) にあります。
 
 ## 貼り付け・消去・埋める
 
@@ -97,7 +97,7 @@ DuckDB エンジンで書き込んだ値は表に属します。同じエンジ�
 
 ## ディスク上のファイルが変わったとき
 
-DuckDB エンジンは、開いている表のファイルを見張っています（[§7.6](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#76-files-that-change-on-disk)）。
+DuckDB エンジンは、開いている表のファイルを見張っています（[§7.6](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#76-files-that-change-on-disk)）。
 
 - 書き込んだセルのない表は読み直し、グリッドはいまのファイルを表示します。履歴の行のキーは古いリビジョンのものなので、履歴は空になります。
 - 書き込んだセルのある表は、編集を失わないよう読み込んだときのまま残します。ステータスバーに「ディスク上のファイルが変更されました。未保存の編集は残っています。」と表示し、保存はできなくなります。ツールバーの **編集を破棄して再読み込み** で、編集を捨てていまのファイルを読み込みます（`store.reload()`）。

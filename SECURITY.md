@@ -3,8 +3,8 @@
 ## Supported versions
 
 Security fixes are released as a new version of every package (they are released together); earlier versions
-are not patched. Use the latest version. v1 (0.1.x, with `vastgrid-core` and `vastgrid-browser`) gets no fixes:
-see [From v1 to v2](docs/v2-from-v1.md).
+are not patched. Use the latest version. 0.1.x (with `vastgrid-core` and `vastgrid-browser`) gets no fixes:
+see [From 0.1 to 0.2](docs/migrating-from-0.1.md).
 
 ## Reporting a vulnerability
 

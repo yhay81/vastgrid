@@ -169,7 +169,7 @@ export function httpTransport(url: string, options: HttpTransportOptions = {}): 
 
 /**
  * Carries messages through a Server Function (`"use server"`), which passes each to an engine on the server and
- * returns its answer (§7 of v2-react.md). The function receives what any client may send: it checks every
+ * returns its answer (§7 of react.md). The function receives what any client may send: it checks every
  * request with `checkRequest`, as engines do.
  */
 export function serverFunctionTransport(action: (request: RequestMessage) => Promise<unknown>): Transport {

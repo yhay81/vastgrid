@@ -1,5 +1,5 @@
 /**
- * Evaluating expressions (docs/v2-spec.md §3, §4.3, §4.4) for the rows of a table: a checked expression becomes a
+ * Evaluating expressions (docs/spec.md §3, §4.3, §4.4) for the rows of a table: a checked expression becomes a
  * function of a row ID that gives its value as typed JSON (§2.2) of the expression's type.
  *
  * Exact numbers are computed as integers scaled by their scale, with BigInt where a JavaScript number would not

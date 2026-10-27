@@ -1,5 +1,5 @@
 /**
- * Plans as DuckDB SQL (docs/v2-spec.md §3, §4). The SQL implements the specification, not DuckDB's defaults
+ * Plans as DuckDB SQL (docs/spec.md §3, §4). The SQL implements the specification, not DuckDB's defaults
  * where they differ. Values are always parameters and names are always quoted. The session's time zone must
  * be UTC, so that the text form of `timestamptz` values is the one of §2.4.
  */

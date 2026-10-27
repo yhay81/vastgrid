@@ -20,7 +20,7 @@ description: 表示の設定を JSON のドキュメントとして保存・復�
 }
 ```
 
-すべてのメンバーは[仕様の §5](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#5-state) にあります。型は `GridDocument` と `GridSession` で、`vastgrid` からエクスポートしています。
+すべてのメンバーは[仕様の §5](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#5-state) にあります。型は `GridDocument` と `GridSession` で、`vastgrid` からエクスポートしています。
 
 ## 表示の設定を残す
 
@@ -46,9 +46,9 @@ export function Orders() {
 }
 ```
 
-`defaultDocument` を読むのは、グリッドがストアを作るときです。その後はグリッドがドキュメントを持ち、変わるたびに `onDocumentChange` を呼びます。保存した後に列が変わった表でドキュメントを開くと、ドキュメントは直されます。表に合わなくなった条件、グループ、並べ替えのキー、計算列を外し、残りはそのまま使います（[§5.5](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#55-repairing-a-document-for-a-table)）。
+`defaultDocument` を読むのは、グリッドがストアを作るときです。その後はグリッドがドキュメントを持ち、変わるたびに `onDocumentChange` を呼びます。保存した後に列が変わった表でドキュメントを開くと、ドキュメントは直されます。表に合わなくなった条件、グループ、並べ替えのキー、計算列を外し、残りはそのまま使います（[§5.5](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#55-repairing-a-document-for-a-table)）。
 
-ドキュメントはバージョン 2 です。vastgrid 0.1 で保存した状態はそのままでは読めません。`vastgrid-spec` の `migrateGridState` でドキュメントにします（[v1 からの移行](/ja/migrating-from-v1/)）。
+ドキュメントはバージョン 2 です。vastgrid 0.1 で保存した状態はそのままでは読めません。`vastgrid-spec` の `migrateGridState` でドキュメントにします（[0.1 からの移行](/ja/migrating-from-0-1/)）。
 
 ## 表示の設定を制御する
 

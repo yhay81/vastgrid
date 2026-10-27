@@ -1,4 +1,4 @@
-"""Plans and expressions (docs/v2-spec.md §4): their limits and errors. Plans themselves stay JSON: dicts and lists."""
+"""Plans and expressions (docs/spec.md §4): their limits and errors. Plans themselves stay JSON: dicts and lists."""
 
 from __future__ import annotations
 

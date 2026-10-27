@@ -1,5 +1,5 @@
 /**
- * The summary of cells that `summarize` answers (docs/v2-spec.md §8.2): the cells that are not blank, and the
+ * The summary of cells that `summarize` answers (docs/spec.md §8.2): the cells that are not blank, and the
  * sum, minimum, maximum and average of the finite numbers among them, as floats.
  *
  * Exact numbers (integers, bigints, decimals) are summed exactly and rounded once; floats are summed with

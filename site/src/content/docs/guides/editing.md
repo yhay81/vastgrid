@@ -68,7 +68,7 @@ again and the status bar says why (see [When a write fails](#when-a-write-fails)
 
 White space around the text is removed, except for strings, and empty text is null for every type. Pasted numbers
 may group their digits with commas (`1,234.5`). The full rules are in
-[§7.3](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#73-reading-typed-text) of the specification.
+[§7.3](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#73-reading-typed-text) of the specification.
 
 ## Pasting, clearing and filling
 
@@ -128,7 +128,7 @@ hold the written values.
 ## Files that change on disk
 
 The DuckDB engine follows the files of open tables
-([§7.6](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#76-files-that-change-on-disk)):
+([§7.6](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#76-files-that-change-on-disk)):
 
 - A table without written cells is read again, and the grid shows the file as it is now. The history is emptied,
   since its row keys belong to the old revision.

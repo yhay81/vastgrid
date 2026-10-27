@@ -1,5 +1,5 @@
 /**
- * DuckDB's types as the logical types of docs/v2-spec.md §2.1, and how the engine reads their values as typed
+ * DuckDB's types as the logical types of docs/spec.md §2.1, and how the engine reads their values as typed
  * JSON (§2.2).
  */
 import {

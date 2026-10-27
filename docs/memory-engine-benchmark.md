@@ -1,4 +1,4 @@
-# v2 memory engine: measurements / メモリーエンジンの計測
+# 0.2 memory engine: measurements / メモリーエンジンの計測
 
 2026-10-27, Issue [#43](https://github.com/yhay81/vastgrid/issues/43). The memory engine of `vastgrid-js`, which
 runs in the page or in a Web Worker, measured on the CSV and Parquet files of the benchmarks.
@@ -61,13 +61,13 @@ CSV file's columns hold their text as UTF-8 bytes.
 ### In a page
 
 `e2e/budgets.spec.ts` measures the grid of `examples/bench` on a million rows in Chromium (Playwright), with the
-memory engine in the page and in a Web Worker (`workerEngine` of `vastgrid`), and v1 for comparison:
+memory engine in the page and in a Web Worker (`workerEngine` of `vastgrid`), and 0.1 for comparison:
 
 | | sort of a million rows | longest task of the page while it sorts | first rows | heap of the page |
 | --- | ---: | ---: | ---: | ---: |
-| v2, engine in a Web Worker | 209 ms | 0 ms | 57 ms | 10 MB |
-| v2, engine in the page | 96 ms | 92 ms | — | 202 MB |
-| v1 | 527 ms | 521 ms | — | — |
+| 0.2, engine in a Web Worker | 209 ms | 0 ms | 57 ms | 10 MB |
+| 0.2, engine in the page | 96 ms | 92 ms | — | 202 MB |
+| 0.1 | 527 ms | 521 ms | — | — |
 
 With the engine in a worker, the page draws and scrolls while the worker sorts, and holds none of the table.
 

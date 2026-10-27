@@ -413,7 +413,7 @@
   color: var(--vg-error-fg);
 }
 
-/* The accessibility rows (§6.4 of v2-react.md): over the cells they stand for, drawn by the canvas instead. */
+/* The accessibility rows (§6.4 of react.md): over the cells they stand for, drawn by the canvas instead. */
 
 .vg-a11y {
   position: absolute;
@@ -431,7 +431,7 @@
   white-space: nowrap;
 }
 
-/* The first rows as HTML, which the server sends in place of the canvas (§7 of v2-react.md). */
+/* The first rows as HTML, which the server sends in place of the canvas (§7 of react.md). */
 
 .vg-static {
   width: 100%;

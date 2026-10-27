@@ -73,7 +73,7 @@ the column names.
 - The column menu (the arrow at the right of a header, a right click on the header, or Alt + ↓) has Sort
   ascending, Sort descending, Then sort ascending, Then sort descending and Clear sort.
 - Blank values (null and empty text) come last in both directions, and rows that are equal keep the table's order.
-  Every engine sorts the same way ([§3.3](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#33-order)).
+  Every engine sorts the same way ([§3.3](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#33-order)).
 
 The engine sorts the whole table, not the rows on screen. The DuckDB engine shows the first 1,000 rows of a sort of
 a million rows or more at once and sorts the rest meanwhile: the status bar says "Reading the view…" until the

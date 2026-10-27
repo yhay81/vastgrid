@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://vastgrid.yhay81.com/schema/v2/commands.schema.json",
-  "title": "vastgrid v2 command cases",
-  "description": "A file of the command corpus (docs/v2-spec.md §10): states, contexts, and cases that apply commands. Commands in cases are not checked by this schema, so that cases can test commands that fail; $defs/command gives the form of every command of §6.",
+  "$id": "https://vastgrid.yhay81.com/schema/0.2/commands.schema.json",
+  "title": "vastgrid 0.2 command cases",
+  "description": "A file of the command corpus (docs/spec.md §10): states, contexts, and cases that apply commands. Commands in cases are not checked by this schema, so that cases can test commands that fail; $defs/command gives the form of every command of §6.",
   "type": "object",
   "additionalProperties": false,
   "required": ["cases"],

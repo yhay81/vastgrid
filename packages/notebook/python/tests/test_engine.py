@@ -1,4 +1,4 @@
-"""The engine's operations beyond the plan corpus (docs/v2-spec.md §8): the requests of the message corpus, the files
+"""The engine's operations beyond the plan corpus (docs/spec.md §8): the requests of the message corpus, the files
 and DataFrames it reads, closing, reloading and cancelling, and what it refuses. The answers of its plans, writes,
 finds, summaries and exports are compared with vastgrid-js's in packages/notebook/test/engines.test.ts."""
 

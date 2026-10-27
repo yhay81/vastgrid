@@ -32,7 +32,7 @@ export function sameColumns(a: readonly Column[], b: readonly Column[]) {
 export interface ReadHost {
   /** The view on screen. */
   current(): View | null;
-  /** The view being made, which comes on screen once its first rows are read (§4.2 of v2-react.md). */
+  /** The view being made, which comes on screen once its first rows are read (§4.2 of react.md). */
   next(): View | null;
   client(): GridClient | null;
   table(): TableInfo | null;
@@ -51,7 +51,7 @@ export interface ReadHost {
 }
 
 /**
- * Reads the rows of a store's views into their caches (§4.1 of v2-react.md): those on screen and a page around
+ * Reads the rows of a store's views into their caches (§4.1 of react.md): those on screen and a page around
  * them, within a budget of bytes, and those that the store asks for. Rows that come for a view that is no longer
  * on screen or being made are dropped.
  */

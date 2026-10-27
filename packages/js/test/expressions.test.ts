@@ -1,5 +1,5 @@
 /**
- * Plans that derive, filter and search (docs/v2-spec.md §3, §4.1, §4.4) beyond the conformance corpus: views
+ * Plans that derive, filter and search (docs/spec.md §3, §4.1, §4.4) beyond the conformance corpus: views
  * whose rows are a part of the table, read, sorted, summarized and located, and values that JavaScript
  * compares or maps otherwise than the specification.
  */

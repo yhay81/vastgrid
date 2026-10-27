@@ -1,4 +1,4 @@
-/** The commands of editing (docs/v2-spec.md §6.5): the editor, the writes of cells, and undo and redo. */
+/** The commands of editing (docs/spec.md §6.5): the editor, the writes of cells, and undo and redo. */
 import { parseHtmlTable, parseTsv } from "../clipboard.js";
 import { editText, readCellText } from "../input.js";
 import type { HistoryUpdate } from "../state.js";

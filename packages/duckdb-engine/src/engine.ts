@@ -1,5 +1,5 @@
 /**
- * The DuckDB engine of vastgrid v2 (docs/v2-spec.md §8): answers request messages with responses whose blocks are
+ * The DuckDB engine of vastgrid 0.2 (docs/spec.md §8): answers request messages with responses whose blocks are
  * bytes (the structured encoding of §8.8), and sends events (§8.5) to its subscribers.
  */
 import { randomBytes } from "node:crypto";

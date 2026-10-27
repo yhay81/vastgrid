@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { benchDirectory } from "../packages/duckdb-engine/bench/files.ts";
 
 /**
- * The toolbar's formula menu (docs/v2-spec.md §4.11) on a file read by the DuckDB engine over HTTP (`examples/files`):
+ * The toolbar's formula menu (docs/spec.md §4.11) on a file read by the DuckDB engine over HTTP (`examples/files`):
  * formulas are added, refused with the characters at fault, renamed and removed through the derive commands.
  */
 const site = "http://127.0.0.1:5183";

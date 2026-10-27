@@ -1,5 +1,5 @@
 /**
- * Tables given as text files (CSV, TSV and JSON Lines): the types their columns are read as (docs/v2-spec.md
+ * Tables given as text files (CSV, TSV and JSON Lines): the types their columns are read as (docs/spec.md
  * §2.1, §2.2), quoting, line breaks, byte order marks, empty fields, text that is not UTF-8, slices of any size, and
  * a large generated file that answers as the same table given as rows.
  */

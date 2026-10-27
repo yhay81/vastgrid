@@ -43,7 +43,7 @@ export function Orders() {
 
 ## 列と値
 
-列は `{ name, type }` に、その型のメンバーを加えたものです（[§2.1](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#21-logical-types)）。表示用の型名 `sourceType`（`DECIMAL(12,2)` など）と `readOnly` も付けられます。行は列ごとに 1 つの値を持つ配列で、値は型付きの JSON で書きます（[§2.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#22-values-in-json)）。値がないときは `null` です。
+列は `{ name, type }` に、その型のメンバーを加えたものです（[§2.1](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#21-logical-types)）。表示用の型名 `sourceType`（`DECIMAL(12,2)` など）と `readOnly` も付けられます。行は列ごとに 1 つの値を持つ配列で、値は型付きの JSON で書きます（[§2.2](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#22-values-in-json)）。値がないときは `null` です。
 
 | 型 | メンバー | `rows` での値 |
 | --- | --- | --- |
@@ -84,7 +84,7 @@ const engine = memoryEngine({
 
 ## エンジンができること
 
-エンジンは、自分が評価できるものをケイパビリティとして伝えます（[§4.10](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#410-capabilities)）。グリッドが出す機能はその範囲に限られます。メモリエンジンのケイパビリティは、`vastgrid-js` の `MEMORY_CAPABILITIES` にあります。
+エンジンは、自分が評価できるものをケイパビリティとして伝えます（[§4.10](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#410-capabilities)）。グリッドが出す機能はその範囲に限られます。メモリエンジンのケイパビリティは、`vastgrid-js` の `MEMORY_CAPABILITIES` にあります。
 
 | ケイパビリティ | メモリエンジン |
 | --- | --- |
@@ -99,7 +99,7 @@ const engine = memoryEngine({
 
 ## どれくらいの大きさまで
 
-2026-10-24 に Apple M2 Pro の Chromium 156 で、100 万行 × 8 列の表を使って計測しました（[v2-react.md の付録 A.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-react.md#a2-in-the-browser)）。
+2026-10-24 に Apple M2 Pro の Chromium 156 で、100 万行 × 8 列の表を使って計測しました（[react.md の付録 A.2](https://github.com/yhay81/vastgrid/blob/main/docs/react.md#a2-in-the-browser)）。
 
 | | エンジンをページで | エンジンを Web Worker で |
 | --- | ---: | ---: |
@@ -136,7 +136,7 @@ export function Orders({ orders }: { orders: MemoryTable }) {
 }
 ```
 
-新しいストアは、直前のドキュメントから始まります。ドキュメントは列を名前で指し、新しい表に合わせて直されます（[§5.5](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#55-repairing-a-document-for-a-table)）。なくなった列での並べ替えや絞り込みは外れます。ドキュメントを常に自分の状態として持ちたいとき（URL に入れるなど）は、代わりに `document` と `onDocumentChange` で制御してください（[状態](/ja/guides/state/)）。
+新しいストアは、直前のドキュメントから始まります。ドキュメントは列を名前で指し、新しい表に合わせて直されます（[§5.5](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#55-repairing-a-document-for-a-table)）。なくなった列での並べ替えや絞り込みは外れます。ドキュメントを常に自分の状態として持ちたいとき（URL に入れるなど）は、代わりに `document` と `onDocumentChange` で制御してください（[状態](/ja/guides/state/)）。
 
 ## デモの表
 

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://vastgrid.yhay81.com/schema/v2/messages.schema.json",
-  "title": "vastgrid v2 messages",
-  "description": "Requests, responses, errors and events (docs/v2-spec.md §8), with blocks in the text or attached encoding (§8.8). A response's result has the form of $defs/result/<op> for the operation of its request. Plans are checked against the table by the engine (§4.7); checkRequest also checks the limits of §8 that a schema cannot (rows and cells of a request, code points of strings).",
+  "$id": "https://vastgrid.yhay81.com/schema/0.2/messages.schema.json",
+  "title": "vastgrid 0.2 messages",
+  "description": "Requests, responses, errors and events (docs/spec.md §8), with blocks in the text or attached encoding (§8.8). A response's result has the form of $defs/result/<op> for the operation of its request. Plans are checked against the table by the engine (§4.7); checkRequest also checks the limits of §8 that a schema cannot (rows and cells of a request, code points of strings).",
   "oneOf": [
     {
       "$ref": "#/$defs/request"

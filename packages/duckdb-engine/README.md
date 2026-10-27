@@ -3,7 +3,7 @@
 The DuckDB engine of [vastgrid](https://www.npmjs.com/package/vastgrid) for Node.js. It opens huge CSV, TSV, Parquet
 and JSON Lines files and Excel workbooks, writes their cells, saves CSV and TSV files with every byte that was not
 edited kept as it is, follows files that change on disk, and exports views. It answers the grid's messages
-([§8 of the specification](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#8-messages)) with Arrow
+([§8 of the specification](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#8-messages)) with Arrow
 blocks, over HTTP or in the same process.
 
 ```sh
@@ -138,4 +138,4 @@ are not a byte quota on the whole session folder; hosts that require one should 
 The repeatable sort/filter benchmark is
 [`bench/views.ts`](https://github.com/yhay81/vastgrid/blob/main/packages/duckdb-engine/bench/views.ts); its
 results and resource measurements are in
-[v2-views-benchmark.md](https://github.com/yhay81/vastgrid/blob/main/docs/v2-views-benchmark.md).
+[views-benchmark.md](https://github.com/yhay81/vastgrid/blob/main/docs/views-benchmark.md).

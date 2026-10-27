@@ -7,7 +7,7 @@ import { cell, row, writeWorkbook } from "../packages/duckdb-engine/test/xlsx-fi
 
 /**
  * The site's page that opens a file (site/src/components/open, playwright.config.ts): a file chosen or dropped is
- * read by v2's memory engine in a Web Worker, edited, exported, and the export opened again, with nothing sent to a
+ * read by 0.2's memory engine in a Web Worker, edited, exported, and the export opened again, with nothing sent to a
  * server.
  */
 const site = "http://127.0.0.1:5187";

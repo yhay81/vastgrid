@@ -17,7 +17,7 @@ export function Orders() {
 
 `DataGrid` draws a table on a canvas, reads rows through a transport as it scrolls, and does everything with the
 [commands](/reference/commands/) of the specification. It renders on the server too (the canvas only in the
-browser). [§5 of the React specification](https://github.com/yhay81/vastgrid/blob/main/docs/v2-react.md#5-components-and-hooks)
+browser). [§5 of the React specification](https://github.com/yhay81/vastgrid/blob/main/docs/react.md#5-components-and-hooks)
 is the source of this page.
 
 ## Props
@@ -40,10 +40,10 @@ given is not connected by the grid: make it with `useCreateGridStore`, which con
 
 | Prop | Type | Default | Description |
 | --- | --- | --- | --- |
-| `document` | `GridDocument` | | The view and its columns ([§5.1](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#51-document)), controlled. |
+| `document` | `GridDocument` | | The view and its columns ([§5.1](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#51-document)), controlled. |
 | `defaultDocument` | `GridDocument` | the empty document | The document to start with, uncontrolled. |
 | `onDocumentChange` | `(document: GridDocument) => void` | | Called with the document that a command makes. |
-| `session` | `GridSession` | | Where the person is ([§5.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#52-session)), controlled. |
+| `session` | `GridSession` | | Where the person is ([§5.2](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#52-session)), controlled. |
 | `defaultSession` | `GridSession` | the empty session | The session to start with, uncontrolled. |
 | `onSessionChange` | `(session: GridSession) => void` | | Called with the session that a command makes, on every move of the active cell. |
 | `initial` | `InitialView \| Promise<InitialView>` | | Rows read on the server ([`readInitialView`](/reference/core/#vastgridserver)), drawn in the first frame. A promise suspends the grid until it resolves, with a busy placeholder of the grid's size. |
@@ -108,7 +108,7 @@ See [Localization](/guides/localization/).
 
 ## Controlled and uncontrolled state
 
-[§5.2 of the React specification](https://github.com/yhay81/vastgrid/blob/main/docs/v2-react.md#52-controlled-and-uncontrolled-state).
+[§5.2 of the React specification](https://github.com/yhay81/vastgrid/blob/main/docs/react.md#52-controlled-and-uncontrolled-state).
 
 - `defaultDocument` and `defaultSession` give the state to start with; the grid then keeps it.
 - With `document` (or `session`), the grid shows the prop. A command reports the state the grid would have to

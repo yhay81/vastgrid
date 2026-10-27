@@ -4,7 +4,7 @@ import { defineConfig } from "@playwright/test";
 // e2e/cli.spec.ts writes its files into the folder that `vastgrid` lists, which is there before it starts.
 mkdirSync(".data/cli-e2e", { recursive: true });
 
-// The end-to-end tests and the performance budgets of v2-react.md §10, on the bench page built from the packages'
+// The end-to-end tests and the performance budgets of react.md §10, on the bench page built from the packages'
 // builds: `npm run build`, then `npm run e2e`, which builds the page before it runs the tests (a server already
 // running on the port serves the new build).
 export default defineConfig({
@@ -24,7 +24,7 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      // e2e/files.spec.ts: files of a folder in v2's grid, read by the DuckDB engine on this server.
+      // e2e/files.spec.ts: files of a folder in 0.2's grid, read by the DuckDB engine on this server.
       command: "npm run build -w vastgrid-files-example && npm run preview -w vastgrid-files-example",
       url: "http://127.0.0.1:5183",
       reuseExistingServer: !process.env.CI,
@@ -47,7 +47,7 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      // e2e/open.spec.ts: the site's page that opens a file in the browser, with v2's memory engine in a worker.
+      // e2e/open.spec.ts: the site's page that opens a file in the browser, with 0.2's memory engine in a worker.
       // Vite serves the built site: `astro preview` goes to the background when an agent runs it.
       command:
         "npm run build -w vastgrid-site && npx vite preview site --outDir dist --host 127.0.0.1 --port 5187 --strictPort",

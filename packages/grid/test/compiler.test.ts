@@ -9,7 +9,7 @@ import { compiled, compilerOptions, failures, sources } from "../../../scripts/r
 
 const folder = fileURLToPath(new URL("../src", import.meta.url));
 
-test("React Compiler compiles every component and hook of the package, giving up on none (v2-react.md §11)", () => {
+test("React Compiler compiles every component and hook of the package, giving up on none (react.md §11)", () => {
   const problems: string[] = [];
   const names: string[] = [];
   for (const file of sources(folder) as string[]) {

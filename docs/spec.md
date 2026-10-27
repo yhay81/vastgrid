@@ -1,8 +1,8 @@
-# vastgrid v2 specification
+# vastgrid 0.2 specification
 
-Status: **2.0-draft.2** (2026-10-24). This document is normative for the engines, the grid core and the
-surfaces of vastgrid v2. Why v2 is built this way is in
-[the reconsideration of the rebuild](rebuild-decision.ja.md) (Japanese); v1's protocol is
+Status: **0.2-draft.2** (2026-10-24). This document is normative for the engines, the grid core and the
+surfaces of vastgrid 0.2. Why 0.2 is built this way is in
+[the reconsideration of the rebuild](rebuild-decision.ja.md) (Japanese); 0.1's protocol is
 [protocol.md of v0.1.1](https://github.com/yhay81/vastgrid/blob/v0.1.1/docs/protocol.md). The conformance corpus in [`packages/spec/conformance`](../packages/spec/conformance)
 turns the rules of sections 2–8 into cases that every engine and every core runs.
 
@@ -22,7 +22,7 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 10. [Conformance](#10-conformance)
 11. [Versions and changes](#11-versions-and-changes)
 12. [Open questions](#12-open-questions)
-- [Appendix A. From v1](#appendix-a-from-v1)
+- [Appendix A. From 0.1](#appendix-a-from-01)
 - [Appendix B. DuckDB behavior this draft was checked against](#appendix-b-duckdb-behavior-this-draft-was-checked-against)
 
 ## 1. Scope and terms
@@ -40,7 +40,7 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 - **Core**: the grid without a screen: state (§5), commands (§6), the cache of blocks, the selection.
 - **Surface**: a place the grid runs: a React app, a VS Code editor, a notebook, an MCP App, a browser
   app, a CLI. The React package, which is the screen of every surface, is specified in
-  [v2-react.md](v2-react.md).
+  [react.md](react.md).
 - **Transport**: what carries messages (§8) between the core and an engine: a function call, a Web
   Worker, HTTP, an MCP tool call, a VS Code webview, a notebook comm.
 
@@ -223,7 +223,7 @@ in every engine.
   `toLowerCase` gives `"i̇"` and `"σας"`, and `toUpperCase` gives `"SS"`; JS engines MUST map code points
   one by one, with the conformance corpus as the reference.
 - Matching that ignores letter case is written with `lower` on both sides:
-  `contains(lower(x), lower("Tokyo"))`. Nothing else is folded in v2.0 (full-width and half-width forms,
+  `contains(lower(x), lower("Tokyo"))`. Nothing else is folded in 0.2 (full-width and half-width forms,
   kana, accents); it may come later as a capability.
 
 ### 3.5 Search
@@ -509,7 +509,7 @@ The core offers only what the engine reports, and a plan that uses anything else
 ### 4.11 Formulas
 
 People write derived columns as **formulas**, which compile to expressions; documents hold only the
-expressions (§5.1), and grids write them back as formulas to show and change them. The language is v1's,
+expressions (§5.1), and grids write them back as formulas to show and change them. The language is 0.1's,
 with every function of §4.4 and literals of every type. `vastgrid-spec` gives `compileFormula` and
 `formulaText`.
 
@@ -524,7 +524,7 @@ A formula is made of:
   `NULL`.
 - **Literals of a type**: the type's name, then its text form (§2.4) in quotes, or `NULL`:
   `DATE '2024-01-31'`, `TIMESTAMP '2024-01-31 12:00:00'`, `FLOAT 'nan'`, `UUID '…'`, `DATE NULL`. Dates and
-  timestamps may also be written as v1 read them: `2024-1-5`, with `T` or a space before the time, without
+  timestamps may also be written as 0.1 read them: `2024-1-5`, with `T` or a space before the time, without
   seconds.
 - **Operators**, from the lowest precedence; chains of `AND`, `OR` and `&` are one call, and the others
   group from the left:
@@ -541,11 +541,11 @@ A formula is made of:
 | `-` before a value | `neg` |
 
 - **Calls**, with names in any letter case: every function of §4.4 other than `and`, `or` and `not` by its
-  own name (`STARTS_WITH(name, 'A')`, `IN(region, 'east', 'west')`, `DATE_DIFF_DAYS(start, end)`), and v1's
-  functions. Those of v1 that have the name of a function of §4.4 (`ABS`, `ROUND`, `LEFT`, `TEXT`, `IF` with 3
+  own name (`STARTS_WITH(name, 'A')`, `IN(region, 'east', 'west')`, `DATE_DIFF_DAYS(start, end)`), and 0.1's
+  functions. Those of 0.1 that have the name of a function of §4.4 (`ABS`, `ROUND`, `LEFT`, `TEXT`, `IF` with 3
   arguments, …) are that function; the others are:
 
-| v1 | Expression |
+| 0.1 | Expression |
 | --- | --- |
 | `CEILING(x)`, `LEN(s)`, `MID(s, start, n)`, `STARTSWITH`, `ENDSWITH`, `ADDDAYS`, `ISBLANK` | `ceil`, `length`, `substr`, `starts_with`, `ends_with`, `add_days`, `is_blank` |
 | `WEEKDAY(d)` | `isodow(d)`: Monday is 1 |
@@ -556,13 +556,13 @@ A formula is made of:
 | `DATE(x)` | text in quotes: a date literal; text: `to_date(x)`; a timestamp: `to_date(left(text(x), 10))` |
 | `DATETIME(x)` | text in quotes: a timestamp literal; text: `to_timestamp(x)`; a date: `to_timestamp(concat(text(x), ' 00:00'))`; a timestamptz: `to_timestamp(replace(text(x), '+00', ''))` |
 
-Like v1, a formula converts some values where its functions take another kind (other mixtures are type errors,
+Like 0.1, a formula converts some values where its functions take another kind (other mixtures are type errors,
 §4.7):
 
 - Text in quotes beside a date, a timestamp or a timestamptz (compared, or in `least`, `greatest`,
   `coalesce`, `if` and `in`), or where a date or a timestamp is taken (`YEAR('2024-03-01')`), is a literal of
   that type when it reads as one.
-- Times, intervals, UUIDs and binary values, which v1 read as text, are taken through `text` where a string is
+- Times, intervals, UUIDs and binary values, which 0.1 read as text, are taken through `text` where a string is
   taken or compared with text.
 - A date where a time or a timestamp is taken (`HOUR(day)`) is its midnight, and a timestamptz where a date or a
   timestamp is taken is its timestamp in UTC, as with `DATETIME`.
@@ -578,10 +578,10 @@ A formula that does not compile has a reason of §4.7 (`syntax`, `unknown_column
 `arity`, `type`, `literal`, `limit` or `unsupported`) and the characters it is about. Formulas have at most
 100,000 characters and 64 levels of nesting, and their expressions the limits of §4.9.
 
-v1 computed every number as a 64-bit float. With the rules of §2–§4, some formulas give other results than in
-v1 (the tests of `vastgrid-duckdb` run v1's formula tests through DuckDB):
+0.1 computed every number as a 64-bit float. With the rules of §2–§4, some formulas give other results than in
+0.1 (the tests of `vastgrid-duckdb` run 0.1's formula tests through DuckDB):
 
-| Formula | v1 | v2 | Why |
+| Formula | 0.1 | 0.2 | Why |
 | --- | --- | --- | --- |
 | `ROUND(0.285, 2)`, `[unit price] * 2` (a decimal(10, 2) of 1.50) | 0.28, 3 | `"0.29"`, `"3.00"` | exact numbers stay exact (§3.7) |
 | `TRIM(name) & ok`, `TEXT(price * 2)`, `TEXT(0.00001)` | `…TRUE`, `5`, `1e-05` | `…true`, `5.0`, `0.00001` | the text forms of §2.4 |
@@ -649,12 +649,12 @@ A column setting is `{ "name" }` with any of:
 | `format` | below | the defaults | how values are shown |
 | `total` | `{ "fn", "p"? }`, a measure of §4.5 without `name` and `column` | no total | the column's value in the totals row: the measure of the column over the whole view |
 
-`format` has `label` (shown instead of the name), `number` and `date` (v1's `NumberFormat` and
+`format` has `label` (shown instead of the name), `number` and `date` (0.1's `NumberFormat` and
 `DateFormat`), `align` (`left`, `center` or `right`), `wrap` (`true` to wrap text), `copy` (`raw` or
 `formatted`, §6.6), and `styles`: rules tried in order, the first whose `when` is true giving `color`,
 `background` and `description` (what the colors mean, read by screen readers). `when` is an expression
 over the row (§4.3) without `search`; a rule whose `when` does not validate against the view is skipped.
-Functions (v1's `format` and `style` callbacks) are not state: they stay props of the React component and
+Functions (0.1's `format` and `style` callbacks) are not state: they stay props of the React component and
 win over `styles`.
 
 Two settings MUST NOT have the same name. Settings of names that the view does not have are kept, for when
@@ -788,24 +788,24 @@ tell the person.
 
 Readers MUST accept the versions they know and refuse the others (`invalid_state`, `reason: "version"`).
 
-v1's `GridState` (version 1) migrates into a document by these rules; Appendix A gives the expressions:
+0.1's `GridState` (version 1) migrates into a document by these rules; Appendix A gives the expressions:
 
-| v1 | v2 |
+| 0.1 | 0.2 |
 | --- | --- |
 | `schema` | `schema` |
 | `query.sort` (indexes into `schema`) | `plan.sort` (names) |
 | `query.search`, `query.filters`, `query.where` | `plan.where`: an `and` of the search, the filters and the parts of the tree (§6.2.1), in that order |
-| `formulas` | `plan.derive`, compiled by §4.11, each after the formulas it uses (in v1's order otherwise); a formula that does not compile, that uses itself through others or that has the name of a table column is not migrated, and neither is what uses it |
+| `formulas` | `plan.derive`, compiled by §4.11, each after the formulas it uses (in 0.1's order otherwise); a formula that does not compile, that uses itself through others or that has the name of a table column is not migrated, and neither is what uses it |
 | `columns[].{name, width, hidden, total}` | `columns[].{name, width, hidden, total: { fn }}` |
 | `frozenColumns`, `frozenRightColumns` | `pin: "left"` on the first n shown columns, `pin: "right"` on the last n |
-| `group.keys`, `group.aggregates`, `group.pivot` | `plan.aggregate`: measures named as v1 named their columns (`count(*)`, `sum(amount)`, then ` (2)`, …) |
+| `group.keys`, `group.aggregates`, `group.pivot` | `plan.aggregate`: measures named as 0.1 named their columns (`count(*)`, `sum(amount)`, then ` (2)`, …) |
 | `group.state.query.sort`; its filters and tree | `plan.sort` (`query.sort` is then not migrated); `plan.having` |
 | `group.state.query.search` | not migrated (a search applies to the table's rows, not to groups) |
 | `group.state.columns` | appended to `columns` for names not listed yet; its frozen columns are not migrated |
 
-A v1 query saved without a state (an object of `sort`, `filters`, `where` and `search` only) migrates as a
+A 0.1 query saved without a state (an object of `sort`, `filters`, `where` and `search` only) migrates as a
 state with that query. Indexes into `schema` name its columns; without `schema`, they are positions of the
-table's columns, then of the formulas. The migration reports the JSON Pointers (into the v1 state) of what it
+table's columns, then of the formulas. The migration reports the JSON Pointers (into the 0.1 state) of what it
 could not migrate, each with why, and the document is then repaired for the table (§5.5).
 
 ## 6. Commands
@@ -1442,10 +1442,10 @@ A plan case:
 
 ## 11. Versions and changes
 
-This document is `2.0-draft.2`. Until 2.0, drafts may change anything. After 2.0, minor versions add
+This document is `0.2-draft.2`. Until 0.2, drafts may change anything. After 0.2, patch versions add
 functions, measures, members and capabilities without changing the meaning of plans that were valid before,
-and changes of meaning need a major version. A change to sections 2–4 comes with conformance cases checked
-against DuckDB, and the JS engine follows in the same change.
+and changes of meaning need a new minor version (0.3) while the major version is 0. A change to sections 2–4
+comes with conformance cases checked against DuckDB, and the JS engine follows in the same change.
 
 ## 12. Open questions
 
@@ -1478,9 +1478,9 @@ Found while writing the memory engine of [`vastgrid-js`](../packages/js), which 
 - `planHash` needs `crypto.subtle`, which browsers give only to secure pages; a client can take hashes from the
   engine's answers (as `vastgrid` does), but an engine in such a page cannot make them.
 
-## Appendix A. From v1
+## Appendix A. From 0.1
 
-| v1 | v2 |
+| 0.1 | 0.2 |
 | --- | --- |
 | `TableSource.info` | `open`, `info` |
 | `ViewQuery.sort` (column indexes) | `plan.sort` (names) |
@@ -1503,11 +1503,11 @@ Found while writing the memory engine of [`vastgrid-js`](../packages/js), which 
 | `RowSelection` (`include`, `exclude` with `query`) | `checked` (`include`, `exclude` with `where`) |
 | `GridState` (version 1) | the document (version 2) and the session |
 
-v1's filters migrate into expressions as follows (§5.6), where `c` is `{ "col": name }` and a literal takes
+0.1's filters migrate into expressions as follows (§5.6), where `c` is `{ "col": name }` and a literal takes
 the column's type: digits of an exact column as a `bigint` or `decimal` literal, text of a date or time
 column as a literal of that type.
 
-| v1 filter | v2 expression |
+| 0.1 filter | 0.2 expression |
 | --- | --- |
 | `{ type: "values", values }` | `in(c, values…)` for the values that are not null, `or`-ed with `is_blank(c)` when `values` holds null |
 | `{ type: "values", values, exclude: true }` | `not(coalesce(e, false))`, where `e` is the expression above |
@@ -1535,7 +1535,7 @@ DuckDB 2.0 through `@duckdb/node-api` 2.0.0-r.1, on 2026-10-27 (first checked wi
 | the types of `sum(BIGINT)`, `sum(DECIMAL(10,2))` and `avg(DECIMAL(10,2))` | HUGEINT, DECIMAL(38,2), DOUBLE |
 | `sum` and `avg` of `DECIMAL(38,4)` values whose sum has more than 38 digits | errors (DuckDB 1.5 gave the sum): `vastgrid-sql` sums the digits of wide decimals as a HUGEINT |
 | `stddev_samp` of 1.7e308 and −1.7e308 | NaN (DuckDB 1.5: an error); `vastgrid-sql` gives null, as the JS engine does |
-| `sum`, `min`, `max` and `avg` of NaN, 1 and Infinity | NaN, 1, NaN, NaN (v2 leaves the values that are not finite out, §3.8) |
+| `sum`, `min`, `max` and `avg` of NaN, 1 and Infinity | NaN, 1, NaN, NaN (0.2 leaves the values that are not finite out, §3.8) |
 | `count(DISTINCT x)` of NaN, NaN, 0.0, −0.0 and NULL | 2 |
 | groups of NaN, NaN, 0.0, −0.0, NULL and NULL | 3 groups of 2 rows |
 | `round(2.5)`, `round(-2.5)`, `round(1.005::DECIMAL(4,3), 2)` | 3, −3, 1.01 (DECIMAL(4,2)) |

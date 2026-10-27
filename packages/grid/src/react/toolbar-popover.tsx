@@ -3,7 +3,7 @@ import { LocaleContext } from "./context.js";
 
 /**
  * A button of the toolbar and its popover, whose content is rendered only while it is open, so that a content loaded
- * with `lazy` is downloaded when it is first opened (§10 of v2-react.md) and starts from the state as it is then. The
+ * with `lazy` is downloaded when it is first opened (§10 of react.md) and starts from the state as it is then. The
  * popover opens under the button, its right edge at the button's, and follows its content's size.
  */
 export function ToolbarPopover({

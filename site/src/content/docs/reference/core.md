@@ -7,7 +7,7 @@ description: The grid's store, transports and errors, which run without React, a
 transports that carry them to an engine. It runs in browsers, Web Workers and servers. `vastgrid/server` reads
 the first rows of a table on a server, for server rendering. React code imports the same names from `vastgrid`,
 which re-exports `vastgrid/core`; workers and servers import from `vastgrid/core`.
-[§4 of the React specification](https://github.com/yhay81/vastgrid/blob/main/docs/v2-react.md#4-the-store) is
+[§4 of the React specification](https://github.com/yhay81/vastgrid/blob/main/docs/react.md#4-the-store) is
 the source of this page.
 
 ## The store
@@ -29,8 +29,8 @@ makes one when it is not given one.
 | `transport` | `Transport` | (required) | Where the engine is. |
 | `table` | `string` | (required) | The `ref` of the table to open (§8.2). |
 | `open` | `OpenOptions` | | The `read` options of `open`: `sheet`, `headerRow`, `keepEmptyRows`, `keepEmptyColumns`. |
-| `document` | `GridDocument` | the empty document | The document to start with ([§5.1](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#51-document)). |
-| `session` | `GridSession` | the empty session | The session to start with ([§5.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#52-session)). |
+| `document` | `GridDocument` | the empty document | The document to start with ([§5.1](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#51-document)). |
+| `session` | `GridSession` | the empty session | The session to start with ([§5.2](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#52-session)). |
 | `initial` | `InitialView` | | Rows read on a server (`readInitialView`), shown before the first read. |
 | `cacheBytes` | `number` | `CACHE_BYTES` (64 MiB) | Bytes of rows to keep. |
 
@@ -109,7 +109,7 @@ if (!outcome.ok) console.warn(outcome.error.code, outcome.error.message);
 
 1. The snapshot changes at once and subscribers are told, so that a key press shows in the same frame.
 2. The requests that the command gives are sent. The core's own commands
-   ([§6.7](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#67-commands-of-the-core)) are applied as
+   ([§6.7](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#67-commands-of-the-core)) are applied as
    their answers arrive.
 3. When the plan changed, the store reads the new view while the old one stays on screen with `pending` set, then
    shows the new rows in one step. A newer plan cancels the reads of an older one.
@@ -149,12 +149,12 @@ whose `code` is `invalid_command` ([Commands](/reference/commands/#when-a-comman
 | `cancelled` | the request was cancelled | 499 |
 | `internal` | anything else | 500 |
 
-[§8.7](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#87-errors) is the list; `ERROR_STATUS` of
+[§8.7](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#87-errors) is the list; `ERROR_STATUS` of
 `vastgrid-spec` maps the codes to the HTTP statuses.
 
 ## Transports
 
-A transport carries the messages of [§8](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#8-messages)
+A transport carries the messages of [§8](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#8-messages)
 to an engine. Blocks of rows travel as bytes (the structured encoding) or, over HTTP, attached after the JSON.
 
 | Transport | Engine |
@@ -260,7 +260,7 @@ export default function Page() {
 ```
 
 See [Files on a server](/guides/server/) and
-[§7 of the React specification](https://github.com/yhay81/vastgrid/blob/main/docs/v2-react.md#7-server-rendering-and-server-components).
+[§7 of the React specification](https://github.com/yhay81/vastgrid/blob/main/docs/react.md#7-server-rendering-and-server-components).
 
 ## A store without React
 

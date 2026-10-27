@@ -3,8 +3,8 @@ import { type CellActionEvent, type ColumnGroup, DataGrid, type DataGridHandle, 
 import "vastgrid/styles.css";
 
 /**
- * A file of the server's folder in v2's grid: `?file=sales-100000000.parquet`. The DuckDB engine reads it on the
- * server (`vite.config.ts`), and the grid reads blocks of it over HTTP (docs/v2-spec.md §8.8). The end-to-end tests
+ * A file of the server's folder in 0.2's grid: `?file=sales-100000000.parquet`. The DuckDB engine reads it on the
+ * server (`vite.config.ts`), and the grid reads blocks of it over HTTP (docs/spec.md §8.8). The end-to-end tests
  * read `window.files`; `?groups=` (JSON) names column groups, and `?links=` a column whose cells are links, whose
  * clicks go to `window.files.actions`.
  */

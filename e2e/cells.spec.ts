@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { benchDirectory } from "../packages/duckdb-engine/bench/files.ts";
 
 /**
- * Column groups, cells that are links, and filling (docs/v2-react.md §6.12) on a file read by the DuckDB engine
+ * Column groups, cells that are links, and filling (docs/react.md §6.12) on a file read by the DuckDB engine
  * over HTTP (`examples/files`, with `?groups=` and `?links=`).
  */
 const site = "http://127.0.0.1:5183";

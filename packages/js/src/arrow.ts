@@ -1,5 +1,5 @@
 /**
- * Tables given as Arrow (docs/v2-spec.md §2.3), read by a module of their own that the engine loads with the
+ * Tables given as Arrow (docs/spec.md §2.3), read by a module of their own that the engine loads with the
  * first such table, so that pages whose tables are rows do not load it.
  */
 import { decodeColumns } from "vastgrid-spec/columns";

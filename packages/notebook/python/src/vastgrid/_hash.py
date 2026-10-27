@@ -1,4 +1,4 @@
-"""The normal form and the hash of plans (docs/v2-spec.md §4.8), byte for byte as the TypeScript implementation
+"""The normal form and the hash of plans (docs/spec.md §4.8), byte for byte as the TypeScript implementation
 writes them."""
 
 from __future__ import annotations

@@ -1,5 +1,5 @@
 /**
- * Writes the text formats of `export` (docs/v2-spec.md §8.2) from rows of typed JSON (§2.2), as a stream of bytes so
+ * Writes the text formats of `export` (docs/spec.md §8.2) from rows of typed JSON (§2.2), as a stream of bytes so
  * that only one batch of rows is in memory at a time; every engine writes them alike.
  *
  * CSV and TSV are written as DuckDB's `COPY` writes them: a header line, values as their text forms (§2.4), quoted

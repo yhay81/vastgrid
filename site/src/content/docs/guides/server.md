@@ -173,7 +173,7 @@ A sort of 1,000,000 rows or more answers first with its first 1,000 rows in thei
 shows them while the rest is built; a `view` event says when it is ready. Views of up to 20 million rows keep a
 sorted copy; larger ones keep only the order of rows. Measured on 2026-10-27 on an Apple M2 Pro with Node.js 24,
 DuckDB 2.0, 8 threads and a 2 GB memory limit, the median of three runs
-([the benchmark](https://github.com/yhay81/vastgrid/blob/main/docs/v2-views-benchmark.md)), reading 256 rows of
+([the benchmark](https://github.com/yhay81/vastgrid/blob/main/docs/views-benchmark.md)), reading 256 rows of
 8 columns:
 
 | File and plan | First rows | Later reads anywhere in the view (median) |

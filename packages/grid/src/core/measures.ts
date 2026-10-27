@@ -80,7 +80,7 @@ export function measuresPlan(plan: Plan, measures: Measure[]): Plan | null {
 /** The measures that a total can be, for a column's type, in the order the menu offers them. */
 export const TOTALS: MeasureName[] = ["sum", "avg", "count", "count_distinct", "min", "max"];
 
-/** A measure's name as v1 wrote it, `sum(amount)` or `count(*)`, with ` (2)`, ` (3)`, … when it is taken. */
+/** A measure's name as 0.1 wrote it, `sum(amount)` or `count(*)`, with ` (2)`, ` (3)`, … when it is taken. */
 export function measureName(fn: MeasureName, column: string | undefined, taken: ReadonlySet<string>): string {
   const base = `${fn}(${column ?? "*"})`;
   let name = base;

@@ -1,5 +1,5 @@
 /**
- * The written cells of a table (docs/v2-spec.md §7.2): kept apart from the source, in a table of the session for
+ * The written cells of a table (docs/spec.md §7.2): kept apart from the source, in a table of the session for
  * each written column, and read through a view that puts them over the source's values, so that every request
  * (rows, plans, summaries, find) sees them.
  */

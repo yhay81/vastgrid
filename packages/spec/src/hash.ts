@@ -1,5 +1,5 @@
 /**
- * The normal form and the hash of plans (docs/v2-spec.md §4.8).
+ * The normal form and the hash of plans (docs/spec.md §4.8).
  */
 import type { Plan } from "./plan.js";
 

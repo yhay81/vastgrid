@@ -79,7 +79,7 @@ try {
 
 const initial = await readInitialView(memory, { table: "orders", rows: 4 });
 const html = renderToString(createElement(DataGrid, { transport: memory, table: "orders", initial, "aria-label": "orders" }));
-// The first rows as a table, which the canvas replaces in the browser (§7 of v2-react.md).
+// The first rows as a table, which the canvas replaces in the browser (§7 of react.md).
 assert.match(html, /<table class="vg-static" aria-label="orders" aria-rowcount="5">/);
 assert.match(html, /JP/);
 `;

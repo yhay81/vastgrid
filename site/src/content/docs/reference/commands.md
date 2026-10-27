@@ -4,7 +4,7 @@ description: Every command that changes the grid's state, by group, how to dispa
 ---
 
 A command is a JSON object, `{ command: name, …arguments }`
-([§6.1](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#61-applying-a-command)). The grid's keys,
+([§6.1](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#61-applying-a-command)). The grid's keys,
 menus and toolbar do everything with commands, and a host or an agent dispatches the same ones: a sort, a filter,
 a selection, a write and an export are each one command. Applied to the document and the session, a command gives
 the new state, the requests that the store then sends to the engine, and for some commands an output. Commands
@@ -69,7 +69,7 @@ A command can also fail with a `GridError` from the engine, such as `read_only` 
 
 ## The plan
 
-[§6.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#62-the-plan). These change the document's
+[§6.2](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#62-the-plan). These change the document's
 `plan`; the store then reads the new view and keeps the active row where it can.
 
 | Command | Arguments | Effect |
@@ -89,12 +89,12 @@ A command can also fail with a `GridError` from the engine, such as `read_only` 
 | `having.set` | `having`: an expression or null | Sets or removes the condition on groups. |
 
 Expressions are JSON (`{ col }`, `{ lit }`, `{ fn, args }`,
-[§4.3](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#43-expressions)); formulas typed in the grid
+[§4.3](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#43-expressions)); formulas typed in the grid
 compile to them ([Formulas](/guides/formulas/)).
 
 ## Columns
 
-[§6.3](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#63-columns). These change the document's
+[§6.3](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#63-columns). These change the document's
 `columns`.
 
 | Command | Arguments | Effect |
@@ -109,7 +109,7 @@ compile to them ([Formulas](/guides/formulas/)).
 
 ## Selection, scrolling and checked rows
 
-[§6.4](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#64-selection-scrolling-and-checked-rows).
+[§6.4](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#64-selection-scrolling-and-checked-rows).
 These change the session. Rows are positions in the view, and columns are names of displayed columns.
 
 | Command | Arguments | Effect |
@@ -129,7 +129,7 @@ These change the session. Rows are positions in the view, and columns are names 
 
 ## Editing
 
-[§6.5](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#65-editing). Writes go to the engine as one
+[§6.5](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#65-editing). Writes go to the engine as one
 `write` request, with each cell's previous value, and become one step of the undo history.
 
 | Command | Arguments | Effect |
@@ -148,7 +148,7 @@ See [Editing](/guides/editing/).
 
 ## Copying, exporting and saving
 
-[§6.6](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#66-copying-and-exporting).
+[§6.6](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#66-copying-and-exporting).
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
@@ -161,17 +161,17 @@ See [Export and save](/guides/export/).
 ## Commands of the core
 
 `view.update`, `history.push`, `history.undone`, `history.redone` and `history.clear`
-([§6.7](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#67-commands-of-the-core)) are applied by the
+([§6.7](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#67-commands-of-the-core)) are applied by the
 store itself as answers arrive; hosts and agents do not need them.
 
 ## The document and the session
 
 Commands change two parts of the state, both plain JSON with their own versions:
 
-- The **document** ([§5.1](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#51-document)) is what a
+- The **document** ([§5.1](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#51-document)) is what a
   person saves, shares or gives an agent: `rowKey`, the `plan` (derived columns, conditions, groups, sort) and the
   column settings (`width`, `hidden`, `pin`, `format`, `total`).
-- The **session** ([§5.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#52-session)) is where the
+- The **session** ([§5.2](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#52-session)) is where the
   person is: the active cell, the selection, the scroll position, the checked rows, the detail panel, an editor
   and the undo history.
 
@@ -185,9 +185,9 @@ Commands change two parts of the state, both plain JSON with their own versions:
 ```
 
 A grid controls either part or leaves it to itself ([State](/guides/state/)). A document of another version is
-refused; `migrateGridState` of `vastgrid-spec` turns a saved state of v1 into a document
-([§5.6](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#56-versions-and-migration),
-[Migrating from v1](/migrating-from-v1/)).
+refused; `migrateGridState` of `vastgrid-spec` turns a saved state of 0.1 into a document
+([§5.6](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#56-versions-and-migration),
+[Migrating from 0.1](/migrating-from-0-1/)).
 
 ## For agents and hosts
 

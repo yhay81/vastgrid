@@ -1,5 +1,5 @@
 /**
- * The plan corpus of vastgrid-spec (docs/v2-spec.md §10) through the engine's messages: every case whose plan
+ * The plan corpus of vastgrid-spec (docs/spec.md §10) through the engine's messages: every case whose plan
  * fits the engine's capabilities runs and conforms; every other case is answered with `invalid_plan`
  * (`unsupported`), and is counted as skipped. The corpus runs twice: with its tables as rows of typed JSON, and
  * as Arrow, whose columns the engine keeps typed.

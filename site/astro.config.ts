@@ -54,7 +54,7 @@ export default defineConfig({
             "getting-started",
             { label: "Live demo", translations: { ja: "デモ" }, link: "/demo/" },
             { label: "Open a file", translations: { ja: "ファイルを開く" }, link: "/open/" },
-            "migrating-from-v1",
+            "migrating-from-0-1",
           ],
         },
         {
@@ -92,12 +92,12 @@ export default defineConfig({
             {
               label: "Specification",
               translations: { ja: "仕様" },
-              link: "https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md",
+              link: "https://github.com/yhay81/vastgrid/blob/main/docs/spec.md",
             },
             {
               label: "Specification of the React package",
               translations: { ja: "React パッケージの仕様" },
-              link: "https://github.com/yhay81/vastgrid/blob/main/docs/v2-react.md",
+              link: "https://github.com/yhay81/vastgrid/blob/main/docs/react.md",
             },
           ],
         },

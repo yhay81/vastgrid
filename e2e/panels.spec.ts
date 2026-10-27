@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { benchDirectory } from "../packages/duckdb-engine/bench/files.ts";
 
 /**
- * The toolbar's conditions, columns and group menus (docs/v2-react.md §6.8, §6.9) on a file read by the DuckDB
+ * The toolbar's conditions, columns and group menus (docs/react.md §6.8, §6.9) on a file read by the DuckDB
  * engine over HTTP (`examples/files`): conditions across columns in nested groups, columns shown, hidden and moved,
  * and a pivot.
  */

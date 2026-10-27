@@ -1,6 +1,6 @@
 # vastgrid-spec
 
-The [vastgrid specification](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md) as code: the types,
+The [vastgrid specification](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md) as code: the types,
 plans, state, commands and messages that [`vastgrid`](https://www.npmjs.com/package/vastgrid) and its engines
 share. The grid depends on it, and an engine of your own uses it to check what it receives and to pass the
 conformance corpus.
@@ -18,7 +18,7 @@ npm install vastgrid-spec
   float32 input and rejects overflow; `encodeBlock` refuses invalid values with a `BlockValueError` and a
   `/rows/{row}/{column}` path instead of silently changing them.
 - **State** (§5): `checkDocument` and `checkSession` check the two parts of the state, `displayedColumns`
-  gives the display order, `repairDocument` fits a document to a table, and `migrateGridState` migrates v1's
+  gives the display order, `repairDocument` fits a document to a table, and `migrateGridState` migrates 0.1's
   `GridState`.
 - **Commands** (§6, §7): `applyCommand(state, command, context)` applies a command and gives the new state,
   the requests the core sends and the output, or throws a `CommandError`. The new state keeps the objects of

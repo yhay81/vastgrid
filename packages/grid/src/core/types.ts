@@ -80,7 +80,7 @@ export interface RequestMessage {
 }
 
 /**
- * Rows read on a server for the first render (§7 of v2-react.md): the table, the plan they were read for, and
+ * Rows read on a server for the first render (§7 of react.md): the table, the plan they were read for, and
  * the answer of `rows`. A store given them shows these rows before it reads any.
  */
 export interface InitialView {
@@ -113,7 +113,7 @@ export class GridError extends Error {
   }
 }
 
-/** What a dispatched command came to: its output, or why it failed (§4.2 of v2-react.md). */
+/** What a dispatched command came to: its output, or why it failed (§4.2 of react.md). */
 export type CommandOutcome = { ok: true; output?: unknown } | { ok: false; error: CommandError | GridError };
 
 /** One update of a `write` request (§7.2 of the specification). */
@@ -125,7 +125,7 @@ export interface WriteUpdate {
 }
 
 /**
- * The last write that failed (§6.6 of v2-react.md), which `retryWrite` sends again and `discardWrite` forgets.
+ * The last write that failed (§6.6 of react.md), which `retryWrite` sends again and `discardWrite` forgets.
  * `retry` tells how it can be sent again: the same write (`"retry"`), after an `edit_conflict` without the
  * `previous` values (`"overwrite"`), or not at all (null): the table has another revision now, or the engine
  * refused the values or the cells.
