@@ -51,7 +51,9 @@ that was not edited kept. [From v1 to v2](docs/v2-from-v1.md) is the migration g
   pytest and a comparison with vastgrid-js's memory engine test it (docs/notebook.md). docs/entries.md and
   docs/entries.ja.md compare the six places v2 opens files: formats, editing, saving, exporting and installing.
 - `vastgrid`: a grid given rows read on a server (`initial`, from `readInitialView`) reads its totals row once the
-  table is open; before, the totals row stayed empty until the view, its edits or the totals changed.
+  table is open; before, the totals row stayed empty until the view, its edits or the totals changed. A totals row
+  that fails to read goes to `onError` and the snapshot's `error`, as other reads do (v2-react.md §4.2), instead of
+  staying empty without a word.
 - `vastgrid`: `httpTransport` sends requests once its stream of events is open (or has failed). A table that
   finished loading before the stream connected stayed "loading" for its grid, without the menu items that need
   the whole table.

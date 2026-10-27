@@ -85,6 +85,69 @@ test("the store reads the totals row for a view read on a server once the table 
   const disconnect = store.connect();
   for (let attempt = 0; attempt < 200 && store.getSnapshot().totals === null; attempt++) await settle(1);
   assert.deepEqual(store.getSnapshot().totals?.values, { id: 45 });
+  // Nothing is read before the table is open, so nothing fails as not ready.
+  assert.equal(store.getSnapshot().error, null);
+  disconnect();
+});
+
+test("a totals row that fails to read goes to onError and the snapshot's error (§4.2 of v2-react.md)", async () => {
+  const engine = fakeEngine(numbers(10), {
+    ...CAPABILITIES,
+    plan: { ...CAPABILITIES.plan, aggregate: true },
+    measures: ["count", "sum", "min", "max"],
+  });
+  const failing = {
+    ...engine,
+    async handle(message: unknown) {
+      const request = message as { id: number; op: string; plan?: { aggregate?: unknown } };
+      if (request.op === "rows" && request.plan?.aggregate) {
+        return { v: 2, id: request.id, error: { code: "internal", message: "The engine failed." } };
+      }
+      return engine.handle(message);
+    },
+  };
+  const document: GridDocument = {
+    kind: "vastgrid/document",
+    version: 2,
+    columns: [{ name: "id", total: { fn: "sum" } }],
+  };
+  const store = createGridStore({ transport: localTransport(failing), table: "numbers", document });
+  const errors: string[] = [];
+  const off = store.on("error", (error) => errors.push(error.message));
+  const disconnect = store.connect();
+  store.setViewport({ top: 0, rows: 20, columns: ["id", "name", "score"] });
+  for (let attempt = 0; attempt < 200 && store.getSnapshot().error === null; attempt++) await settle(1);
+  assert.equal(store.getSnapshot().error?.code, "internal");
+  assert.deepEqual(errors, ["The engine failed."]);
+  assert.equal(store.getSnapshot().totals, null);
+  off();
+  disconnect();
+});
+
+test("a new connection reads the totals row again", async () => {
+  const engine = fakeEngine(numbers(10), {
+    ...CAPABILITIES,
+    plan: { ...CAPABILITIES.plan, aggregate: true },
+    measures: ["count", "sum", "min", "max"],
+  });
+  const document: GridDocument = {
+    kind: "vastgrid/document",
+    version: 2,
+    columns: [{ name: "id", total: { fn: "sum" } }],
+  };
+  const store = createGridStore({ transport: localTransport(engine), table: "numbers", document });
+  const measured = () =>
+    engine.requests.filter((request) => (request as { plan?: { aggregate?: unknown } }).plan?.aggregate).length;
+  let disconnect = store.connect();
+  store.setViewport({ top: 0, rows: 20, columns: ["id"] });
+  for (let attempt = 0; attempt < 200 && store.getSnapshot().totals === null; attempt++) await settle(1);
+  const before = measured();
+  disconnect();
+  disconnect = store.connect();
+  for (let attempt = 0; attempt < 200 && measured() === before; attempt++) await settle(1);
+  assert.equal(measured(), before + 1);
+  assert.deepEqual(store.getSnapshot().totals?.values, { id: 45 });
+  assert.equal(store.getSnapshot().error, null);
   disconnect();
 });
 

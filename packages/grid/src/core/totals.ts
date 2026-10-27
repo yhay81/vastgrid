@@ -7,7 +7,8 @@ type Totals = NonNullable<GridSnapshot["totals"]>;
 
 /**
  * The totals row of the view on screen (§5.1): read again when the view, its edits or the totals change, with
- * `measure`, and shown with `show`. The totals on screen stay until the new ones come.
+ * `measure`, and shown with `show`; a read that fails goes to `fail`. The totals on screen stay until the new ones
+ * come.
  */
 export class TotalsReader {
   /** The revision, edits and plan of the totals read last; empty without them, null to read them again. */
@@ -17,11 +18,14 @@ export class TotalsReader {
   constructor(
     private readonly measure: (plan: Plan, revision: string | null, signal: AbortSignal) => Promise<Totals>,
     private readonly show: (totals: Totals | null) => void,
+    private readonly fail: (error: unknown) => void,
   ) {}
 
-  /** Reads the totals row again at the next `follow`, even if nothing it follows changed. */
+  /** Stops the read in flight, and reads the totals row again at the next `follow`, as for a new connection. */
   reset() {
     this.key = null;
+    this.abort?.abort();
+    this.abort = null;
   }
 
   /** Reads the totals row again if the view on screen, its edits or the totals changed. */
@@ -42,9 +46,14 @@ export class TotalsReader {
     const abort = new AbortController();
     this.abort = abort;
     this.measure(plan, view.revision, abort.signal)
-      .then((totals) => {
-        if (!abort.signal.aborted) this.show(totals);
-      })
+      .then(
+        (totals) => {
+          if (!abort.signal.aborted) this.show(totals);
+        },
+        (error) => {
+          if (!abort.signal.aborted) this.fail(error);
+        },
+      )
       .catch(() => {});
   }
 }

@@ -144,6 +144,7 @@ export class GridStore {
   private readonly totals = new TotalsReader(
     (plan, revision, signal) => this.measure(plan, revision, signal),
     (totals) => this.publish({ totals }),
+    (error) => this.readFailed(error),
   );
   private rowsVersion = 0;
 
@@ -159,9 +160,7 @@ export class GridStore {
         keyed: () => Boolean(this.base("session").active?.key),
         showView: (info) => this.publish({ view: info }),
         showRows: () => this.emitRows(),
-        fail: (error) => {
-          if (!isCancelled(error)) this.fail(asGridError(error));
-        },
+        fail: (error) => this.readFailed(error),
       },
       options.cacheBytes ?? CACHE_BYTES,
     );
@@ -215,7 +214,8 @@ export class GridStore {
     next.displayed = keep ? previous.displayed : this.displayedOf(next);
     this.snapshot = next;
     for (const listener of this.listeners) listener();
-    this.totals.follow(this.current, this.snapshot);
+    // The totals are read once the table is open, which rows read on a server come before.
+    if (this.opened) this.totals.follow(this.current, this.snapshot);
   }
 
   /** Reads the one row of a plan that aggregates without keys: its values and their types, by column name. */
@@ -362,6 +362,7 @@ export class GridStore {
       this.current?.abort.abort();
       this.next?.abort.abort();
       this.next = null;
+      this.totals.reset();
       if (this.current) this.current = { ...this.current, abort: new AbortController() };
       this.client = null;
     };
@@ -375,8 +376,6 @@ export class GridStore {
     // Rows read on a server stay when they belong to the same revision and plan.
     if (seeded && (seeded.revision !== info.revision || seeded.edits !== info.edits.version)) this.current = null;
     else if (seeded) this.current = { ...seeded, abort: new AbortController() };
-    // Totals asked for before the table was open, as for rows read on a server, could not be read.
-    this.totals.reset();
     this.publish({ table: info, status: info.status === "error" ? "error" : "ready" });
     if (repaired.removed.length > 0) this.change(repaired.document, this.base("session"));
     this.showPlan(this.base("document").plan ?? {});
@@ -449,6 +448,11 @@ export class GridStore {
   private fail(error: GridError) {
     this.publish({ error });
     this.emit("error", error);
+  }
+
+  /** A read failed: unless it was cancelled, the failure belongs to no command (§4.2 of v2-react.md). */
+  private readFailed(error: unknown) {
+    if (!isCancelled(error)) this.fail(asGridError(error));
   }
 
   /** Shows rows read on a server before the table is open. */
