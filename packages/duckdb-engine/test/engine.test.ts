@@ -457,6 +457,23 @@ test("falls back when types change late or rows are irregular, and tells clients
     ["G2999", 299.9, "注記2999"],
     ["G9999", 0.5, "追加"],
   ]);
+
+  // Line breaks of both kinds and one in quotes: DuckDB refuses to pad the file in parallel, and its strict sniffer
+  // refuses the records. The file is read in one thread, loosely, with its types.
+  await writeFile(path.join(workspace, "mixed-quoted.csv"), 'a,b\r\n1,"x\ny"\r\n2,z\n');
+  const quoted = await client.open("mixed-quoted.csv");
+  await context.engine.whenLoaded(quoted.table);
+  const inQuotes = await client.result<TableInfo>("info", { table: quoted.table });
+  assert.equal(inQuotes.status, "ready", inQuotes.error);
+  assert.deepEqual(
+    inQuotes.columns.map((column) => column.type),
+    ["bigint", "string"],
+  );
+  assert.equal(inQuotes.notes, undefined);
+  assert.deepEqual((await client.rows(inQuotes, { start: 0, end: 2 })).rows, [
+    [1, "x\ny"],
+    [2, "z"],
+  ]);
 });
 
 test("serves the first rows while a file loads, and tells clients when it has (§9)", async () => {

@@ -9,6 +9,8 @@
   strict records (`strict_mode=false`) before being read as text. Only DuckDB's error of invalid UTF-8 converts a
   file with replacement characters (`invalid_utf8_replaced`); the error of a failed sniff no longer does. Such a
   file is not saved (`save_unsupported`), as a file read as text was not.
+- `vastgrid-duckdb`: a CSV or TSV file with line breaks of both kinds and a line break in quotes opens: when
+  DuckDB's strict sniffer refuses it while choosing how to read the file, it is read in one thread.
 
 ## 0.2.0 — 2026-10-28
 

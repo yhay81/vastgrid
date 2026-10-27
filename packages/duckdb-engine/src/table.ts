@@ -433,7 +433,8 @@ export class LoadedTable {
       await read();
     } catch (error) {
       if (this.reading === "padded" && refusesParallel(error)) {
-        this.reading = (await this.readsPlain(source)) ? "plain" : "sequential";
+        // A sniff that fails (strict records refused) leaves only the reading in one thread, which every attempt takes.
+        this.reading = (await this.readsPlain(source).catch(() => false)) ? "plain" : "sequential";
         return this.readDelimited(source, read);
       }
       if (this.reading !== "plain" || !unevenRecords(error)) throw error;
