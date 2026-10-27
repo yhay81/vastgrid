@@ -9,6 +9,7 @@ import type {
   JsonValue,
   Operation,
   Plan,
+  RowKey,
 } from "vastgrid-spec";
 
 /** The table's edits version and the number of cells written so far (§8.2 of the specification). */
@@ -115,6 +116,30 @@ export class GridError extends Error {
 /** What a dispatched command came to: its output, or why it failed (§4.2 of v2-react.md). */
 export type CommandOutcome = { ok: true; output?: unknown } | { ok: false; error: CommandError | GridError };
 
+/** One update of a `write` request (§7.2 of the specification). */
+export interface WriteUpdate {
+  readonly key: RowKey;
+  readonly column: string;
+  readonly value: JsonValue;
+  readonly previous?: JsonValue;
+}
+
+/**
+ * The last write that failed (§6.6 of v2-react.md), which `retryWrite` sends again and `discardWrite` forgets.
+ * `retry` tells how it can be sent again: the same write (`"retry"`), after an `edit_conflict` without the
+ * `previous` values (`"overwrite"`), or not at all (null): the table has another revision now, or the engine
+ * refused the values or the cells.
+ */
+export interface FailedWrite {
+  /** The command whose write it was. */
+  readonly command: string;
+  readonly updates: readonly WriteUpdate[];
+  readonly revision: string | null;
+  readonly rowKey?: string | readonly string[];
+  readonly error: GridError;
+  readonly retry: "retry" | "overwrite" | null;
+}
+
 /** What the grid shows. A snapshot is never changed: the store makes a new one for every change. */
 export interface GridSnapshot {
   readonly document: GridDocument;
@@ -130,6 +155,8 @@ export interface GridSnapshot {
   readonly status: "idle" | "opening" | "ready" | "error";
   /** The last failure that belongs to no command. */
   readonly error: GridError | null;
+  /** The last write that failed, until it is sent again or discarded. */
+  readonly failedWrite: FailedWrite | null;
   /**
    * The totals row (§5.1): the total of each displayed column that has one, over the whole view on screen, with
    * the types of the values; null without totals, or for a view that groups rows.

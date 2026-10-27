@@ -169,6 +169,19 @@
   text-overflow: ellipsis;
 }
 
+.vg-statusbar__failed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.vg-statusbar__error {
+  overflow: hidden;
+  color: var(--vg-error-fg);
+  text-overflow: ellipsis;
+}
+
 .vg-statusbar__unsaved {
   color: var(--vg-fg);
   font-variant-numeric: tabular-nums;

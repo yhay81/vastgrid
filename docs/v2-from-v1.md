@@ -16,7 +16,7 @@ The specifications are [v2-spec.md](v2-spec.md) (§) and [v2-react.md](v2-react.
 | [#10](https://github.com/yhay81/vastgrid/issues/10) | Copying several ranges | Ported: `copy` places ranges as spreadsheets do (§6.6). |
 | [#11](https://github.com/yhay81/vastgrid/issues/11) | OR across columns and nested AND / OR | Ported: `where` (§4.3) and the Conditions menu (React §6.9). |
 | [#12](https://github.com/yhay81/vastgrid/issues/12) | Formula columns | Ported: `derive` written as formulas (§4.11) and the Formulas menu, [#39](https://github.com/yhay81/vastgrid/issues/39). |
-| [#13](https://github.com/yhay81/vastgrid/issues/13) | Editing cells, with typed checks | Ported: §6.5, §7 and React §6.6, [#36](https://github.com/yhay81/vastgrid/issues/36). |
+| [#13](https://github.com/yhay81/vastgrid/issues/13) | Editing cells, with typed checks | Ported: §6.5, §7 and React §6.6, [#36](https://github.com/yhay81/vastgrid/issues/36): a failed write offers Retry, Overwrite after a conflict, and Discard. |
 | [#14](https://github.com/yhay81/vastgrid/issues/14) | Pasting cells from Excel and TSV | Ported: `edit.paste` (§6.5.1). |
 | [#15](https://github.com/yhay81/vastgrid/issues/15) | Undo and redo | Ported: §7.4. |
 | [#16](https://github.com/yhay81/vastgrid/issues/16) | Fill from the selection | Ported: `edit.fill` with ⌘/Ctrl+D and R (React §6.12). v1 also left out the fill handle and series. |

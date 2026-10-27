@@ -101,3 +101,116 @@ test("an edited cell is saved into the CSV file with the keys, and the view expo
   expect(readFileSync(exported, "utf8")).toContain("2,US,99.5");
   expect(problems).toEqual([]);
 });
+
+/** A cell of the grid as the accessibility rows give it (row and column from 0). */
+function gridCell(page: Page, at: number, column: number) {
+  return page.locator(`[role="gridcell"][id$="-r${at}-c${column}"]`);
+}
+
+/** Moves the active cell from the first one. */
+async function goTo(page: Page, down: number, right: number) {
+  const grid = page.getByRole("grid", { name: orders });
+  await grid.focus();
+  await page.keyboard.press("ControlOrMeta+Home");
+  for (let index = 0; index < down; index++) await page.keyboard.press("ArrowDown");
+  for (let index = 0; index < right; index++) await page.keyboard.press("ArrowRight");
+}
+
+test("cells of a file are edited with an IME, pasted as HTML and TSV, cleared, undone, sent again and saved", async ({
+  page,
+}) => {
+  const problems = await openPrinted(page);
+  const status = page.locator(".vg-statusbar");
+
+  // An IME composition that starts on the grid goes into the editor whole.
+  await goTo(page, 0, 1);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "rawKeyDown",
+    key: "Process",
+    code: "KeyO",
+    windowsVirtualKeyCode: 229,
+  });
+  await cdp.send("Input.imeSetComposition", { text: "おうしゅう", selectionStart: 5, selectionEnd: 5 });
+  await cdp.send("Input.insertText", { text: "欧州" });
+  await expect(page.locator(".vg-editor-input")).toHaveValue("欧州");
+  await page.keyboard.press("Enter");
+  await expect(gridCell(page, 0, 1)).toHaveText("欧州", { timeout: 30_000 });
+
+  // A table copied as HTML only (§6.5 takes the text first when there is one) is pasted from the active cell down.
+  await goTo(page, 1, 1);
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData("text/html", "<table><tr><td>米国</td></tr><tr><td>EU&amp;2</td></tr></table>");
+    document.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  });
+  await expect(gridCell(page, 1, 1)).toHaveText("米国", { timeout: 30_000 });
+  await expect(gridCell(page, 2, 1)).toHaveText("EU&2");
+
+  // Tab-separated text, as spreadsheets copy it, with digit grouping.
+  await goTo(page, 0, 2);
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData("text/plain", "1,234.5\n31");
+    document.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  });
+  await expect(gridCell(page, 1, 2)).toHaveText("31.0", { timeout: 30_000 });
+  await expect(gridCell(page, 0, 2)).toHaveText("1234.5");
+
+  // Delete clears, and undo and redo write by the keys.
+  await goTo(page, 3, 1);
+  await page.keyboard.press("Delete");
+  await expect(gridCell(page, 3, 1)).toHaveText("", { timeout: 30_000 });
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(gridCell(page, 3, 1)).toHaveText("JP", { timeout: 30_000 });
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect(gridCell(page, 3, 1)).toHaveText("", { timeout: 30_000 });
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(gridCell(page, 3, 1)).toHaveText("JP", { timeout: 30_000 });
+
+  // A write that the connection loses shows the file's value with Retry, which writes it.
+  let next: "lose" | "conflict" | null = "lose";
+  await page.route(`${site}/api`, async (route) => {
+    const body = route.request().postDataJSON() as { op: string; updates?: { previous?: unknown }[] };
+    if (body.op !== "write" || next === null) return route.continue();
+    const what = next;
+    next = null;
+    if (what === "lose") return route.abort("failed");
+    // Someone else wrote the cell first: the value it was made from is not the cell's any more.
+    for (const update of body.updates ?? []) update.previous = "someone else's";
+    return route.continue({ postData: JSON.stringify(body) });
+  });
+  await page.keyboard.type("JPN");
+  await page.keyboard.press("Enter");
+  await expect(status.getByRole("alert")).toContainText("Not written", { timeout: 30_000 });
+  await expect(gridCell(page, 3, 1)).toHaveText("JP");
+  await status.getByRole("button", { name: "Retry" }).click();
+  await expect(gridCell(page, 3, 1)).toHaveText("JPN", { timeout: 30_000 });
+  await expect(status.getByRole("alert")).toHaveCount(0);
+
+  // A conflict offers Overwrite, which writes over what the cell holds.
+  next = "conflict";
+  await goTo(page, 3, 1);
+  await page.keyboard.type("Japan");
+  await page.keyboard.press("Enter");
+  await expect(status.getByRole("alert")).toContainText("the cells were changed meanwhile", { timeout: 30_000 });
+  await expect(gridCell(page, 3, 1)).toHaveText("JPN");
+  await status.getByRole("button", { name: "Overwrite" }).click();
+  await expect(gridCell(page, 3, 1)).toHaveText("Japan", { timeout: 30_000 });
+
+  // Discard forgets a failed write.
+  next = "lose";
+  await goTo(page, 2, 1);
+  await page.keyboard.type("gone");
+  await page.keyboard.press("Enter");
+  await status.getByRole("button", { name: "Discard" }).click();
+  await expect(status.getByRole("alert")).toHaveCount(0);
+  await expect(gridCell(page, 2, 1)).toHaveText("EU&2");
+
+  await page.keyboard.press("ControlOrMeta+s");
+  await expect
+    .poll(() => readFileSync(path.join(folder, "orders.csv"), "utf8"), { timeout: 30_000 })
+    .toBe("id,region,price\n1,欧州,1234.5\n2,米国,31.0\n3,EU&2,20\n4,Japan,5\n");
+  // The browser logs the requests that the test made fail, and nothing else.
+  expect(problems.filter((text) => !/net::ERR_FAILED|409 \(Conflict\)/.test(text))).toEqual([]);
+});

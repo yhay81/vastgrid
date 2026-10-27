@@ -35,6 +35,13 @@ export interface GridMessages {
   reload: string;
   /** Reading the file again drops the cells written into the table as it was read. */
   discardAndReload: string;
+  /** A write that failed (§6.6): why, and the buttons that send it again, write over the cells or forget it. */
+  writeFailed: (message: string) => string;
+  writeConflict: string;
+  writeRevisionChanged: string;
+  retry: string;
+  overwrite: string;
+  discard: string;
   /** The menu that exports the view (§6.6), its choices, and what an export did. */
   export: string;
   exportFormats: Record<string, string>;
@@ -196,6 +203,12 @@ const en: GridMessages = {
   changedOnDisk: "The file changed on disk. Your unsaved edits are kept.",
   reload: "Reload",
   discardAndReload: "Discard edits and reload",
+  writeFailed: (message) => `Not written: ${message}`,
+  writeConflict: "Not written: the cells were changed meanwhile. Their values now are shown.",
+  writeRevisionChanged: "Not written: the table was read again, so its rows may be other records now.",
+  retry: "Retry",
+  overwrite: "Overwrite",
+  discard: "Discard",
   export: "Export",
   exportFormats: { csv: "CSV", tsv: "TSV", xlsx: "Excel (.xlsx)", parquet: "Parquet", json: "JSON" },
   exportView: "Rows of the view",
@@ -376,6 +389,12 @@ const ja: GridMessages = {
   changedOnDisk: "ディスク上のファイルが変更されました。未保存の編集は残っています。",
   reload: "再読み込み",
   discardAndReload: "編集を破棄して再読み込み",
+  writeFailed: (message) => `書き込めませんでした: ${message}`,
+  writeConflict: "書き込めませんでした: その間にセルが変更されています。いまの値を表示しています。",
+  writeRevisionChanged: "書き込めませんでした: 表を読み直したため、行がほかの記録になっているかもしれません。",
+  retry: "再試行",
+  overwrite: "上書き",
+  discard: "破棄",
   export: "書き出し",
   exportFormats: { csv: "CSV", tsv: "TSV", xlsx: "Excel (.xlsx)", parquet: "Parquet", json: "JSON" },
   exportView: "ビューの行",

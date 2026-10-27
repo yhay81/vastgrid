@@ -79,6 +79,8 @@ interface GridStore {
   setDocument(document: GridDocument): void;
   setSession(session: GridSession): void;
   reload(): Promise<void>;
+  retryWrite(): Promise<CommandOutcome>;
+  discardWrite(): void;
   exportUrl(target: string): string | null;
   values(
     column: string,
@@ -99,6 +101,9 @@ without keys; it fails for a plan that groups rows.
 `exportUrl` gives where the file of an `export` without a target can be downloaded, from the transport
 (`Transport.exportUrl`; `httpTransport` gives `<url>/exports/<target>`), or null.
 
+`retryWrite` sends the last write that failed (`failedWrite` of the snapshot) again, and `discardWrite` forgets it
+(§6.6).
+
 `reload` reads the table's file as it is now (`reload`, §7.6 of the specification), for a file that changed on disk
 while the table had written cells (`fileChanged` of the table); a new revision is applied as an engine's `changed`
 event is (§5.4 of the specification).
@@ -115,6 +120,7 @@ interface GridSnapshot {
   pending: { plan: Plan } | null; // a plan whose view is being read to replace the one on screen
   status: "idle" | "opening" | "ready" | "error";
   error: GridError | null;
+  failedWrite: FailedWrite | null; // the last write that failed (§6.6)
   totals: { values: Record<string, JsonValue>; columns: Record<string, Column> } | null; // the totals row (§6.8)
 }
 ```
@@ -371,7 +377,16 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   (with `rename` when the name changed), and Remove dispatches `derive.remove`, which removes what uses the column.
 - The store shows a written value at once, before the engine answers, and shows the cell's value again when the
   write fails; commands read the written values too. It drops them once the rows of the new edits version are on
-  screen (§4.2).
+  screen (§4.2). An undo or a redo waits for the writes sent before it, so that it takes the step of the last one.
+- A write that fails stays in the snapshot's `failedWrite` (its command, updates, revision and error) until it is sent
+  again or discarded, and the status bar says why, with buttons. After a lost connection or an engine's failure
+  (`internal`, `cancelled`, `not_ready`, `table_not_found`), Retry (`retryWrite`) sends the same write. After an
+  `edit_conflict` the cells show their values now, and Overwrite sends the write without `previous`, so that it
+  writes over them; the history keeps the values the person wrote over. Discard (`discardWrite`) forgets it. A write
+  that the engine refused for its values or cells, or whose table has another revision now, is only discarded. A
+  write sent again succeeds as its command would have: the history gets its step, and an undo or a redo whose step
+  is still the last moves it. Both buttons give the focus back to the grid. These are v1's Retry, Overwrite and
+  Discard (#13).
 
 ### 6.7 The column menu
 

@@ -261,7 +261,9 @@ function Frame({
                 </Suspense>
               )}
             </div>
-            {statusBar && <StatusBar />}
+            {statusBar && (
+              <StatusBar announce={setNotice} onDone={() => scrollerRef.current?.focus({ preventScroll: true })} />
+            )}
             <div className="vg-sr-only" aria-live="polite">
               {notice}
             </div>

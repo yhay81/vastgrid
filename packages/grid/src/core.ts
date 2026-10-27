@@ -26,6 +26,7 @@ export {
 export {
   type CommandOutcome,
   type Edits,
+  type FailedWrite,
   GridError,
   type GridSnapshot,
   type InitialView,
@@ -34,4 +35,5 @@ export {
   type RowsResult,
   type TableInfo,
   type ViewInfo,
+  type WriteUpdate,
 } from "./core/types.js";

@@ -10,6 +10,7 @@ import {
   checkPlan,
   decodeBlock,
   displayedColumns,
+  type ErrorCode,
   emptyDocument,
   emptySession,
   type GridCommand,
@@ -34,6 +35,7 @@ import { measuresPlan, totalMeasures } from "./measures.js";
 import { now, track } from "./trace.js";
 import {
   type CommandOutcome,
+  type FailedWrite,
   GridError,
   type GridSnapshot,
   type InitialView,
@@ -41,10 +43,14 @@ import {
   type RowsResult,
   type TableInfo,
   type ViewInfo,
+  type WriteUpdate,
 } from "./types.js";
 
 /** Bytes of rows that a store keeps for the view on screen, by default. */
 export const CACHE_BYTES = 64 * 1024 * 1024;
+
+/** Failures of a write that the same write may not meet when it is sent again. */
+const RETRIED = new Set<ErrorCode>(["internal", "cancelled", "not_ready", "table_not_found"]);
 
 export interface GridStoreOptions {
   /** Where the engine is. */
@@ -156,6 +162,8 @@ export class GridStore {
   private writes = 0;
   /** The edits version that each write that succeeded made. */
   private readonly writeVersions = new Map<number, number>();
+  /** Settles once the writes sent so far are answered and their steps are in the history. */
+  private writing: Promise<void> = Promise.resolve();
   private readScheduled = false;
   private totalsKey = "";
   private totalsAbort: AbortController | null = null;
@@ -173,6 +181,7 @@ export class GridStore {
       pending: null,
       status: "idle",
       error: null,
+      failedWrite: null,
       totals: null,
     };
     if (options.initial) this.seed(options.initial);
@@ -908,6 +917,8 @@ export class GridStore {
   readonly dispatch = async (command: GridCommand, options: DispatchOptions = {}): Promise<CommandOutcome> => {
     // The state never shares objects with a command that its caller may change later.
     const given = structuredClone(command);
+    // An undo or a redo takes the last step once the writes sent before it are in the history.
+    if (given.command === "history.undo" || given.command === "history.redo") await this.writing;
     let applied = this.applyNow(given, options);
     if (
       applied.kind === "failed" &&
@@ -947,6 +958,64 @@ export class GridStore {
       });
     }
     return applied.result.output === undefined ? { ok: true } : { ok: true, output: applied.result.output };
+  }
+
+  /**
+   * Sends the failed write again (§6.6 of v2-react.md): the same updates, or after an `edit_conflict` without their
+   * `previous`, so that they write over what the cells hold now. It succeeds as its command would have: the history
+   * gets its step, or an undo or a redo whose step is still the last moves it. Resolves as `dispatch` does.
+   */
+  readonly retryWrite = async (): Promise<CommandOutcome> => {
+    const failed = this.snapshot.failedWrite;
+    const table = this.snapshot.table;
+    if (!failed) return { ok: false, error: new GridError("invalid_request", "No write failed.") };
+    if (failed.retry === null || !table || table.revision !== failed.revision) {
+      return { ok: false, error: new GridError("revision_changed", "The write cannot be sent again.") };
+    }
+    this.publish({ failedWrite: null });
+    const request: CommandRequest = { op: "write", revision: failed.revision, updates: failed.updates };
+    if (failed.rowKey !== undefined) request.rowKey = failed.rowKey;
+    const command = this.stillLast(failed) ? failed.command : "write";
+    try {
+      await this.send(command, [request], table, failed.retry === "overwrite");
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: asGridError(error) };
+    }
+  };
+
+  /** Forgets the failed write: its cells show what the engine holds. */
+  discardWrite() {
+    if (this.snapshot.failedWrite) this.publish({ failedWrite: null });
+  }
+
+  /** Keeps a write that failed, for `retryWrite` and `discardWrite`. */
+  private failWrite(command: string, request: CommandRequest, error: GridError) {
+    const failed: FailedWrite = {
+      command,
+      updates: request.updates as WriteUpdate[],
+      revision: (request.revision as string | null | undefined) ?? null,
+      ...(request.rowKey === undefined ? {} : { rowKey: request.rowKey as string | string[] }),
+      error,
+      retry: error.code === "edit_conflict" ? "overwrite" : RETRIED.has(error.code) ? "retry" : null,
+    };
+    this.publish({ failedWrite: failed });
+  }
+
+  /** Whether a failed undo or redo has its step still last in its list, where its write then moves it from. */
+  private stillLast(failed: FailedWrite) {
+    const list = failed.command === "history.undo" ? "undo" : failed.command === "history.redo" ? "redo" : null;
+    if (!list) return true;
+    const step = this.base("session").history?.[list].at(-1);
+    if (!step) return false;
+    const written = step.updates.map((update) => ({
+      key: update.key,
+      column: update.column,
+      value: list === "undo" ? update.before : update.after,
+      previous: list === "undo" ? update.after : update.before,
+    }));
+    const sent = failed.updates.map(({ key, column, value, previous }) => ({ key, column, value, previous }));
+    return canonicalJson(written) === canonicalJson(sent);
   }
 
   /** Where the file of an `export` without a target can be downloaded (`Transport.exportUrl`), or null. */
@@ -1112,25 +1181,39 @@ export class GridStore {
   }
 
   /** Sends the requests of a command and applies the commands of §6.7 that their answers call for. */
-  private async send(name: string, requests: CommandRequest[], table: TableInfo): Promise<unknown> {
+  private async send(name: string, requests: CommandRequest[], table: TableInfo, overwrite = false): Promise<unknown> {
+    if (!requests.some((request) => request.op === "write")) return this.sendNow(name, requests, table, overwrite);
+    let done = () => {};
+    const finished = new Promise<void>((resolve) => {
+      done = resolve;
+    });
+    this.writing = this.writing.then(() => finished);
+    try {
+      return await this.sendNow(name, requests, table, overwrite);
+    } finally {
+      done();
+    }
+  }
+
+  private async sendNow(name: string, requests: CommandRequest[], table: TableInfo, overwrite: boolean) {
     const client = this.client;
     let output: unknown;
     for (const request of requests) {
       if (!client) throw new GridError("not_ready", "The grid is not connected.");
       const { op, ...members } = request;
-      const updates = (op === "write" ? members.updates : []) as {
-        key: RowKey;
-        column: string;
-        value: JsonValue;
-        previous?: JsonValue;
-      }[];
+      const updates = (op === "write" ? members.updates : []) as WriteUpdate[];
       const write = op === "write" ? ++this.writes : 0;
       if (write) this.markWritten(write, updates);
+      // An overwrite checks no `previous`; the history keeps them all the same, as the values the person wrote over.
+      const sent = overwrite ? { ...members, updates: updates.map(({ previous: _, ...update }) => update) } : members;
       let result: Record<string, unknown>;
       try {
-        result = await client.request<Record<string, unknown>>(op as Operation, { table: table.table, ...members });
+        result = await client.request<Record<string, unknown>>(op as Operation, { table: table.table, ...sent });
       } catch (error) {
-        if (write) this.dropWritten((other) => other === write);
+        if (write) {
+          this.dropWritten((other) => other === write);
+          if (client === this.client) this.failWrite(name, request, asGridError(error));
+        }
         throw error;
       }
       if (op === "write") {

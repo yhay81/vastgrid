@@ -52,11 +52,62 @@ function format(number: Intl.NumberFormat, value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
+interface StatusBarProps {
+  announce: (text: string) => void;
+  /** Gives the focus back to the grid, once a button that had it is gone. */
+  onDone: () => void;
+}
+
+/**
+ * The last write that failed (§6.6 of v2-react.md): why, with Retry (Overwrite after a conflict) while the table
+ * has the revision its rows were read at, and Discard. Both give the focus back to the grid.
+ */
+function FailedWrite({ announce, onDone }: StatusBarProps) {
+  const store = useGridStore();
+  const { messages } = use(LocaleContext);
+  const failed = useGridSelector((snapshot) => snapshot.failedWrite);
+  const revision = useGridSelector((snapshot) => snapshot.table?.revision);
+  if (!failed) return null;
+  const retry = failed.revision === revision ? failed.retry : null;
+  const text =
+    failed.error.code === "revision_changed" || (failed.retry !== null && retry === null)
+      ? messages.writeRevisionChanged
+      : failed.error.code === "edit_conflict"
+        ? messages.writeConflict
+        : messages.writeFailed(failed.error.message);
+  const send = () => {
+    onDone();
+    void store.retryWrite().then((outcome) => {
+      if (!outcome.ok && !store.getSnapshot().failedWrite) announce(messages.writeFailed(outcome.error.message));
+    });
+  };
+  return (
+    <span className="vg-statusbar__failed" role="alert">
+      <span className="vg-statusbar__error">{text}</span>
+      {retry && (
+        <button type="button" className="vg-button vg-button--small" onClick={send}>
+          {retry === "overwrite" ? messages.overwrite : messages.retry}
+        </button>
+      )}
+      <button
+        type="button"
+        className="vg-button vg-button--small"
+        onClick={() => {
+          onDone();
+          store.discardWrite();
+        }}
+      >
+        {messages.discard}
+      </button>
+    </span>
+  );
+}
+
 /**
  * The status bar: the active cell, the sum of the selection, what the grid is doing (saving and the outcome of the
- * last save included) or that the file changed on disk, the cells not saved yet and the rows.
+ * last save included) or that the file changed on disk, a write that failed, the cells not saved yet and the rows.
  */
-export function StatusBar() {
+export function StatusBar({ announce, onDone }: StatusBarProps) {
   const store = useGridStore();
   const { messages, number } = use(LocaleContext);
   const saving = use(SaveContext);
@@ -67,6 +118,7 @@ export function StatusBar() {
   const rowCount = useGridSelector((snapshot) => snapshot.view?.rowCount);
   const building = useGridSelector((snapshot) => snapshot.view?.status === "building");
   const pending = useGridSelector((snapshot) => snapshot.pending !== null);
+  const failedWrite = useGridSelector((snapshot) => snapshot.failedWrite !== null);
   const error = useGridSelector((snapshot) => snapshot.error);
   const active = useGridSelector((snapshot) => snapshot.session.active);
   const selection = useGridSelector((snapshot) => snapshot.session.selection);
@@ -102,9 +154,13 @@ export function StatusBar() {
           {summary.numericCount > 0 && <span>{messages.average(format(number, summary.average))}</span>}
         </span>
       )}
-      <span className="vg-statusbar__muted" role="status">
-        {doing}
-      </span>
+      {failedWrite ? (
+        <FailedWrite announce={announce} onDone={onDone} />
+      ) : (
+        <span className="vg-statusbar__muted" role="status">
+          {doing}
+        </span>
+      )}
       {checked !== 0 && (
         <span className="vg-statusbar__checked">
           {checked === null ? messages.checkedUnknown : messages.checkedRows(number.format(checked))}

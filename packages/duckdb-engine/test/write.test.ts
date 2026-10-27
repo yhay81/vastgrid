@@ -275,3 +275,168 @@ test("the grid's store edits, pastes, undoes and redoes cells of a file through 
   assert.equal(store.cell(1, "name"), "Other");
   disconnect();
 });
+
+test("a write that fails is kept: Retry sends it again, Overwrite writes over a conflict, Discard forgets it", async () => {
+  await writeFile(path.join(workspace, "retry.csv"), people);
+  // A transport whose next write fails as a lost connection does.
+  let failNext = false;
+  const local = localTransport(context.engine);
+  const transport = {
+    ...local,
+    send: (request: Parameters<typeof local.send>[0], options: Parameters<typeof local.send>[1]) => {
+      if (request.op === "write" && failNext) {
+        failNext = false;
+        return Promise.reject(new TypeError("Failed to fetch"));
+      }
+      return local.send(request, options);
+    },
+  };
+  const store = createGridStore({ transport, table: "retry.csv" });
+  const disconnect = store.connect();
+  store.setViewport({ top: 0, rows: 10, columns: ["id", "name", "age", "joined"] });
+  await until(() => store.getSnapshot().view !== null && store.cell(2, "name") === "Cy");
+  const settled = () => store.getSnapshot().pending === null;
+
+  // Lost: the cell shows the engine's value, and Retry writes it with its history step.
+  failNext = true;
+  await store.dispatch({ command: "select", row: 0, column: "name" });
+  store.dispatchSync({ command: "edit.begin", text: "Amy" });
+  const lost = await store.dispatch({ command: "edit.commit", move: null });
+  assert.equal(lost.ok, false);
+  assert.equal(store.cell(0, "name"), "Ann");
+  let failed = store.getSnapshot().failedWrite;
+  assert.equal(failed?.retry, "retry");
+  assert.equal(failed?.command, "edit.commit");
+  assert.equal(failed?.error.code, "internal");
+  assert.deepEqual(await store.retryWrite(), { ok: true });
+  assert.equal(store.getSnapshot().failedWrite, null);
+  await until(() => settled() && store.cell(0, "name") === "Amy");
+  assert.equal(store.getSnapshot().session.history?.undo.length, 1);
+
+  // Another client writes the cell under the person's edit: a conflict, which Overwrite writes over.
+  const table = store.getSnapshot().table;
+  const other = (value: string) =>
+    client.result("write", {
+      table: table?.table,
+      revision: table?.revision,
+      updates: [{ key: { rowId: 1 }, column: "name", value }],
+    });
+  await store.dispatch({ command: "select", row: 1, column: "name" });
+  store.dispatchSync({ command: "edit.begin", text: "Bea" });
+  await other("Other");
+  const conflict = await store.dispatch({ command: "edit.commit", move: null });
+  assert.equal(conflict.ok, false);
+  failed = store.getSnapshot().failedWrite;
+  assert.equal(failed?.retry, "overwrite");
+  assert.equal(failed?.error.code, "edit_conflict");
+  await until(() => settled() && store.cell(1, "name") === "Other");
+  assert.deepEqual(await store.retryWrite(), { ok: true });
+  await until(() => settled() && store.cell(1, "name") === "Bea");
+  assert.equal(store.getSnapshot().session.history?.undo.length, 2);
+
+  // An undo over a value written meanwhile is a conflict too; Overwrite moves its step onto redo.
+  await other("Again");
+  await until(() => settled() && store.cell(1, "name") === "Again");
+  assert.equal((await store.dispatch({ command: "history.undo" })).ok, false);
+  assert.equal(store.getSnapshot().failedWrite?.command, "history.undo");
+  assert.deepEqual(await store.retryWrite(), { ok: true });
+  await until(() => settled() && store.cell(1, "name") === "Bob");
+  assert.equal(store.getSnapshot().session.history?.undo.length, 1);
+  assert.equal(store.getSnapshot().session.history?.redo.length, 1);
+
+  // Discard forgets a failed write, and the cell keeps the engine's value.
+  failNext = true;
+  await store.dispatch({ command: "select", row: 2, column: "name" });
+  store.dispatchSync({ command: "edit.begin", text: "Cyd" });
+  assert.equal((await store.dispatch({ command: "edit.commit", move: null })).ok, false);
+  store.discardWrite();
+  assert.equal(store.getSnapshot().failedWrite, null);
+  assert.equal(store.cell(2, "name"), "Cy");
+  assert.equal((await store.retryWrite()).ok, false);
+  disconnect();
+});
+
+test("an undo pressed while a write is sent undoes that write", async () => {
+  await writeFile(path.join(workspace, "quick.csv"), people);
+  const store = createGridStore({ transport: localTransport(context.engine), table: "quick.csv" });
+  const disconnect = store.connect();
+  store.setViewport({ top: 0, rows: 10, columns: ["id", "name", "age", "joined"] });
+  await until(() => store.getSnapshot().view !== null && store.cell(2, "name") === "Cy");
+  await store.dispatch({ command: "select", row: 0, column: "name" });
+  assert.equal((await store.dispatch({ command: "edit.paste" }, { clipboard: { text: "Amy" } })).ok, true);
+  await store.dispatch({ command: "select", row: 1, column: "name" });
+  const clearing = store.dispatch({ command: "edit.clear" });
+  const undoing = store.dispatch({ command: "history.undo" });
+  assert.deepEqual(await clearing, { ok: true });
+  assert.deepEqual(await undoing, { ok: true });
+  await until(() => store.getSnapshot().pending === null && store.cell(1, "name") === "Bob");
+  assert.equal(store.cell(0, "name"), "Amy");
+  assert.equal(store.getSnapshot().session.history?.undo.length, 1);
+  disconnect();
+});
+
+/** The bytes of the blocks in an answer (§8.4): what a transport carries of the rows. */
+function blockBytes(value: unknown): number {
+  if (value instanceof Uint8Array) return value.byteLength;
+  if (Array.isArray(value)) return value.reduce((sum: number, item) => sum + blockBytes(item), 0);
+  if (value !== null && typeof value === "object") {
+    return Object.values(value).reduce((sum: number, item) => sum + blockBytes(item), 0);
+  }
+  return 0;
+}
+
+test("writing a few cells of a 2-million-row file reads again only the rows on screen", async () => {
+  const instance = await DuckDBInstance.create(":memory:");
+  const connection = await instance.connect();
+  const file = path.join(workspace, "large.parquet").replaceAll("'", "''");
+  await connection.run(
+    `COPY (SELECT i AS id, 'name ' || i AS name, i * 0.5 AS price FROM range(2000000) r(i)) TO '${file}' (FORMAT parquet)`,
+  );
+  connection.closeSync();
+  instance.closeSync();
+  const read = { rows: 0, bytes: 0 };
+  const local = localTransport(context.engine);
+  const transport = {
+    ...local,
+    send: async (request: Parameters<typeof local.send>[0], options: Parameters<typeof local.send>[1]) => {
+      const response = await local.send(request, options);
+      if (request.op === "rows") {
+        read.rows += Math.max(0, Number(request.end) - Number(request.start));
+        read.bytes += blockBytes(response);
+      }
+      return response;
+    },
+  };
+  const store = createGridStore({ transport, table: "large.parquet" });
+  const disconnect = store.connect();
+  const settled = () => store.getSnapshot().pending === null && store.getSnapshot().view?.status !== "building";
+  // The middle of the file is on screen: 40 rows.
+  store.setViewport({ top: 1_000_000, rows: 40, columns: ["id", "name", "price"] });
+  await until(() => store.getSnapshot().view !== null && store.cell(1_000_000, "name") === "name 1000000");
+
+  const measure = async (paste: string, row: number, column: string, done: () => boolean) => {
+    read.rows = 0;
+    read.bytes = 0;
+    await store.dispatch({ command: "select", row, column });
+    assert.equal((await store.dispatch({ command: "edit.paste" }, { clipboard: { text: paste } })).ok, true);
+    await until(() => settled() && done());
+    return { ...read };
+  };
+  // Three cells in row ID order.
+  const inOrder = await measure("a\na\na", 1_000_001, "name", () => store.cell(1_000_003, "name") === "a");
+  // Three cells of the column that the view is sorted by: the engine sorts again, the grid reads the screen again.
+  assert.equal(
+    (await store.dispatch({ command: "sort.set", keys: [{ column: "price", direction: "desc" }] })).ok,
+    true,
+  );
+  store.setViewport({ top: 1_000_000, rows: 40, columns: ["id", "name", "price"] });
+  await until(() => settled() && store.cell(1_000_000, "id") === 999_999);
+  // The rows written go to the end of the order, and the rows after them come up.
+  const sorted = await measure("-1\n-1\n-1", 1_000_010, "price", () => store.cell(1_000_010, "id") === 999_986);
+  for (const [name, result] of Object.entries({ inOrder, sorted })) {
+    // The block on screen (256 rows, about 10 KB), never the file's 2,000,000 rows.
+    assert.ok(result.rows <= 2 * 256, `${name}: ${result.rows} rows read again`);
+    assert.ok(result.bytes < 64 * 1024, `${name}: ${result.bytes} bytes read again`);
+  }
+  disconnect();
+});

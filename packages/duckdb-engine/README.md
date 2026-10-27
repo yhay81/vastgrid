@@ -40,7 +40,9 @@ createServer(createHttpHandler(engine, { path: "/api" })).listen(8080);
   waits for a file that is still loading. Handles of one file share its written cells; once the last one closes,
   they are gone. A file changed on disk opens as a new revision without them, while the handles opened before keep
   theirs. A view in row ID order reads as fast after a write (about 5 ms for 100 rows at any depth of a
-  20-million-row file); views that save their order are built again for the new edits version.
+  20-million-row file); views that save their order are built again for the new edits version. A grid that writes
+  cells reads again only the block of rows on screen: three cells of a 2-million-row file, in row ID order or of
+  the column the view is sorted by, take 256 rows and about 10 KB of blocks (`test/write.test.ts`).
 - **Sharing and cancellation.** The normalized plan, revision, source relation and edits version identify a cached
   view. Concurrent callers share its construction; cancelling one caller leaves others running.
   Switching plans or closing the last following handle stops an unfinished build once no request uses it.
