@@ -7,6 +7,7 @@
  * The values Excel saved are read as they are: formulas are not calculated again (their last calculated value is
  * shown), and formatting, merged cells and hidden rows are not reproduced.
  */
+import { columnLetters, MAX_SERIAL, serialTime } from "./excel.js";
 import type { LogicalType } from "./types.js";
 
 /** How `open` reads a workbook (§8.2). */
@@ -601,14 +602,6 @@ function columnOf(reference: string) {
   return at === 0 ? -1 : column - 1;
 }
 
-/** The letters of a 0-based column (`0` → `A`). */
-export function columnLetters(column: number) {
-  let letters = "";
-  for (let rest = column + 1; rest > 0; rest = Math.floor((rest - 1) / 26))
-    letters = String.fromCharCode(65 + ((rest - 1) % 26)) + letters;
-  return letters;
-}
-
 /** Kinds of values seen in a column, as bits. */
 const Kind = {
   integer: 1,
@@ -643,13 +636,6 @@ function typeOf(kinds: number): LogicalType {
 }
 
 const DAY = 86_400_000;
-/** Excel's day 0 in the 1900 date system, for serial numbers from 61 (1900-03-01) on. */
-const EPOCH_1900 = Date.UTC(1899, 11, 30);
-/** For serial numbers below 61: Excel counts a 29 February 1900 that did not exist. */
-const EPOCH_1900_EARLY = Date.UTC(1899, 11, 31);
-const EPOCH_1904 = Date.UTC(1904, 0, 1);
-/** Serial number of 10000-01-01: later values are not dates Excel can show. */
-const MAX_SERIAL = 2_958_466;
 
 function two(value: number) {
   return value < 10 ? `0${value}` : String(value);
@@ -671,8 +657,7 @@ function dateText(date: Date) {
  * Times are rounded to milliseconds.
  */
 export function serialDate(serial: number, style: DateStyle, date1904: boolean): { kind: number; text: string } {
-  const epoch = date1904 ? EPOCH_1904 : serial < 61 ? EPOCH_1900_EARLY : EPOCH_1900;
-  const date = new Date(epoch + Math.round(serial * DAY));
+  const date = new Date(serialTime(serial, date1904));
   if (style === DateStyle.Time && serial < 1) return { kind: Kind.time, text: timeText(date) };
   if (date.getTime() % DAY === 0) return { kind: Kind.date, text: dateText(date) };
   return { kind: Kind.dateTime, text: `${dateText(date)} ${timeText(date)}` };

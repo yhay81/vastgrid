@@ -54,7 +54,6 @@ export {
   type LoadedRow,
   type LoadedRows,
   orderColumns,
-  sameCellValue,
   WRITE_LIMIT,
 } from "./commands.js";
 export { excelNumberFormat } from "./excel.js";
@@ -177,6 +176,7 @@ export {
   isTimestampText,
   isTimeText,
   isValueOf,
+  sameCellValue,
   sameType,
   textOf,
   toBase64,

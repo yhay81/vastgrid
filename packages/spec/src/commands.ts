@@ -46,7 +46,7 @@ import {
   type Total,
 } from "./state.js";
 import type { Column, JsonValue, LogicalType, ValueType } from "./types.js";
-import { floatOf, sameType, textOf, trimSpaces } from "./values.js";
+import { sameCellValue, sameType, textOf, trimSpaces } from "./values.js";
 
 /** Rows of the view that the core has read (§6.1). */
 export interface LoadedRows {
@@ -306,23 +306,6 @@ function renameExpr(expr: Expr, from: string, to: string): Expr {
 /** Whether a value is blank (§3.2). */
 function isBlank(value: JsonValue, type: ValueType) {
   return value === null || (type.type === "string" && value === "");
-}
-
-/** Whether two values of a type are the same value (§3.1), whichever JSON writes them (§2.2). */
-export function sameCellValue(a: JsonValue, b: JsonValue, type: ValueType): boolean {
-  if (a === null || b === null) return a === b;
-  switch (type.type) {
-    case "integer":
-    case "bigint":
-      return BigInt(a as number | string) === BigInt(b as number | string);
-    case "float": {
-      const x = floatOf(a);
-      const y = floatOf(b);
-      return Number.isNaN(x) ? Number.isNaN(y) : x === y;
-    }
-    default:
-      return a === b;
-  }
 }
 
 /** The plan without empty `derive`, `where`, `having` and `sort` members. */

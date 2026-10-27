@@ -10,6 +10,7 @@
  * cell, never a formula, also when it starts with `=`, `+`, `-` or `@`. Text longer than 32,767 characters is cut.
  * `null` leaves the cell empty. Ported from v1's `xlsx-writer.ts`; both engines write workbooks with it.
  */
+import { columnLetters, serialOf } from "./excel.js";
 import { SpecError } from "./plan.js";
 import type { JsonValue, LogicalType } from "./types.js";
 
@@ -93,10 +94,6 @@ export function webDeflate(): ((chunks: AsyncIterable<Uint8Array>) => AsyncItera
 
 // ----- values -----
 
-const EXCEL_EPOCH_DAYS = 25_569; // 1970-01-01
-const MIN_SERIAL = 61; // 1900-03-01: Excel counts a 29 February 1900 that did not exist
-const MAX_SERIAL = 2_958_466; // 10000-01-01
-
 const temporal =
   /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?)?\s*(Z|[+-]\d{2}(?::?\d{2}){0,2})?$/i;
 const timeOfDay = /^(\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?\s*(?:Z|[+-]\d{2}(?::?\d{2}){0,2})?$/i;
@@ -129,8 +126,7 @@ export function excelSerial(value: string, type: LogicalType): number | null {
   if (!Number.isFinite(days)) return null;
   const seconds =
     Number(hour) * 3600 + Number(minute) * 60 + Number(second) + Number(fraction) - offsetSeconds(match[8]);
-  const serial = days + EXCEL_EPOCH_DAYS + seconds / 86_400;
-  return serial >= MIN_SERIAL && serial < MAX_SERIAL ? serial : null;
+  return serialOf(days, seconds);
 }
 
 const numericText = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
@@ -143,17 +139,6 @@ function exactNumber(text: string): number | null {
   if (significant.length > 15) return null;
   const number = Number(text);
   return Number.isFinite(number) ? number : null;
-}
-
-const columnNames: string[] = [];
-function columnName(index: number) {
-  let name = columnNames[index];
-  if (name !== undefined) return name;
-  name = "";
-  for (let rest = index + 1; rest > 0; rest = Math.floor((rest - 1) / 26))
-    name = String.fromCharCode(65 + ((rest - 1) % 26)) + name;
-  columnNames[index] = name;
-  return name;
 }
 
 function escapeXml(text: string) {
@@ -401,7 +386,7 @@ export async function* writeXlsx(
   const parts = staticParts(sheetName, formats);
   for (const [name, text] of Object.entries(parts)) yield* zip.entry(name, [encoder.encode(text)]);
 
-  const refs = columns.map((_, index) => columnName(index));
+  const refs = columns.map((_, index) => columnLetters(index));
   async function* sheet(): AsyncGenerator<Uint8Array> {
     const cols = columns.map(
       (column, index) => `<col min="${index + 1}" max="${index + 1}" width="${columnWidth(column)}" customWidth="1"/>`,

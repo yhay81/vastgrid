@@ -1,5 +1,6 @@
 /**
- * Rules of values (docs/v2-spec.md §2): how JSON writes them, their text form, and literals.
+ * Rules of values (docs/v2-spec.md §2): how JSON writes them, their text form, literals, and when two are the same
+ * value (§3.1).
  */
 import { parseIntervalText, parseTimestampText } from "./calendar.js";
 import type { JsonValue, TimestampUnit, ValueType } from "./types.js";
@@ -158,6 +159,23 @@ export function sameType(a: ValueType, b: ValueType): boolean {
       return (a.unit ?? "us") === (b.unit ?? "us");
     default:
       return true;
+  }
+}
+
+/** Whether two values of a type are the same value (§3.1), whichever JSON writes them (§2.2). */
+export function sameCellValue(a: JsonValue, b: JsonValue, type: ValueType): boolean {
+  if (a === null || b === null) return a === b;
+  switch (type.type) {
+    case "integer":
+    case "bigint":
+      return BigInt(a as number | string) === BigInt(b as number | string);
+    case "float": {
+      const x = floatOf(a);
+      const y = floatOf(b);
+      return Number.isNaN(x) ? Number.isNaN(y) : x === y;
+    }
+    default:
+      return a === b;
   }
 }
 

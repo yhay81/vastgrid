@@ -1,6 +1,7 @@
 /**
  * Excel's number format codes for the display settings of columns (§5.1): `export` gives them to engines that
- * write workbooks (§6.6, §8.2), so that a workbook shows numbers and dates as the grid does.
+ * write workbooks (§6.6, §8.2), so that a workbook shows numbers and dates as the grid does. Also Excel's date
+ * serial numbers and the letters of its columns, which reading and writing workbooks share.
  */
 import type { ColumnFormat, NumberFormat } from "./state.js";
 import type { LogicalType } from "./types.js";
@@ -144,4 +145,43 @@ export function excelNumberFormat(
     return format.date.pattern === undefined ? null : excelDateCode(format.date.pattern);
   }
   return null;
+}
+
+const DAY = 86_400_000;
+/** Serial number of 1900-03-01. Excel counts a 29 February 1900 that did not exist, so earlier days are one off. */
+const MARCH_1900 = 61;
+/** Excel's day 0 in the 1900 date system, for serial numbers from `MARCH_1900` on. */
+const EPOCH_1900 = Date.UTC(1899, 11, 30);
+/** Day 0 for the serial numbers below `MARCH_1900`. */
+const EPOCH_1900_EARLY = Date.UTC(1899, 11, 31);
+const EPOCH_1904 = Date.UTC(1904, 0, 1);
+/** Serial number of 1970-01-01: 25,569. */
+const SERIAL_1970 = -EPOCH_1900 / DAY;
+/** Serial number of 10000-01-01: later values are not dates Excel can show. */
+export const MAX_SERIAL = 2_958_466;
+
+/**
+ * The time of a date serial number in milliseconds since 1970-01-01 (UTC), rounded to milliseconds: in the 1900
+ * date system, or in the 1904 one of workbooks that set `date1904`.
+ */
+export function serialTime(serial: number, date1904: boolean): number {
+  const epoch = date1904 ? EPOCH_1904 : serial < MARCH_1900 ? EPOCH_1900_EARLY : EPOCH_1900;
+  return epoch + Math.round(serial * DAY);
+}
+
+/**
+ * The serial number in the 1900 date system of a day (days since 1970-01-01) and seconds after its start, or `null`
+ * when Excel cannot show it as a date: before 1900-03-01 or from 10000-01-01 on.
+ */
+export function serialOf(days: number, seconds: number): number | null {
+  const serial = days + SERIAL_1970 + seconds / 86_400;
+  return serial >= MARCH_1900 && serial < MAX_SERIAL ? serial : null;
+}
+
+/** The letters of a 0-based column (`0` → `A`). */
+export function columnLetters(column: number) {
+  let letters = "";
+  for (let rest = column + 1; rest > 0; rest = Math.floor((rest - 1) / 26))
+    letters = String.fromCharCode(65 + ((rest - 1) % 26)) + letters;
+  return letters;
 }
