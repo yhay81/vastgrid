@@ -10,14 +10,19 @@ type Totals = NonNullable<GridSnapshot["totals"]>;
  * `measure`, and shown with `show`. The totals on screen stay until the new ones come.
  */
 export class TotalsReader {
-  /** The revision, edits and plan of the totals read last; empty without them. */
-  private key = "";
+  /** The revision, edits and plan of the totals read last; empty without them, null to read them again. */
+  private key: string | null = "";
   private abort: AbortController | null = null;
 
   constructor(
     private readonly measure: (plan: Plan, revision: string | null, signal: AbortSignal) => Promise<Totals>,
     private readonly show: (totals: Totals | null) => void,
   ) {}
+
+  /** Reads the totals row again at the next `follow`, even if nothing it follows changed. */
+  reset() {
+    this.key = null;
+  }
 
   /** Reads the totals row again if the view on screen, its edits or the totals changed. */
   follow(view: View | null, snapshot: GridSnapshot) {

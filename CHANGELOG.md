@@ -50,6 +50,8 @@ that was not edited kept. [From v1 to v2](docs/v2-from-v1.md) is the migration g
   and when its cell runs again, and keeps the notebook's keys of command mode off while it has the focus. The corpus,
   pytest and a comparison with vastgrid-js's memory engine test it (docs/notebook.md). docs/entries.md and
   docs/entries.ja.md compare the six places v2 opens files: formats, editing, saving, exporting and installing.
+- `vastgrid`: a grid given rows read on a server (`initial`, from `readInitialView`) reads its totals row once the
+  table is open; before, the totals row stayed empty until the view, its edits or the totals changed.
 - `vastgrid`: `httpTransport` sends requests once its stream of events is open (or has failed). A table that
   finished loading before the stream connected stayed "loading" for its grid, without the menu items that need
   the whole table.

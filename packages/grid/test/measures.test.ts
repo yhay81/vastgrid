@@ -3,6 +3,7 @@ import { test } from "node:test";
 import type { Column, GridDocument } from "vastgrid-spec";
 import { measureName, measuresPlan, statisticsOf, totalMeasures } from "../src/core/measures.ts";
 import { createGridStore, localTransport } from "../src/core.ts";
+import { readInitialView } from "../src/server.ts";
 import { CAPABILITIES, fakeEngine, numbers, settle } from "./fake-engine.ts";
 
 const qty: Column = { name: "qty", type: "integer" };
@@ -63,6 +64,27 @@ test("the store reads the totals row for the view on screen and follows its sett
   assert.deepEqual(store.getSnapshot().totals?.values, { id: 9 });
   await store.dispatch({ command: "column.total", name: "id", total: null });
   assert.equal(store.getSnapshot().totals, null);
+  disconnect();
+});
+
+test("the store reads the totals row for a view read on a server once the table is open", async () => {
+  const engine = fakeEngine(numbers(10), {
+    ...CAPABILITIES,
+    plan: { ...CAPABILITIES.plan, aggregate: true },
+    measures: ["count", "sum", "min", "max"],
+  });
+  const transport = localTransport(engine);
+  const document: GridDocument = {
+    kind: "vastgrid/document",
+    version: 2,
+    columns: [{ name: "id", total: { fn: "sum" } }],
+  };
+  const initial = await readInitialView(transport, { table: "numbers", document, rows: 10 });
+  const store = createGridStore({ transport, table: "numbers", document, initial });
+  assert.equal(store.getSnapshot().view?.rowCount, 10);
+  const disconnect = store.connect();
+  for (let attempt = 0; attempt < 200 && store.getSnapshot().totals === null; attempt++) await settle(1);
+  assert.deepEqual(store.getSnapshot().totals?.values, { id: 45 });
   disconnect();
 });
 

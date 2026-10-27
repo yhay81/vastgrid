@@ -375,6 +375,8 @@ export class GridStore {
     // Rows read on a server stay when they belong to the same revision and plan.
     if (seeded && (seeded.revision !== info.revision || seeded.edits !== info.edits.version)) this.current = null;
     else if (seeded) this.current = { ...seeded, abort: new AbortController() };
+    // Totals asked for before the table was open, as for rows read on a server, could not be read.
+    this.totals.reset();
     this.publish({ table: info, status: info.status === "error" ? "error" : "ready" });
     if (repaired.removed.length > 0) this.change(repaired.document, this.base("session"));
     this.showPlan(this.base("document").plan ?? {});
