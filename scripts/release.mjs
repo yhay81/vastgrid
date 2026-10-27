@@ -23,10 +23,13 @@ const NPM_PACKAGES = [
  */
 const others = ["packages/vscode", "packages/notebook", "examples/bench", "examples/files", "site"];
 const pyproject = "packages/notebook/python/pyproject.toml";
+/** uv's lockfile, which holds the version of the package itself. */
+const uvLock = "packages/notebook/python/uv.lock";
+const lockedVersion = /(\nname = "vastgrid"\nversion = )"([^"]*)"(\nsource = \{ editable = "\." \})/;
 const commands = {
   version: setVersion,
   check,
-  notes: () => process.stdout.write(`${section()}\n`),
+  notes: () => process.stdout.write(`${absoluteLinks(section())}\n`),
   python: () => process.stdout.write(`${pythonVersion(version)}\n`),
 };
 
@@ -67,6 +70,9 @@ function setVersion() {
   }
   const python = readFileSync(pyproject, "utf8");
   writeFileSync(pyproject, python.replace(/^version = ".*"$/m, `version = "${pythonVersion(version)}"`));
+  const lock = readFileSync(uvLock, "utf8");
+  if (!lockedVersion.test(lock)) fail(`${uvLock} has no version of the package vastgrid.`);
+  writeFileSync(uvLock, lock.replace(lockedVersion, `$1"${pythonVersion(version)}"$3`));
   writeFileSync("CHANGELOG.md", changelog.replace("\n## Unreleased\n", `\n## ${version} — ${today()}\n`));
   execSync("npm install --package-lock-only --ignore-scripts", { stdio: "inherit" });
 }
@@ -89,6 +95,8 @@ function check() {
   }
   const python = /^version = "(.*)"$/m.exec(readFileSync(pyproject, "utf8"))?.[1];
   if (python !== pythonVersion(version)) problems.push(`The Python package is at ${python}.`);
+  const locked = lockedVersion.exec(readFileSync(uvLock, "utf8"))?.[2];
+  if (locked !== pythonVersion(version)) problems.push(`${uvLock} has the Python package at ${locked}.`);
   if (problems.length > 0) fail(`${problems.join("\n")}\nRun: node scripts/release.mjs version ${version}`);
   section();
 }
@@ -102,6 +110,11 @@ function section() {
     .slice(start + 1, end < 0 ? undefined : end)
     .join("\n")
     .trim();
+}
+
+/** Links relative to the repository, made absolute at the release's tag, as the GitHub release shows them. */
+function absoluteLinks(text) {
+  return text.replace(/\]\((?!https?:|#)([^)\s]+)\)/g, `](https://github.com/yhay81/vastgrid/blob/v${version}/$1)`);
 }
 
 function today() {
