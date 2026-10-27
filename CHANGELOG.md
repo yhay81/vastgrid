@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `vastgrid-duckdb`, `vastgrid-duckdb-engine` (unreleased v2): exports to Parquet keep intervals as they are. DuckDB
+  1.5's Parquet dictionaries keep one of the values that compare equal, so a column of "1 month" and "30 days" was
+  written with one in place of the other; a Parquet export with an interval column is now written without
+  dictionaries.
 - `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb-engine` (unreleased v2): a test sends generated plans to the memory
   engine and the DuckDB engine and compares their answers, which found and fixed these. The memory engine reads a
   date as a timestamp of any unit (it failed for dates that nanoseconds do not hold), and keeps −0.0 in float

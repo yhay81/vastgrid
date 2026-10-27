@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { inflateRawSync } from "node:zlib";
+import { DuckDBInstance } from "@duckdb/node-api";
 import { type CellValue, SourceError, XLSX_MAX_ROWS } from "vastgrid-core";
 import { TableEngine } from "../src/engine.ts";
 import { createTableHandler } from "../src/handler.ts";
@@ -156,6 +157,30 @@ test("writes the requested headers to CSV and keeps the names in Parquet", async
   const parquet = path.join(workspace, "out", "named.parquet");
   await table.exportView({ view: null, format: "parquet", columns: [1], headers: ["Fruit"], target: "x" }, parquet);
   assert.equal((await open(parquet)).info().columns[0].name, "name");
+});
+
+test("Parquet keeps intervals that compare equal as they are: 1 month is not 30 days", async () => {
+  // DuckDB 1.5's dictionaries keep one of the values that compare equal, and "1 month" equals "30 days".
+  const spans = "['1 month', '30 days', '29 days', '1 day 02:00:00', '01:00:00', '1 year 2 months']";
+  const expected = `${spans}[(n * 5) % 6 + 1]`;
+  const instance = await DuckDBInstance.create(":memory:");
+  const connection = await instance.connect();
+  try {
+    const source = path.join(workspace, "spans.parquet");
+    await connection.run(
+      `COPY (SELECT n, CAST(${expected} AS INTERVAL) AS span FROM range(3000) t(n)) TO '${source}' (FORMAT parquet, DICTIONARY_SIZE_LIMIT 1)`,
+    );
+    const table = await open(source);
+    const target = path.join(workspace, "out", "spans.parquet");
+    await table.exportView({ view: null, format: "parquet", target: "spans.parquet" }, target);
+    const read = await connection.runAndReadAll(
+      `SELECT count(*) FILTER (WHERE CAST(span AS VARCHAR) <> ${expected}), count(*) FROM '${target}'`,
+    );
+    assert.deepEqual(read.getRowsJS()[0].map(Number), [0, 3000]);
+  } finally {
+    connection.closeSync();
+    instance.closeSync();
+  }
 });
 
 test("refuses xlsx beyond the rows of a sheet, and exports a filtered view of the same table", async () => {

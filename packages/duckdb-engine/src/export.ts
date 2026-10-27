@@ -73,7 +73,12 @@ export async function writeExport(connection: DuckDBConnection, job: ExportJob, 
   const options = {
     csv: `FORMAT csv, HEADER ${header}`,
     tsv: `FORMAT csv, HEADER ${header}, DELIMITER '\\t'`,
-    parquet: "FORMAT parquet, COMPRESSION zstd",
+    // Without dictionaries when there are intervals: DuckDB 1.5's dictionaries keep one of the values that compare
+    // equal, and "1 month" and "30 days" compare equal (§3.1), so one would be written for the other. A limit of
+    // one byte leaves every column without one.
+    parquet: columns.some((column) => column.type === "interval")
+      ? "FORMAT parquet, COMPRESSION zstd, DICTIONARY_SIZE_LIMIT 1"
+      : "FORMAT parquet, COMPRESSION zstd",
     json: "FORMAT json, ARRAY true",
   }[format];
   const body = ownHeader ? `${file}.body` : file;

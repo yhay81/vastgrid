@@ -7,7 +7,7 @@ import { inflateRawSync } from "node:zlib";
 import { createGridStore, localTransport } from "vastgrid-grid/core";
 import { createHttpHandler } from "../src/index.ts";
 import { XLSX_MAX_ROWS } from "../src/xlsx-writer.ts";
-import { type Client, type Json, setUp, type TableInfo } from "./client.ts";
+import { type Client, type Json, setUp, type TableInfo, writeParquet } from "./client.ts";
 
 let context: Awaited<ReturnType<typeof setUp>>;
 let client: Client;
@@ -137,6 +137,34 @@ test("writes the requested headers to CSV and TSV, keeps the names in Parquet an
     (await readdir(path.join(workspace, "out"))).filter((name) => name.includes(".tmp")),
     [],
   );
+});
+
+test("Parquet keeps intervals that compare equal as they are: 1 month is not 30 days (§2.2)", async () => {
+  // DuckDB 1.5's dictionaries keep one of the values that compare equal, and intervals compare by their parts
+  // normalized (§3.1): a column of both would read back as one of them.
+  const spans = ["1 month", "30 days", "29 days", "1 day 02:00:00", "01:00:00", "1 year 2 months", null];
+  const rows = Array.from({ length: 3_000 }, (_, row) => [row, spans[(row * 5) % spans.length], `n${row % 3}`]);
+  await writeParquet(path.join(workspace, "spans.parquet"), {
+    columns: [
+      { name: "id", type: "integer" },
+      { name: "span", type: "interval" },
+      { name: "name", type: "string" },
+    ],
+    rows,
+  });
+  const info = await client.open("spans.parquet");
+  for (const [index, plan] of [{}, { sort: [{ column: "name", direction: "desc" }] }].entries()) {
+    await exported(info, { format: "parquet", plan, target: `spans-${index}.parquet` });
+    const back = await client.open(`out/spans-${index}.parquet`);
+    const read = await client.rows(back, { start: 0, end: rows.length, columns: ["id", "span"] });
+    const byId = new Map(read.rows.map(([id, span]) => [id, span]));
+    assert.equal(byId.size, rows.length);
+    assert.deepEqual(
+      rows.filter(([id, span]) => byId.get(id) !== span).slice(0, 3),
+      [],
+      `intervals of ${JSON.stringify(plan)} read back as written`,
+    );
+  }
 });
 
 test("exports read the written cells (§7.2)", async () => {
