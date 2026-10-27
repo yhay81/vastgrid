@@ -156,7 +156,7 @@ worker; an export keeps them.
 ## How fast
 
 Measured on 2026-10-27 on an Apple M2 Pro with Node.js 24, through the engine's messages without a worker or a
-page ([the benchmark](https://github.com/yhay81/vastgrid/blob/main/docs/memory-engine-benchmark.md)). The
+page ([the benchmark](https://github.com/yhay81/vastgrid/blob/main/docs/benchmarks/memory-engine.md)). The
 files have 8 columns; times are of one run.
 
 | | 1M rows, CSV (69 MB) | 1M rows, Parquet (13 MB) | 10M rows, CSV (701 MB) | 10M rows, Parquet (132 MB) |

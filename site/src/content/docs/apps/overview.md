@@ -74,6 +74,3 @@ Each entry makes a store with `createGridStore` (`vastgrid/core`) over its trans
 - **Keys and themes.** The grid's keys work where the host leaves them to it: VS Code acts on its own keys of
   saving, Undo and Redo and gives them to the grid as commands, and a notebook skips its keys while the grid has
   the focus. The grid follows the host's theme, light or dark.
-
-[entries.md](https://github.com/yhay81/vastgrid/blob/main/docs/entries.md) on GitHub has the same comparison
-and how each entry is tested.

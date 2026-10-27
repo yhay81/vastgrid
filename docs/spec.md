@@ -2,7 +2,7 @@
 
 Status: **0.2-draft.2** (2026-10-24). This document is normative for the engines, the grid core and the
 surfaces of vastgrid 0.2. Why 0.2 is built this way is in
-[the reconsideration of the rebuild](rebuild-decision.ja.md) (Japanese); 0.1's protocol is
+[the reconsideration of the rebuild](https://github.com/yhay81/vastgrid/blob/507862d/docs/rebuild-decision.ja.md) (Japanese); 0.1's protocol is
 [protocol.md of v0.1.1](https://github.com/yhay81/vastgrid/blob/v0.1.1/docs/protocol.md). The conformance corpus in [`packages/spec/conformance`](../packages/spec/conformance)
 turns the rules of sections 2–8 into cases that every engine and every core runs.
 

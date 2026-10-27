@@ -33,41 +33,13 @@ comes as a command, a VS Code extension, an MCP App and a Jupyter widget.
 | --- | --- | --- |
 | A React app | `npm install vastgrid vastgrid-js` ([quick start](#quick-start)) | in memory, a worker, or a server |
 | The browser | [vastgrid.yhay81.com/open/](https://vastgrid.yhay81.com/open/): drop a file; it stays in the browser | `vastgrid-js` in a Web Worker |
-| The command line | `npx vastgrid-cli sales.parquet` | DuckDB on this computer |
-| VS Code | the extension [vastgrid](packages/vscode) (`yhay81.vastgrid-vscode`) | DuckDB in the extension |
-| An AI chat | the MCP server `vastgrid-mcp` with its MCP App | DuckDB in the MCP server |
-| A Jupyter notebook | `pip install vastgrid`, then `vastgrid.show(df)` | DuckDB in the kernel |
+| The command line | [`npx vastgrid-cli sales.parquet`](https://vastgrid.yhay81.com/apps/cli/) | DuckDB on this computer |
+| VS Code | the extension [vastgrid](https://vastgrid.yhay81.com/apps/vscode/) (`yhay81.vastgrid-vscode`) | DuckDB in the extension |
+| An AI chat | the MCP server [`vastgrid-mcp`](https://vastgrid.yhay81.com/apps/mcp/) with its MCP App | DuckDB in the MCP server |
+| A Jupyter notebook | [`pip install vastgrid`](https://vastgrid.yhay81.com/apps/notebook/), then `vastgrid.show(df)` | DuckDB in the kernel |
 
-[docs/entries.md](docs/entries.md) compares them: formats, editing, saving and exporting.
-
-**Command line.** Opens files or folders in a grid in the browser, served on 127.0.0.1 only; `--save` lets ⌘S or
-Ctrl+S save edited CSV and TSV files ([docs/cli.md](docs/cli.md)).
-
-```sh
-npx vastgrid-cli sales.parquet
-npx vastgrid-cli --save data/
-```
-
-**VS Code.** Parquet and Excel files open in vastgrid; CSV, TSV and JSON Lines files open with "Open in vastgrid".
-Cells of CSV and TSV files are saved with VS Code's Save, and undone with its Undo ([docs/vscode.md](docs/vscode.md)).
-
-**MCP App.** An agent opens a file in a grid that the person sees in the chat, and both work on the same grid: the
-agent reads its state and rows and applies the same commands as the person's keys and menus
-([docs/mcp-app.md](docs/mcp-app.md)).
-
-```json
-{ "mcpServers": { "vastgrid": { "command": "npx", "args": ["-y", "vastgrid-mcp", "/path/to/data"] } } }
-```
-
-**Notebook.** A DataFrame, an Arrow table, a DuckDB relation or a file in JupyterLab 4 or Notebook 7; the notebook
-reads the edited table back ([docs/notebook.md](docs/notebook.md)).
-
-```python
-import vastgrid
-
-grid = vastgrid.show("sales.parquet")  # or a pandas or Polars DataFrame
-grid.to_pandas(view=True)              # the grid's view, with the edited cells
-```
+[Where vastgrid opens files](https://vastgrid.yhay81.com/apps/overview/) compares them: formats, editing, saving
+and exporting.
 
 ## Quick start
 
@@ -76,7 +48,7 @@ npm install vastgrid vastgrid-js
 ```
 
 Until 0.2.0 is released, the packages are prereleases on npm's `next` tag, and `npm install vastgrid` still gives
-0.1.x: try this version with `npm install vastgrid@next vastgrid-js@next` (and `@next` for the other packages).
+0.1.x: try this version with `npm install vastgrid@next vastgrid-js@next`.
 
 ```tsx
 import { DataGrid, localTransport } from "vastgrid";
@@ -108,178 +80,11 @@ export function Orders() {
 }
 ```
 
-Rows are typed JSON: decimals as strings with their exact digits, dates as `YYYY-MM-DD`
-([spec.md §2.2](docs/spec.md#22-values-in-json)). The memory engine also takes Apache Arrow, and CSV, TSV,
-JSON Lines, Excel and Parquet files ([vastgrid-js](packages/js)). With `editable: true`, people write cells; the
-written values are kept apart from `rows`, and every view, total and export sees them.
-
-The grid works uncontrolled, or with `document` and `onDocumentChange` (the view: plan, column widths, formats,
-pins) and `session` and `onSessionChange` (selection, scroll, undo history), so that a host can save and restore
-them. Everything is a typed command, and your own controls dispatch the same ones:
-
-```tsx
-import { DataGrid, GridProvider, useCreateGridStore, useGridDispatch, useGridSelector } from "vastgrid";
-
-function Workbench() {
-  const store = useCreateGridStore({ transport, table: "orders" });
-  return (
-    <GridProvider store={store}>
-      <ClearSort />
-      <DataGrid store={store} style={{ height: 480 }} />
-    </GridProvider>
-  );
-}
-
-function ClearSort() {
-  const sort = useGridSelector((snapshot) => snapshot.document.plan?.sort);
-  const dispatch = useGridDispatch();
-  return (
-    <button type="button" disabled={!sort} onClick={() => dispatch({ command: "sort.clear" })}>
-      Clear sort
-    </button>
-  );
-}
-```
-
-The props, hooks and commands are in [docs/react.md](docs/react.md) and [docs/spec.md](docs/spec.md)
-§5–§6.
-
-## Large files
-
-**In a Web Worker.** The memory engine runs in a worker as it does in the page, so that sorting a million rows never
-blocks the page. Parquet is read by row groups as the grid needs them, from a `File` or a URL that answers HTTP
-Range requests:
-
-```ts
-// engine.worker.ts
-import { serveEngine, type WorkerLike } from "vastgrid/core";
-import { memoryEngine } from "vastgrid-js";
-
-const engine = memoryEngine({ tables: { trips: { parquet: "https://example.com/trips.parquet" } } });
-serveEngine(engine, self as unknown as WorkerLike);
-```
-
-```tsx
-import { DataGrid, workerTransport } from "vastgrid";
-
-const worker = new Worker(new URL("./engine.worker.ts", import.meta.url), { type: "module" });
-const transport = workerTransport(worker);
-
-export function Trips() {
-  return <DataGrid transport={transport} table="trips" style={{ height: 600 }} />;
-}
-```
-
-A file that the person drops or chooses is posted to the worker and given as `{ file }` (CSV, TSV, JSON Lines,
-Excel) or `{ parquet: file }`, as [the open page](site/src/components/open/engine-worker.ts) does. Columns read
-whole stay within `maxBytes` (1 GiB by default); beyond it, a text file is read by blocks.
-
-**On a server, with DuckDB.** `vastgrid-duckdb` opens files of any size on Node.js: Parquet in place, and CSV, TSV,
-JSON Lines and Excel loaded into DuckDB with their first rows readable at once. It reads only files inside the
-folders you allow, by their real location with links followed, loads no DuckDB extensions, and passes every value
-to SQL as a parameter.
-
-```ts
-// server.ts
-import { createServer } from "node:http";
-import { createHttpHandler, DuckDBEngine } from "vastgrid-duckdb";
-
-const engine = await DuckDBEngine.create({
-  allowedDirectories: ["/srv/data"],
-  tempDirectory: "/tmp/vastgrid",
-  saveFiles: true, // lets the grid save edited CSV and TSV files
-});
-createServer(createHttpHandler(engine, { path: "/api" })).listen(8080);
-```
-
-```tsx
-import { DataGrid, httpTransport } from "vastgrid";
-
-const transport = httpTransport("/api", { events: "/api/events" });
-
-export function Sales() {
-  return <DataGrid transport={transport} table="sales.csv" style={{ height: 600 }} />;
-}
-```
-
-The handler also works as middleware (Express, Connect, Vite). `serverFunctionTransport` carries the messages
-through a React Server Function instead, and `readInitialView` of `vastgrid/server` reads the first rows on the
-server, which the grid sends as HTML before the canvas takes over (react.md §7).
-
-## Editing and saving
-
-What the engines guarantee ([spec.md §7](docs/spec.md#7-editing)):
-
-- **Typed checks.** Text that people type or paste is read as the column's type without losing digits (`1,234.5`
-  pasted into a number column is 1234.5); a value that does not fit keeps the editor open and says why.
-- **Atomic writes with conflict checks.** A write changes every cell or none. Each cell carries the value it was
-  edited from: when someone else changed it meanwhile, the write fails, and the grid offers Retry, Overwrite or
-  Discard.
-- **Undo and redo** of typed values, clears, pastes and fills (100 steps), also of an agent's writes in the MCP App.
-- **Kept apart until saved.** Written cells are not in the file until it is saved, and every view, filter, total,
-  find and export sees them.
-- **Saves that keep every other byte.** `save` writes only the edited fields of a CSV or TSV file, and keeps its byte
-  order mark, quoting, delimiters, line breaks and encoding (Shift_JIS and UTF-16 included). It writes a temporary
-  file and renames it over the original, so a failed save leaves the file as it was, and it refuses a file that
-  someone else changed since it was read.
-- **Files that change on disk** are read again. When the table has unsaved edits, it stays as it was read, the grid
-  says the file changed, and "Discard edits and reload" reads it anew.
-
-Other formats are not saved into: export them, with the edits, as CSV, TSV, Parquet, JSON or Excel.
-
-## Features
-
-- **Reading.** Sort by several columns (click a header, Shift to add a key); filter a column by a list of its values
-  with their counts, or by a condition; the Conditions menu combines conditions across columns with AND and OR in
-  nested groups; a search box across all columns; find (⌘F); column statistics.
-- **Shaping.** Group by columns with count, distinct count, sum, average, standard deviation, min, max and quantile;
-  pivot values into columns; a totals row; formulas as derived columns (`qty * price`), from the Formulas menu.
-- **Columns.** A menu on every header (the arrow, a right click or Alt+↓): sort, filter, statistics, total, group,
-  fit, pin to the left or the right, hide. Drag headers to move columns and their edges to resize them; the Columns
-  menu shows, hides and moves them; `columnGroups` adds header rows of groups.
-- **Formats.** Labels, alignment, wrapping, number, percent and currency formats, date patterns (`yyyy/MM/dd`), and
-  conditional colors, from the column's Format… item.
-- **Selecting and editing.** Ranges with the mouse and Excel's keys, several ranges at once; copy as TSV and HTML,
-  paste from spreadsheets, fill down and right, and the count, sum and average of the selection.
-- **Rows.** Check boxes that keep the same records checked through sorts and filters (`checkboxes`), and a detail
-  panel of the active row (Alt+Enter, or your own `detailPanel`).
-- **Exporting** the view or the whole table as CSV, TSV, JSON or Excel (with the columns' number and date formats),
-  and Parquet with the DuckDB engine, which writes the file on the server.
-- **Your own cells.** `cellText`, `cellStyle`, `drawCell` (draw on the canvas, with the grid's drawing at hand) and
-  `cellAction` (links and buttons, with `onCellAction`).
-- **Languages.** English and Japanese by `locale`, and any text replaced by `messages`.
-- **Theming.** Every color, font and size is a CSS custom property on `.vg-root`, which the canvas reads; colors are
-  `light-dark()` pairs that follow the page's light or dark scheme.
-
-  ```css
-  .my-app .vg-root {
-    --vg-font-family: "Inter", sans-serif;
-    --vg-accent: var(--brand);
-    --vg-selection-bg: color-mix(in srgb, var(--brand) 15%, transparent);
-  }
-  ```
-
-- **Accessibility.** The ARIA grid pattern, with the rows on screen as accessible rows under the canvas, the active
-  cell as `aria-activedescendant`, and results announced in a live region.
-- **Server rendering.** The first rows as an HTML table, streamed from a Server Component; Strict Mode and
-  concurrent rendering; every component compiled with React Compiler.
-
-### Keyboard
-
-| Keys | Action |
-| --- | --- |
-| Arrows · Page Up/Down · Home/End | Move the active cell; with ⌘/Ctrl, jump to the first or last row or column |
-| Shift + the above · Shift + click · ⌘/Ctrl + click | Extend the selection · add a range |
-| Tab · Enter (Shift: backwards) | Move within the selection |
-| ⌘/Ctrl + A | Select everything |
-| ⌘/Ctrl + C · ⌘/Ctrl + V | Copy · paste |
-| Typing · F2 · double click | Edit the active cell (Enter writes, Esc cancels) |
-| Delete · ⌘/Ctrl + D · ⌘/Ctrl + R | Clear the selected cells · fill down · fill right |
-| ⌘/Ctrl + Z · ⌘/Ctrl + Shift + Z or Ctrl + Y | Undo · redo |
-| ⌘/Ctrl + S | Save, when the engine saves the file |
-| ⌘/Ctrl + F | Find |
-| Alt + ↓ · Shift + F10 | The column menu · the cell menu |
-| Space · Alt + Enter | Check the active row (with `checkboxes`) · the detail panel |
+For files larger than the page should hold, run the memory engine
+[in a Web Worker](https://vastgrid.yhay81.com/guides/browser/), or the DuckDB engine
+[on a server](https://vastgrid.yhay81.com/guides/server/). The
+[guides](https://vastgrid.yhay81.com/getting-started/) cover state, editing and saving, formulas, grouping,
+exporting, theming and your own engine.
 
 ## Packages
 
@@ -302,66 +107,31 @@ and musl), macOS (x64, arm64) and Windows (x64, arm64).
 
 ## Performance
 
-On an Apple M2 Pro. In Chromium, the grid on a table of 1,000,000 rows and 8 columns in the memory engine
-([react.md Appendix A](docs/react.md#a2-in-the-browser), tested against budgets by `e2e/budgets.spec.ts`):
-
-| Measure | Time |
-| --- | ---: |
-| From mount to the first rows on screen | 36–49 ms |
-| From a key press to the next frame (95th percentile) | 13.4–14.1 ms |
-| The gap between frames while scrolling (95th percentile) | 16.7–16.8 ms: no frame dropped at 60 Hz |
-| React commits while scrolling 100 frames | 0 |
-| Sorting by a float column until the rows are on screen: engine in the page · in a Web Worker | 85–98 ms · 112–113 ms |
-| The longest task of the page meanwhile: engine in the page · in a Web Worker | 81–93 ms · none |
-
-The DuckDB engine on Node.js 24 with DuckDB 2.0, 8 threads and 2 GB of memory, the median of three runs
-([views-benchmark.md](docs/views-benchmark.md)); 256 rows of 8 columns at a time, without HTTP:
-
-| File and view | First rows | 256 rows anywhere in the view, median |
-| --- | ---: | ---: |
-| Parquet, 1.38 GB, 100M rows, sorted by a float | 953 ms | 700 ms |
-| Parquet, 100M rows, filtered | 192 ms | 21 ms |
-| CSV, 735 MB, 10M rows, sorted | 55 ms | 4.0 ms |
-| CSV, 10M rows, filtered | 124 ms | 3.0 ms |
-
-Saving two edited cells takes about 60 ms in a 6 MB CSV file and 0.3 s in a 65 MB one; a sorted view of a million
-rows exports in 0.3 s as CSV and 0.1 s as Parquet. The memory engine opens a million-row Parquet file in 26 ms and a
-CSV one in about a second ([memory-engine-benchmark.md](docs/memory-engine-benchmark.md)). What a page loads
-first of `DataGrid` and the memory engine is about 100 KB with gzip; menus and panels load when they open.
-
-## Migrating from 0.1
-
-vastgrid 0.2 replaces 0.1.x. The grid reads through an engine and a transport instead of 0.1's sources, its state is
-a document and a session, and the separate core and browser packages are gone: their parts are in `vastgrid/core`
-and `vastgrid-js`. `vastgrid-duckdb` is now the DuckDB engine of this version (`DuckDBEngine`, `createHttpHandler`).
-`migrateGridState` of `vastgrid-spec` reads 0.1's saved grid state, and formulas keep 0.1's language.
-[docs/migrating-from-0.1.md](docs/migrating-from-0.1.md) maps every 0.1 feature to its place now.
+On an Apple M2 Pro. The grid on a million rows in the memory engine shows its first rows 36–49 ms after mounting
+and drops no frame while scrolling at 60 Hz, with no React commit. The DuckDB engine sorts a 100-million-row
+Parquet file (1.38 GB) with its first rows ready in 953 ms, and reads a sorted 10-million-row CSV file 256 rows at a
+time in 4 ms. [Performance](https://vastgrid.yhay81.com/about/performance/) has every measure and how to repeat
+them.
 
 ## Documentation
 
-- [vastgrid.yhay81.com](https://vastgrid.yhay81.com): guides, the demo and the open page.
-- [docs/entries.md](docs/entries.md): the React component, the browser page, the command line, VS Code, the MCP App
-  and the notebook compared. [cli.md](docs/cli.md), [vscode.md](docs/vscode.md), [mcp-app.md](docs/mcp-app.md) and
-  [notebook.md](docs/notebook.md) describe each.
-- [docs/react.md](docs/react.md): the React API (store, transports, `DataGrid`, hooks, rendering, server
-  rendering).
-- [docs/spec.md](docs/spec.md): values and types, plans, the document and session, commands, editing and
-  saving, and the messages between the grid and its engine.
+- [vastgrid.yhay81.com](https://vastgrid.yhay81.com): guides, the API reference, the demo and the open page.
+- [docs/](docs): the specifications ([spec.md](docs/spec.md) for the engines and their messages,
+  [react.md](docs/react.md) for the React package), how each app is built, the benchmarks, and
+  [migrating from 0.1](docs/migrating-from-0.1.md).
 - [CHANGELOG.md](CHANGELOG.md), and plans in the [GitHub issues](https://github.com/yhay81/vastgrid/issues).
 
-## Development
+## Contributing
 
 ```sh
 npm install
 npm run build      # every package, the CLI's page, the MCP App and the extension
 npm test           # the unit tests, on the sources
-npm run e2e        # Playwright on the build
 npm run dev        # examples/files: the grid on the DuckDB engine, at http://127.0.0.1:5182
-npm run dev -w vastgrid-site   # the site, the demo and /open/, at http://localhost:4321
 ```
 
-`npm run typecheck`, `npm run lint` and `npm run bench` check and measure the rest. See
-[CONTRIBUTING.md](CONTRIBUTING.md) before a change.
+[CONTRIBUTING.md](CONTRIBUTING.md) has the checks and the guidelines for a change, and
+[SECURITY.md](SECURITY.md) how to report a vulnerability.
 
 ## License
 

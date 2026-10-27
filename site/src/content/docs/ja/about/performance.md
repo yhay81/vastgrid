@@ -54,7 +54,7 @@ description: ブラウザーでのグリッド、DuckDB のエンジン、メモ
 
 Apple シリコンのノートパソコンで、2 つのセルの保存は 20 万行の CSV で約 60 ms、200 万行で 0.3 秒です。100 万行・4 列の並べ替えたビューの書き出しは、CSV で 0.3 秒、Parquet で 0.1 秒、JSON で 0.2 秒、Excel のブックで 2.2 秒です。
 
-方法、このバージョンより前の数値、もう一度計測するコマンドは [`views-benchmark.md`](https://github.com/yhay81/vastgrid/blob/main/docs/views-benchmark.md) にあります。
+方法、このバージョンより前の数値、もう一度計測するコマンドは [`benchmarks/views.md`](https://github.com/yhay81/vastgrid/blob/main/docs/benchmarks/views.md) にあります。
 
 ## メモリエンジン
 
@@ -73,4 +73,4 @@ Apple シリコンのノートパソコンで、2 つのセルの保存は 20 �
 
 100 万行の CSV は開いた後に約 60 MB、Parquet は列を読むまで 1 MB です。列が `maxBytes` に収まらないファイルも開け、要求は必要な列を読みます。一度に `maxBytes` より多くを必要とする要求は `load_failed` で失敗し、表は開いたままです。そのようなファイルには、ディスクにあふれさせられる DuckDB のエンジンを使ってください。
 
-すべての要求、メモリ、限界、もう一度計測するコマンドは [`memory-engine-benchmark.md`](https://github.com/yhay81/vastgrid/blob/main/docs/memory-engine-benchmark.md) にあります。
+すべての要求、メモリ、限界、もう一度計測するコマンドは [`benchmarks/memory-engine.md`](https://github.com/yhay81/vastgrid/blob/main/docs/benchmarks/memory-engine.md) にあります。

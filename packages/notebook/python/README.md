@@ -19,5 +19,5 @@ It needs Python 3.11 or later and runs in JupyterLab 4 and Jupyter Notebook 7 (w
 [anywidget](https://anywidget.dev).
 
 - Documentation: [docs/notebook.md](https://github.com/yhay81/vastgrid/blob/main/docs/notebook.md)
-- Other places vastgrid opens files: [docs/entries.md](https://github.com/yhay81/vastgrid/blob/main/docs/entries.md)
+- Other places vastgrid opens files: [Where vastgrid opens files](https://vastgrid.yhay81.com/apps/overview/)
 - License: MIT

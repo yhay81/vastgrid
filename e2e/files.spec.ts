@@ -2,7 +2,7 @@ import { expect, type Locator, type Page, test } from "@playwright/test";
 import { benchDirectory, benchFiles } from "../packages/duckdb-engine/bench/files.ts";
 
 /**
- * Step 2 of the rebuild (docs/rebuild-decision.ja.md): 0.2's grid opens a Parquet file of 100,000,000 rows and a
+ * Step 2 of the rebuild: 0.2's grid opens a Parquet file of 100,000,000 rows and a
  * CSV file of 10,000,000 rows (735 MB) through the DuckDB engine over HTTP (`examples/files`), and scrolls them to
  * their last row. The files are those of the benches, made when they are missing; `VASTGRID_E2E_PARQUET_ROWS` and
  * `VASTGRID_E2E_CSV_ROWS` choose smaller ones.

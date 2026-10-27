@@ -203,7 +203,7 @@ shipped: what 0.1 left out (a row tree, #30) is not added.
 | JavaScript values | `ArraySource`: rows of JSON | `vastgrid-js`: rows of typed JSON, Apache Arrow IPC |
 | In the browser, without a server | `vastgrid-browser`: CSV, TSV, JSON Lines and Parquet files; Parquet at a URL | `vastgrid-js`: CSV, TSV, JSON Lines, Excel (`.xlsx`, `.xlsm`) and Parquet files; Parquet at a URL by HTTP Range |
 | Node.js, with DuckDB | `vastgrid-duckdb`: CSV and TSV (also `.gz`, `.zst`), Parquet, JSON, JSON Lines, Excel; UTF-16, Shift_JIS and EUC-JP text | `vastgrid-duckdb`: the same formats and encodings, read by DuckDB without loading them whole |
-| Apps | the playground (an example) | `vastgrid-cli`, the VS Code extension, the MCP App and the notebook, with the DuckDB engine ([entries.md](entries.md)) |
+| Apps | the playground (an example) | `vastgrid-cli`, the VS Code extension, the MCP App and the notebook, with the DuckDB engine ([the overview of the apps](https://vastgrid.yhay81.com/apps/overview/)) |
 
 ## Using the grid
 

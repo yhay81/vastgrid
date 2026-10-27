@@ -24,7 +24,7 @@ writes a cell of it and sorts again.
 
 Times are milliseconds. "1 GiB" is the default `maxBytes`; with 256 MiB the 10-million-row files do not fit, and
 their columns are read whole as requests need them and forgotten when others need the room
-([`maxBytes`](../packages/js/README.md)).
+([`maxBytes`](../../packages/js/README.md)).
 
 | Request | 1M CSV | 1M Parquet | 10M CSV | 10M Parquet | 10M CSV, 256 MiB | 10M Parquet, 256 MiB |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |

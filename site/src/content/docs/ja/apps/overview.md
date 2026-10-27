@@ -56,5 +56,3 @@ vastgrid は巨大な CSV・TSV・Parquet・JSON Lines・Excel のファイル�
 - **capabilities**　グリッドは、エンジンができると答えたことだけを示します。保存のボタンと ⌘S は `capabilities.save` のときだけ、書き出しは `capabilities.export` の形式だけです。VS Code は自分で保存するので、Webview のエンジンは `save` を false と答え、エディターの未保存の状態がファイルに合います。
 - **ドキュメント**　`onDocumentChange` はビューをホストに渡します。MCP App はエージェントの側のグリッドをそれに合わせ、ノートブックはそれを `grid.plan` として読みます。
 - **キーとテーマ**　グリッドのキーは、ホストが任せた範囲で働きます。VS Code は保存・元に戻す・やり直しのキーを自分で受けてグリッドにコマンドとして渡し、ノートブックはグリッドにフォーカスがある間は自分のキーを使いません。グリッドはホストのテーマ（ライトかダーク）に従います。
-
-GitHub の [entries.ja.md](https://github.com/yhay81/vastgrid/blob/main/docs/entries.ja.md) に同じ比較と、それぞれの入口の試験の方法があります。

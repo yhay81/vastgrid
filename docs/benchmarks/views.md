@@ -2,7 +2,7 @@
 
 2026-10-25, Issue [#35](https://github.com/yhay81/vastgrid/issues/35). Baseline: main
 `740b00e54097609ee29884e32229099aead7588b`; after: the implementation accompanying this report.
-The original files and their values are unchanged. [Raw measurements](views-benchmark.json).
+The original files and their values are unchanged. [Raw measurements](views.json).
 
 ## Method
 
@@ -46,7 +46,7 @@ files are excluded. Sampling may miss short peaks. RSS includes memory outside D
 The new defaults keep eight idle views, serialize view builds and bound spill files to 8 GB. Large inputs keep
 only the row order; their arbitrary reads still fetch scattered source rows, so they are slower than reading a
 full saved copy. The session database has no hard byte quota and may keep reusable blocks after LRU eviction.
-Hosts requiring a total disk quota must provision one for `tempDirectory`. See the [engine options and cleanup](../packages/duckdb-engine/README.md#limits-and-cleanup).
+Hosts requiring a total disk quota must provision one for `tempDirectory`. See the [engine options and cleanup](../../packages/duckdb-engine/README.md#limits-and-cleanup).
 
 ## DuckDB 2.0
 

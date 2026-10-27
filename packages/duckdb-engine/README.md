@@ -138,4 +138,4 @@ are not a byte quota on the whole session folder; hosts that require one should 
 The repeatable sort/filter benchmark is
 [`bench/views.ts`](https://github.com/yhay81/vastgrid/blob/main/packages/duckdb-engine/bench/views.ts); its
 results and resource measurements are in
-[views-benchmark.md](https://github.com/yhay81/vastgrid/blob/main/docs/views-benchmark.md).
+[`benchmarks/views.md`](https://github.com/yhay81/vastgrid/blob/main/docs/benchmarks/views.md).

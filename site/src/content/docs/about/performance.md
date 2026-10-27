@@ -69,7 +69,7 @@ On an Apple-silicon laptop, saving two edited cells takes about 60 ms in a 200,0
 2-million-row one, and a sorted view of a million rows of four columns exports in 0.3 s as CSV, 0.1 s as Parquet,
 0.2 s as JSON and 2.2 s as an Excel workbook.
 
-[`views-benchmark.md`](https://github.com/yhay81/vastgrid/blob/main/docs/views-benchmark.md) has the method,
+[`benchmarks/views.md`](https://github.com/yhay81/vastgrid/blob/main/docs/benchmarks/views.md) has the method,
 the numbers before this version and the commands to run it again.
 
 ## The memory engine
@@ -94,5 +94,5 @@ whose columns do not fit in `maxBytes` still opens, and its requests read the co
 more at once than `maxBytes` fails with `load_failed`, and the table stays open. For those files, use the DuckDB
 engine, which spills to disk.
 
-[`memory-engine-benchmark.md`](https://github.com/yhay81/vastgrid/blob/main/docs/memory-engine-benchmark.md)
+[`benchmarks/memory-engine.md`](https://github.com/yhay81/vastgrid/blob/main/docs/benchmarks/memory-engine.md)
 has every request, the memory, the limits and the command to run it again.

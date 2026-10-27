@@ -175,7 +175,7 @@ so that late answers never replace the current view.
   `DataGrid`, the hooks, rendering, theming and server rendering.
 - [docs/spec.md](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md): the document and session (§5),
   the commands (§6), editing and saving (§7) and the messages (§8).
-- [docs/entries.md](https://github.com/yhay81/vastgrid/blob/main/docs/entries.md): the same grid in the command line,
+- [Where vastgrid opens files](https://vastgrid.yhay81.com/apps/overview/): the same grid in the command line,
   VS Code, an MCP App and a notebook.
 - [docs/migrating-from-0.1.md](https://github.com/yhay81/vastgrid/blob/main/docs/migrating-from-0.1.md): from vastgrid 0.1.x.
 

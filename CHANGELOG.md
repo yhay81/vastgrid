@@ -99,7 +99,7 @@ that was not edited kept. [From 0.1 to 0.2](docs/migrating-from-0.1.md) is the m
   view is made. The ranks of a sorted column keep 4 bytes a row and its distinct values, where those of text kept
   every row's string and those of numbers the column. A million rows of eight columns open from Parquet in 30 ms and
   from CSV in about a second
-  ([measurements](docs/memory-engine-benchmark.md)).
+  ([measurements](docs/benchmarks/memory-engine.md)).
 - `vastgrid-spec`: `integerJson` and `decimalJson` are exported.
 - `vastgrid-duckdb`: the test of the memory engine against DuckDB opens the generated table as
   a Parquet file too, and a test reads a Parquet file over HTTP and counts its bytes;
@@ -303,7 +303,7 @@ that was not edited kept. [From 0.1 to 0.2](docs/migrating-from-0.1.md) is the m
   inputs store only row IDs; smaller inputs and aggregates keep their output columns. Sort previews share the
   final order, the grid follows completion and cancels old reads, and queued plans wait until files finish
   loading. Shared builds, LRU cleanup and a configurable 8 GB spill limit bound their work. See
-  [measurements and limits](docs/views-benchmark.md).
+  [measurements and limits](docs/benchmarks/views.md).
 
 ## 0.1.1 — 2026-10-23
 

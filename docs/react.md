@@ -4,7 +4,7 @@ Status: **draft** (2026-10-24). This document is normative for [`vastgrid`](../p
 package of 0.2 (and its `vastgrid/core` and `vastgrid/server`). It builds on
 [the 0.2 specification](spec.md): the state, the commands and the messages are those of the specification,
 and this document says how React holds, shows and changes them. Why React comes first is in
-[the reconsideration of the rebuild](rebuild-decision.ja.md#react-を中心に据える) (Japanese).
+[the reconsideration of the rebuild](https://github.com/yhay81/vastgrid/blob/507862d/docs/rebuild-decision.ja.md#react-を中心に据える) (Japanese).
 
 The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 
@@ -193,7 +193,7 @@ The client gives ids, checks every response and event (`checkResponse`, `checkEv
 a signal aborts.
 
 A host with a channel of its own implements `Transport` itself: the MCP App sends each request as a call of its
-tool (docs/mcp-app.md). docs/entries.md shows which transport each entry uses.
+tool (docs/mcp-app.md). The site's overview of the apps shows which transport each entry uses.
 
 ## 5. Components and hooks
 

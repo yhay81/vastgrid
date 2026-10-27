@@ -63,7 +63,7 @@ It needs Node.js 20 or later on a platform that DuckDB ships a binary for: Linux
 
 - [docs/mcp-app.md](https://github.com/yhay81/vastgrid/blob/main/docs/mcp-app.md): the tools, how the two states stay
   in step, and what is not done yet.
-- [docs/entries.md](https://github.com/yhay81/vastgrid/blob/main/docs/entries.md): the other places vastgrid opens
+- [Where vastgrid opens files](https://vastgrid.yhay81.com/apps/overview/): the other places vastgrid opens
   files (a React component, the command line, VS Code, a notebook).
 - [vastgrid.yhay81.com](https://vastgrid.yhay81.com) and [GitHub](https://github.com/yhay81/vastgrid).
 
