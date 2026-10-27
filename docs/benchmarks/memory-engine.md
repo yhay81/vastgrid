@@ -99,7 +99,8 @@ node --expose-gc --max-old-space-size=8192 --conditions=vastgrid-source --import
 ```
 
 `--rows=10000000` measures 10 million rows, and `--max-bytes=268435456` gives the engines a `maxBytes` of 256 MiB.
-The page's numbers come from `npm run e2e -- e2e/budgets.spec.ts`, which prints them.
+The page's numbers come from `npm run e2e:performance`, which prints them. Run it after `npm run build`,
+with no other tests or benchmarks running.
 
 ## 日本語での要点
 
