@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- `vastgrid-notebook` (unreleased v2, the Python package `vastgrid` in `packages/notebook/python`): vastgrid's grid in
+  JupyterLab 4 and Jupyter Notebook 7 as an anywidget, with DuckDB in the kernel. `vastgrid.show` opens a pandas or
+  Polars DataFrame, a PyArrow table, a DuckDB relation, or a CSV, TSV, JSON, JSON Lines, Parquet or Excel file; the
+  page reads rows over the widget's custom messages with their bytes as buffers (`workerTransport`), and the notebook
+  reads the written cells (`edits`, `plan`, `to_pandas`, `to_polars`, `to_arrow`, `view=True` for the grid's view) and
+  exports them (`export`). The engine answers `save` false and exports as data. A grid closes with its cell's output
+  and when its cell runs again, and keeps the notebook's keys of command mode off while it has the focus. The corpus,
+  pytest and a comparison with vastgrid-js's memory engine test it (docs/notebook.md). docs/entries.md and
+  docs/entries.ja.md compare the six places v2 opens files: formats, editing, saving, exporting and installing.
+- `vastgrid-grid` (unreleased v2): the grid follows a theme that the host marks on the body, as VS Code's webviews
+  (`vscode-dark`) and JupyterLab (`data-jp-theme-light`) do. `workerTransport` is documented for anything that carries
+  messages as a worker does (v2-react.md §4.4).
+- `vastgrid-spec` (unreleased v2): of two shortest digits of a 32-bit float that read back as it, the text form
+  (§2.4.1) takes the nearer, and of two as near the even one (5525.71875 is `5525.7188`, -5096.53125 `-5096.5312`);
+  `excelSerial` reads the years 0 to 99 as themselves. The corpus searches 32-bit floats by their text forms.
+- `vastgrid-sql` (unreleased v2): `textSql` writes 32-bit floats with their shortest digits, not DuckDB's exact ones.
+- `vastgrid-duckdb-engine` (unreleased v2): CSV and TSV exports write 32-bit floats as their text forms.
 - `vastgrid-site`: the page `/open/` (`/ja/open/`) opens a CSV, TSV, JSON Lines, Parquet or Excel file that is
   dropped or chosen, or a sample of 1,000,000 rows, with v2's grid and memory engine in a Web Worker: the file
   stays in the browser, is sorted, filtered, edited and exported as CSV, TSV, JSON or Excel, and a workbook's sheet

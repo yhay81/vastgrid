@@ -4,6 +4,8 @@ import babelParser from "@babel/eslint-parser";
 import reactHooks from "eslint-plugin-react-hooks";
 
 export default [
+  // The Python environment of the notebook's package (packages/notebook/python) holds JupyterLab's own scripts.
+  { ignores: ["**/.venv/"] },
   {
     files: ["packages/grid/src/**/*.{ts,tsx}"],
     languageOptions: {

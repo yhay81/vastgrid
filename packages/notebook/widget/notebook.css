@@ -1,0 +1,15 @@
+/*
+ * The grid in a notebook's output (docs/notebook.md), light or dark as the notebook is: JupyterLab and Notebook 7
+ * mark their theme on the body by `data-jp-theme-light`, and VS Code's notebooks by a class.
+ */
+body[data-jp-theme-light="true"] .vastgrid-notebook .vg-root,
+body.vscode-light .vastgrid-notebook .vg-root,
+body.vscode-high-contrast-light .vastgrid-notebook .vg-root {
+  color-scheme: light;
+}
+
+body[data-jp-theme-light="false"] .vastgrid-notebook .vg-root,
+body.vscode-dark .vastgrid-notebook .vg-root,
+body.vscode-high-contrast .vastgrid-notebook .vg-root {
+  color-scheme: dark;
+}

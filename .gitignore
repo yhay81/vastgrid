@@ -20,3 +20,10 @@ site/.wrangler/
 .claude/worktrees/
 .claude/settings.local.json
 .vscode-test/
+
+# The Python package of the notebook (packages/notebook/python): its environment, caches and the built widget
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+packages/notebook/python/src/vastgrid/static/

@@ -75,11 +75,13 @@ export async function writeExport(connection: DuckDBConnection, job: ExportJob, 
   const ownHeader = delimited && (columns.length === 0 || new Set(headers).size !== headers.length);
   const selected = columns.map((column, index) => {
     const name = quoteIdentifier(column.name);
-    // DuckDB writes decimals without whole digits without their 0 (`.5`), unlike their text form (§2.4), and a
-    // float of the view whose SQL keeps a FLOAT (`abs` of a float32) as a FLOAT: as the view's type.
+    // DuckDB writes decimals without whole digits without their 0 (`.5`) and some 32-bit floats with all their
+    // exact digits (5525.71875), unlike their text forms (§2.4), and a float of the view whose SQL keeps a FLOAT
+    // (`abs` of a float32) as a FLOAT: as the view's type.
     let value = name;
     if (delimited && column.type === "decimal" && column.scale === column.precision) value = textSql(name, column);
     if (column.type === "float") value = `CAST(${name} AS ${column.bits === 32 ? "FLOAT" : "DOUBLE"})`;
+    if (delimited && column.type === "float" && column.bits === 32) value = textSql(value, column);
     if (delimited && !ownHeader && headers[index] !== column.name)
       return `${value} AS ${quoteIdentifier(headers[index])}`;
     return value === name ? name : `${value} AS ${name}`;

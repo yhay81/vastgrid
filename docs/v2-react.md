@@ -185,12 +185,15 @@ interface Transport {
 | Transport | Engine | Blocks (§8.8) |
 | --- | --- | --- |
 | `localTransport(engine)` | in the same thread, such as `vastgrid-js`'s memory engine | structured |
-| `workerTransport(worker)` | in a Web Worker, where `serveEngine(engine, self)` answers; buffers are transferred | structured |
+| `workerTransport(worker)` | in a Web Worker, where `serveEngine(engine, self)` answers, or behind anything that carries messages as a worker does (`WorkerLike`: a `MessagePort`, VS Code's webview, a notebook widget's messages); buffers are transferred | structured |
 | `httpTransport(url)` | on a server, with `accept: application/vnd.vastgrid.v2+arrow` | attached |
 | `serverFunctionTransport(action)` | a `"use server"` function (§7) | structured |
 
 The client gives ids, checks every response and event (`checkResponse`, `checkEvent`), and sends `cancel` when
 a signal aborts.
+
+A host with a channel of its own implements `Transport` itself: the MCP App sends each request as a call of its
+tool (docs/mcp-app.md). docs/entries.md shows which transport each entry uses.
 
 ## 5. Components and hooks
 

@@ -175,20 +175,47 @@ export function typeName(type: ValueType): string {
   }
 }
 
-/** The shortest digits and exponent of a float that read back as the same float of its bits (§2.4.1). */
+const float32 = new DataView(new ArrayBuffer(4));
+
+/** The exact digits of a positive 32-bit float, and the power of ten of the last: a 24-bit mantissa × 2^shift. */
+function exactDigits(magnitude: number): { digits: string; power: number } {
+  float32.setFloat32(0, magnitude);
+  const bits = float32.getUint32(0);
+  const biased = bits >>> 23;
+  const fraction = BigInt(bits & 0x7fffff);
+  const mantissa = biased === 0 ? fraction : fraction | 0x800000n;
+  const shift = (biased === 0 ? 1 : biased) - 150;
+  if (shift >= 0) return { digits: (mantissa << BigInt(shift)).toString(), power: 0 };
+  return { digits: (mantissa * 5n ** BigInt(-shift)).toString(), power: shift };
+}
+
+/** Exact digits rounded to `count` digits, halves to even, as Python and DuckDB's `printf` round them. */
+function roundedDigits(exact: { digits: string; power: number }, count: number): { digits: string; exponent: number } {
+  const { digits, power } = exact;
+  let head = BigInt(digits.slice(0, count));
+  const rest = digits.slice(count);
+  const above = rest > "5" && !/^50*$/.test(rest);
+  if (above || (/^50*$/.test(rest) && head % 2n === 1n)) head += 1n;
+  const text = head.toString();
+  return { digits: text.replace(/0+$/, "") || "0", exponent: text.length - 1 + power + rest.length };
+}
+
+/**
+ * The shortest digits and exponent of a float that read back as the same float of its bits (§2.4.1); of two
+ * that are as short, the nearer, and of two as near, the even one.
+ */
 function shortestDigits(value: number, bits: 32 | 64): { digits: string; exponent: number } {
   const magnitude = Math.abs(value);
-  let text = magnitude.toExponential();
   if (bits === 32) {
-    for (let digits = 1; digits <= 9; digits++) {
-      const candidate = magnitude.toExponential(digits - 1);
-      if (Math.fround(Number(candidate)) === magnitude) {
-        text = candidate;
-        break;
-      }
+    const exact = exactDigits(magnitude);
+    for (let count = 1; count < exact.digits.length; count++) {
+      const rounded = roundedDigits(exact, count);
+      const read = Number(`${rounded.digits}e${rounded.exponent - rounded.digits.length + 1}`);
+      if (Math.fround(read) === magnitude) return rounded;
     }
+    return roundedDigits(exact, exact.digits.length);
   }
-  const [mantissa, exponent] = text.split("e");
+  const [mantissa, exponent] = magnitude.toExponential().split("e");
   return { digits: mantissa.replace(".", "").replace(/0+$/, "") || "0", exponent: Number(exponent) };
 }
 

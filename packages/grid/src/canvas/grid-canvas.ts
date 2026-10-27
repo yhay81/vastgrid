@@ -286,10 +286,11 @@ export class GridCanvas {
     };
     media?.addEventListener("change", refresh);
     const themeObserver = typeof MutationObserver === "undefined" ? null : new MutationObserver(refresh);
-    themeObserver?.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class", "style", "data-theme"],
-    });
+    // Pages mark their theme on the root element, and hosts on the body too: VS Code's webviews by a class
+    // (`vscode-dark`), JupyterLab by `data-jp-theme-light`.
+    const marks = { attributes: true, attributeFilter: ["class", "style", "data-theme", "data-jp-theme-light"] };
+    themeObserver?.observe(document.documentElement, marks);
+    if (document.body) themeObserver?.observe(document.body, marks);
     void document.fonts?.ready.then(refresh);
     // The session's place (§5.2) when the grid starts.
     const scroll = this.snapshot.session.scroll;

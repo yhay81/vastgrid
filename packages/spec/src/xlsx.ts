@@ -111,7 +111,6 @@ function offsetSeconds(offset: string | undefined) {
 }
 
 /** The Excel serial number of an ISO-like date, time or timestamp, or `null` when Excel cannot show it. */
-/** The Excel serial number of an ISO-like date, time or timestamp, or `null` when Excel cannot show it. */
 export function excelSerial(value: string, type: LogicalType): number | null {
   if (type === "time") {
     const match = timeOfDay.exec(value.trim());
@@ -122,7 +121,11 @@ export function excelSerial(value: string, type: LogicalType): number | null {
   const match = temporal.exec(value.trim());
   if (!match) return null;
   const [, year, month, day, hour = "0", minute = "0", second = "0", fraction = "0"] = match;
-  const days = Date.UTC(Number(year), Number(month) - 1, Number(day)) / 86_400_000;
+  // `setUTCFullYear`, unlike `Date.UTC`, reads the years 0 to 99 as themselves. Days and months beyond their
+  // ranges roll over into the next ones.
+  const date = new Date(0);
+  date.setUTCFullYear(Number(year), Number(month) - 1, Number(day));
+  const days = date.getTime() / 86_400_000;
   if (!Number.isFinite(days)) return null;
   const seconds =
     Number(hour) * 3600 + Number(minute) * 60 + Number(second) + Number(fraction) - offsetSeconds(match[8]);

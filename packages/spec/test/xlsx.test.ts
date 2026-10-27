@@ -184,6 +184,9 @@ test("converts dates to Excel serial numbers", () => {
   assert.equal(excelSerial("2024-01-31 05:30:00+05:30", "timestamptz"), 45322);
   assert.equal(excelSerial("2024-01-30 19:00:00-0500", "timestamptz"), 45322);
   assert.equal(excelSerial("9999-12-31", "date"), 2_958_465);
+  // Years 0 to 99 are those years, not 1900 to 1999 (as `Date.UTC` reads them), so Excel cannot show them.
+  assert.equal(excelSerial("0050-03-01", "date"), null);
+  assert.equal(excelSerial("0099-12-31 12:00:00", "timestamp"), null);
   assert.equal(excelSerial("06:00", "time"), 0.25);
   assert.equal(excelSerial("12:00:00+09", "time"), 0.5);
 });

@@ -144,7 +144,8 @@ UTC:
 #### 2.4.1 Floats
 
 Take the shortest digits d₁d₂…dₙ and the exponent e such that d₁.d₂…dₙ × 10^e reads back as the same float
-of the column's `bits` (for 32-bit floats, as the same 32-bit float):
+of the column's `bits` (for 32-bit floats, as the same 32-bit float); of two as short, take the nearer to the
+float, and of two as near, the one whose last digit is even (the 32-bit 5525.71875 is `5525.7188`):
 
 - NaN is `nan`, the infinities are `inf` and `-inf`, and zero is `0.0` or `-0.0`.
 - When −4 ≤ e < 16, the number is written in fixed notation with at least one digit after the point:
@@ -153,7 +154,8 @@ of the column's `bits` (for 32-bit floats, as the same 32-bit float):
   `-`) and at least two digits of the exponent: `1e+16`, `1e-05`, `1.2345678901234567e+19`, `5e-324`.
 
 This is Python's `repr` of a float. In JavaScript, `x.toExponential()` gives the digits and the exponent of a
-64-bit float; for a 32-bit float, use the shortest digits that `Math.fround` reads back as the same value.
+64-bit float; for a 32-bit float, round its exact digits to ever more digits, halves to even, until
+`Math.fround` reads them back as the same value.
 
 ### 2.5 Literals
 

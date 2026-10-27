@@ -18,15 +18,16 @@
     "packages/mcp",
     "packages/vscode",
     "packages/cli",
+    "packages/notebook",
     "examples/playground",
     "examples/bench",
     "examples/files",
     "site"
   ],
   "scripts": {
-    "build": "tsc -b packages/core packages/duckdb packages/browser packages/react packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp packages/vscode packages/cli && node scripts/copy-assets.mjs && node scripts/compile-react.mjs packages/grid && npm run build -w vastgrid-mcp && node packages/vscode/scripts/build.mjs && node packages/cli/scripts/build-app.mjs",
+    "build": "tsc -b packages/core packages/duckdb packages/browser packages/react packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp packages/vscode packages/cli && node scripts/copy-assets.mjs && node scripts/compile-react.mjs packages/grid && npm run build -w vastgrid-mcp && node packages/vscode/scripts/build.mjs && node packages/cli/scripts/build-app.mjs && node packages/notebook/scripts/build.mjs",
     "clean": "rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo",
-    "typecheck": "tsc -b packages/core packages/duckdb packages/browser packages/react packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp packages/vscode packages/cli && tsc -p packages/mcp/app && tsc -p packages/mcp/host && tsc -p packages/vscode/webview && tsc -p packages/cli/app && tsc -p examples/playground --noEmit && tsc -p examples/bench --noEmit && tsc -p examples/files --noEmit && tsc -p site --noEmit",
+    "typecheck": "tsc -b packages/core packages/duckdb packages/browser packages/react packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp packages/vscode packages/cli && tsc -p packages/mcp/app && tsc -p packages/mcp/host && tsc -p packages/vscode/webview && tsc -p packages/cli/app && tsc -p packages/notebook/widget && tsc -p examples/playground --noEmit && tsc -p examples/bench --noEmit && tsc -p examples/files --noEmit && tsc -p site --noEmit",
     "test": "node --conditions=vastgrid-source --import tsx --test packages/*/test/*.test.ts",
     "lint": "biome check . && eslint",
     "format": "biome check --write .",

@@ -18,7 +18,10 @@ export function localTransport(engine: Engine): Transport {
   return transport;
 }
 
-/** The side of a worker that `workerTransport` talks to: `self` in a worker, or a `MessagePort`. */
+/**
+ * The side of a worker that `workerTransport` talks to: `self` in a worker, a `MessagePort`, or anything that carries
+ * messages as they do (VS Code's webview, a notebook widget's messages).
+ */
 export interface WorkerLike {
   postMessage(message: unknown, transfer?: Transferable[]): void;
   addEventListener(type: "message", listener: (event: MessageEvent) => void): void;

@@ -128,6 +128,15 @@ export function textSql(sql: string, type: ValueType): string {
   if (type.type === "decimal" && scale > 0 && scale === (type.precision ?? 38)) {
     return `regexp_replace(${text}, '^(-?)\\.', '\\10.')`;
   }
+  if (type.type === "float" && type.bits === 32) {
+    // DuckDB writes some 32-bit floats with all their exact digits (5525.71875 for 5525.7188): the shortest digits
+    // that read back as the same float, which `printf` rounds halves to even, written as the double they are.
+    const shortest = Array.from({ length: 8 }, (_, digits) => {
+      const rounded = `printf('%.${digits}e', ${sql})`;
+      return `WHEN CAST(${rounded} AS FLOAT) = ${sql} THEN CAST(CAST(${rounded} AS DOUBLE) AS VARCHAR)`;
+    });
+    return `(CASE WHEN NOT isfinite(${sql}) THEN ${text} ${shortest.join(" ")} ELSE ${text} END)`;
+  }
   return text;
 }
 

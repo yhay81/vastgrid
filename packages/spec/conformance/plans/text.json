@@ -38,7 +38,10 @@
         [123456789.125]
       ]
     },
-    "singles": { "columns": [{ "name": "x", "type": "float", "bits": 32 }], "rows": [[0.10000000149011612], [16777216]] },
+    "singles": {
+      "columns": [{ "name": "x", "type": "float", "bits": 32 }],
+      "rows": [[0.10000000149011612], [16777216], [5525.71875], [-5096.53125], [1.0000000116860974e-7]]
+    },
     "kinds": {
       "columns": [
         { "name": "d", "type": "decimal", "precision": 10, "scale": 2 },
@@ -260,11 +263,29 @@
     {
       "id": "text.float32-text-form",
       "section": "2.4.1",
-      "description": "32-bit floats have the shortest digits of 32 bits: 0.1, and 16777217 is 16777216.",
+      "description": "32-bit floats have the shortest digits of 32 bits: 0.1, and 16777217 is 16777216. 5525.71875, which 32 bits hold exactly, is 5525.7188; -5096.53125, as near to -5096.5312 as to -5096.5313, is the even one.",
       "table": "singles",
       "plan": { "derive": [{ "name": "t", "expr": { "fn": "text", "args": [{ "col": "x" }] } }] },
       "read": { "columns": ["t"] },
-      "expect": { "rowCount": 2, "rows": [["0.1"], ["16777216.0"]] }
+      "expect": { "rowCount": 5, "rows": [["0.1"], ["16777216.0"], ["5525.7188"], ["-5096.5312"], ["1e-07"]] }
+    },
+    {
+      "id": "text.float32-search",
+      "section": "3.5",
+      "description": "A search reads 32-bit floats as their text forms: 5525.7188.",
+      "table": "singles",
+      "plan": { "where": { "search": "5525.7188" } },
+      "read": { "columns": ["x"] },
+      "expect": { "rowCount": 1, "rowIds": [2], "rows": [[5525.71875]] }
+    },
+    {
+      "id": "text.float32-search-exact-digits",
+      "section": "3.5",
+      "description": "The exact digits of a 32-bit float, 5525.71875, are not its text form.",
+      "table": "singles",
+      "plan": { "where": { "search": "71875" } },
+      "read": { "columns": ["x"] },
+      "expect": { "rowCount": 0, "rowIds": [], "rows": [] }
     },
     {
       "id": "text.text-forms",
