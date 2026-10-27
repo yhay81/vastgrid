@@ -262,7 +262,12 @@ function reverseTable(encoding: TextEncoding) {
 
 /** A field's text as the dialect writes it: quoted when it holds a delimiter, a quote, an escape or a line break. */
 function fieldText(value: string | null, dialect: CsvDialect) {
-  if (value === null || value === "") return "";
+  if (value === null) return "";
+  // read_csv uses allow_quoted_nulls=true: even a quoted empty string reads back as null. Refuse it rather
+  // than saving a different value and clearing the edit (§7.5).
+  if (value === "") {
+    throw new CsvSaveError("unsupported", "An empty string cannot be saved without being read back as null.");
+  }
   const quote = dialect.quote || '"';
   const escapeChar = dialect.escape || quote;
   const special = [dialect.delimiter, quote, escapeChar, "\n", "\r"];

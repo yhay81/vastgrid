@@ -1,6 +1,6 @@
 # vastgrid 0.2 for React
 
-Status: **draft** (2026-10-24). This document is normative for [`vastgrid`](../packages/grid), the React
+Status: **0.2** (2026-10-28). This document is normative for [`vastgrid`](../packages/grid), the React
 package of 0.2 (and its `vastgrid/core` and `vastgrid/server`). It builds on
 [the 0.2 specification](spec.md): the state, the commands and the messages are those of the specification,
 and this document says how React holds, shows and changes them. Why React comes first is in
@@ -8,7 +8,7 @@ and this document says how React holds, shows and changes them. Why React comes 
 
 The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 
-The code implements this draft: the store (§4), `DataGrid` and the hooks (§5), the canvas with scrolling, keys,
+The code implements this specification: the store (§4), `DataGrid` and the hooks (§5), the canvas with scrolling, keys,
 pointers, sorting, resizing and moving columns, copying and pasting (§6), editing with an IME, undo and saving
 (§6.6), the menus, the totals row and the panels (§6.7–§6.13), the toolbar and the status bar, the accessibility
 rows, server rendering (§7) and the checks of §10 and §11.
@@ -190,7 +190,9 @@ interface Transport {
 | `serverFunctionTransport(action)` | a `"use server"` function (§7) | structured |
 
 The client gives ids, checks every response and event (`checkResponse`, `checkEvent`), and sends `cancel` when
-a signal aborts.
+a signal aborts. Clients in the same JavaScript context use distinct ids, so grids can share a transport or
+an engine without mixing their answers or cancellations. Hosts joining clients from separate contexts assign
+their own ids with `RequestIds` (`vastgrid/core`).
 
 A host with a channel of its own implements `Transport` itself: the MCP App sends each request as a call of its
 tool (docs/mcp-app.md). The site's overview of the apps shows which transport each entry uses.

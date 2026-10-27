@@ -48,6 +48,36 @@ async function column(info: TableInfo, name: string) {
 const bytes = (name: string) => readFile(path.join(workspace, name));
 const temporaries = async () => (await readdir(workspace)).filter((name) => name.endsWith(".tmp"));
 
+for (const [extension, separator] of [
+  ["csv", ","],
+  ["tsv", "\t"],
+] as const) {
+  test(`${extension} refuses an empty string without changing the file or clearing any edits`, async () => {
+    const name = `empty-string.${extension}`;
+    const content = `id${separator}name\r\n1${separator}Alice\r\n2${separator}Bob\r\n3${separator}Carol\r\n`;
+    const info = await opened(name, content);
+    await write(info, [
+      [0, "name", "Ann"],
+      [1, "name", ""],
+    ]);
+    const before = await client.result<{ edits: Json }>("info", { table: info.table });
+    const error = await client.error("save", { table: info.table });
+    assert.equal(error.code, "save_unsupported");
+    assert.match(error.message, /empty string/i);
+    assert.equal((await bytes(name)).toString(), content, "even the earlier edited record is not replaced");
+    assert.deepEqual(await column(info, "name"), ["Ann", "", "Carol"]);
+    const after = await client.result<{ edits: Json }>("info", { table: info.table });
+    assert.deepEqual(after.edits, before.edits, "the failed save keeps all pending edits");
+    assert.deepEqual(await temporaries(), []);
+
+    // Null is representable: correcting the unsupported value allows the whole save to succeed.
+    await write(info, [[1, "name", null]]);
+    await save(info);
+    const reopened = await opened(`reopened-${name}`, await bytes(name));
+    assert.deepEqual(await column(reopened, "name"), ["Ann", null, "Carol"]);
+  });
+}
+
 test("only the edited fields are written; every other byte stays (§7.5)", async () => {
   const content = [
     "﻿id,name,price,note\r\n",

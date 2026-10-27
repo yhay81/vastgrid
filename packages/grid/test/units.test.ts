@@ -121,6 +121,29 @@ test("the client checks answers, gives errors as GridError and cancels by messag
   assert.equal(engine.requests.at(-1)?.op, "cancel");
 });
 
+test("cancelling one client does not name another client's request on the same engine", async () => {
+  const engine = fakeEngine(numbers(3));
+  const clients = [new GridClient(localTransport(engine)), new GridClient(localTransport(engine))];
+  const opened = await Promise.all(clients.map((client) => client.request<{ table: string }>("open", { ref: "x" })));
+  engine.hold();
+  const controller = new AbortController();
+  const reads = clients.map((client, index) =>
+    client.request(
+      "rows",
+      { table: opened[index].table, revision: "r1", plan: {}, start: 0, end: 1, columns: ["id"] },
+      index === 0 ? controller.signal : undefined,
+    ),
+  );
+  const requests = engine.requests.filter((request) => request.op === "rows");
+  controller.abort();
+  engine.release();
+  await assert.rejects(reads[0], (error: unknown) => error instanceof GridError && error.code === "cancelled");
+  await reads[1];
+  const cancel = engine.requests.find((request) => request.op === "cancel");
+  assert.equal(cancel?.request, requests[0].id);
+  assert.notEqual(cancel?.request, requests[1].id);
+});
+
 test("over HTTP, blocks come attached to the response (§8.8)", async () => {
   const engine = fakeEngine(numbers(20));
   const seen: RequestInit[] = [];

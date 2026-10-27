@@ -72,14 +72,24 @@ export function createHttpHandler(engine: DuckDBEngine, options: HttpHandlerOpti
   const events = options.events ?? `${prefix}events`;
   const exportsPath = options.exports ?? `${prefix}exports/`;
   const limit = options.maxBody ?? 64 * 1024 * 1024;
-  return async (request: IncomingMessage, response: ServerResponse, next?: (error?: unknown) => void) => {
-    const url = new URL(request.url ?? "/", "http://localhost");
+  const handle = async (request: IncomingMessage, response: ServerResponse, next?: (error?: unknown) => void) => {
+    let url: URL;
+    let exportName: string | undefined;
+    try {
+      url = new URL(request.url ?? "/", "http://localhost");
+      if (url.pathname.startsWith(exportsPath)) {
+        exportName = decodeURIComponent(url.pathname.slice(exportsPath.length));
+      }
+    } catch {
+      invalid(response, 400, "The request URL is not valid.", "syntax");
+      return;
+    }
     if (url.pathname === events && request.method === "GET") {
       streamEvents(engine, response, options.keepAlive ?? 15_000);
       return;
     }
     if (url.pathname.startsWith(exportsPath) && (request.method === "GET" || request.method === "HEAD")) {
-      sendExport(engine, decodeURIComponent(url.pathname.slice(exportsPath.length)), request, response);
+      sendExport(engine, exportName as string, request, response);
       return;
     }
     if (url.pathname !== base) {
@@ -129,6 +139,20 @@ export function createHttpHandler(engine: DuckDBEngine, options: HttpHandlerOpti
       return;
     }
     sendJson(response, 200, toTextEncoding(answer));
+  };
+  // http.createServer does not consume a listener's rejected promise. In particular, an interrupted body
+  // rejects readBody with ECONNRESET; it must only end that request, not the server process.
+  return async (request: IncomingMessage, response: ServerResponse, next?: (error?: unknown) => void) => {
+    try {
+      await handle(request, response, next);
+    } catch (error) {
+      if (response.destroyed) return;
+      if (response.headersSent) response.destroy();
+      else if (next) next(error);
+      else {
+        sendJson(response, 500, { v: 2, id: null, error: { code: "internal", message: "The request failed." } });
+      }
+    }
   };
 }
 

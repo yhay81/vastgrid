@@ -23,8 +23,7 @@ Add the server to a host that shows MCP Apps (Claude Desktop, VS Code, ChatGPT, 
 }
 ```
 
-Before 0.2.0 is released, the pre-release is `vastgrid-mcp@next`. From this repository, `npm install` and `npm run
-build`, then the command `node` with the arguments `/path/to/vastgrid/packages/mcp/dist/cli.js /path/to/data`.
+From this repository, `npm install` and `npm run build`, then the command `node` with the arguments `/path/to/vastgrid/packages/mcp/dist/cli.js /path/to/data`.
 
 `vastgrid-mcp [--save] <folder>…` opens the files of the folders it is given (the current folder by default) and no
 others: their real location, links followed, must be inside one. `--save` lets the grids save written cells into

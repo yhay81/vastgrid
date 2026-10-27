@@ -21,8 +21,8 @@ Install the packages of the engine you use with the grid, all at the same versio
 | `vastgrid-browser` (`BrowserSource`, `serveTable`) | `vastgrid-js` in a Web Worker, with `workerTransport` and `serveEngine` of `vastgrid/core` |
 | | new: `vastgrid-sql` (plans as DuckDB SQL), `vastgrid-cli`, `vastgrid-mcp`, the VS Code extension and the notebook's Python package |
 
-`vastgrid-core` and `vastgrid-browser` have no 0.2 version and are deprecated on npm. Before 0.2.0 is released,
-0.2 is on the `next` tag: `npm install vastgrid@next vastgrid-js@next`.
+`vastgrid-core` and `vastgrid-browser` have no 0.2 version. Replace them with the packages above;
+`npm install vastgrid vastgrid-js` installs the current grid and memory engine.
 
 The grid needs React 19.3 or later (0.1: React 18 or later), as an optional peer: servers use `vastgrid/core`
 and the engines without React. The packages need Node.js 20 or later.

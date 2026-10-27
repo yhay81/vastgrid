@@ -152,7 +152,9 @@ jobs:
           done
   release:
     name: Create the GitHub release
-    needs: [npm, pypi]
+    needs: [npm, pypi, vscode]
+    # Stable releases are complete only after all three registries accept their packages. Pre-releases skip VS Code.
+    if: ${{ always() && needs.npm.result == 'success' && needs.pypi.result == 'success' && (needs.vscode.result == 'success' || needs.vscode.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

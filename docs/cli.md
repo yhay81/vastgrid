@@ -14,8 +14,8 @@ npx vastgrid-cli sales.parquet
 npx vastgrid-cli --save data/
 ```
 
-Installed with `npm install --global vastgrid-cli`, the command is `vastgrid`. Before 0.2.0 is released, the
-pre-release is `npx vastgrid-cli@next`. In this repository, `npm run build` and then `node packages/cli/dist/cli.js`.
+Installed with `npm install --global vastgrid-cli`, the command is `vastgrid`. In this repository,
+`npm run build` and then `node packages/cli/dist/cli.js`.
 
 ```text
 Usage: vastgrid [options] [<file or folder>…]

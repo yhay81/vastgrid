@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { memoryEngine } from "vastgrid-js";
-import { createGridStore, localTransport } from "../src/core.ts";
+import { createGridStore, localTransport, serveEngine, workerTransport } from "../src/core.ts";
 import { settle } from "./fake-engine.ts";
 
 function table() {
@@ -38,6 +38,45 @@ async function until(done: () => boolean) {
   for (let attempt = 0; attempt < 200 && !done(); attempt++) await settle(1);
   assert.ok(done());
 }
+
+test("grids sharing a worker read and edit their own tables", async (t) => {
+  const engine = memoryEngine({ tables: { first: table(), second: { ...table(), rows: [[9, "Kyoto", 7]] } } });
+  const channel = new MessageChannel();
+  const stop = serveEngine(engine, channel.port2 as never);
+  const transport = workerTransport(channel.port1 as never);
+  const stores = ["first", "second"].map((ref) => createGridStore({ transport, table: ref }));
+  const disconnects = stores.map((store) => store.connect());
+  t.after(() => {
+    for (const disconnect of disconnects) disconnect();
+    stop();
+    transport.close();
+    channel.port1.close();
+    channel.port2.close();
+  });
+  for (const store of stores) store.setViewport({ top: 0, rows: 10, columns: ["id", "city", "qty"] });
+  await until(() => stores.every((store) => store.cell(0, "city") !== undefined));
+  assert.deepEqual(
+    stores.map((store) => store.cell(0, "city")),
+    ["Tokyo", "Kyoto"],
+  );
+
+  const second = stores[1];
+  await second.dispatch({ command: "select", row: 0, column: "city" });
+  second.dispatchSync({ command: "edit.begin", text: "Nara" });
+  assert.deepEqual(await second.dispatch({ command: "edit.commit", move: null }), { ok: true });
+  // A fresh reader checks the engine's data, rather than either grid's optimistic cell cache.
+  const readers = ["first", "second"].map((ref) => createGridStore({ transport: localTransport(engine), table: ref }));
+  for (const reader of readers) {
+    const disconnect = reader.connect();
+    t.after(disconnect);
+    reader.setViewport({ top: 0, rows: 10, columns: ["city"] });
+  }
+  await until(() => readers.every((reader) => reader.cell(0, "city") !== undefined));
+  assert.deepEqual(
+    readers.map((reader) => reader.cell(0, "city")),
+    ["Tokyo", "Nara"],
+  );
+});
 
 test("typing into a cell writes it, shows the value at once and records a step to undo (§6.5, §7.4)", async () => {
   const { store, disconnect } = await editable();

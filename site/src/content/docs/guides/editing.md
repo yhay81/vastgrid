@@ -119,6 +119,9 @@ With `saveFiles: true`, the DuckDB engine saves written cells into the CSV or TS
   once complete.
 - A file that someone else changed since it was read is not saved over: the status bar says "Not saved: the file
   was changed by someone else…" and the edits are kept.
+- An empty string written through the API cannot be saved: even a quoted empty field reads back as null.
+  Saving returns `save_unsupported` and keeps the original file and all pending edits. Null can be saved;
+  clearing a cell in the grid writes null.
 - Parquet, JSON Lines, Excel and compressed files are never written. Their cells can still be edited, and
   [exported](/guides/export/) with the edits.
 

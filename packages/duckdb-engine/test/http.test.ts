@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import { type AddressInfo, connect } from "node:net";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { ARROW_MEDIA_TYPE, checkEvent, checkResponse, decodeBlock, fromBase64, readAttached } from "vastgrid-spec";
@@ -17,9 +17,7 @@ before(async () => {
   context = await setUp();
   await writeFile(path.join(context.workspace, "fruit.csv"), "id,name\n1,Apple\n2,Banana\n3,Cherry\n");
   const handler = createHttpHandler(context.engine, { path: "/api" });
-  server = createServer((request, response) => {
-    void handler(request, response);
-  });
+  server = createServer(handler);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -44,6 +42,51 @@ async function open() {
   await context.engine.whenLoaded(answer.result.table);
   return answer.result;
 }
+
+test("malformed export URLs return 400 and leave the HTTP server running", { timeout: 10_000 }, async () => {
+  for (const suffix of ["%", "%FF", "%E0%A4%A"]) {
+    for (const method of ["GET", "HEAD"]) {
+      const response = await fetch(`${base}/api/exports/${suffix}`, { method, signal: AbortSignal.timeout(2_000) });
+      assert.equal(response.status, 400);
+      if (method === "GET") {
+        const answer = (await response.json()) as { id: unknown; error: { code: string } };
+        assert.equal(answer.id, null);
+        assert.equal(answer.error.code, "invalid_request");
+      }
+    }
+  }
+  assert.ok((await open()).table);
+});
+
+test("disconnecting during a POST body leaves the HTTP server running", { timeout: 10_000 }, async (t) => {
+  // Create the listener inside this test so node:test attributes an unhandled rejection to this regression.
+  const interrupted = createServer(createHttpHandler(context.engine, { path: "/api" }));
+  t.after(async () => {
+    interrupted.closeAllConnections();
+    await new Promise<void>((resolve) => interrupted.close(() => resolve()));
+  });
+  await new Promise<void>((resolve) => interrupted.listen(0, "127.0.0.1", resolve));
+  const received = new Promise<void>((resolve) => {
+    interrupted.once("request", (request) => request.once("data", () => resolve()));
+  });
+  const closed = new Promise<void>((resolve) => {
+    interrupted.once("request", (request) => request.once("close", () => resolve()));
+  });
+  const port = (interrupted.address() as AddressInfo).port;
+  const socket = connect(port, "127.0.0.1", () => {
+    socket.write("POST /api HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100000\r\n\r\n{");
+  });
+  t.after(() => socket.destroy());
+  await received;
+  socket.destroy();
+  await closed;
+  const response = await fetch(`http://127.0.0.1:${port}/api`, {
+    method: "POST",
+    body: JSON.stringify({ v: 2, id: ++id, op: "open", ref: "fruit.csv" }),
+  });
+  assert.equal(response.status, 200);
+  checkResponse(await response.json(), "open");
+});
 
 test("a request is a POST of its JSON, and blocks are base64 in JSON responses (§8.8)", async () => {
   const table = await open();

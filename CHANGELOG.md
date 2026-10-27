@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0-next.1 — 2026-10-27
+## 0.2.0 — 2026-10-28
 
 vastgrid 0.2.0 replaces 0.1.x with a new design, specified by [spec.md](docs/spec.md) and
 [react.md](docs/react.md): engines answer the same messages wherever they run (in memory in the page or a Web
@@ -51,6 +51,16 @@ that was not edited kept. [From 0.1 to 0.2](docs/migrating-from-0.1.md) is the m
   server whose App shows the agent's grid to the person, `vastgrid-vscode` is an editor for VS Code, and the Python
   package `vastgrid` is a Jupyter widget. The site's page `/open/` opens a file in the browser with the memory
   engine in a worker.
+
+### Fixes
+
+- `vastgrid`: grids sharing a worker transport keep their requests and tables separate; reading, editing and
+  cancelling in one grid no longer reaches another grid's request. Clients of one engine use distinct request IDs.
+- `vastgrid-duckdb`: malformed export URLs return 400, and a connection closed during a request body no longer
+  terminates a server using `createHttpHandler` directly.
+- `vastgrid-duckdb`: saving an empty string to CSV or TSV fails with `save_unsupported`, keeping the original
+  file and pending edits. The current reader treats even quoted empty fields as null, so they cannot preserve
+  an empty string; saves previously succeeded and silently changed the value on reopening.
 
 ### Release
 

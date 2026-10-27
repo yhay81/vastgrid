@@ -1,6 +1,6 @@
 # vastgrid 0.2 specification
 
-Status: **0.2-draft.2** (2026-10-24). This document is normative for the engines, the grid core and the
+Status: **0.2** (2026-10-28). This document is normative for the engines, the grid core and the
 surfaces of vastgrid 0.2. Why 0.2 is built this way is in
 [the reconsideration of the rebuild](https://github.com/yhay81/vastgrid/blob/507862d/docs/rebuild-decision.ja.md) (Japanese); 0.1's protocol is
 [protocol.md of v0.1.1](https://github.com/yhay81/vastgrid/blob/v0.1.1/docs/protocol.md). The conformance corpus in [`packages/spec/conformance`](../packages/spec/conformance)
@@ -23,7 +23,7 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 11. [Versions and changes](#11-versions-and-changes)
 12. [Open questions](#12-open-questions)
 - [Appendix A. From 0.1](#appendix-a-from-01)
-- [Appendix B. DuckDB behavior this draft was checked against](#appendix-b-duckdb-behavior-this-draft-was-checked-against)
+- [Appendix B. DuckDB behavior this specification was checked against](#appendix-b-duckdb-behavior-this-specification-was-checked-against)
 
 ## 1. Scope and terms
 
@@ -46,7 +46,7 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 
 The meaning of plans (§3) follows DuckDB 2.0 unless this document says otherwise. Where it does, the SQL
 that `vastgrid-sql` makes implements this document, not DuckDB's default. Appendix B lists the DuckDB
-results this draft was checked against.
+results this specification was checked against.
 
 ## 2. Types and values
 
@@ -1139,7 +1139,9 @@ was.
 - Only cells whose written value differs from the file's are written: a cell written back to the file's value
   keeps its bytes. A value is written as text that the file is read back as: in the file's date and timestamp
   formats, otherwise as DuckDB writes it (`3.0` for a float), quoted when it holds a delimiter, a quote or a line
-  break. A value that the file's encoding cannot hold fails the save with `invalid_value`.
+  break. An empty string fails the save with `save_unsupported`: the CSV reader treats even quoted empty fields
+  as null, so the value would not survive a read. Null can be saved as an empty field. A failed save keeps both
+  the original file and all pending edits. A value that the file's encoding cannot hold fails the save with `invalid_value`.
 - `records` counts the records written anew. After a save, the file holds the written values: the table keeps
   its revision, row IDs and the session's history, its written cells are none, and the edits version is
   incremented (a `changed` event, §8.5), so that a later write compares `previous` with the saved value.
@@ -1442,7 +1444,7 @@ A plan case:
 
 ## 11. Versions and changes
 
-This document is `0.2-draft.2`. Until 0.2, drafts may change anything. After 0.2, patch versions add
+This document specifies version `0.2`. Patch versions add
 functions, measures, members and capabilities without changing the meaning of plans that were valid before,
 and changes of meaning need a new minor version (0.3) while the major version is 0. A change to sections 2–4
 comes with conformance cases checked against DuckDB, and the JS engine follows in the same change.
@@ -1519,7 +1521,7 @@ column as a literal of that type.
 | `{ type: "blank", blank }` | `is_blank(c)`, or `not(is_blank(c))` |
 | `{ type: "and" / "or", filters }` | `and` / `or` of the migrated filters; a group of one filter is that filter |
 
-## Appendix B. DuckDB behavior this draft was checked against
+## Appendix B. DuckDB behavior this specification was checked against
 
 DuckDB 2.0 through `@duckdb/node-api` 2.0.0-r.1, on 2026-10-27 (first checked with DuckDB 1.5 on 2026-10-24):
 

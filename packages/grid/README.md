@@ -16,7 +16,6 @@ every byte that was not edited kept as it is.
 npm install vastgrid vastgrid-js
 ```
 
-Until 0.2.0 is released, this version is a prerelease on npm's `next` tag: `npm install vastgrid@next vastgrid-js@next`.
 `vastgrid` needs React 19.3 or later and a browser with CSS `light-dark()` (Chrome and Edge 123, Firefox 120,
 Safari 17.5 or later). React is an optional peer dependency: `vastgrid/core` runs on servers and in workers without
 it.

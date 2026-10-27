@@ -57,15 +57,17 @@ function read<T>(message: unknown, op: Operation): T {
   return toStructuredEncoding(response).result as T;
 }
 
+// Clients can share a transport or reach the same engine through different transports. Their requests and
+// cancellations must use distinct ids, including after a store is disconnected and another is created.
+let nextId = 1;
+
 /** Sends requests through a transport: gives them ids, checks the answers and cancels what is no longer needed. */
 export class GridClient {
-  private nextId = 1;
-
   constructor(readonly transport: Transport) {}
 
   request<T>(op: Operation, members: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
     if (signal?.aborted) return Promise.reject(cancelled(op));
-    const id = this.nextId++;
+    const id = nextId++;
     const started = now();
     const bySignal = this.transport.cancels === "signal";
     const sent = this.transport.send({ v: 2, id, op, ...members }, bySignal && signal ? { signal } : {});
@@ -74,7 +76,7 @@ export class GridClient {
     const aborted = new Promise<never>((_, reject) => {
       const abort = () => {
         if (!bySignal) {
-          this.transport.send({ v: 2, id: this.nextId++, op: "cancel", request: id }, {}).catch(() => {});
+          this.transport.send({ v: 2, id: nextId++, op: "cancel", request: id }, {}).catch(() => {});
         }
         reject(cancelled(op));
       };

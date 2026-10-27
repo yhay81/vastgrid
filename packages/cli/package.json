@@ -1,6 +1,6 @@
 {
   "name": "vastgrid-cli",
-  "version": "0.2.0-next.1",
+  "version": "0.2.0",
   "description": "Open huge CSV, TSV, Parquet, JSON Lines and Excel files in a grid in the browser with one command, read by DuckDB on this computer: npx vastgrid-cli data.parquet",
   "keywords": [
     "csv",
@@ -45,11 +45,11 @@
     "build": "tsc -b && node scripts/build-app.mjs"
   },
   "dependencies": {
-    "vastgrid-duckdb": "0.2.0-next.1"
+    "vastgrid-duckdb": "0.2.0"
   },
   "devDependencies": {
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "vastgrid": "0.2.0-next.1"
+    "vastgrid": "0.2.0"
   }
 }

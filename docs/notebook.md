@@ -13,8 +13,7 @@ back as a DataFrame, or exports it.
 pip install vastgrid
 ```
 
-Before 0.2.0 is released, the pre-release is `pip install --pre vastgrid`. From this repository, build the grid's
-module into the package first: `npm install`, `npm run build`, then `pip install ./packages/notebook/python`.
+From this repository, build the grid's module into the package first: `npm install`, `npm run build`, then `pip install ./packages/notebook/python`.
 
 It needs Python 3.11 or later, `anywidget` 0.10 or later, `duckdb` 2.0 or later and `pyarrow` 19 or later;
 `pandas` and `polars` are needed only for their DataFrames and for `to_pandas` and `to_polars`. In a notebook:

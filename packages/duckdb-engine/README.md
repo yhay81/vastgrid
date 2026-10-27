@@ -91,7 +91,9 @@ temporary folder.
   encoding, Shift_JIS and UTF-16 included) stays. The file is written next to itself under a temporary name and
   renamed over it once complete, so that a failed or cancelled save leaves it as it was; a file changed by someone
   else since it was read is refused (`file_changed`). Afterwards the table reads the saved values as the file's
-  own, with the same revision and row IDs. Saving two cells takes about 60 ms in a 200,000-row file (6 MB) and 0.3 s in a 2-million-row file (65 MB) on an Apple-silicon laptop.
+  own, with the same revision and row IDs. Empty strings cannot be saved: even quoted empty fields read back as
+  null, so `save` returns `save_unsupported` and keeps both the file and all pending edits. Null can be saved.
+  Saving two cells takes about 60 ms in a 200,000-row file (6 MB) and 0.3 s in a 2-million-row file (65 MB) on an Apple-silicon laptop.
 - **Following files.** The folders of open files are watched (`watchFiles`, on by default), and `changes` and
   `open` check the file too (§7.6). A file that changes on disk is loaded again, and the handles move to the new
   revision once it has loaded, reading the table as it was meanwhile. A table with written cells is kept instead,

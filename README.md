@@ -19,7 +19,8 @@ comes as a command, a VS Code extension, an MCP App and a Jupyter widget.
   groups, pivots and totals, formulas, formats, copy, paste and fill.
 - **Edits you can trust.** Typed input is checked against the column's type, writes are checked for conflicts and
   can be undone, and saving a CSV or TSV file rewrites only the edited fields and keeps every other byte. A file
-  that changes on disk is followed, and is never saved over.
+  that changes on disk is followed, and is never saved over. Values that cannot survive a save, including empty
+  strings in CSV and TSV, are refused with the edits kept.
 - **One state, typed commands.** What the grid shows is a document (the view and its columns) and a session (where
   the person is), controlled or not. Every change is a command that a toolbar, a host or an AI agent can dispatch.
 - **Engines you choose.** `vastgrid-js` in memory, in the page or a Web Worker; `vastgrid-duckdb` on Node.js; or
@@ -46,9 +47,6 @@ and exporting.
 ```sh
 npm install vastgrid vastgrid-js
 ```
-
-Until 0.2.0 is released, the packages are prereleases on npm's `next` tag, and `npm install vastgrid` still gives
-0.1.x: try this version with `npm install vastgrid@next vastgrid-js@next`.
 
 ```tsx
 import { DataGrid, localTransport } from "vastgrid";
