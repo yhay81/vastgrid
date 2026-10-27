@@ -108,6 +108,11 @@ The App takes the host's theme and locale (English or Japanese).
   ext-apps' `AppBridge`, as hosts do; `POST /restart` starts the server again, and the App opens the file again as
   the person saw it. `node --import tsx packages/mcp/host/serve.ts <folder> [port]` starts it by hand:
   `http://127.0.0.1:5184/?file=orders.csv`.
+- By hand in VS Code 1.142.0, with the server in a folder's `.vscode/mcp.json` (`"servers": { "vastgrid": { "type":
+  "stdio", "command": "node", "args": ["/path/to/vastgrid/packages/mcp/dist/cli.js", "--save",
+  "${workspaceFolder}"] } }`) and the chat's Local agent: a CSV file of 100,000 rows opens in the App under VS Code's
+  CSP, the agent sorts it with `grid_command` and reads it with `grid_state` and `grid_rows`, the App shows the sort,
+  and a click on a header sorts the App's grid. The chat's Copilot CLI agent ran the tools but did not show the App.
 
 ## Not yet
 
