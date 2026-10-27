@@ -522,10 +522,10 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
 ### 6.5 Theming
 
 Colors, fonts and sizes are CSS custom properties on `.vg-root`, which the canvas reads (and reads again when the
-page's class, style or color scheme changes). Colors are `light-dark()` pairs, and the stylesheet declares
-`color-scheme: light dark` on `.vg-root` without specificity, so the grid follows the system's light or dark mode;
-`.vg-root { color-scheme: light }` keeps it light. The declaration also makes the colors work where a bundler turns
-`light-dark()` into variables for older browsers (Lightning CSS in Vite), which need it.
+page's or the grid's class or style, or the color scheme, changes). Colors are `light-dark()` pairs, and the
+stylesheet declares `color-scheme: light dark` on `.vg-root` without specificity, so the grid follows the system's
+light or dark mode; `.vg-root { color-scheme: light }` keeps it light. The declaration also makes the colors work
+where a bundler turns `light-dark()` into variables for older browsers (Lightning CSS in Vite), which need it.
 
 ## 7. Server rendering and Server Components
 

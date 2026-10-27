@@ -49,9 +49,9 @@ that was not edited kept. [From v1 to v2](docs/v2-from-v1.md) is the migration g
   and when its cell runs again, and keeps the notebook's keys of command mode off while it has the focus. The corpus,
   pytest and a comparison with vastgrid-js's memory engine test it (docs/notebook.md). docs/entries.md and
   docs/entries.ja.md compare the six places v2 opens files: formats, editing, saving, exporting and installing.
-- `vastgrid`: the grid follows a theme that the host marks on the body, as VS Code's webviews
-  (`vscode-dark`) and JupyterLab (`data-jp-theme-light`) do. `workerTransport` is documented for anything that carries
-  messages as a worker does (v2-react.md §4.4).
+- `vastgrid`: the grid follows a theme that the host marks on the body, as VS Code's webviews (`vscode-dark`) and
+  JupyterLab (`data-jp-theme-light`) do, and draws again when its own `className` or `style` changes.
+  `workerTransport` is documented for anything that carries messages as a worker does (v2-react.md §4.4).
 - `vastgrid-spec`: of two shortest digits of a 32-bit float that read back as it, the text form
   (§2.4.1) takes the nearer, and of two as near the even one (5525.71875 is `5525.7188`, -5096.53125 `-5096.5312`);
   `excelSerial` reads the years 0 to 99 as themselves. The corpus searches 32-bit floats by their text forms.

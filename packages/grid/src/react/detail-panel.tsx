@@ -56,7 +56,6 @@ function OpenDetail({ Custom, onClosed }: { Custom?: ComponentType<DetailPanelPr
     onClosed();
   };
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: Esc closes the panel from anywhere in it.
     <aside
       className="vg-detail"
       aria-label={title}

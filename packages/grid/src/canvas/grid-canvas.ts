@@ -291,6 +291,9 @@ export class GridCanvas {
     const marks = { attributes: true, attributeFilter: ["class", "style", "data-theme", "data-jp-theme-light"] };
     themeObserver?.observe(document.documentElement, marks);
     if (document.body) themeObserver?.observe(document.body, marks);
+    // And the grid's own class and style, as `className` and `style` of DataGrid set them.
+    const grid = elements.root.closest(".vg-root") ?? elements.root;
+    themeObserver?.observe(grid, { attributes: true, attributeFilter: ["class", "style"] });
     void document.fonts?.ready.then(refresh);
     // The session's place (§5.2) when the grid starts.
     const scroll = this.snapshot.session.scroll;
