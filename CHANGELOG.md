@@ -37,6 +37,7 @@ that was not edited kept. [From v1 to v2](docs/v2-from-v1.md) is the migration g
 - `vastgrid-mcp`: the server and its App give the package's version to the host instead of 0.0.0.
 - `vastgrid-cli` and `vastgrid-mcp` have READMEs, and the READMEs and the site describe v2 in English and
   Japanese, with pages for the apps and for migrating from v1.
+- `vastgrid-spec` reads Arrow with `@uwdata/flechette` 2.7.0, which installs `@uwdata/wk-geojson` with it.
 
 ### New in v2
 
