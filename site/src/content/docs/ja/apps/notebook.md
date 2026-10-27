@@ -11,7 +11,7 @@ Python のパッケージ `vastgrid` は、どんな大きさの表も Jupyter �
 pip install vastgrid
 ```
 
-Python 3.11 以降と、`anywidget` 0.10 以降、`duckdb` 1.5.6 以降、`pyarrow` 19 以降が必要で、これらは pip が一緒に入れます。`pandas` と `polars` は、その DataFrame を扱うときと `to_pandas`・`to_polars` を使うときだけ必要です。ノートブックでは次のようにします。
+Python 3.11 以降と、`anywidget` 0.10 以降、`duckdb` 2.0 以降、`pyarrow` 19 以降が必要で、これらは pip が一緒に入れます。`pandas` と `polars` は、その DataFrame を扱うときと `to_pandas`・`to_polars` を使うときだけ必要です。ノートブックでは次のようにします。
 
 ```python
 import vastgrid

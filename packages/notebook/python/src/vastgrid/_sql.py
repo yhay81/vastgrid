@@ -288,12 +288,10 @@ class _Compiler:
             # 64-bit, also for a 32-bit float column (§3.7).
             if type["type"] == "float":
                 return _finite(f"round({self._double(args[0])}, {digits})")
-            if type["type"] == "decimal":
-                return f"TRY({_cast(f'round({arg(0)}, {digits})', type)})"
-            if places >= 0:
+            if type["type"] != "decimal" and places >= 0:
                 return arg(0)
-            # DuckDB 1.5 wrapped around when it rounded a BIGINT past its range (2.0 fails); a decimal overflows.
-            return f"TRY({_cast(f'round(CAST({arg(0)} AS DECIMAL(19,0)), {digits})', type)})"
+            # Rounding past the type's range fails, which TRY makes null (§3.6).
+            return f"TRY({_cast(f'round({arg(0)}, {digits})', type)})"
         if fn in ("floor", "ceil"):
             if type["type"] == "float":
                 return _finite(f"{fn}({self._number(args[0])})")

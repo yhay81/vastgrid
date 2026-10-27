@@ -311,10 +311,9 @@ class Compiler {
         const digits = args.length === 2 ? Number((args[1] as LiteralExpr).value) : 0;
         // 64-bit, also for a 32-bit float column (§3.7).
         if (type.type === "float") return finite(`round(${this.double(args[0])}, ${digits})`);
-        if (type.type === "decimal") return `TRY(${cast(`round(${arg(0)}, ${digits})`, type)})`;
-        if (digits >= 0) return arg(0);
-        // DuckDB 1.5 wrapped around when it rounded a BIGINT past its range (2.0 fails); a decimal overflows.
-        return `TRY(${cast(`round(CAST(${arg(0)} AS DECIMAL(19,0)), ${digits})`, type)})`;
+        if (type.type !== "decimal" && digits >= 0) return arg(0);
+        // Rounding past the type's range fails, which TRY makes null (§3.6).
+        return `TRY(${cast(`round(${arg(0)}, ${digits})`, type)})`;
       }
       case "floor":
       case "ceil":

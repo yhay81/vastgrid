@@ -42,7 +42,7 @@ that was not edited kept. [From v1 to v2](docs/v2-from-v1.md) is the migration g
 ### New in v2
 
 - `vastgrid-duckdb` and `vastgrid-sql` run on DuckDB 2.0 (`@duckdb/node-api` 2.0.0-r.1), and the Python package on
-  `duckdb` 1.5.6 or later, 2.0 included. CSV and TSV files with line breaks in quotes are read in one thread, which
+  `duckdb` 2.0 or later. CSV and TSV files with line breaks in quotes are read in one thread, which
   DuckDB 2.0 needs; sums and averages of decimals of more than 18 digits stay exact beyond 38 digits (a sum beyond
   them is null), and a `stddev` beyond the largest float is null, as in the memory engine.
 - `vastgrid-spec`, `vastgrid-js`: intervals compare by their length (§3.1), as DuckDB 2.0 compares them:

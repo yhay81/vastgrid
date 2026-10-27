@@ -2321,7 +2321,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "anywidget", specifier = ">=0.10" },
-    { name = "duckdb", specifier = ">=1.5.6" },
+    { name = "duckdb", specifier = ">=2.0.0" },
     { name = "pyarrow", specifier = ">=19" },
 ]
 

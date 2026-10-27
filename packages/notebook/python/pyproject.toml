@@ -13,7 +13,7 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Topic :: Scientific/Engineering :: Visualization",
 ]
-dependencies = ["anywidget>=0.10", "duckdb>=1.5.6", "pyarrow>=19"]
+dependencies = ["anywidget>=0.10", "duckdb>=2.0.0", "pyarrow>=19"]
 
 [project.urls]
 Homepage = "https://vastgrid.yhay81.com"

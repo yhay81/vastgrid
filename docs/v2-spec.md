@@ -1550,7 +1550,7 @@ DuckDB 2.0 through `@duckdb/node-api` 2.0.0-r.1, on 2026-10-27 (first checked wi
 | `NULL IN ('a')`, `'b' IN ('a', NULL)` | NULL, NULL |
 | `contains('', '')`, `contains(NULL, 'a')` | true, NULL |
 | `isodow(DATE '2024-01-07')` (a Sunday), `date_diff('day', TIMESTAMP '2024-01-01 23:00', TIMESTAMP '2024-01-02 01:00')` | 7, 1 |
-| `round(9223372036854775807::BIGINT, -1)`, `round(2147483647::INTEGER, -1)` | errors (DuckDB 1.5 wrapped around to `-9223372036854775800` and `-2147483646`, so `vastgrid-sql` rounds integers through `DECIMAL(19,0)`, where overflow fails and gives null, §3.6) |
+| `round(9223372036854775807::BIGINT, -1)`, `round(2147483647::INTEGER, -1)` | errors, null in `TRY()` (DuckDB 1.5 wrapped around to `-9223372036854775800` and `-2147483646`), so `vastgrid-sql` rounds integers in their own type (§3.6) |
 | `TRY(sum(x))` | refused (`aggregates are not allowed inside the TRY expression`), so measures use `TRY_CAST` |
 | `CAST(0.5::DECIMAL(1,1) AS VARCHAR)`, `CAST(-0.10::DECIMAL(2,2) AS VARCHAR)` | `.5`, `-.10`: decimals without whole digits lose the 0 of §2.4, which `vastgrid-sql` puts back (`textSql`) |
 | `COPY (…) TO … (FORMAT csv)` of `0.5::DECIMAL(1,1)`; `(FORMAT json, ARRAY true)` of a column of `'NaN'::DOUBLE`, of `0.1::FLOAT`, of `12.50::DECIMAL(10,2)` | `.5`; `NaN` (not JSON), `0.10000000149011612`, `12.5`: `vastgrid-duckdb` selects such decimals with `textSql` for CSV and TSV, and writes JSON from the rows itself (`writeJson` of `vastgrid-spec/export`), as `vastgrid-js` does (§8.2) |

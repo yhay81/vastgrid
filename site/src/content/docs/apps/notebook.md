@@ -15,7 +15,7 @@ edited table back as a DataFrame, or exports it.
 pip install vastgrid
 ```
 
-It needs Python 3.11 or later, `anywidget` 0.10 or later, `duckdb` 1.5.6 or later and `pyarrow` 19 or later,
+It needs Python 3.11 or later, `anywidget` 0.10 or later, `duckdb` 2.0 or later and `pyarrow` 19 or later,
 which pip installs with it; `pandas` and `polars` are needed only for their DataFrames and for `to_pandas` and
 `to_polars`. In a notebook:
 
