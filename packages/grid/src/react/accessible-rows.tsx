@@ -47,7 +47,7 @@ function shownColumns(settled: Settled, columns: readonly DisplayedColumn[]): nu
 
 /** A box of the canvas, in the scroller's content. */
 function boxOf(canvas: GridCanvas, x: number, y: number, width: number, height: number): Box {
-  return { left: canvas.scrollX.native + x, top: canvas.scrollY.native + y, width, height };
+  return { left: canvas.geometry.scrollX.native + x, top: canvas.geometry.scrollY.native + y, width, height };
 }
 
 /** A row's cells; a row that is not on screen is placed at the top of the screen. */
@@ -59,7 +59,8 @@ function readRow(
   row: number,
   onScreen: boolean,
 ): ShownRow {
-  const y = onScreen ? canvas.rowY(row) : canvas.headerHeight;
+  const { geometry } = canvas;
+  const y = onScreen ? geometry.rowY(row) : geometry.headerHeight;
   const cells = shown.map((column) => {
     const item = columns[column].column;
     const value = store.cell(row, item.name);
@@ -69,7 +70,7 @@ function readRow(
       text: value === undefined || value === null ? "" : canvas.text(row, item, value),
       description: canvas.styleOf(row, item.name)?.description,
       action: canvas.actionAt(row, column)?.action,
-      ...boxOf(canvas, canvas.columnX(column), y, canvas.columnWidth(column), canvas.rowHeight),
+      ...boxOf(canvas, geometry.columnX(column), y, geometry.columnWidth(column), geometry.rowHeight),
     };
   });
   return { row, cells };
@@ -81,13 +82,14 @@ function readRow(
  * rows arrive (memoization, React Compiler's included, keys on it), and not when the selection moves.
  */
 function readScreen(canvas: GridCanvas, store: GridStore, settled: Settled, columns: readonly DisplayedColumn[]) {
+  const { geometry } = canvas;
   const shown = shownColumns(settled, columns);
   const header = shown.map((column) => ({
     column,
     name: columns[column].column.name,
     text: columns[column].setting.format?.label ?? columns[column].column.name,
     groups: canvas.groupNames(column).join(" › "),
-    ...boxOf(canvas, canvas.columnX(column), 0, canvas.columnWidth(column), canvas.headerHeight),
+    ...boxOf(canvas, geometry.columnX(column), 0, geometry.columnWidth(column), geometry.headerHeight),
   }));
   const rows: ShownRow[] = [];
   const end = Math.min(settled.top + settled.rows, settled.top + MAX_ROWS);
@@ -162,6 +164,7 @@ function AccessibleRow({ id, row, selected }: { id: string; row: ShownRow; selec
  * when scrolling pauses, in a Transition: one commit at a lower priority than anything the person does.
  */
 export function AccessibleRows({ canvas, id }: { canvas: GridCanvas; id: string }) {
+  const { geometry } = canvas;
   const store = useGridStore();
   const [settled, setSettled] = useState(() => canvas.getSettled());
   useEffect(
@@ -178,7 +181,7 @@ export function AccessibleRows({ canvas, id }: { canvas: GridCanvas; id: string 
   const totals = useGridSelector((snapshot) => snapshot.totals);
   const screen = readScreen(canvas, store, settled, columns);
   const elsewhere =
-    active && (active.row < settled.top || active.row >= screen.end) && active.row < canvas.rowCount
+    active && (active.row < settled.top || active.row >= screen.end) && active.row < geometry.rowCount
       ? readRow(canvas, store, columns, screen.shown, active.row, false)
       : null;
   const rows = elsewhere ? [...screen.rows, elsewhere].sort((a, b) => a.row - b.row) : screen.rows;
@@ -206,11 +209,11 @@ export function AccessibleRows({ canvas, id }: { canvas: GridCanvas; id: string 
       {rows.map((row) => (
         <AccessibleRow key={row.row} id={id} row={row} selected={selectedOf(selection, active, row)} />
       ))}
-      {canvas.footer > 0 && (
+      {geometry.footer > 0 && (
         // The totals row (§5.1 of the specification), after the rows.
         // biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas.
         // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
-        <div role="row" aria-rowindex={canvas.rowCount + 2}>
+        <div role="row" aria-rowindex={geometry.rowCount + 2}>
           {screen.header.map((cell) => {
             const value = totals?.values[cell.name];
             const type = totals?.columns[cell.name];
@@ -221,7 +224,12 @@ export function AccessibleRows({ canvas, id }: { canvas: GridCanvas; id: string 
                 key={cell.name}
                 role="gridcell"
                 aria-colindex={cell.column + 1}
-                style={{ left: cell.left, top: canvas.bottom, width: cell.width, height: canvas.footer }}
+                style={{
+                  left: cell.left,
+                  top: geometry.bottom,
+                  width: cell.width,
+                  height: geometry.footer,
+                }}
               >
                 {value === undefined || value === null || !type ? "" : (textOf(value, type) ?? "")}
               </div>

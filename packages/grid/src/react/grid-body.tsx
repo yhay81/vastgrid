@@ -15,7 +15,8 @@ import {
 } from "react";
 import { browser } from "react-dom";
 import { CommandError, type GridCommand, type RowKey } from "vastgrid-spec";
-import { GridCanvas, type Hit } from "../canvas/grid-canvas.js";
+import type { Hit } from "../canvas/geometry.js";
+import { GridCanvas } from "../canvas/grid-canvas.js";
 import type { CellAction, CellHooks, ColumnGroup, GridCell } from "../canvas/hooks.js";
 import { isApple, type KeyInput, keyCommand, typesText } from "../canvas/keys.js";
 import { allState, checkedCount, checkState } from "../core/checked.js";
@@ -194,6 +195,7 @@ export function GridBody({
   use(browser("The grid draws on a canvas, which only the browser has."));
   const store = useGridStore();
   const [canvas] = useState(() => new GridCanvas({ rowHeight, headerHeight }));
+  const { geometry } = canvas;
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sizerRef = useRef<HTMLDivElement>(null);
@@ -275,7 +277,7 @@ export function GridBody({
     if (x > scroller.clientWidth || y > scroller.clientHeight) return;
     scroller.focus({ preventScroll: true });
     event.preventDefault();
-    const hit: Hit = canvas.hit(x, y);
+    const hit: Hit = geometry.hit(x, y);
     const primary = isApple() ? event.metaKey : event.ctrlKey;
     const mode = event.shiftKey ? "extend" : primary ? "add" : "replace";
     const start = (kind: Drag["kind"], last: string, extra: Partial<Drag> = {}) => {
@@ -315,7 +317,7 @@ export function GridBody({
       if (column === undefined) return;
       // The menu opens on the click, after the pointer is up: a popover shown before closes as the pointer goes up.
       if (hit.menu) return;
-      if (hit.edge) start("resize", "", { column: hit.column, width: canvas.columnWidth(hit.column) });
+      if (hit.edge) start("resize", "", { column: hit.column, width: geometry.columnWidth(hit.column) });
       // A click sorts by the column; dragging it moves it (with the other columns selected whole with it).
       else start("move", "", { column: hit.column, names: movedWith(column), shift: event.shiftKey });
     }
@@ -323,9 +325,9 @@ export function GridBody({
 
   /** Extends the selection being dragged to the cell or the row at a point, kept within the body. */
   const extendTo = (scroller: HTMLElement, current: Drag, x: number, y: number) => {
-    const hit = canvas.hit(
-      Math.max(canvas.gutterWidth + 1, Math.min(scroller.clientWidth - 1, x)),
-      Math.max(canvas.headerHeight + 1, Math.min(canvas.bottom - 1, y)),
+    const hit = geometry.hit(
+      Math.max(geometry.gutterWidth + 1, Math.min(scroller.clientWidth - 1, x)),
+      Math.max(geometry.headerHeight + 1, Math.min(geometry.bottom - 1, y)),
     );
     if (current.kind === "cells" && hit.area === "cell") {
       const key = `${hit.row}:${hit.column}`;
@@ -349,9 +351,10 @@ export function GridBody({
 
   /** While a drag is beyond the body, scrolls towards the pointer every frame and extends the selection. */
   const followPointer = (scroller: HTMLElement, x: number, y: number) => {
-    const beyondY = y < canvas.headerHeight ? y - canvas.headerHeight : y > canvas.bottom ? y - canvas.bottom : 0;
+    const beyondY =
+      y < geometry.headerHeight ? y - geometry.headerHeight : y > geometry.bottom ? y - geometry.bottom : 0;
     const beyondX =
-      x < canvas.gutterWidth ? x - canvas.gutterWidth : x > scroller.clientWidth ? x - scroller.clientWidth : 0;
+      x < geometry.gutterWidth ? x - geometry.gutterWidth : x > scroller.clientWidth ? x - scroller.clientWidth : 0;
     if (beyondX === 0 && beyondY === 0) {
       stopFollowing();
       return;
@@ -366,9 +369,10 @@ export function GridBody({
     const step = () => {
       const current = drag.current;
       if (follow.current !== state || !current) return;
-      const dy = state.y < canvas.headerHeight ? state.y - canvas.headerHeight : Math.max(0, state.y - canvas.bottom);
+      const dy =
+        state.y < geometry.headerHeight ? state.y - geometry.headerHeight : Math.max(0, state.y - geometry.bottom);
       const dx =
-        state.x < canvas.gutterWidth ? state.x - canvas.gutterWidth : Math.max(0, state.x - scroller.clientWidth);
+        state.x < geometry.gutterWidth ? state.x - geometry.gutterWidth : Math.max(0, state.x - scroller.clientWidth);
       // Faster the farther the pointer is.
       scroller.scrollTop += Math.sign(dy) * Math.min(80, Math.abs(dy) / 2 + 4);
       if (current.kind === "cells") scroller.scrollLeft += Math.sign(dx) * Math.min(80, Math.abs(dx) / 2 + 4);
@@ -382,7 +386,7 @@ export function GridBody({
     const current = drag.current;
     const { x, y } = point(event);
     if (!current) {
-      const hit = canvas.hit(x, y);
+      const hit = geometry.hit(x, y);
       const action = hit.area === "cell" ? canvas.actionAt(hit.row, hit.column)?.action : undefined;
       event.currentTarget.style.cursor =
         hit.area === "header" && hit.edge ? "col-resize" : action ? (action.cursor ?? "pointer") : "";
@@ -481,9 +485,9 @@ export function GridBody({
    */
   const dropAt = (x: number, names: readonly string[]): { before: string | null; x: number } | undefined => {
     if (columns.length === 0) return undefined;
-    let at = canvas.columnAt(Math.max(canvas.gutterWidth, x));
-    if (at < 0) at = x < canvas.gutterWidth ? 0 : columns.length - 1;
-    const middle = canvas.columnX(at) + canvas.columnWidth(at) / 2;
+    let at = geometry.columnAt(Math.max(geometry.gutterWidth, x));
+    if (at < 0) at = x < geometry.gutterWidth ? 0 : columns.length - 1;
+    const middle = geometry.columnX(at) + geometry.columnWidth(at) / 2;
     const index = x < middle ? at : at + 1;
     const before = index < columns.length ? columns[index].column.name : null;
     const moved = names.map((name) => columns.findIndex((item) => item.column.name === name));
@@ -492,7 +496,7 @@ export function GridBody({
     if (moved.length > 0 && index === Math.max(...moved) + 1 && moved.every((item, i) => item === moved[0] + i)) {
       return undefined;
     }
-    const lineX = index < columns.length ? canvas.columnX(index) : canvas.columnX(at) + canvas.columnWidth(at);
+    const lineX = index < columns.length ? geometry.columnX(index) : geometry.columnX(at) + geometry.columnWidth(at);
     return { before, x: lineX };
   };
 
@@ -503,14 +507,14 @@ export function GridBody({
     const rect = scroller.getBoundingClientRect();
     setMenu({
       column,
-      x: rect.left + Math.max(0, canvas.columnX(index) + canvas.columnWidth(index) - 200),
-      y: rect.top + canvas.headerHeight,
+      x: rect.left + Math.max(0, geometry.columnX(index) + geometry.columnWidth(index) - 200),
+      y: rect.top + geometry.headerHeight,
     });
   };
 
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const hit = canvas.hit(event.clientX - rect.left, event.clientY - rect.top);
+    const hit = geometry.hit(event.clientX - rect.left, event.clientY - rect.top);
     const column = nameOf(hit.column);
     if (hit.area === "header" && hit.menu && column !== undefined) openMenu(column, hit.column);
     // A click on a link or a button of a cell acts, after selecting the cell.
@@ -527,7 +531,7 @@ export function GridBody({
 
   const onContextMenu = (event: MouseEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const hit = canvas.hit(event.clientX - rect.left, event.clientY - rect.top);
+    const hit = geometry.hit(event.clientX - rect.left, event.clientY - rect.top);
     const column = nameOf(hit.column);
     if ((hit.area !== "header" && hit.area !== "cell") || column === undefined) return;
     event.preventDefault();
@@ -579,7 +583,7 @@ export function GridBody({
     if (!scroller || !active) return;
     const index = columns.findIndex((item) => item.column.name === active.column);
     if (index < 0) return;
-    const box = canvas.cellBox(active.row, index);
+    const box = geometry.cellBox(active.row, index);
     const rect = scroller.getBoundingClientRect();
     setCellMenu({
       row: active.row,
@@ -601,7 +605,7 @@ export function GridBody({
 
   const onDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const hit = canvas.hit(event.clientX - rect.left, event.clientY - rect.top);
+    const hit = geometry.hit(event.clientX - rect.left, event.clientY - rect.top);
     const name = nameOf(hit.column);
     // Double-clicking a column's edge fits it to its values again; double-clicking a cell edits it.
     if (hit.area === "header" && hit.edge && name !== undefined)

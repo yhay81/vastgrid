@@ -42,7 +42,7 @@ function place(box: HTMLDivElement | null, store: GridStore, canvas: GridCanvas)
   if (!box || !current) return;
   const at = store.getSnapshot().displayed.findIndex((item) => item.column.name === current.column);
   if (at < 0) return;
-  const cell = canvas.cellBox(current.row, at);
+  const cell = canvas.geometry.cellBox(current.row, at);
   box.style.left = `${cell.left}px`;
   box.style.top = `${cell.top}px`;
   box.style.minWidth = `${Math.max(cell.width, 60)}px`;

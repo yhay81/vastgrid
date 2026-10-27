@@ -1,7 +1,8 @@
 "use client";
 
 export type { CommandName, CommandOutputs, GridCommand, GridDocument, GridSession } from "vastgrid-spec";
-export { GridCanvas, type Hit, type Settled } from "./canvas/grid-canvas.js";
+export type { Geometry, Hit } from "./canvas/geometry.js";
+export { GridCanvas, type Settled } from "./canvas/grid-canvas.js";
 export type { CellAction, CellHooks, CellStyle, ColumnGroup, DrawCellArgs, GridCell } from "./canvas/hooks.js";
 export { isApple, type KeyInput, keyCommand } from "./canvas/keys.js";
 /**
