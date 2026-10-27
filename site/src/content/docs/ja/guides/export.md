@@ -1,83 +1,92 @@
 ---
 title: 書き出し
-description: 書き出しパネル、ファイルの行き先、Excel ファイルの書き方。
+description: 書き出しメニュー、形式ごとに書く内容、ファイルの行き先、コードからの書き出し。
 ---
 
-ツールバーの **書き出し** ボタンで、何をどの形式で書き出すかを選ぶパネルが開きます。source が書き出せるとき（`capabilities.export` と `exportView`）に表示され、`info().exports` の形式を選べます。
+ツールバーの **書き出し** メニューは、グリッドの行をファイルに書き出します。エンジンが書き出しに対応しているとき（`capabilities.export`）に表示し、エンジンが書ける形式（`capabilities.export.formats`）ごとにボタンを出します。
 
-| source | 形式 | ファイルの行き先 |
+| エンジン | 形式 | ファイルの行き先（`capabilities.export.delivery`） |
 | --- | --- | --- |
-| `RemoteSource` ＋ `vastgrid-duckdb` | CSV・TSV・Parquet・JSON・Excel（`.xlsx`） | サーバーが新しいファイルを書きます（`delivery: "file"`）。ハンドラーに `resolveTarget` があるときだけ。 |
-| `ArraySource` | CSV・TSV・JSON・Excel | ブラウザーでダウンロードします（`delivery: "data"`）。 |
-| `BrowserSource`（`vastgrid-browser`） | なし | まだ提供していません。[下記](#vastgrid-browser)を参照。 |
+| メモリーエンジン（`vastgrid-js`） | CSV・TSV・JSON・Excel | `data`：エンジンがファイルのバイト列を返し、ブラウザーが保存します |
+| DuckDB エンジン（`vastgrid-duckdb`） | CSV・TSV・Parquet・JSON・Excel | `file`：エンジンがサーバーにファイルを書き、ブラウザーがダウンロードします |
 
 ## 書き出す内容
 
-- **行**：現在のビュー（表示中の絞り込み・検索・並べ替えのとおり）か、表全体（元の順）。並べ替え中のビューは、終わってから書き出せます。
-- **列**：表示中の列（表示順）か、すべての列（スキーマの順）。
-- **列の設定**：既定では、`columnFormats` の表示名を CSV・TSV・Excel の見出しにし、Excel のセルには列の数値・日時の書式を付けます（`excelNumberFormat` で変換。`format` 関数、compact 表記、`Intl` の日時オプションは型の既定の書式になります）。Parquet と JSON はスキーマの列名のままです。値を表示用の文字に置き換えることはありません。`wrap`・`style`・`align`・`format` は書き出しません。`style` と `format` はブラウザーの関数で、サーバーがすべての行に対して呼ぶことはできず、折り返しと配置はグリッドのレイアウトに合わせたもので Excel のものではないためです。
-- **ファイル名**：利用者が入力した名前に、形式の拡張子を付けます。
+- **行**：「ビューの行」（既定）は、絞り込み・検索・並べ替え・計算列・グループ化を含め、グリッドが表示しているとおりのビューを書きます。「表全体」は、それらを使わずに表のすべての行を元の順で書きます。
+- **列**：表示している列を表示の順で書きます。「非表示の列も含める」をオンにすると、残りの列をその後に足します。
+- **見出し**：CSV・TSV・Excel の見出しには列の表示名（書式…で設定したもの、なければ列名）を使います。Parquet と JSON は列名のままです。
+- **値**：画面に表示した文字ではなく値を書きます。グリッドで書き込んだセル（[セルの編集](/ja/guides/editing/)）の値も入ります。Excel のセルには、列の数値と日付の書式を付けます。
+- **ファイル名**：表の名前に形式の拡張子を付けます。`orders.csv` を Excel で書き出すと `orders.xlsx` になります。
 
-パネルは進行中を表示し、**キャンセル**（またはパネルを閉じる）で書き出しを止めます。サーバーはクエリーを中断し、書きかけのファイルを消します。失敗はパネルに表示します。Excel の上限は実行前に確かめます。
+書き出している間、ボタンは「書き出しています…」になり、終わると「12,345 行を書き出しました」と伝えます。ファイルは完全にできるか、まったくできないかのどちらかで、失敗した書き出しは何も残しません。読み込み中の表は、読み込みが終わってから書き出します。
 
-1 つのファイルには表の 1 つのリビジョンだけを書きます。書き出し中に表が変わったとき（source が `subscribe` で変更を知らせたとき、またはファイルが変わってサーバーが表を閉じ、グリッドが読み直したとき）は書き出しを止め、書きかけのファイルを消して、もう一度書き出すよう表示します（`runExport` は `ExportInterruptedError` を投げます）。DuckDB エンジンは書き出しの終わりにもファイルのリビジョンを確かめ、途中で変わっていれば結果を捨てます。
+## 形式
+
+| 形式 | 書き方 | 上限 |
+| --- | --- | --- |
+| CSV・TSV | 見出しの行、続けて値をテキストで書く。必要なら引用符で囲む | なし |
+| Parquet | 列を列名と型のまま書く | なし |
+| JSON | 列名をキーにしたオブジェクトの配列。数値はすべての桁を持つ数値（`"nan"`・`"inf"` は文字列）、真偽値はそのまま、ほかの値は文字列 | なし |
+| Excel（`.xlsx`） | シート 1 枚。太字で固定した見出しの行。数値・真偽値・日付はその種類のセルにし、列の書式を付ける。文字列は常に文字列で、数式にはしない。double で正確に表せない数値は文字列 | 1,048,575 行・16,384 列（`export_too_large`）。1 セル 32,767 文字（超える分は切る）。4 GB |
+
+Excel ファイルでは、書式…で設定した列の数値の書式（小数点以下の桁数・桁区切り・パーセント・通貨）と日付の形式をセルの表示形式にするので、ブックでもグリッドと同じように数値を表示します。規則は仕様の [§8.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#82-operations) にあります。
 
 ## ファイルの行き先
 
-`exportOptions` でパネルとアプリをつなぎます。各コールバックは `ExportContext`（利用者の `choice`、`exportView` に渡す `request`、`delivery`、`rowCount`、`signal`）を受け取ります。
+### メモリーエンジン：ページの中
 
-```tsx
-<DataGrid
-  source={source}
-  exportOptions={{
-    fileName: "orders",                 // 拡張子なしの既定のファイル名
-    formats: ["xlsx", "csv"],           // source の形式のうち、これだけを出す
-    // target を決める：サーバーならパス、データならダウンロード名。null で取り消し。
-    target: ({ request, delivery }) => (delivery === "file" ? `exports/${request.target}` : request.target),
-    // ファイルができたら呼ばれる。なければ、返されたデータはダウンロードし、サーバーのファイルは知らせるだけ。
-    onExported: (result, { delivery }) => {
-      if (delivery === "file") window.location.assign(`/downloads/${encodeURIComponent(result.target)}`);
-    },
-  }}
-/>
-```
+エンジンはファイルのバイト列を返し（`delivery: "data"`）、グリッドはそれをページの中でファイルにして保存します。エンジンを Web Worker で動かしていても、データはブラウザーの外に出ません。
 
-### サーバーに保存してダウンロードする
+### DuckDB エンジン：サーバー
 
-サーバーの source はデータの近くにファイルを書き、`{ target, rows }` だけを返します。大きな結果がブラウザーを通ることはありません。`target` の置き場所はサーバーが `resolveTarget` で決め、エンジンが使えるフォルダーの中に収めます。
+エンジンは一時フォルダーにファイルを書き（`delivery: "file"`）、その名前を `target` として返します。書き出したファイルは新しいものから 16 個まで、1 時間保持します。`createHttpHandler` がそれを `GET <path>/exports/<名前>` でファイル名を付けて返し、`httpTransport` がその URL（`exportUrl`）をグリッドに渡して、ブラウザーがダウンロードします。
 
 ```ts
-createTableHandler({
-  engine,
-  resolve: (ref) => resolveInside(dataRoot, ref),
-  // 書き出しは専用のフォルダーに、利用者が選んだ名前で置く
-  resolveTarget: (target) => path.join(exportRoot, path.basename(target)),
-});
+import http from "node:http";
+import { createHttpHandler, DuckDBEngine } from "vastgrid-duckdb";
+
+const engine = await DuckDBEngine.create({ allowedDirectories: ["/srv/data"], tempDirectory: "/tmp/vastgrid" });
+http.createServer(createHttpHandler(engine, { path: "/api" })).listen(8080);
 ```
 
-利用者のブラウザーに渡すには、そのフォルダーをアプリから配信し、上の例のように `onExported` で URL を開きます。リポジトリの playground は `/data/exports/` でこれをしています。
+```tsx
+import { DataGrid, httpTransport } from "vastgrid";
 
-### ブラウザーのデータをダウンロードする
+const transport = httpTransport("/api"); // /api/exports/<名前> からダウンロード
 
-`ArraySource` はファイルを `Blob` として `result.data` に返します。`onExported` がなければグリッドがダウンロードします（`downloadBlob`）。`onExported` があれば、File System Access API やアップロードなど、別の場所に保存できます。
+export const Orders = () => <DataGrid transport={transport} table="orders.parquet" />;
+```
 
-### パネルを使わない
+ファイルを別の場所から配るときは、`httpTransport(url, { exports })` とハンドラーの `exports` オプションでダウンロードのパスを変えます。
 
-`exportOptions={false}` でパネルを隠します。`ref.current.openExport()` は、ツールバーを隠していてもパネルを開きます。独自の画面を作るには、`runExport(controller, choice, options, signal)` でパネルと同じように書き出すか、`exportRequest(controller, choice)` で要求だけを作ります。`source.exportView(request)` を直接呼んでもかまいません。
+ホストが決めた場所に書き出すには、エンジンに `resolveTarget` を渡します。書き出しの `target` を、許可したフォルダーの中のパスに変える関数です（断るときは例外を投げます。`not_allowed`）。エンジンはそこに一時的な名前で書き、書き終えてから名前を変えます。このときエンジンはファイルを保持しません。書き出しメニューは `target` を指定しないので、指定するのはコードからです（後述）。`resolveTarget` がなければ、`target` を指定した書き出しは断ります。
 
-## Excel ファイル
+[アプリ](/ja/apps/overview/)の書き出しはそれぞれ異なります。コマンドラインではブラウザーがダウンロードし、VS Code では保存のダイアログで選んだ場所に書き、ノートブックのグリッドはブラウザーでバイト列を保存します。MCP App ではまだダウンロードできません。
 
-Excel ファイルは依存なしで（ZIP と SpreadsheetML を自前で）ストリームとして書きます。DuckDB エンジンは行をまとまりごとに読み、圧縮しながら書くので、表が大きくてもサーバーのメモリーは増えません。8 列 100 万行で約 7 秒、58 MB です。
+## コードから書き出す
 
-- シートは 1 枚で、見出し行は太字、スクロールしても見える位置に固定します。
-- 数値は数値のセルです。倍精度で正確に持てない数値の文字（2^53 を超える 64 bit の ID、有効数字 15 桁を超える decimal）は、桁が変わらないよう文字のままにします。
-- 日付・時刻・日時は日付の書式付きの Excel の日付です。タイムゾーン付きの日時は UTC で書きます。1900-03-01 より前の日付は文字のままです。
-- 文字は常に文字で、`=`・`+`・`-`・`@` で始まっても数式にはなりません。Excel の上限 32,767 文字を超える文字は切ります。
-- `null` は空のセル、真偽値は TRUE と FALSE です。
-- 1,048,575 行または 16,384 列を超えるとシートに収まりません。パネルがそう表示し、source は `export_too_large` で断ります。行を絞り込むか、CSV や Parquet で書き出してください。複数のシートへの分割は、Excel で扱いにくいためしません。
+書き出しメニューは `export` コマンドを送ります。アプリからも同じコマンドを送れます。
 
-詳しい規則は[プロトコル](/reference/protocol/#excel-export-rules)にあります。CSV と TSV は値をそのまま書くので、表計算アプリが開くときに `=` で始まる文字を数式と読むことがあります。表計算アプリで使う人には Excel ファイルを勧めます。
+```ts
+const store = grid.current!.store; // DataGrid のハンドル。GridProvider の中なら useGridStore()
+const outcome = await store.dispatch({ command: "export", format: "csv", rows: "view", columns: "displayed" });
+if (outcome.ok) {
+  const { target, rows, data } = outcome.output as { target: string | null; rows: number; data?: { bytes: Uint8Array } };
+  if (data) {
+    // メモリーエンジン：ファイルのバイト列。名前はメニューと同じ付け方
+    const file = new File([data.bytes], store.exportName("csv"));
+  } else if (target !== null) {
+    // DuckDB エンジン：ダウンロードできる URL。トランスポートが知らなければ null
+    const url = store.exportUrl(target);
+  }
+}
+```
 
-## vastgrid-browser
+| 引数 | 値 |
+| --- | --- |
+| `format` | `capabilities.export.formats` のどれか。それ以外は `unsupported` で失敗 |
+| `rows` | `"view"`（既定）か `"table"` |
+| `columns` | `"displayed"`（既定）か `"all"` |
+| `target` | DuckDB エンジンが `resolveTarget` を通してファイルを書く場所 |
 
-`BrowserSource` はまだ書き出せません（`capabilities.export` は `false`）。書き出すには Worker で全行を読み、ファイル全体をメモリーに持つか、一部のブラウザーにしかない File System Access API で書く必要があるためです。今後は、アプリが渡すストリームへ Worker から `writeTableFile` で書き、ファイル全体をメモリーに載せない方式を予定しています。それまではサーバーか `ArraySource` から書き出してください。
+出力の `rows` は書いた行の数です。見出しと Excel の書式は、メニューと同じくドキュメントの列の設定から作ります。

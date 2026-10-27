@@ -1,130 +1,153 @@
 ---
 title: Using the grid
-description: Selection, keyboard shortcuts, copying, sorting, filters, search, find, statistics and columns.
+description: Selecting, the keyboard, copying, sorting, filters and search, find, statistics, columns and the detail panel.
 ---
 
-The grid works like a spreadsheet, with the mouse and with Excel's keyboard shortcuts. Everything here
-can be tried in the [demo](/demo/).
+The grid works like a spreadsheet, with the pointer and the keyboard. Everything here can be tried in the
+[demo](/demo/). Each action is a [command](/reference/commands/) on the grid's state, so what a person does with
+the pointer, an app can do with `dispatch`.
+
+What the toolbar and the menus offer depends on the engine. Each engine reports what it can do in its
+capabilities (`plan.where`, `plan.aggregate`, `find`, `summarize`, `write`, `export`, …), and the grid shows only
+what the engine does: see [Engines](/reference/engines/).
 
 ## Selecting
 
-- Click a cell to make it active; drag, or Shift + click, to select a range.
-- ⌘/Ctrl + click adds another range. The summary and copies cover every range.
-- Click a column header to select the column, a row header to select the row, and the corner to select
-  everything. Drag across headers to select several.
-- With `checkboxSelection`, rows also have checkboxes, which stay with their records when the view is
-  sorted or filtered (see [Checked rows](/reference/data-grid/#checked-rows)). Shift + click checks a
-  range.
+- Click a cell to make it active. Drag, or Shift + click, to select a range; dragging past an edge scrolls.
+- ⌘/Ctrl + click adds another range. Copies cover every range.
+- Click the gutter (the row numbers) to select whole rows, and drag along it for more. Click the corner, or press
+  ⌘/Ctrl + A, to select everything.
+- With `columnGroups`, clicking a group's header selects its columns. A click on a column's name sorts by it
+  rather than selecting it (see [Sorting](#sorting)).
 
-The status bar shows the active cell and, for a selection of several cells, the count of non-blank
-cells and, for numbers, their sum, average, minimum and maximum. In a sorted or filtered view it also
-shows the row's position in the file.
+The status bar shows the active cell (`Row 12, price`). For one range of several cells it adds their count, sum
+and average a moment later, computed by the engine (`capabilities.summarize`), so a range of a million rows
+counts every row.
 
 ## Keyboard
 
+⌘ is the modifier on Apple platforms, Ctrl on the others.
+
 | Keys | Action |
 | --- | --- |
-| Arrows · Page Up/Down · Home/End | Move the active cell |
-| ⌘/Ctrl + arrows · ⌘/Ctrl + Home/End | Jump to the first or last row or column |
-| Shift + any of the above · Shift + click | Extend the selection |
-| ⌘/Ctrl + click | Add a range |
-| Tab / Enter (with Shift: backwards) | Move within the selection |
-| Shift + Space · Ctrl + Space · ⌘/Ctrl + A | Select the row · the column · everything |
-| Space · ⌘/Ctrl + Shift + Space (with `checkboxSelection`) | Check the active row · every row |
-| ⌘/Ctrl + C · ⌘/Ctrl + Shift + C | Copy · copy with headers |
-| ⌘/Ctrl + F | Find |
-| Alt + ↓ | Column menu (sort, filter, statistics, freeze, hide) |
-| F2 · double click | Show the full value of the cell (edit it, in a grid that edits: see [Editing cells](/guides/editing/)) |
-| Alt + Enter (again: into the panel) · Esc | Open the detail panel of the active row · close it |
-| Shift + F10 · context menu key · right click | Cell menu (copy, filter to value, sort) |
-| Escape | Close a menu or panel, or cancel a copy that is still reading |
+| Arrows · Page Up/Down | Move the active cell by one cell · by a page |
+| ⌘/Ctrl + arrows | Jump to the first or last row or column |
+| Home/End · ⌘/Ctrl + Home/End | First or last column · first or last cell of the view |
+| Shift + any of the above | Extend the selection |
+| Tab · Enter (with Shift: backwards) | Move right · down; inside a selection of several cells, walk through it |
+| ⌘/Ctrl + A | Select everything |
+| ⌘/Ctrl + C | Copy |
+| Typing · F2 · double click | Edit the cell (see [Editing cells](/guides/editing/)) |
+| Delete · Backspace | Clear the selected cells |
+| ⌘/Ctrl + Z · ⌘/Ctrl + Shift + Z (Ctrl + Y) | Undo · redo |
+| ⌘/Ctrl + D · ⌘/Ctrl + R | Fill down · fill right |
+| ⌘/Ctrl + S | Save into the file, when the engine saves |
+| ⌘/Ctrl + F | Find, when the engine finds |
+| Alt + ↓ | The active column's menu |
+| Shift + F10 · context menu key · right click | The cell menu |
+| Alt + Enter | Open or close the detail panel |
+| Space | Check or uncheck the active row (with `checkboxes`), or follow a link or button cell |
+| Esc | Close a menu, the find bar or the editor |
+
+The keys that write do so only where cells are writable. Where the engine does not save or find, ⌘/Ctrl + S and
+⌘/Ctrl + F are left to the browser.
 
 ## Copying
 
-⌘/Ctrl + C copies the selection as tab-separated text and as an HTML table, so pasting into a
-spreadsheet or a document keeps the cells. ⌘/Ctrl + Shift + C adds the column names, and the cell menu
-also copies as a Markdown table. Copies hold whole values, also of cells that are cut short on screen.
-At most `copyLimit` cells (1,000,000 by default) are copied at once, counted over all ranges. Copies hold the values, not the text
-that [column formats](/reference/data-grid/#column-formats) show, unless `copyValues` is `"formatted"`.
+⌘/Ctrl + C copies the selected cells as tab-separated text and as an HTML table, so pasting into a spreadsheet or
+a document keeps the cells. Copies hold whole values in their text form (`2024-01-31`, numbers with all their
+digits), not the formatted text on screen, and no column names. Cells that are not read yet are read first. Up to
+1,000,000 cells are copied at once.
 
-Several ranges are copied together as Excel does. Ranges with the same rows are placed side by side, and
-ranges with the same columns one below the other. Either way the cells keep the order of the grid (rows
-of the view, columns as they are shown, without hidden columns), the gaps between the ranges are left
-out, and cells where ranges overlap are copied once. Other ranges cannot be copied together, and the grid
-says so instead of copying. Cells that are not loaded yet are read first; Escape cancels a copy that is
-still reading.
+Several ranges are placed as spreadsheets place them: ranges with the same rows side by side, ranges with the same
+columns one below the other, in the grid's order and without the cells between them. Other combinations are not
+copied, and the grid says so (`copy_layout`).
+
+From code, `dispatch({ command: "copy", headers: true })` gives `{ tsv, html, markdown }` of the selection with
+the column names.
 
 ## Sorting
 
-The column menu, opened with the ▾ that a header shows under the pointer or with Alt + ↓, sorts
-ascending or descending. "Then sort ascending" and "Then sort descending" add the column as a further
-key, for a sort by several columns; the headers then number the keys. Blank cells go last in both
-directions, as in spreadsheets.
+- Click a column's name to sort by it: ascending, then descending, then not sorted. Shift + click adds the column
+  as a further key.
+- The column menu (the arrow at the right of a header, a right click on the header, or Alt + ↓) has Sort
+  ascending, Sort descending, Then sort ascending, Then sort descending and Clear sort.
+- Blank values (null and empty text) come last in both directions, and rows that are equal keep the table's order.
+  Every engine sorts the same way ([§3.3](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#33-order)).
 
-When the source can show a sort before it is finished (the DuckDB server does for tables of 1M rows or
-more), the first rows appear right away and the toolbar says "Sorting… showing the first 1,000 of …
-rows". You can scroll and select everywhere; the rows further down show as loading until the sort is
-done, and then appear without the first rows moving. Until then, copying past the first rows and find
-tell you to wait, the selection summary shows "…", and the statistics of a filtered view are off.
+The engine sorts the whole table, not the rows on screen. The DuckDB engine shows the first 1,000 rows of a sort of
+a million rows or more at once and sorts the rest meanwhile: the status bar says "Reading the view…" until the
+view is complete, and rows further down come when they are ready.
 
 ## Filtering and searching
 
-- **By value.** "Filter…" in the column menu lists the column's values with their counts, most common
-  first, with a box to search them. Uncheck values to leave them out.
-- **By condition.** The same panel filters numbers by comparison or range, text by "Contains",
-  "Begins with", "Ends with" and others (optionally matching case), and any column by "Is blank" or "Is
-  not blank".
-- **From a cell.** The cell menu filters to the cell's value, or excludes it.
-- **AND / OR conditions.** "Add condition (AND)…" or "Add condition (OR)…" in a column's filter panel
-  opens the condition builder with that filter and a new condition, for example "region is Tokyo *or*
-  sales over 100,000". "Conditions…" in the toolbar opens it with every filter. A group keeps the rows
-  that match all of its conditions (AND) or any of them (OR); groups nest, and a column can have several
-  conditions. Conditions without a value are left out when you apply.
-- **Search.** The box in the toolbar keeps the rows where any column contains the text, ignoring case.
+- **Search** (the toolbar's box) keeps the rows where any column of the table contains the text, ignoring letter
+  case.
+- **Filter…** in the column menu lists the column's values with how many rows have each, the most common first,
+  with check boxes, "Search values", "(Select all)" and "(Blank)". Below it, a condition on typed text: Equals,
+  Does not equal, Less than (or equal to), Greater than (or equal to), Between (From, To), Contains, Does not
+  contain, Begins with, Ends with, Is blank, Is not blank. Text conditions ignore letter case, and values are read
+  as the column's type. Engines that do not group rows offer the condition only. A header whose column has
+  conditions shows a funnel instead of its arrow.
+- **Filter to this value** and **Exclude this value** in the cell menu filter by the active cell's value.
+- **Conditions** in the toolbar (with their number when there are some) shows every condition as a group that
+  matches "All of these (AND)" or "Any of these (OR)", with Add condition, Add group (groups nest) and Clear all.
+  Conditions that code wrote and the menu cannot take apart are shown as formulas and kept. Apply replaces the
+  conditions and keeps the search.
 
-Filters on several columns all apply. The toolbar shows each one, and the AND / OR conditions, with a
-button to remove it, and the number of rows left; click the conditions to change them. A column used in
-the conditions shows the filter mark in its header. Statistics, selection summaries, copies and exports
-work on the rows left. Sources that cannot evaluate conditions (`capabilities.conditions`) keep the
-builder disabled.
+All of these are the plan's `where`, kept in the document (see [State](/guides/state/)). Filter… is not offered on
+a grouped view; the conditions on groups are its `having` (see [Grouping](/guides/grouping/)).
 
 ## Finding
 
-⌘/Ctrl + F opens the find bar. Enter goes to the next cell that contains the text, Shift + Enter to the
-previous one, from the active cell along its row and then on to the next rows. Find moves the active cell
-without changing which rows are shown; use the search box for that.
+⌘/Ctrl + F opens a find bar under the toolbar. Enter finds the next cell after the active cell whose text
+contains what is typed, Shift + Enter the one before, in the displayed columns, wrapping around; the cell found
+becomes active. Letter case is ignored unless "Match case" is on. Esc closes the bar. The engine looks through
+the whole view, so cells far from the screen are found too.
+
+## The cell menu
+
+A right click on a cell, Shift + F10 or the context menu key opens it: Copy, Filter to this value, Exclude this
+value (not on grouped views), Show full value (reads a text that the engine cut short, such as the DuckDB
+engine's strings over 2,000 characters), and Details.
 
 ## Column statistics
 
-"Column statistics" in the column menu shows the number of rows, blanks and distinct values, the
-minimum and maximum and, for numbers, the mean, standard deviation, quartiles and a histogram, or for
-text the shortest and longest length. It also lists the most common values.
-
-## Grouping and totals
-
-"Group" in the toolbar groups the rows by columns, with counts, sums, averages, minimums and maximums of
-each group; "Total in the bottom row…" in a column's menu shows an aggregate of the column below the rows.
-See [Grouping and totals](/guides/grouping/).
-
-## Exporting
-
-"Export" in the toolbar writes the current view (as filtered and sorted) or the whole table, with the
-shown or all columns, as CSV, TSV, Parquet, JSON or Excel, depending on the source. See
-[Exporting](/guides/export/).
+Statistics… in the column menu shows, over the rows of the view: Rows, Values, Empty, Distinct, Minimum,
+Maximum, Sum, Average, Median and Standard deviation, those that fit the column's type. The engine computes them,
+so they are exact for a table of any size. It is offered when the engine groups rows and the view is not
+grouped.
 
 ## Columns
 
-- Drag the edge of a header to resize a column; double-click it, or use "Fit width to content", to fit
-  the column to its values.
-- Drag the header of a selected column to move it.
-- When the app groups columns, a click on a group's header (above the column names) selects its
-  columns, and dragging a selected group moves them together.
-- "Freeze up to this column" keeps the columns up to it at the left while you scroll sideways, and
-  "Freeze from this column to the right edge" keeps it and the columns after it at the right. The
-  "Columns" panel freezes each column at the left or the right. Columns frozen at the right are resized
-  by dragging their left edge.
-- "Hide column" hides it; the "Columns" button in the toolbar lists every column to show or hide.
-- F2 or a double click shows the cell's whole value, with line breaks, in the cell inspector.
-- Alt + Enter, or "Show row details" in the cell menu, opens the detail panel beside the grid (below it
-  when the grid is narrow). It shows every column of the active row in full and follows the active cell
-  as you move. Alt + Enter again moves the focus into it, and Esc closes it.
+- **Width**: drag a header's right edge (40 pixels at least). Double-click the edge, or choose "Fit width to
+  content" in the column menu, to fit the column.
+- **Order**: drag a column's name; a line shows where it goes. A selection of whole columns moves together, and
+  dragging a group's header moves its columns. Columns take the side they are dropped on, frozen or not.
+- **Freezing**: "Freeze at the left", "Freeze at the right" and "Unfreeze" in the column menu keep columns in view
+  while the grid scrolls sideways.
+- **Hiding**: "Hide column" in the column menu, and "Show all columns" to show them again.
+- **Columns** in the toolbar lists the displayed columns in order, with a check box to hide each and buttons to
+  move it left or right, then the hidden ones, a "Find a column" box, and "Show all".
+- **Format…** in the column menu sets the label in the header, the alignment, wrapping, numbers (Number, Percent
+  or Currency, with decimal places and digit grouping), the date pattern, and conditional colors (a condition, a
+  text color, a background, and what the colors mean). "Clear format" removes it. Copies and the editor keep the
+  values; exports use the label as the header and, in Excel files, the number format.
+
+Each of these is a command (`column.resize`, `column.move`, `column.pin`, `column.hide`, `column.show`,
+`column.format`), kept in the document.
+
+"Total…" in the column menu adds a totals row, and "Group by this column" shows groups instead of rows: see
+[Grouping and totals](/guides/grouping/). The toolbar's Formulas menu adds computed columns
+([Formulas](/guides/formulas/)) and its Export menu writes files ([Exporting](/guides/export/)).
+
+## Checked rows and the detail panel
+
+- With `checkboxes`, the gutter has a check box for each row and the corner one for every row of the view. A box,
+  or Space, checks the active row. Checks belong to the records (by key), so they stay when the view is sorted or
+  filtered, and the status bar says how many rows are checked. A row whose state cannot be known under the
+  current filter shows a dash and cannot be checked until the filter is as it was.
+- **Details** in the toolbar, or Alt + Enter, opens a panel beside the grid (below it when the grid is narrower
+  than 640 pixels) with every column of the active row, hidden ones included, with their labels and formats and
+  their whole text. It follows the active cell. The `detailPanel` prop shows the row with a component of your
+  own: see [DataGrid](/reference/data-grid/).

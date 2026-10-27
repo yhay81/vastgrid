@@ -1,55 +1,81 @@
 ---
 title: How it works
-description: How the grid scrolls past the browser's limits, loads rows, and how the DuckDB engine opens and sorts files.
+description: How the grid draws and reads rows, how views and commands work, and how the engines open and sort files.
 ---
 
 import Architecture from "../../../components/Architecture.astro";
 
 <Architecture />
 
-The grid knows nothing about files or engines: it reads windows of rows from a `TableSource`. What it
-draws costs the same whether the table has a hundred rows or a billion.
+The grid knows nothing about files or databases. `DataGrid` draws what its store holds; the store keeps the
+document, the session and blocks of rows, and asks an engine for rows through a transport. Every engine answers
+the same messages, so the grid works the same with rows in the page, a file in a Web Worker and a 100-million-row
+file on a server. What the grid draws costs the same whether the table has a hundred rows or a billion.
 
 ## Drawing
 
-Cells are drawn on a canvas, which takes about 2 ms per frame for a full screen of cells (1,000 and
-more). Menus, panels, the find bar and the cell inspector are DOM elements over it. Scrolling draws the
-canvas without rendering React; React renders the toolbar, the status bar and the panels when what they
-show changes.
+Cells are drawn on a canvas. Menus, panels, the find bar and the cell editor are DOM elements over it, and a
+hidden ARIA grid of the rows on screen gives screen readers the cells. Scrolling draws the canvas without rendering
+React; an arrow key commits React once, to move the active cell in the ARIA grid. React renders the toolbar, the
+status bar and the panels when what they show changes.
 
-The canvas reads its colors and fonts from the [CSS custom properties](/guides/theming/) of the grid's
-root, so CSS styles the cells as it styles the rest.
+The canvas reads its colors and fonts from the [CSS custom properties](/guides/theming/) of the grid's root, so
+CSS styles the cells as it styles the rest.
 
 ## Scrolling
 
-A transparent native scroller sits over the canvas, so the wheel, the trackpad and the scrollbars behave
-as the platform's do. Browsers cap the size of an element (about 16.7 million pixels in Chromium, under
-700,000 rows of 24 px), so `ScrollAxis` maps the native position to a virtual one: small movements move
-by the same amount, while large jumps and the two ends map proportionally. Every row of a billion stays
-reachable with the scrollbar and the keyboard.
+A transparent native scroller sits over the canvas, so the wheel, the trackpad and the scrollbars behave as the
+platform's do. Browsers cap the size of an element (about 16.7 million pixels in Chromium, under 700,000 rows of
+24 px), so `ScrollAxis` maps the native position to a virtual one: small movements move by the same amount, while
+large jumps and the two ends map proportionally. Every row stays reachable with the scrollbar and the keys.
 
-## Loading
+## Reading rows
 
-On every frame the grid declares the visible rows and columns. `RowCache` loads the missing blocks of
-256 rows by 48 columns: the visible ones first, then one screen ahead and behind. It cancels the requests
-for blocks that scrolled far away, drops the least recently used blocks beyond its budget, and asks again
-for blocks that failed after a delay. Engines cut long text for display (`vastgrid-duckdb` at 2,000
-characters); copies and the cell inspector read whole values.
+On every frame the canvas tells the store which rows and columns it shows. The store reads the missing blocks of
+256 rows of those columns, for the rows on screen and a screen (at least 32 rows) above and below them. It keeps
+blocks up to 64 MiB and drops the least recently used beyond that. Blocks come as Apache Arrow: attached as bytes
+to the answers over HTTP, and transferred without a copy from a Web Worker. Engines cut long text for display (the
+DuckDB engine at 2,000 characters); copies and Show full value in the cell menu read whole values.
+
+Rows are not part of the state that React sees. Snapshots of the store hold the document, the session and what
+the engine said about the table and the view; the canvas reads the rows from the cache directly, and
+`useGridRows` reads them for components.
+
+## Views and commands
+
+The document's plan (derived columns, conditions, groups, sort) is a view, named by a hash of its normal form.
+When the plan changes, the store reads the new view while the old one stays on screen, then shows the new rows and
+moves the selection to the same records in one step: a sort never flashes empty rows.
+
+Every change is a command (`sort.set`, `filter.column`, `edit.set`, `select`, …), and `applyCommand` of
+`vastgrid-spec` applies it to the document and the session as a pure function. The grid's menus and keys, your
+own buttons, a VS Code extension and an AI agent all dispatch the same commands, so they all do the same thing.
+The [specification](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md) defines the plans, the
+commands and the messages, and a conformance corpus checks that the engines give the same answers.
+
+## The memory engine
+
+`vastgrid-js` keeps a table as typed columns. A text file is read in slices into columns when it opens, if they fit
+in `maxBytes` (1 GiB by default); a larger one is indexed instead, and its rows are read from the file by blocks. A
+Parquet file, on disk or at a URL by HTTP ranges, opens by reading its footer, and rows come from the row groups
+that hold them. A sort, a filter or a group reads the columns it needs whole, and those least recently used are
+forgotten when others need the room. Sorting ranks a column's values once and sorts the ranks. In a Web Worker,
+the page keeps drawing while the worker sorts, and holds none of the table.
 
 ## The DuckDB engine
 
-- **Opening.** Delimited and JSON files become DuckDB tables in a database file of the session; the
-  first 1,000 rows are served from a preview while the file loads. Parquet files are read in place by
-  row position, with no load. Encodings DuckDB cannot read (Shift_JIS, EUC-JP) are converted first.
-- **Views.** Sorting and filtering build a view: a sorted copy for tables up to 20M rows, so that a
-  window of rows takes 2 ms, or only the order of the rows for larger ones, which takes seconds instead
-  of minutes to build and a fraction of the temporary space. A sort of 1M rows or more first reads its
-  first 1,000 rows with a top-N query, in the order of the finished view, and shows them while the rest
-  of the view is built in the background.
-- **Isolation.** The engine allows DuckDB to read only the folders you name, by their real location,
-  and then disables changing that. All SQL is generated; values are always parameters.
-- **Protocol.** `RemoteSource` speaks a small [JSON protocol](/reference/protocol/) with the server. It
-  reopens tables and recreates views when the server forgets them, for example after a restart.
+- **Opening.** Delimited and JSON Lines files and Excel sheets become DuckDB tables in a database of the session;
+  the first 1,000 rows are served from a preview while the file loads. Parquet files are read in place, with no
+  load. Encodings DuckDB cannot read (Shift_JIS, EUC-JP) are converted first.
+- **Views.** A sort or a filter builds a view: a sorted copy for tables up to 20 million rows, so that a block of
+  rows takes milliseconds, or only the order of the rows for larger ones, which takes a fraction of the time and
+  the temporary space. A sort of a million rows or more first reads its first 1,000 rows with a top-N query, in
+  the order of the finished view, and shows them while the rest is built. Eight views are kept for reuse.
+- **Isolation.** DuckDB may read only the folders you allow, by their real location, and external access is then
+  turned off. All SQL is generated by `vastgrid-sql`; values are always parameters.
+- **Saving.** Written cells live in the session's database. Saving a CSV or TSV file writes them into the file
+  with every byte that was not edited kept as it was, and refuses when the file changed on disk since it was read.
 
 The [survey of existing viewers and grids](https://github.com/yhay81/vastgrid/blob/main/docs/research.ja.md)
-(Japanese) explains the choices.
+(Japanese) and the [decision to rebuild](https://github.com/yhay81/vastgrid/blob/main/docs/rebuild-decision.ja.md)
+(Japanese) explain the choices.

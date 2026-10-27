@@ -1,0 +1,94 @@
+---
+title: グラフ
+description: グリッドに表示しているビューを、好きなグラフのライブラリで描きます。グループはエンジンが作ります。
+---
+
+import { ChartGrid } from "../../../../components/examples.tsx";
+
+vastgrid はグラフを描かず、グラフのライブラリにも依存しません。そのかわり、グラフはグリッドと同じストアを読めます。読むのは画面のビュー、つまり絞り込み・グループ化・並べ替えをした後の行です。行のグループ化をエンジンに任せれば、1 億行の表のグラフでも、受け取るのは表ではなく十数個の数です。アプリですでに使っているライブラリ（Chart.js、ECharts、Vega-Lite、Recharts など）に渡すか、自分で描きます。
+
+<ChartGrid client:only="react" locale="ja" />
+
+棒は、グリッドのビューの最初の 12 行です。注文 1 万件を分類でグループ化して、売上を出しています。グリッドで別の列でグループ化したり、絞り込んだり、別の集計で並べ替えたりすると、棒も変わります。
+
+## ストアを共有する
+
+`useCreateGridStore` でストアを作り、グリッドと、両方を囲む `GridProvider` に渡します。グリッドには `transport` と `table` のかわりに `store` を渡します。
+
+```tsx
+import { DataGrid, type GridDocument, GridProvider, useCreateGridStore } from "vastgrid";
+
+const byCategory: GridDocument = {
+  kind: "vastgrid/document",
+  version: 2,
+  plan: {
+    aggregate: { keys: ["category"], measures: [{ name: "sales", fn: "sum", column: "total" }] },
+    sort: [{ column: "sales", direction: "desc" }],
+  },
+};
+
+export function SalesByCategory() {
+  const store = useCreateGridStore({ transport, table: "orders", document: byCategory });
+  return (
+    <GridProvider store={store}>
+      <Bars />
+      <DataGrid store={store} style={{ height: 400 }} />
+    </GridProvider>
+  );
+}
+```
+
+`useCreateGridStore` は最初のオプションからストアを一度だけ作り、コンポーネントがマウントされている間つなぎます。ドキュメントはグリッドの最初の状態です。利用者がグリッドのメニューで変えても、グラフは画面にあるものを読みます。
+
+## 行を読む
+
+プロバイダーの中では、`useGridSelector` がストアのスナップショットの一部を、`useGridRows` が画面のビューの行の値を読みます。
+
+```tsx
+import { useGridRows, useGridSelector } from "vastgrid";
+
+const NUMBERS = ["integer", "bigint", "decimal", "float"];
+
+function sameNames(a: readonly string[], b: readonly string[]) {
+  return a.length === b.length && a.every((name, index) => name === b[index]);
+}
+
+function Bars() {
+  const rowCount = useGridSelector((snapshot) => snapshot.view?.rowCount ?? 0);
+  // 表示している最初の列が棒の名前、その後の最初の数値の列が棒の長さ。
+  const names = useGridSelector((snapshot) => {
+    const [label, ...rest] = snapshot.displayed;
+    const value = rest.find((column) => NUMBERS.includes(column.column.type));
+    return label && value ? [label.column.name, value.column.name] : [];
+  }, sameNames);
+  const rows = useGridRows({ start: 0, end: Math.min(rowCount, 12), columns: names });
+  const bars = rows.map(([label, value]) => ({ label: String(label ?? ""), value: Number(value ?? 0) }));
+  return <BarChart bars={bars} />; // 自分のグラフ
+}
+```
+
+- `useGridSelector(selector, isEqual)` は、選んだ値が変わったときだけコンポーネントを描き直します。比べ方は `isEqual` を渡さなければ `Object.is` です。新しい配列を作るセレクターには、ここの `sameNames` や `vastgrid` の `shallowEqual` のような比べ方が要ります。
+- `useGridRows({ start, end, columns })` は、1 行に 1 つの配列を `columns` の順で返します。まだ読んでいない値は `undefined` です。足りない行を読み、届いたら描き直します。
+- 値は型付きの JSON です。`decimal` と大きな `bigint` は文字列、`timestamp` はテキストで届きます。グラフには `Number` や `Date` で変換してください。
+- `snapshot.view.rowCount` はビューの行数です。大きなビューを作っている間は `snapshot.view.status` が `"building"` で、行数が増えることがあります。
+
+## 行ではなくグループを
+
+行そのもののグラフは、描く行の数だけ行を読みます。グループのグラフなら 1 グループ 1 行で、グループはデータのある場所でエンジンが作ります。DuckDB のエンジンならサーバーの SQL で、メモリエンジンならページか Worker の中です。プランの `aggregate` には `keys` と `measures`（`count`、`count_distinct`、`sum`、`avg`、`stddev`、`min`、`max`、`quantile`）を書きます。`aggregate.pivot` はほかの列の値ごとに列を作るので、系列が複数あるグラフに使えます。グリッドのメニューで作れるものは[グループ化と集計](/ja/guides/grouping/)、集計の一覧は[仕様の §4.5](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#45-measures)を参照してください。
+
+## グリッドのないグラフ
+
+ストアは、画面にグリッドがなくても使えます。自分のビューを持つグラフは、同じトランスポートで自分のストアを、必要なドキュメントで作り、`DataGrid` は描きません。
+
+```tsx
+function MonthlySales() {
+  const store = useCreateGridStore({ transport, table: "orders", document: byMonth });
+  return (
+    <GridProvider store={store}>
+      <Bars />
+    </GridProvider>
+  );
+}
+```
+
+`useCreateGridStore` に渡すドキュメントは、ストアの最初の状態です。後でグラフのビューを変えるには、たとえばグリッドと同じように絞り込むには、グリッドのメニューと同じくストアにコマンド（`filter.set`、`group.set`、`sort.set`）を送ります。[状態と自作の操作部品](/ja/guides/state/)を参照してください。

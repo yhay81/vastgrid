@@ -1,119 +1,110 @@
 ---
 title: Exporting
-description: The export panel, where files go, and how Excel files are written.
+description: The Export menu, what is written in each format, where the file goes, and exporting from code.
 ---
 
-The toolbar's **Export** button opens a panel where the user chooses what to write and in which format.
-It is shown when the source can export (`capabilities.export` and `exportView`), and offers the formats
-of `info().exports`:
+The toolbar's **Export** menu writes the grid's rows into a file. It is shown when the engine exports
+(`capabilities.export`), with a button for each format the engine offers (`capabilities.export.formats`).
 
-| Source | Formats | Where the file goes |
+| Engine | Formats | Where the file goes (`capabilities.export.delivery`) |
 | --- | --- | --- |
-| `RemoteSource` + `vastgrid-duckdb` | CSV, TSV, Parquet, JSON, Excel (`.xlsx`) | The server writes a new file (`delivery: "file"`), only when the handler has `resolveTarget`. |
-| `ArraySource` | CSV, TSV, JSON, Excel | The browser downloads the file (`delivery: "data"`). |
-| `BrowserSource` (`vastgrid-browser`) | None | Not offered yet: see [below](#vastgrid-browser). |
+| Memory engine (`vastgrid-js`) | CSV, TSV, JSON, Excel | `data`: the engine answers the file's bytes, and the browser saves them |
+| DuckDB engine (`vastgrid-duckdb`) | CSV, TSV, Parquet, JSON, Excel | `file`: the engine writes the file on the server, and the browser downloads it |
 
 ## What is written
 
-- **Rows**: the current view, with its filters, search and sort as shown, or the whole table in its
-  original order. A view that is still being sorted can be exported once it is ready.
-- **Columns**: the shown columns in display order, or every column in schema order.
-- **Column settings**: by default, the labels of `columnFormats` become the headers of CSV, TSV and Excel
-  files, and Excel cells get the columns' number and date formats (`excelNumberFormat` maps them; a
-  `format` function, compact notation and `Intl` date options fall back to the type's default). Parquet
-  and JSON keep the schema names. Values are never replaced by their shown text. `wrap`, `style`,
-  `align` and `format` are not written: `style` and `format` are functions in the browser that a server
-  cannot run for every row, and wrapping and alignment follow the grid's layout, not Excel's.
-- **File name**: the user's, with the format's extension.
+- **Rows**: "Rows of the view" (the default) writes the view as the grid shows it, with its filters, search,
+  sort, formula columns and groups. "Whole table" writes every row of the table in its own order, without them.
+- **Columns**: the displayed columns in display order. "Hidden columns too" adds the others after them.
+- **Headers**: the columns' labels (set with Format…, or the names) head CSV, TSV and Excel files. Parquet and JSON
+  files keep the names.
+- **Values**: the values, not the text on screen, including the cells written in the grid
+  ([Editing](/guides/editing/)). Excel cells get the columns' number and date formats.
+- **File name**: the table's name with the format's extension: `orders.csv` exports as `orders.xlsx`.
 
-The panel shows the progress, and **Cancel** (or closing the panel) stops the export: the server
-interrupts the query and deletes the partial file. Errors are shown in the panel; Excel's limits are
-checked before anything runs.
+While the export runs, the button says "Exporting…"; when it is done, the grid announces "Exported 12,345 rows". A
+file is complete or not there at all: a failed export leaves nothing behind. A table that is still loading is
+exported once it has loaded.
 
-A file holds one revision of the table. When the table changes while it is exported (the source reports
-a change through `subscribe`, or the server closes the table because its file changed and the grid
-reloads it), the export stops, its partial file is deleted, and the panel asks to export again
-(`ExportInterruptedError` from `runExport`). The DuckDB engine also checks the file's revision when the
-export ends and refuses the result if the file changed meanwhile.
+## Formats
 
-## Where files go
+| Format | Written as | Limits |
+| --- | --- | --- |
+| CSV, TSV | A header line, then the values as text, quoted when they need it | None |
+| Parquet | The columns under their names, with their types | None |
+| JSON | An array of objects by column name; numbers with all their digits (`"nan"` and `"inf"` as text), booleans as such, other values as text | None |
+| Excel (`.xlsx`) | One sheet with a bold, frozen header row; numbers, booleans and dates as such cells, with the columns' formats; text always as text, never a formula; numbers that a double cannot hold exactly as text | 1,048,575 rows and 16,384 columns (`export_too_large`); 32,767 characters a cell, longer text cut; 4 GB |
 
-`exportOptions` connects the panel to your app. Each callback gets an `ExportContext`: the user's
-`choice`, the `request` for `exportView`, the `delivery`, the `rowCount` and a `signal`.
+In Excel files, a column's number format (decimal places, digit grouping, percent, currency) and date pattern
+from Format… become the cells' format codes, so the workbook shows the numbers as the grid does. The rules are in
+[§8.2](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#82-operations) of the specification.
 
-```tsx
-<DataGrid
-  source={source}
-  exportOptions={{
-    fileName: "orders",                 // suggested name, without extension
-    formats: ["xlsx", "csv"],           // offer only these (among the source's)
-    // Decide the target: a path for a server, the download name for data. Return null to cancel.
-    target: ({ request, delivery }) => (delivery === "file" ? `exports/${request.target}` : request.target),
-    // Called when the file is done. Without it, returned data is downloaded and server files are reported.
-    onExported: (result, { delivery }) => {
-      if (delivery === "file") window.location.assign(`/downloads/${encodeURIComponent(result.target)}`);
-    },
-  }}
-/>
-```
+## Where the file goes
 
-### Saving on the server and downloading
+### Memory engine: in the page
 
-A server source writes the file next to the data and returns only `{ target, rows }`, so large results
-never pass through the browser. The server decides where `target` goes in `resolveTarget`, which must keep
-it inside the folders the engine may use:
+The engine answers the file's bytes (`delivery: "data"`), and the grid saves them as a file made in the page.
+Nothing leaves the browser, also when the engine runs in a Web Worker.
+
+### DuckDB engine: on the server
+
+The engine writes the file into its temporary folder (`delivery: "file"`) and answers a name for it as `target`. It
+keeps the 16 latest exports for an hour. `createHttpHandler` serves them at `GET <path>/exports/<name>`, with the
+file's name, and `httpTransport` gives the grid that URL (`exportUrl`), which the browser downloads:
 
 ```ts
-createTableHandler({
-  engine,
-  resolve: (ref) => resolveInside(dataRoot, ref),
-  // Exports go to their own folder, under the name the user chose.
-  resolveTarget: (target) => path.join(exportRoot, path.basename(target)),
-});
+import http from "node:http";
+import { createHttpHandler, DuckDBEngine } from "vastgrid-duckdb";
+
+const engine = await DuckDBEngine.create({ allowedDirectories: ["/srv/data"], tempDirectory: "/tmp/vastgrid" });
+http.createServer(createHttpHandler(engine, { path: "/api" })).listen(8080);
 ```
 
-To hand the file to the user's browser, serve that folder from your app and open its URL in `onExported`,
-as above. The playground in the repository does this with `/data/exports/`.
+```tsx
+import { DataGrid, httpTransport } from "vastgrid";
 
-### Downloading data from the browser
+const transport = httpTransport("/api"); // downloads from /api/exports/<name>
 
-`ArraySource` returns the file as a `Blob` in `result.data`. Without `onExported`, the grid downloads it
-(`downloadBlob`). With `onExported`, you get it to store elsewhere, for example with the File System
-Access API or an upload.
+export const Orders = () => <DataGrid transport={transport} table="orders.parquet" />;
+```
 
-### Without the panel
+When the files are served from elsewhere, `httpTransport(url, { exports })` and the handler's `exports` option
+move the download path.
 
-`exportOptions={false}` hides the panel. `ref.current.openExport()` opens it, also when the toolbar is
-hidden. To build your own UI, `runExport(controller, choice, options, signal)` runs an export like the
-panel, and `exportRequest(controller, choice)` builds only the request; or call `source.exportView(request)`
-yourself.
+To write exports where the host chooses instead, give the engine `resolveTarget`: it maps an export's `target` to
+a path inside the allowed folders, or throws to refuse it (`not_allowed`). The engine then writes the file there,
+under a temporary name that it renames once the file is complete, and keeps nothing. The Export menu names no
+target; code does (below). Without `resolveTarget`, an export that names a target is refused.
 
-## Excel files
+The [apps](/apps/overview/) handle exports their own way: the command line's browser downloads them, VS Code
+writes them where a save dialog says, a notebook's grid saves the bytes in the browser, and an MCP App cannot
+download them yet.
 
-Excel files are written without dependencies (a ZIP archive with SpreadsheetML), as a stream: the DuckDB
-engine reads a chunk of rows at a time and compresses it as it goes, so the server's memory does not grow
-with the table. A million rows of eight columns take about 7 seconds and 58 MB.
+## Exporting from code
 
-- One sheet, with a bold header row that stays in view when scrolling.
-- Numbers are number cells. Numeric text that a double cannot hold exactly (64-bit IDs beyond 2^53,
-  decimals with more than 15 significant digits) stays text, so that no digit changes.
-- Dates, times and timestamps are Excel dates with a date format. Timestamps with a time zone are written
-  in UTC. Dates before 1900-03-01 stay text.
-- Text is always text, never a formula, also when it starts with `=`, `+`, `-` or `@`. Text longer than
-  Excel's 32,767 characters is cut.
-- `null` is an empty cell; booleans are TRUE and FALSE.
-- More than 1,048,575 rows or 16,384 columns do not fit in a sheet: the panel says so and the source
-  refuses with `export_too_large`. Filter the rows, or export CSV or Parquet. Splitting into several
-  sheets is not done, since such files are hard to use in Excel.
+The Export menu dispatches the `export` command, which an app can dispatch too:
 
-The [protocol](/reference/protocol/#excel-export-rules) has the full rules. CSV and TSV files hold the
-values as they are, so a spreadsheet app may read text that starts with `=` as a formula when it opens
-them: prefer Excel files for spreadsheet users.
+```ts
+const store = grid.current!.store; // a DataGrid's handle, or useGridStore() under a GridProvider
+const outcome = await store.dispatch({ command: "export", format: "csv", rows: "view", columns: "displayed" });
+if (outcome.ok) {
+  const { target, rows, data } = outcome.output as { target: string | null; rows: number; data?: { bytes: Uint8Array } };
+  if (data) {
+    // The memory engine: the file's bytes, named like the menu names them.
+    const file = new File([data.bytes], store.exportName("csv"));
+  } else if (target !== null) {
+    // The DuckDB engine: where the file can be downloaded, or null when the transport does not say.
+    const url = store.exportUrl(target);
+  }
+}
+```
 
-## vastgrid-browser
+| Argument | Values |
+| --- | --- |
+| `format` | One of `capabilities.export.formats`; another fails with `unsupported` |
+| `rows` | `"view"` (default) or `"table"` |
+| `columns` | `"displayed"` (default) or `"all"` |
+| `target` | Where the DuckDB engine writes the file, through its `resolveTarget` |
 
-`BrowserSource` does not export yet (`capabilities.export` is `false`). An export there would read every
-row in the worker and either hold the whole file in memory or write it through the File System Access API,
-which only some browsers have. The plan is to write from the worker with `writeTableFile` into a stream the
-app provides, so that the file never has to fit in memory; until then, export with a server or from an
-`ArraySource`.
+`rows` in the output is the number of rows written. The headers and Excel formats come from the document's column
+settings, as in the menu.

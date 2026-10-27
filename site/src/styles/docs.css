@@ -53,6 +53,22 @@
   height: 360px;
 }
 
+.example-chart {
+  display: block;
+  width: 100%;
+  max-width: 600px;
+  margin-bottom: 0.5rem;
+  font-size: 12px;
+}
+
+.example-chart rect {
+  fill: var(--sl-color-accent);
+}
+
+.example-chart text {
+  fill: var(--sl-color-white);
+}
+
 /* The presets of the theming example. */
 .vg-root.theme-compact {
   --vg-font-size: 12px;

@@ -1,170 +1,160 @@
 ---
-title: ブラウザーで開くファイル
-description: ローカルの Parquet・CSV・TSV・JSON Lines と URL の Parquet を、vastgrid-browser で Web Worker から読みます。サーバーは要りません。
+title: ブラウザーで開く大きなファイル
+description: CSV・TSV・JSON Lines・Excel・Parquet のファイルと HTTP 越しの Parquet を、Web Worker の中のメモリエンジンで開きます。サーバーもアップロードも要りません。
 ---
 
-`vastgrid-browser` は表のファイルを Web Worker で読みます。サーバーもアップロードも要りません。利用者が選んだファイル
-（`File` や `Blob`）と、URL の Parquet を HTTP の `Range` で部分的に読みます。画面のスレッドは、グリッドの要求を送って
-描く行を受け取るだけです。
+`vastgrid-js` のメモリエンジンは、行だけでなくファイルも読めます。エンジンは Web Worker で動かしてください。ファイルの読み込み・並べ替え・グループ化・書き出しを Worker が行う間も、ページは描画とスクロールを続けられます。ファイルはブラウザーの外へ出ません。
 
 ```bash
-npm install vastgrid vastgrid-browser
+npm install vastgrid vastgrid-js
 ```
 
-```tsx
-import { DataGrid } from "vastgrid";
-import { BrowserSource } from "vastgrid-browser";
-import { useEffect, useState } from "react";
+## Worker とページ
 
-export function Table({ file }: { file: File }) {
-  const [source, setSource] = useState<BrowserSource | null>(null);
-  useEffect(() => {
-    const next = new BrowserSource({ file });
-    setSource(next);
-    return () => next.close();
-  }, [file]);
-  return <div style={{ height: 600 }}>{source && <DataGrid source={source} locale="ja" />}</div>;
+Worker の中でエンジンを作り、`serveEngine` でページに答えます。Worker では、React を含まない `vastgrid/core` から import します。
+
+```ts
+// engine-worker.ts
+/// <reference lib="webworker" />
+import { serveEngine, type WorkerLike } from "vastgrid/core";
+import { memoryEngine } from "vastgrid-js";
+
+// The page posts the file first; the engine answers every message after it.
+self.addEventListener("message", function start(event: MessageEvent<{ file: File }>) {
+  self.removeEventListener("message", start);
+  const { file } = event.data;
+  const table = /\.(parquet|pq)$/i.test(file.name) ? { parquet: file } : { file, editable: true };
+  serveEngine(memoryEngine({ tables: { [file.name]: table } }), self as unknown as WorkerLike);
+});
+```
+
+ページでは、ファイルごとに Worker を起動し、`workerTransport` でやり取りします。
+
+```tsx
+import { useState } from "react";
+import { DataGrid, type Transport, workerTransport } from "vastgrid";
+import "vastgrid/styles.css";
+
+interface Opened {
+  name: string;
+  worker: Worker;
+  transport: Transport;
+}
+
+export function FileGrid() {
+  const [opened, setOpened] = useState<Opened>();
+
+  function open(file: File) {
+    opened?.worker.terminate();
+    const worker = new Worker(new URL("./engine-worker.ts", import.meta.url), { type: "module" });
+    worker.postMessage({ file });
+    setOpened({ name: file.name, worker, transport: workerTransport(worker) });
+  }
+
+  return (
+    <>
+      <input type="file" onChange={(event) => event.target.files?.[0] && open(event.target.files[0])} />
+      {opened && <DataGrid transport={opened.transport} table={opened.name} style={{ height: 600 }} />}
+    </>
+  );
 }
 ```
 
-Web サーバー上の Parquet は、`file` の代わりに `url` を渡します。
+- グリッドの `table` は、Worker が表に付けた名前です。ここではファイル名です。
+- Worker はエフェクトではなく、イベントハンドラーで起動します。Worker を終了すると、そのファイルのメモリはすべて解放されます。別のファイルを開くときと、コンポーネントがアンマウントされるときに、古い Worker を終了してください。
+- `File` を postMessage しても、ファイルは読まれません。エンジンが Worker の中で少しずつ読みます。
+- 行のブロックはバイト列で返り、そのバッファーはコピーされずにページへ移されます。
+
+## ファイル
+
+`{ file }` には、CSV・TSV・JSON Lines・Excel のブックの `File` か `Blob` を渡します。形式はファイル名か `format` で決まります。
+
+| 形式 | 名前 | `format` |
+| --- | --- | --- |
+| CSV | `.csv` | `"csv"` |
+| TSV | `.tsv`、`.tab` | `"tsv"` |
+| JSON Lines | `.jsonl`、`.ndjson` | `"jsonl"` |
+| Excel | `.xlsx`、`.xlsm` | `"xlsx"` |
+
+| オプション | 既定 | |
+| --- | --- | --- |
+| `delimiter` | `,`・タブ・`;`・`\|` のうち、1 行目を最も多くの欄に分けるもの | CSV の区切り文字（1 文字） |
+| `header` | `true` | CSV・TSV の 1 行目が列名かどうか |
+| `maxBytes` | 1 GiB | 表の列が使ってよいメモリの上限（後述） |
+| `editable` | `false` | グリッドからセルに書き込めるようにする |
+
+各列の型は、すべての値が収まる最初の型になります。順に `boolean`・`integer`・`bigint`・`float`・`time`・`date`・`timestamp`・`timestamptz` を試し、どれにも収まらなければ `string` です。値になりかけの文字列（`24:00:00`、` 1`、`2023-02-29`）があると、その列は文字列になり、すべての値を書かれたとおりに保ちます。空の欄は null、引用符で囲んだ空の欄（`""`）は空文字列です。JSON Lines ではキーごとに列ができます。オブジェクトやリストの列は、その JSON の文字列になり、読み取り専用です。
+
+ファイルは UTF-8 にしてください。UTF-16 のファイル、UTF-8 でない文字列、オブジェクトでない JSON Lines の行は `load_failed` になります。圧縮したファイル（`.csv.gz`）はブラウザーでは読めません。
+
+### Excel のシート
+
+ブックは、最初の表示されているシートで開きます。表の情報には、ブックの `sheets` と読んだ `sheet` が入っています。別のシートはグリッドの `open` プロパティで選びます。`open` はグリッドがストアを作るときに読まれるので、`key` も一緒に渡してください。
+
+```tsx
+<DataGrid key={sheet} transport={transport} table={name} open={{ sheet }} />
+```
+
+`open` には、列名の行 `headerRow`（1 から数えます。`0` なら列名なし）と、`keepEmptyRows`・`keepEmptyColumns` も指定できます。暗号化されたブックと、古い `.xls` 形式は `load_failed` になります。
+
+## Parquet
+
+`{ parquet }` には、`File` か `Blob`、または HTTP の範囲リクエストに答えるサーバー上のファイルの URL を渡します。
 
 ```ts
-const source = new BrowserSource({ url: "https://data.example.com/sales.parquet" });
+memoryEngine({ tables: { sales: { parquet: "https://data.example.com/sales.parquet" } } });
 ```
 
-`BrowserSource` は 1 つずつ Worker を持ちます。`close()` で Worker を終え、メモリーを解放します。上のように effect の中で
-作ると、ファイルが変わったときやグリッドを外したときに閉じられます。
-
-## できること
-
-| | ローカルのファイル | URL の Parquet |
+| オプション | 既定 | |
 | --- | --- | --- |
-| 形式 | Parquet・CSV・TSV・JSON Lines | Parquet |
-| 開くとき | Parquet はフッターを読む。テキストは 4 MiB ずつ 1 回読んで行を数え、数えている間も最初の行を表示する | `HEAD` で大きさを調べ、フッターを読む |
-| 行 | グリッドが表示する行グループか、1,024 行ずつのまとまり | グリッドが表示する行グループと列のバイト範囲 |
-| 並べ替え・絞り込み・全列検索・統計・値の一覧・検索 | 使える（Worker で計算） | 使えない（ファイル全体を取得することになるため）。`fullScan: true` で使える |
-| 選択範囲の集計 | 使える | 使えない（列全体を選ぶとファイル全体を読むため） |
-| 書き出し | 使えない（[書き出し](/ja/guides/export/#vastgrid-browser)を参照） | 使えない |
+| `headers` | なし | URL へのすべてのリクエストに付けるヘッダー（`Authorization` など） |
+| `fetch` | グローバルの `fetch` | 代わりに使う関数 |
+| `maxBytes` | 1 GiB | まるごと読んだ列が使うメモリのおおよその上限 |
+| `editable` | `false` | グリッドからセルに書き込めるようにする |
 
-グリッドは `info().capabilities` の示す操作だけを有効にするので、URL では並べ替えと絞り込みのメニューが使えない状態に
-なります。テキストのファイルの行を数えている間は、DuckDB のエンジンと同じく、どの操作も無効です。
+開くときに読むのは、ファイルのフッターだけです。画面に出る行は、その行を含む行グループを読みます。並べ替え・絞り込み・グループ化・集計は、使う列をまるごと型付き配列に読みます。列の型は DuckDB が読む型と同じで、リスト・構造体・マップは JSON の文字列（読み取り専用）になります。
 
-並べ替えと絞り込みは `ArraySource` と同じ比較で、DuckDB のエンジンと同じ結果になります。数値は値で比べ（2^53 を超える整数や、
-文字列で届く小数も正確に）、空白は昇順でも降順でも最後、日付と時刻は ISO の文字列で比べます。値は DuckDB と同じ形で届きます。
-`DECIMAL` は正確な文字列（`"2.50"`）、`TIMESTAMP` は `2024-01-03 10:00:00.5`、`TIMESTAMP WITH TIME ZONE` はブラウザーの
-時間帯（`2024-01-01 09:00:00+09`）、リストと構造体は `[1, 2]` と `{'a': 1}` です。
+別のオリジンの URL では、サーバーが CORS で許可し、`Content-Length`・`Content-Range`・`ETag` を公開する（`Access-Control-Expose-Headers`）必要があります。最初の応答でファイルの大きさと `ETag` か `Last-Modified` を受け取り、以後の応答はそれと一致しなければなりません。ファイルが変わっていれば `file_changed` になります。読んだ範囲は 32 MiB のキャッシュに残ります。`Range` を無視するサーバーはファイル全体を送ってきますが、16 MiB までなら保持し、それより大きいと `load_failed` になります。
 
-## オプション
+## メモリと `maxBytes`
 
-| オプション | 既定値 | 説明 |
-| --- | --- | --- |
-| `file` / `url` | | 開くもの。`File` か `Blob`、または Parquet の URL。 |
-| `name` | `file.name` | ファイル名。`Blob` の形式を判断するのに使います。 |
-| `format` | 名前か中身から判断 | `"parquet"`・`"csv"`・`"tsv"`・`"json"`（JSON Lines）。 |
-| `delimiter` | 自動 | CSV の区切り文字（`,`・`;`・`\|`・タブ）。 |
-| `header` | `true` | CSV・TSV の 1 行目が列名かどうか。 |
-| `fullScan` | ファイルは `true`、URL は `false` | 表全体を読む操作を使えるようにします。 |
-| `headers` | | HTTP の要求すべてに付けるヘッダー。`Authorization` など。 |
-| `credentials` | | `fetch` の credentials。別のオリジンに Cookie を送るときに。 |
-| `maxDownloadBytes` | 16 MiB | `Range` に答えないサーバーから、この大きさまではファイル全体を取得します。大きければエラーです。 |
-| `cacheBytes` | 32 MiB | 読み直しのために残す HTTP の範囲のバイト数。 |
-| `textLimit` | 2000 | グリッドが求めない限り、1 つのセルで送る文字数の上限。 |
-| `worker` | 同梱の Worker | Worker を作る関数（次の節）。 |
-| `changeInterval` | 5000 | URL のファイル: グリッドがファイルの変更をサーバーに問い合わせる間隔（ミリ秒）。`ETag`・`Last-Modified`・大きさを `HEAD` 要求で比べます。500 以上。`0` で問い合わせません。 |
+`maxBytes`（既定は 1 GiB）は、エンジンがまるごと保持する列の上限です。列がこれを超えるテキストファイルは保持されません。エンジンは 1,024 行ごとの開始位置を記録し、そのブロック単位で行を読みます。並べ替え・絞り込み・グループ化・集計・検索・書き出しは、必要な列が上限に収まる間はまるごと読み、場所が足りなくなると、最も長く使われていない列から手放します。一度に上限を超える要求は `/maxBytes` を指す `load_failed` になりますが、表は開いたままです。
 
-`transfer()` は、それまでに読んだバイト数と読み込みの回数（HTTP の要求の数）を返します。どれだけ少なく読んだかの表示や確認に使えます。
+要求は `maxBytes` とは別にもメモリを使います。並べ替えた列とビューごとに 1 行あたり約 4 バイト、グループ化のグループ、それに 32 MiB のブロックのキャッシュです。表が収まらないときは、`maxBytes` を大きくするか、ファイルをサーバーで開いてください（[サーバーのファイル](/ja/guides/server/)）。サーバーの DuckDB はディスクに書き出しながら処理します。
 
-## Worker とバンドラー
+## 書き出しと編集
 
-既定では `new Worker(new URL("./worker.js", import.meta.url), { type: "module" })` で Worker を作ります。Vite・webpack 5・
-Rollup・esbuild を使うツールが、この形を理解します。ほかの形が要るときは `worker` を渡します。Vite なら次のとおりです。
+メモリエンジンは CSV・TSV・JSON・xlsx をデータとして書き出します。ファイルをメモリ上で作ってそのバイト列を返し、グリッドがダウンロードとして保存させます（[書き出し](/ja/guides/export/)）。エンジンがファイルを書くことはなく、表を読んだ元の `File` も変わりません。`editable: true` ならグリッドからセルに書き込めます。書き込んだセルは Worker がある間だけ残るので、残したいときは書き出してください。
 
-```ts
-import BrowserWorker from "vastgrid-browser/worker?worker";
+## 速さ
 
-const source = new BrowserSource({ file, worker: () => new BrowserWorker() });
-```
+2026-10-27 に Apple M2 Pro と Node.js 24 で、Worker やページを通さずエンジンのメッセージで計測しました（[計測の記録](https://github.com/yhay81/vastgrid/blob/main/docs/v2-memory-engine-benchmark.md)）。ファイルは 8 列で、時間は 1 回の計測です。
 
-Vite は依存パッケージを事前にバンドルします。開発中に既定の Worker の URL が見つからないときは、
-`optimizeDeps: { exclude: ["vastgrid-browser"] }` を設定するか、上の `?worker` の import を使ってください。自分の Worker で
-表を動かすには、その中で `vastgrid-browser` の `serveTable(self)` を呼びます。`BrowserTable` は Worker を使わない同じエンジン
-です（テストや Node.js 向け）。
+| | 100 万行の CSV（69 MB） | 100 万行の Parquet（13 MB） | 1,000 万行の CSV（701 MB） | 1,000 万行の Parquet（132 MB） |
+| --- | ---: | ---: | ---: | ---: |
+| 開く | 1.06 秒 | 26 ms | 10.5 秒 | 38 ms |
+| 最初の 256 行 | 9 ms | 201 ms | 7 ms | 206 ms |
+| 浮動小数点数で並べ替え | 91 ms | 1.08 秒 | 0.88 秒 | 8.7 秒 |
+| 文字列で並べ替え | 0.48 秒 | 0.25 秒 | 5.0 秒 | 2.9 秒 |
+| 絞り込んでタイムスタンプで並べ替え | 0.19 秒 | 0.10 秒 | 2.5 秒 | 1.8 秒 |
+| 合計・平均・件数でグループ化 | 0.41 秒 | 0.32 秒 | 5.0 秒 | 3.5 秒 |
+| 全行を CSV に書き出し | 1.45 秒 | 1.32 秒 | 14.8 秒 | 13.7 秒 |
+| 開いた後のメモリ | 58 MB | 1 MB | 590 MB | 2 MB |
+| 上記をすべて行った後のメモリ | 107 MB | 129 MB | 1,020 MB | 1,264 MB |
 
-特別なヘッダーは要りません。エンジンは普通の JavaScript なので、`SharedArrayBuffer` もクロスオリジン分離（COOP/COEP）も
-不要です。モジュールの Worker には Chrome・Edge 80、Firefox 114、Safari 15 以降が必要です。
+Parquet はすぐに開き、要求が初めて列をまるごと読むときに時間がかかります。テキストファイルは開くときに時間がかかります。`maxBytes` を 256 MiB にすると、1,000 万行の CSV は 4.7 秒で開き、メモリはほとんど使いませんが、全列の集計や書き出しは `load_failed` になります。Chromium でエンジンを Worker に置くと、100 万行の並べ替え中もページに長いタスクは生じず、ページのヒープには表がまったく載りません（10 MB）。
 
-## URL で読む Parquet の配信
+## /open/ のページ
 
-サーバーは `Range: bytes=start-end` に `206 Partial Content` で答える必要があります。静的ファイルのサーバー、オブジェクト
-ストレージ（S3・R2・GCS）、CDN は答えます。別のオリジンのファイルは CORS で許可します。
-
-```http
-Access-Control-Allow-Origin: https://your-app.example
-Access-Control-Expose-Headers: Content-Length, Content-Range, ETag
-```
-
-1 つのバイト範囲の `Range` は CORS で安全とされるヘッダーなので、普通の読み込みでは事前の要求（preflight）は起きません。
-`Authorization` などのヘッダーは起きるので、`Access-Control-Allow-Headers: Authorization, Range` で許可してください。`HEAD` の
-応答は圧縮（`Content-Encoding`）しないでください。圧縮すると `Content-Length` がファイルの大きさになりません。
-
-| 状況 | 動作 |
-| --- | --- |
-| サーバーが `Range` を無視してファイル全体を送る | `maxDownloadBytes` までのファイルは 1 回だけ取得してメモリーから読む。大きければ `range_not_supported` |
-| `HEAD` を拒否する | 1 バイトの範囲の `Content-Range` から大きさを知る |
-| 大きさが分からない（`Content-Length` がない、`Content-Range` が公開されていない） | `size_unknown` |
-| 開いている間にファイルが変わる（`ETag` や `Last-Modified` が変わる、ファイルが短くなる） | 読み込みが `file_changed` で失敗し、次の `info()` で開き直して新しい `revision` を返す。グリッドの再読み込みがこれを行う |
-| 401・403・404 | `http_error`（メッセージに状態コード） |
-| 要求が失敗する、CORS で応答を読めない | `network_error` |
-
-すべての応答を最初の `ETag`（なければ `Last-Modified`）と照らし合わせるので、開いている間に置き換わったファイルを新旧混ぜて
-読むことはありません。別のオリジンのサーバーは、この確認のために `ETag` を公開してください。
-
-## 計測
-
-playground のサンプルファイルを Apple M2 Pro で、`npm run bench -w vastgrid-browser`（Node.js 24。Worker のコードを
-Worker なしで実行）と、playground の Chrome（Engine: Browser worker）で計りました。Parquet は 122,880 行の行グループが 82 個、
-zstd 圧縮で、ページの索引はありません。
-
-| | 時間 | 読んだ量 |
-| --- | ---: | ---: |
-| Parquet 132 MB・1,000 万行を HTTP Range で：開く | 40 ms（Chrome 41 ms） | 2 回で 0.1 MB |
-| URL の Parquet：最初の 100 行 × 8 列 | 0.3〜0.7 秒 | 1.7 MB |
-| URL の Parquet：任意の 5 か所の 100 行 | Chrome で各 150〜270 ms | 各 1.7 MB、合計 10.3 MB（ファイルの 7.8%） |
-| ローカルの Parquet：1,000 万行を数値で並べ替え | 13.6 秒 | その列を 1 回 |
-| ローカルの Parquet：その並べ替えの最初の画面 | 12 秒 | 表示する行を含む行グループすべて |
-| ローカルの CSV 71 MB・100 万行：行を数える | 0.15 秒（Chrome 0.22 秒） | ファイルを 1 回 |
-| CSV：任意の位置の行 | 1〜3 ms | 1,024 行のまとまり |
-| CSV：100 万行を数値で並べ替え／並べ替えた最初の画面 | 1.1 秒／54 ms（Chrome 1.07 秒／61 ms） | |
-| CSV：Chrome で絞り込みと並べ替えの間、画面のスレッドが止まった最長の時間 | 11 ms | |
-
-Worker のメモリーは CSV で約 40 MB（索引は 1,024 行ごとに 8 バイト、ビューは 1 行 4 バイト）、Parquet で約 110〜135 MB
-でした。Parquet の多くは、スクロールで戻ったときのために残すデコード済みの行グループと HTTP の範囲です（それぞれ最大 400 万
-セルと 32 MiB）。Worker のバンドルは minify 後 210 KB（gzip 107 KB）で、hyparquet と zstd・gzip・brotli・lz4・snappy の
-展開を含みます。画面のスレッドの部分は 3 KB です。
+[ファイルを開く](/ja/open/)は、このガイドの内容を動かしているページです。ドロップまたは選んだファイルごとに Worker でメモリエンジンを起動し、表を編集できるようにし、`.txt` のファイルは CSV として読み、ブックにはシートの選択を付けています。Worker のコードは [site/src/components/open/engine-worker.ts](https://github.com/yhay81/vastgrid/blob/main/site/src/components/open/engine-worker.ts) です。
 
 ## 制限
 
-- テキストのファイルは UTF-8 にしてください（BOM は可）。Shift_JIS や UTF-16 のファイルは先に変換するか、`vastgrid-duckdb` を
-  使ってください。
-- CSV・TSV の列の型は最初の 2,048 行で決めます。その後の合わない値は文字列のままで、数値の列では空白と一緒に並びます。
-- Parquet を並べ替え・絞り込みしたビューは、画面ごとに、表示する行を含む行グループをすべて読みます。ページの索引がない
-  ファイルは行グループ単位でデコードするため、数百万行の並べ替えの最初の画面には数秒かかります。その用途では
-  `vastgrid-duckdb` で配信してください。
-- 並べ替えは Worker で並べ替える列の値を持って行います。数千万行では Worker に数百 MB のメモリーが要ります。
-- [計算列](/ja/guides/formulas/)はまだ評価しません（`capabilities.formulas` は false）。グリッドは計算列を出さないので、使うときは `vastgrid-duckdb` で配信してください。
-- 変更を検出できるのは URL のファイルだけです。ローカルの `File` はその時点の写しで、ディスク上で変わるとブラウザーが読めなくなるため、開き直してください（ファイルの選択からなど）。URL の場合、別のオリジンのサーバーは `Access-Control-Expose-Headers` に `ETag`（か `Last-Modified`）を含めてください。
+- 最初の行が出るのは、ファイル全体を読んだ後です。上の 1,000 万行の CSV では 10 秒かかります。読み込み中に行を見せるのは、今後の課題です。
+- 取り消しは 40 ms ごとくらいに確認されます。ビューの一部の処理（数値の順位付けや、順位での並べ替え）は、終わるまで止まりません。
+- エンジンはファイルに保存しません。編集を残すには書き出してください。
+- タブのメモリが上限です。それを超えるなら、サーバーで DuckDB エンジンを使ってください。
 
-## DuckDB-WASM ではなく hyparquet を選んだ理由
+## バンドラー
 
-| | hyparquet（採用） | DuckDB-WASM |
-| --- | --- | --- |
-| 大きさ | Worker 全体で gzip 107 KB | WebAssembly がビルドごとに約 35〜40 MB（圧縮して数 MB）と、その Worker |
-| 配信 | どの静的ホストでも可。特別なヘッダーは不要 | シングルスレッドのビルドは COOP/COEP なしで動く。スレッドにはクロスオリジン分離が必要 |
-| 形式 | Parquet。CSV・TSV・JSON Lines はこのパッケージの読み込み | Parquet・CSV・JSON ほか。SQL も使える |
-| 並べ替え・絞り込み・統計 | JavaScript で、`ArraySource` と同じ比較 | SQL。数千万行でははるかに速い |
-| HTTP Range | 必要な範囲だけを要求してキャッシュ。ETag はこのパッケージで確認 | 組み込みの HTTP ファイルシステム |
-
-ブラウザーでのグリッドの典型的な使い方（ファイルを開いて眺め、数百万行までを並べ替え・絞り込む）には、どのホストからでも
-すぐに読み込める小さなエンジンが向いています。数億行を扱う処理はサーバーの `vastgrid-duckdb` に任せ、グリッドは同じ
-`TableSource` で両方につなげます。
+`new Worker(new URL("./engine-worker.ts", import.meta.url), { type: "module" })` は、Vite や webpack 5 が見つけてバンドルする書き方です。Vite ではプラグインも設定も要りません。特別なヘッダーも不要です。エンジンは `SharedArrayBuffer` を使わないので、ページをクロスオリジン分離（COOP/COEP）にする必要はありません。モジュール Worker には、Chrome と Edge 80、Firefox 114、Safari 15 以降が必要です。

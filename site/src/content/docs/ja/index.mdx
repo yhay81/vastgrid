@@ -1,12 +1,12 @@
 ---
 title: vastgrid
-description: どんな大きさの CSV・TSV・Parquet・JSON Lines のファイルも開けて、表計算ソフトのように扱える、キャンバスで描く React のデータグリッドです。
+description: どんな大きさの CSV・TSV・Parquet・JSON Lines・Excel のファイルも開けて、表計算ソフトのように扱える、キャンバスで描く React のデータグリッドです。
 head:
   - tag: title
     content: vastgrid — どんな大きさのファイルも開ける React のデータグリッド
 template: splash
 hero:
-  tagline: どんな大きさの CSV・TSV・Parquet・JSON Lines のファイルも、数 GB・数億行でも開けて、表計算ソフトのように扱える React のデータグリッドです。
+  tagline: どんな大きさの CSV・TSV・Parquet・JSON Lines・Excel のファイルも、数 GB・数億行でも開けて、表計算ソフトのように扱える React のデータグリッドです。
   actions:
     - text: はじめる
       link: /ja/getting-started/
@@ -25,54 +25,61 @@ import { HeroGrid } from "../../../components/examples.tsx";
 
 <HeroGrid client:only="react" locale="ja" />
 
-ブラウザーの中で作った、架空の注文 10 万件です。列のメニュー（▾）を開くと並べ替え・絞り込み・統計の表示ができ、セルの上をドラッグすると、下にそのデータの個数・合計・平均が出ます。⌘/Ctrl ＋ F で検索できます。[デモ](/ja/demo/)には 10 億行の表もあります。
+ブラウザーの中で作った架空の注文 10 万件を、メモリエンジンが持っています。列のメニュー（▾）を開くと並べ替え・絞り込み・グループ化・統計の表示ができ、セルの上をドラッグすると、下にその個数・合計・平均が出ます。⌘/Ctrl ＋ F で検索できます。[デモ](/ja/demo/)ではセルの編集も試せます。[ファイルを開く](/ja/open/)では、手元のファイルをアップロードせずに開けます。
 
 ```bash
-npm install vastgrid
+npm install vastgrid vastgrid-js
 ```
 
 ```tsx
-import { ArraySource, DataGrid } from "vastgrid";
+import { DataGrid, localTransport } from "vastgrid";
 import "vastgrid/styles.css";
+import { memoryEngine } from "vastgrid-js";
 
-const source = new ArraySource({
-  columns: ["name", "born", "field"],
-  rows: [
-    ["Ada Lovelace", 1815, "Mathematics"],
-    ["Grace Hopper", 1906, "Computer science"],
-  ],
-});
+const transport = localTransport(
+  memoryEngine({
+    tables: {
+      people: {
+        columns: [
+          { name: "name", type: "string" },
+          { name: "born", type: "integer" },
+          { name: "field", type: "string" },
+        ],
+        rows: [
+          ["Ada Lovelace", 1815, "Mathematics"],
+          ["Grace Hopper", 1906, "Computer science"],
+        ],
+      },
+    },
+  }),
+);
 
 export function App() {
-  return (
-    <div style={{ height: 600 }}>
-      <DataGrid source={source} />
-    </div>
-  );
+  return <DataGrid transport={transport} table="people" style={{ height: 600 }} />;
 }
 ```
 
-ディスク上のファイルは、`vastgrid-duckdb` が Node.js から DuckDB で配信します。[サーバーのファイル](/ja/guides/server/)を参照してください。サーバーがなければ、`vastgrid-browser` がローカルのファイルと URL の Parquet を Web Worker で読みます。[ブラウザーで開くファイル](/ja/guides/browser/)を参照してください。
+ディスク上のファイルは、`vastgrid-duckdb` が Node.js の DuckDB で開きます。[サーバーのファイル](/ja/guides/server/)を参照してください。サーバーがなくても、`vastgrid-js` が利用者の選んだファイルや URL の Parquet を Web Worker の中で読みます。[ブラウザーで開く大きなファイル](/ja/guides/browser/)を参照してください。同じグリッドは、コマンド、VS Code の拡張機能、MCP App、ノートブックのウィジェットとしても使えます。[アプリ](/ja/apps/overview/)を参照してください。
 
 <CardGrid>
   <Card title="どんな大きさでも開ける" icon="document">
-    行はスクロールに合わせて、まとまりごとに読みます。1.4 GB・1 億行の Parquet は 20 ms で開き、735 MB の CSV は読み込みの途中でも 0.15 秒で最初の行を表示します。
+    行はスクロールに合わせて、まとまりごとに読みます。サーバーでは 1 億行の Parquet をその場で読み、並べ替えの最初の行を 1 秒以内に表示して、残りはその間に作ります。サーバーがなくても、100 万行の CSV が約 1 秒で開きます。
   </Card>
   <Card title="速い" icon="rocket">
-    セルはキャンバスに描きます。1,000 セル以上を表示しても 1 フレーム約 2 ms です。ブラウザーの要素の大きさの上限を越えて、数十億行までスクロールできます。
+    セルはキャンバスに描き、スクロールでは React を描画しません。スクロール中にフレームを落とさず、矢印キー 1 回で React のコミットは 1 回です。エンジンを Web Worker に置けば、100 万行を並べ替える間もページは止まりません。
   </Card>
   <Card title="表計算ソフトの操作" icon="pencil">
-    マウスと Excel のキー操作での範囲の選択、コピー（TSV・HTML・Markdown）、複数の列での並べ替え、絞り込み、すべての列からの絞り込み、検索、列の統計、選択範囲の集計。
+    範囲の選択と Excel のキー操作、コピーと貼り付け、複数の列での並べ替え、AND と OR を組み合わせた絞り込み、すべての列からの絞り込み、検索、統計、グループ化、ピボット、計算列、合計行。
   </Card>
-  <Card title="エンジンを選べる" icon="puzzle">
-    グリッドは `TableSource` とだけやり取りします。ファイルは DuckDB のサーバーのエンジン、ブラウザーで開くファイルは `vastgrid-browser`、メモリ上のデータは `ArraySource`、ほかのエンジンは[自作のもの](/ja/guides/custom-source/)で扱えます。
+  <Card title="編集と保存" icon="document">
+    入力・貼り付け・連続入力・元に戻す・やり直しができ、値はすべて列の型で確かめます。DuckDB のエンジンは、編集していないバイトをそのまま残して CSV と TSV のファイルに保存します。
   </Card>
-  <Card title="安全な作り" icon="approve-check">
-    DuckDB のエンジンは、実際の場所が許可したフォルダーの中にあるファイルだけを読み、その設定は実行中に変えられません。SQL はすべて組み立てたもので、値は必ずパラメーターで渡します。
+  <Card title="API はコマンド" icon="puzzle">
+    表示の設定は JSON のドキュメント、操作の場所はセッションです。変更はすべて型の付いたコマンドで、グリッドのメニューと同じように、自作の UI、ホスト、AI のエージェントからも送れます。
   </Card>
   <Card title="日本語と英語" icon="translate">
-    組み込みの文言は日本語と英語の両方があります。CSS 変数によるライトとダーク、ARIA のグリッドの役割、キーボードだけでの操作にも対応しています。
+    組み込みの文言は日本語と英語の両方があります。CSS 変数によるライトとダーク、ARIA のグリッドの役割、IME での入力を含むキーボードだけでの操作にも対応しています。
   </Card>
 </CardGrid>
 
-vastgrid は 0.x です。1.0 までは、マイナーリリースでも API が変わることがあります。すべてのリリースは[変更履歴](https://github.com/yhay81/vastgrid/blob/main/CHANGELOG.md)にあります。
+これは vastgrid 2 です。vastgrid 0.1 を置き換えるもので、API は引き継いでいません。[v1 からの移行](/ja/migrating-from-v1/)を参照してください。すべてのリリースは[変更履歴](https://github.com/yhay81/vastgrid/blob/main/CHANGELOG.md)にあります。

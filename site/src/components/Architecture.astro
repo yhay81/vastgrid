@@ -9,19 +9,20 @@ const english = {
   browser: "Browser",
   server: "Node.js",
   grid: "DataGrid",
-  gridNote: "canvas + DOM overlays",
-  cache: "RowCache",
-  cacheNote: "256 × 48 blocks, prefetch,",
-  cacheNote2: "cancel, LRU",
-  source: "TableSource",
-  array: "ArraySource",
-  arrayNote: "arrays in memory",
-  remote: "RemoteSource",
-  protocol: "JSON protocol",
-  handler: "createTableHandler",
-  engine: "TableEngine",
-  engineNote: "DuckDB",
-  files: "CSV · TSV · Parquet · JSON Lines",
+  gridNote: "canvas + React",
+  store: "GridStore",
+  storeNote: "document · session",
+  storeNote2: "blocks of rows",
+  transport: "Transport",
+  memory: "memoryEngine",
+  memoryNote: "page or Web Worker",
+  local: "local · worker",
+  http: "httpTransport",
+  messages: "JSON + Arrow",
+  handler: "createHttpHandler",
+  engine: "DuckDBEngine",
+  files: "CSV · TSV · JSON Lines",
+  files2: "Parquet · Excel",
 };
 
 const t = { ...english, ...Astro.props.labels };
@@ -45,30 +46,32 @@ const t = { ...english, ...Astro.props.labels };
     <text class="architecture__note" x="91" y="94">{t.gridNote}</text>
 
     <rect class="architecture__box" x="186" y="48" width="170" height="64" rx="6"></rect>
-    <text class="architecture__name" x="271" y="70">{t.cache}</text>
-    <text class="architecture__note" x="271" y="88">{t.cacheNote}</text>
-    <text class="architecture__note" x="271" y="103">{t.cacheNote2}</text>
+    <text class="architecture__name" x="271" y="70">{t.store}</text>
+    <text class="architecture__note" x="271" y="88">{t.storeNote}</text>
+    <text class="architecture__note" x="271" y="103">{t.storeNote2}</text>
 
     <rect class="architecture__box architecture__box--accent" x="376" y="48" width="110" height="64" rx="6"></rect>
-    <text class="architecture__name" x="431" y="85">{t.source}</text>
+    <text class="architecture__name" x="431" y="85">{t.transport}</text>
 
-    <rect class="architecture__box" x="376" y="166" width="110" height="64" rx="6"></rect>
-    <text class="architecture__name" x="431" y="192">{t.array}</text>
-    <text class="architecture__note" x="431" y="212">{t.arrayNote}</text>
+    <rect class="architecture__box" x="356" y="166" width="140" height="64" rx="6"></rect>
+    <text class="architecture__name" x="426" y="192">{t.memory}</text>
+    <text class="architecture__note" x="426" y="212">{t.memoryNote}</text>
 
     <rect class="architecture__box" x="636" y="48" width="210" height="44" rx="6"></rect>
     <text class="architecture__name" x="741" y="75">{t.handler}</text>
     <rect class="architecture__box" x="636" y="116" width="210" height="44" rx="6"></rect>
-    <text class="architecture__name" x="741" y="143"><tspan>{t.engine}</tspan><tspan class="architecture__note" dx="8">{t.engineNote}</tspan></text>
+    <text class="architecture__name" x="741" y="143">{t.engine}</text>
     <rect class="architecture__box" x="636" y="186" width="210" height="44" rx="6"></rect>
-    <text class="architecture__name architecture__name--small" x="741" y="213">{t.files}</text>
+    <text class="architecture__name architecture__name--small" x="741" y="204">{t.files}</text>
+    <text class="architecture__name architecture__name--small" x="741" y="221">{t.files2}</text>
 
     <path class="architecture__line" d="M166 80H184" marker-end="url(#arrow)"></path>
     <path class="architecture__line" d="M356 80H374" marker-end="url(#arrow)"></path>
-    <path class="architecture__line architecture__line--dashed" d="M431 112V164" marker-end="url(#arrow)"></path>
+    <path class="architecture__line architecture__line--dashed" d="M426 112V164" marker-end="url(#arrow)"></path>
+    <text class="architecture__note" x="370" y="143">{t.local}</text>
     <path class="architecture__line" d="M486 70H634" marker-end="url(#arrow)"></path>
-    <text class="architecture__name architecture__name--small" x="560" y="60">{t.remote}</text>
-    <text class="architecture__note" x="560" y="88">{t.protocol}</text>
+    <text class="architecture__name architecture__name--small" x="560" y="60">{t.http}</text>
+    <text class="architecture__note" x="560" y="88">{t.messages}</text>
     <path class="architecture__line" d="M741 92V114" marker-end="url(#arrow)"></path>
     <path class="architecture__line" d="M741 160V184" marker-end="url(#arrow)"></path>
   </svg>

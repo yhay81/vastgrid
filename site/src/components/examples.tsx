@@ -124,7 +124,8 @@ function Bars() {
       aria-label={names.join(" / ")}
     >
       {bars.map((bar, index) => (
-        <g key={`${index}:${bar.label}`} transform={`translate(0 ${index * 22 + 2})`}>
+        // A grouped view has one row for each key, so the labels are unique.
+        <g key={bar.label} transform={`translate(0 ${index * 22 + 2})`}>
           <text x="0" y="14" className="example-chart__label">
             {bar.label}
           </text>

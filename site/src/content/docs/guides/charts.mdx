@@ -1,0 +1,116 @@
+---
+title: Charts
+description: Draw the view the grid shows with the chart library of your choice, its groups computed by the engine.
+---
+
+import { ChartGrid } from "../../../components/examples.tsx";
+
+vastgrid draws no charts and depends on no chart library. A chart reads the same store as the grid instead: the
+view on screen, after its filters, groups and sort. Let the engine group the rows, and a chart of a
+hundred-million-row table receives a dozen numbers, not the table. Pass them to the library your app already
+uses (Chart.js, ECharts, Vega-Lite, Recharts, …), or draw them yourself.
+
+<ChartGrid client:only="react" />
+
+The bars are the first twelve rows of the grid's view: 10,000 orders grouped by category, with their sales.
+Group by another column, add a filter or sort by another measure in the grid, and the bars follow.
+
+## Share the store
+
+Make the store with `useCreateGridStore` and give it to the grid and to a `GridProvider` around both. The grid
+takes `store` in place of `transport` and `table`:
+
+```tsx
+import { DataGrid, type GridDocument, GridProvider, useCreateGridStore } from "vastgrid";
+
+const byCategory: GridDocument = {
+  kind: "vastgrid/document",
+  version: 2,
+  plan: {
+    aggregate: { keys: ["category"], measures: [{ name: "sales", fn: "sum", column: "total" }] },
+    sort: [{ column: "sales", direction: "desc" }],
+  },
+};
+
+export function SalesByCategory() {
+  const store = useCreateGridStore({ transport, table: "orders", document: byCategory });
+  return (
+    <GridProvider store={store}>
+      <Bars />
+      <DataGrid store={store} style={{ height: 400 }} />
+    </GridProvider>
+  );
+}
+```
+
+`useCreateGridStore` makes the store once, from the first options, and connects it while the component is
+mounted. The document is where the grid starts; a person changes it from the grid's menus, and the chart reads
+whatever is on screen.
+
+## Read the rows
+
+Inside the provider, `useGridSelector` reads a part of the store's snapshot, and `useGridRows` reads values of
+rows of the view on screen:
+
+```tsx
+import { useGridRows, useGridSelector } from "vastgrid";
+
+const NUMBERS = ["integer", "bigint", "decimal", "float"];
+
+function sameNames(a: readonly string[], b: readonly string[]) {
+  return a.length === b.length && a.every((name, index) => name === b[index]);
+}
+
+function Bars() {
+  const rowCount = useGridSelector((snapshot) => snapshot.view?.rowCount ?? 0);
+  // The first displayed column names a bar, and the first number column after it is its length.
+  const names = useGridSelector((snapshot) => {
+    const [label, ...rest] = snapshot.displayed;
+    const value = rest.find((column) => NUMBERS.includes(column.column.type));
+    return label && value ? [label.column.name, value.column.name] : [];
+  }, sameNames);
+  const rows = useGridRows({ start: 0, end: Math.min(rowCount, 12), columns: names });
+  const bars = rows.map(([label, value]) => ({ label: String(label ?? ""), value: Number(value ?? 0) }));
+  return <BarChart bars={bars} />; // your chart
+}
+```
+
+- `useGridSelector(selector, isEqual)` renders the component again only when the selected value changes, by
+  `Object.is` unless you give `isEqual`. A selector that makes a new array needs one, such as `sameNames` here
+  or `shallowEqual` from `vastgrid`.
+- `useGridRows({ start, end, columns })` gives one array per row, in the order of `columns`, with `undefined`
+  for values not read yet. It reads the rows that are missing and renders again when they arrive.
+- Values are typed JSON: a `decimal` or a large `bigint` comes as a string, a `timestamp` as text. Convert them
+  with `Number` or `Date` for the chart.
+- `snapshot.view.rowCount` is the number of rows of the view; while a large view is still being built,
+  `snapshot.view.status` is `"building"` and the count may grow.
+
+## Groups, not rows
+
+A chart of the rows themselves reads as many rows as it draws. A chart of groups reads one row per group, and
+the engine makes the groups where the data is: the DuckDB engine in SQL on the server, the memory engine in the
+page or its worker. The plan's `aggregate` takes `keys` and `measures` (`count`, `count_distinct`, `sum`, `avg`,
+`stddev`, `min`, `max` and `quantile`), and `aggregate.pivot` makes one column per value of other columns,
+for a chart of several series. See [Groups and totals](/guides/grouping/) for what the grid's menus make, and
+[§4.5 of the specification](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#45-measures) for the
+measures.
+
+## A chart without the grid
+
+A store does not need a grid on screen. A chart with a view of its own makes its own store on the same
+transport, with the document it needs, and renders no `DataGrid`:
+
+```tsx
+function MonthlySales() {
+  const store = useCreateGridStore({ transport, table: "orders", document: byMonth });
+  return (
+    <GridProvider store={store}>
+      <Bars />
+    </GridProvider>
+  );
+}
+```
+
+The document given to `useCreateGridStore` is where the store starts. To change the chart's view later, such
+as to filter it as a grid is filtered, dispatch commands to its store (`filter.set`, `group.set`, `sort.set`),
+as the grid's menus do: see [State and your own controls](/guides/state/).

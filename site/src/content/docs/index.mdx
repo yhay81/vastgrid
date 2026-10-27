@@ -1,12 +1,12 @@
 ---
 title: vastgrid
-description: A canvas data grid for React that opens CSV, TSV, Parquet and JSON Lines files of any size and works like a spreadsheet.
+description: A canvas data grid for React that opens CSV, TSV, Parquet, JSON Lines and Excel files of any size and works like a spreadsheet.
 head:
   - tag: title
     content: vastgrid, a data grid for React for files of any size
 template: splash
 hero:
-  tagline: A data grid for React that opens CSV, TSV, Parquet and JSON Lines files of any size — gigabytes, hundreds of millions of rows — and works like a spreadsheet.
+  tagline: A data grid for React that opens CSV, TSV, Parquet, JSON Lines and Excel files of any size — gigabytes, hundreds of millions of rows — and works like a spreadsheet.
   actions:
     - text: Get started
       link: /getting-started/
@@ -25,65 +25,76 @@ import { HeroGrid } from "../../components/examples.tsx";
 
 <HeroGrid client:only="react" />
 
-100,000 made-up orders, generated in your browser. Open a column's menu (▾) to sort, filter or see its
-statistics, drag across cells to see their count, sum and average below, and press ⌘/Ctrl+F to find. The
-[demo](/demo/) also has a table of a billion rows.
+100,000 made-up orders, generated in your browser and held by the memory engine. Open a column's menu (▾) to
+sort, filter, group or see its statistics, drag across cells to see their count, sum and average below, and
+press ⌘/Ctrl+F to find. The [demo](/demo/) edits cells too, and [Open a file](/open/) opens a file of yours
+without uploading it.
 
 ```bash
-npm install vastgrid
+npm install vastgrid vastgrid-js
 ```
 
 ```tsx
-import { ArraySource, DataGrid } from "vastgrid";
+import { DataGrid, localTransport } from "vastgrid";
 import "vastgrid/styles.css";
+import { memoryEngine } from "vastgrid-js";
 
-const source = new ArraySource({
-  columns: ["name", "born", "field"],
-  rows: [
-    ["Ada Lovelace", 1815, "Mathematics"],
-    ["Grace Hopper", 1906, "Computer science"],
-  ],
-});
+const transport = localTransport(
+  memoryEngine({
+    tables: {
+      people: {
+        columns: [
+          { name: "name", type: "string" },
+          { name: "born", type: "integer" },
+          { name: "field", type: "string" },
+        ],
+        rows: [
+          ["Ada Lovelace", 1815, "Mathematics"],
+          ["Grace Hopper", 1906, "Computer science"],
+        ],
+      },
+    },
+  }),
+);
 
 export function App() {
-  return (
-    <div style={{ height: 600 }}>
-      <DataGrid source={source} />
-    </div>
-  );
+  return <DataGrid transport={transport} table="people" style={{ height: 600 }} />;
 }
 ```
 
-For files on disk, `vastgrid-duckdb` serves them from Node.js with DuckDB: see
-[Files on a server](/guides/server/). With no server, `vastgrid-browser` reads local files and Parquet URLs in
-a Web Worker: see [Files in the browser](/guides/browser/).
+For files on disk, `vastgrid-duckdb` opens them with DuckDB in Node.js: see [Files on a server](/guides/server/).
+With no server, `vastgrid-js` reads the files a person picks, and Parquet files at a URL, in a Web Worker: see
+[Large files in the browser](/guides/browser/). The same grid also comes as a command, a VS Code extension, an
+MCP App and a notebook widget: see [Apps](/apps/overview/).
 
 <CardGrid>
   <Card title="Any size" icon="document">
-    Rows are read as you scroll, a block at a time. A 1.4 GB Parquet file with 100 million rows opens in
-    20 ms; the first rows of a 735 MB CSV appear in 0.15 s while the rest loads.
+    Rows are read as you scroll, a block at a time. On a server, a 100-million-row Parquet file is read in
+    place, and its first sorted rows come in under a second while the rest of the sort is built. With no
+    server, a million-row CSV file opens in about a second.
   </Card>
   <Card title="Fast" icon="rocket">
-    Cells are drawn on a canvas: about 2 ms per frame for 1,000+ visible cells. Scrolling goes past the
-    browser's element-size limit, to billions of rows.
+    Cells are drawn on a canvas, and scrolling renders no React: no frame is dropped while scrolling, and an
+    arrow key commits React once. With the engine in a Web Worker, the page never stops while a million rows
+    are sorted.
   </Card>
   <Card title="A spreadsheet's way of working" icon="pencil">
-    Range selection with the mouse and Excel's keyboard shortcuts, copy as TSV, HTML or Markdown,
-    multi-column sort, filters, search, find, column statistics and a summary of the selection.
+    Ranges and Excel's keys, copy and paste, sorting by several columns, filters with AND and OR, search,
+    find, statistics, groups, pivots, formulas and a totals row.
   </Card>
-  <Card title="Bring your engine" icon="puzzle">
-    The grid talks to a `TableSource`: the DuckDB server engine for files, `vastgrid-browser` for files in
-    the browser, `ArraySource` for data in memory, or [your own](/guides/custom-source/).
+  <Card title="Edit and save" icon="document">
+    Type, paste, fill, undo and redo, with every value checked against its column's type. The DuckDB engine
+    saves CSV and TSV files with every byte you did not edit kept as it was.
   </Card>
-  <Card title="Safe by construction" icon="approve-check">
-    The DuckDB engine only reads files whose real location is inside the folders you allow, and that
-    cannot change while it runs. All SQL is generated; values are always parameters.
+  <Card title="Commands are the API" icon="puzzle">
+    The view is a JSON document and the place is a session. Every change is a typed command, which your own
+    UI, a host or an AI agent dispatches as the grid's menus do.
   </Card>
   <Card title="Japanese and English" icon="translate">
     Built-in texts in both languages, light and dark themes through CSS variables, ARIA grid semantics and
-    full keyboard operation.
+    full keyboard operation, IME input included.
   </Card>
 </CardGrid>
 
-vastgrid is at 0.x: its API may change in a minor release until 1.0. The
-[changelog](https://github.com/yhay81/vastgrid/blob/main/CHANGELOG.md) lists every release.
+This is vastgrid 2. It replaces vastgrid 0.1 and does not keep its API: see [Migrating from v1](/migrating-from-v1/).
+The [changelog](https://github.com/yhay81/vastgrid/blob/main/CHANGELOG.md) lists every release.

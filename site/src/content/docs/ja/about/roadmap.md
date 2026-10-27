@@ -1,12 +1,21 @@
 ---
 title: 今後
-description: vastgrid で予定していること。
+description: vastgrid のバージョン 2 の後に予定していることと、入れないこと。
 ---
 
-v1のセル編集・CSV書き戻しは実装済みです。未公開のv2の作り直しは [#33](https://github.com/yhay81/vastgrid/issues/33) で管理しています。
+バージョン 2 では、vastgrid を仕様を中心に作り直しました。JSON のドキュメントとセッション、API としてのコマンド、同じメッセージに答えるエンジンです。そのロードマップ [#33](https://github.com/yhay81/vastgrid/issues/33) は、リリースそのものを除いて終わりました。vastgrid 0.1 の機能は、すべて入っているか、理由を添えて外しています（[v2-from-v1.md](https://github.com/yhay81/vastgrid/blob/main/docs/v2-from-v1.md)）。
 
-v2では、型の有効範囲を超える値や不正なUnicode文字列を、Arrow変換で別の値へ変えずに拒否します。float32への文字入力は書き込み前に丸め、桁あふれはエラーにします。[v2仕様](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#22-values-in-json) に型の規則を記載しています。
+## 次に行うこと
 
-v2のDuckDBエンジンは、ファイルのセルへの書き込みに対応しました。書き込んだ値はファイルと分けて持ち、競合を検出し、取り消せます。CSV・TSVへの保存では、編集していないバイトをそのまま保ちます。グリッドでは ⌘S または Ctrl+S で保存します。ディスク上でファイルが変更されると読み直し、未保存の編集があれば破棄するまで残します（[#37](https://github.com/yhay81/vastgrid/issues/37)）。ビューと表全体を、サーバー側でCSV・TSV・Parquet・JSON・Excelに書き出せます（[#38](https://github.com/yhay81/vastgrid/issues/38)）。v1の計算式はプランの式に変換され、保存済みの計算式も移行します。ツールバーの「計算列」メニューで計算列を追加・変更・改名・削除できます（[#39](https://github.com/yhay81/vastgrid/issues/39)）。標準のパネルとメニュー（[#42](https://github.com/yhay81/vastgrid/issues/42)）に取りかかっています。列ごとのメニューで、その列での並べ替え、値の一覧（件数つき）や条件での絞り込み、統計の表示、集計行、グループ化、幅の調整・固定・非表示ができます。ツールバーの「グループ」メニューでグループ化する列・集計・ピボットの列を、「条件」メニューで列をまたぐ AND・OR の条件を、「列」メニューで列の表示・非表示と並べ替えを扱えます。列メニューの「書式…」で、表示名・配置・折り返し・数値や日付の書式・条件付きの色を設定できます。行のチェックと、現在の行のすべての列を出す詳細パネルにも対応しました。列グループ、セルのリンク・ボタン、独自描画、フィルも入り、v1 の機能との対応を [v2-from-v1.md](https://github.com/yhay81/vastgrid/blob/main/docs/v2-from-v1.md) にまとめました。検索（⌘F）、セルのメニュー、見出しのドラッグでの列の移動も入りました。メニューとパネルは開いたときに読み込み、最初に読み込む量は CI で gzip 後 200 KB 以内に保ちます。電文はプランや値の内側まで上限を検査し、エラーはどんな要求に対しても上限内に収めます（[#46](https://github.com/yhay81/vastgrid/issues/46)）。MCP App（[#40](https://github.com/yhay81/vastgrid/issues/40)）では、どんな大きさのファイルもチャットの中のグリッドで開き、エージェントと人が同じ状態を同じコマンドで操作します（[mcp-app.md](https://github.com/yhay81/vastgrid/blob/main/docs/mcp-app.md)）。VS Code（[#41](https://github.com/yhay81/vastgrid/issues/41)）では、どんな大きさのファイルもエディターとしてグリッドで開き、拡張機能の中の DuckDB で読みます。CSV・TSV は編集でき、VS Code の保存・名前を付けて保存・元に戻すで扱えます（[vscode.md](https://github.com/yhay81/vastgrid/blob/main/docs/vscode.md)）。1 つのコマンド `vastgrid`（[#44](https://github.com/yhay81/vastgrid/issues/44)）で、ファイルやフォルダーをブラウザーのグリッドで開けます。コンピューターの DuckDB が読み、そのアドレスを開いたブラウザーからしか届きません。`--save` を付けると、編集した CSV・TSV を ⌘S または Ctrl+S で保存できます（[cli.md](https://github.com/yhay81/vastgrid/blob/main/docs/cli.md)）。JavaScript エンジンは、仕様のすべての関数と集計で、計算列・条件・検索・グループ・ピボットとその条件を計算し、適合ケースをすべて通ります。生成したプランでは DuckDB エンジンと同じ答えを返します。表を Arrow でも受け取り、列を型付きのまま持つので、JSON の行の半分のメモリーで済みます。ブラウザーでは CSV・TSV・JSON Lines のファイルを型付きの列として開き、100 万行を約 1 秒、JSON の行の 8 分の 1 のメモリーで読み込みます（[#43](https://github.com/yhay81/vastgrid/issues/43)）。このエンジンで次に取り組むのは、HTTP の範囲リクエストで読む Parquet ファイルと、大きなファイルを読み込みながら先頭の行を見せることです。
+- **リリース。** npm の vastgrid 2.0.0、Marketplace の VS Code の拡張機能、PyPI の Python のパッケージを、同じバージョンで出します（[#45](https://github.com/yhay81/vastgrid/issues/45)）。
+- **メモリエンジン。** DuckDB のエンジンと同じように、大きなテキストのファイルを読み込む間に最初の行を返します。
+- **アプリ。** MCP App からの書き出しのダウンロード、コマンドのページを読み込み直したときの表示の設定の保持、ノートブックでの `.xlsm` のブック、Open VSX での VS Code の拡張機能です。
+- **仕様。** 未解決の問い（[§12](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#12-open-questions)）です。リスト・構造体・マップをテキストではなくそれ自身の型として扱うこと、日本語の読みの順のような照合順序、日付と時刻での `quantile` と `count_distinct` などがあります。
 
-アイデアや使い方の例は、[Issues](https://github.com/yhay81/vastgrid/issues) で歓迎します。大きなプルリクエストの前には、[CONTRIBUTING.md](https://github.com/yhay81/vastgrid/blob/main/CONTRIBUTING.md) にあるとおり、まず Issue を立ててください。
+## 入れないもの
+
+- 行の木構造。階層が列にあるデータは、複数のキーでグループ化して表示します。
+- グリッドの中のグラフ。グラフはグリッドのビューを読みます（[グラフ](/ja/guides/charts/)）。
+- 複数の列の幅をまとめて変えること。列ごとに幅を変えるか、列のメニューから値に合わせます。
+
+アイデアや使い方は [Issue](https://github.com/yhay81/vastgrid/issues) で歓迎します。大きなプルリクエストの前には、[CONTRIBUTING.md](https://github.com/yhay81/vastgrid/blob/main/CONTRIBUTING.md) のとおり、まず Issue を立ててください。

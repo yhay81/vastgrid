@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@astrojs/react";
@@ -9,28 +9,14 @@ import { defineConfig } from "astro/config";
 const siteDir = fileURLToPath(new URL(".", import.meta.url));
 const docsDir = join(siteDir, "../docs");
 
-/**
- * Copies what the repository keeps in docs/ into the site, so that there is one copy to edit: the protocol
- * becomes the reference page (with the front matter Starlight needs in place of its heading), and the README's
- * screenshot the image that links to the site show.
- */
+/** Copies the README's screenshot from docs/ into the site, as the image that links to the site show. */
 function stageDocs(): AstroIntegration {
   return {
     name: "vastgrid-stage-docs",
     hooks: {
       "astro:config:setup": () => {
-        const protocol = readFileSync(join(docsDir, "protocol.md"), "utf8").replace(/^# .*\n/, "");
-        const page = join(siteDir, "src/content/docs/reference/protocol.md");
-        const frontMatter = [
-          "---",
-          "title: Table protocol",
-          "description: The JSON protocol between RemoteSource and a table server.",
-          "editUrl: https://github.com/yhay81/vastgrid/edit/main/docs/protocol.md",
-          "---",
-        ];
-        writeFileSync(page, `${frontMatter.join("\n")}\n${protocol}`);
         mkdirSync(join(siteDir, "public"), { recursive: true });
-        copyFileSync(join(docsDir, "images/playground.jpg"), join(siteDir, "public/og.jpg"));
+        copyFileSync(join(docsDir, "images/grid.jpg"), join(siteDir, "public/og.jpg"));
       },
     },
   };
@@ -45,7 +31,7 @@ export default defineConfig({
     stageDocs(),
     starlight({
       title: "vastgrid",
-      description: "A canvas data grid for React that opens CSV, TSV, Parquet and JSON Lines files of any size.",
+      description: "A canvas data grid for React that opens CSV, TSV, Parquet, JSON Lines and Excel files of any size.",
       logo: { src: "./src/assets/logo.svg" },
       favicon: "/favicon.svg",
       defaultLocale: "root",
@@ -67,11 +53,8 @@ export default defineConfig({
           items: [
             "getting-started",
             { label: "Live demo", translations: { ja: "デモ" }, link: "/demo/" },
-            {
-              label: "Open a file (v2 preview)",
-              translations: { ja: "ファイルを開く（v2 プレビュー）" },
-              link: "/open/",
-            },
+            { label: "Open a file", translations: { ja: "ファイルを開く" }, link: "/open/" },
+            "migrating-from-v1",
           ],
         },
         {
@@ -79,12 +62,13 @@ export default defineConfig({
           translations: { ja: "ガイド" },
           items: [
             "guides/in-memory",
-            "guides/server",
             "guides/browser",
-            "guides/custom-source",
+            "guides/server",
+            "guides/custom-engine",
             "guides/using-the-grid",
-            "guides/export",
+            "guides/state",
             "guides/editing",
+            "guides/export",
             "guides/formulas",
             "guides/grouping",
             "guides/charts",
@@ -93,9 +77,29 @@ export default defineConfig({
           ],
         },
         {
+          label: "Apps",
+          translations: { ja: "アプリ" },
+          items: ["apps/overview", "apps/cli", "apps/vscode", "apps/mcp", "apps/notebook"],
+        },
+        {
           label: "Reference",
           translations: { ja: "リファレンス" },
-          items: ["reference/data-grid", "reference/table-source", "reference/duckdb", "reference/protocol"],
+          items: [
+            "reference/data-grid",
+            "reference/core",
+            "reference/commands",
+            "reference/engines",
+            {
+              label: "Specification",
+              translations: { ja: "仕様" },
+              link: "https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md",
+            },
+            {
+              label: "Specification of the React package",
+              translations: { ja: "React パッケージの仕様" },
+              link: "https://github.com/yhay81/vastgrid/blob/main/docs/v2-react.md",
+            },
+          ],
         },
         {
           label: "About",
@@ -116,7 +120,7 @@ export default defineConfig({
     react(),
   ],
   vite: {
-    // Use the TypeScript sources of the packages, as the playground does, so that the site shows the code it
+    // Use the TypeScript sources of the packages, as the examples do, so that the site shows the code it
     // is built with and needs no build of the packages first. The rest are Vite's default conditions, for the
     // browser and for the server environments that render the pages (they import the grid's modules too).
     resolve: { conditions: ["vastgrid-source", "module", "browser", "development|production"] },

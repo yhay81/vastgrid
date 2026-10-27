@@ -1,64 +1,84 @@
 ---
 title: Getting started
-description: Install vastgrid and show a table from memory or from files on a server.
+description: Install vastgrid, and show a table from memory, from a file in the browser or from files on a server.
 ---
 
-import { Tabs, TabItem } from "@astrojs/starlight/components";
+import { LinkCard } from "@astrojs/starlight/components";
 
-vastgrid comes in four packages:
+The grid is one package, and the data comes from an engine. Pick the engine by where the data is:
 
 | Package | Contents |
 | --- | --- |
-| [`vastgrid`](https://www.npmjs.com/package/vastgrid) | The `DataGrid` component for React. It re-exports everything in `vastgrid-core`. |
-| [`vastgrid-core`](https://www.npmjs.com/package/vastgrid-core) | The table protocol, `ArraySource`, `RemoteSource`, the row cache, selection and scroll models, formatting. Framework-free. |
-| [`vastgrid-duckdb`](https://www.npmjs.com/package/vastgrid-duckdb) | A Node.js table server backed by DuckDB, with a Fetch API request handler. |
-| [`vastgrid-browser`](https://www.npmjs.com/package/vastgrid-browser) | Reads local files and Parquet URLs (HTTP Range) in a Web Worker, with no server. |
+| [`vastgrid`](https://www.npmjs.com/package/vastgrid) | `DataGrid`, `GridProvider` and the hooks for React. `vastgrid/core` has the store and the transports without React, and `vastgrid/server` reads the first rows on a server. |
+| [`vastgrid-js`](https://www.npmjs.com/package/vastgrid-js) | The memory engine, in the page or in a Web Worker: rows in JavaScript, Arrow tables, CSV, TSV, JSON Lines and Excel files, and Parquet files on disk or at a URL. |
+| [`vastgrid-duckdb`](https://www.npmjs.com/package/vastgrid-duckdb) | The DuckDB engine for Node.js, for files of any size, with a handler for HTTP. |
+| [`vastgrid-spec`](https://www.npmjs.com/package/vastgrid-spec) | The specification as code: types, commands, plan checking and the conformance tests. For your own engine. |
+| [`vastgrid-sql`](https://www.npmjs.com/package/vastgrid-sql) | Plans as DuckDB SQL, for an engine of your own on DuckDB. |
+
+The same grid also comes ready to use, with no code: a command (`npx vastgrid-cli data.parquet`), a VS Code
+extension, an MCP App for chats and a widget for Jupyter notebooks. See [Apps](/apps/overview/).
 
 ## Requirements
 
-- **`vastgrid`**: React 18 or later, and a browser with the CSS `light-dark()` function: Chrome and Edge
-  123, Firefox 120, Safari 17.5 or later.
-- **`vastgrid-duckdb`**: Node.js 20 or later, on a platform DuckDB ships a binary for: Linux (x64 or
+- **`vastgrid`**: React 19.3 or later, and a browser with the CSS `light-dark()` function: Chrome and Edge 123,
+  Firefox 120, Safari 17.5 or later. React is needed only for `DataGrid` and the hooks; `vastgrid/core` and
+  `vastgrid/server` run without it.
+- **`vastgrid-js`**: the same browsers, with module workers to run it in a Web Worker, or Node.js 20 or later.
+- **`vastgrid-duckdb`**: Node.js 20 or later, on a platform DuckDB's Node.js bindings ship for: Linux (x64 or
   arm64, glibc or musl), macOS (x64 or arm64) or Windows (x64 or arm64).
-- **`vastgrid-browser`**: browsers with module workers (Chrome and Edge 80, Firefox 114, Safari 15 or later).
-  No special headers (COOP/COEP) are needed.
-- **`vastgrid-core`** has no dependencies and runs in the same browsers and in Node.js 20 or later.
 
 ## Data in memory
 
 ```bash
-npm install vastgrid
+npm install vastgrid vastgrid-js
 ```
 
-Give the grid a `TableSource` and a height. `ArraySource` holds rows that are already in the browser:
+Until 2.0.0 is out, `npm install vastgrid` still installs vastgrid 0.1. To try version 2 before then, install
+its prereleases from the `next` tag: `npm install vastgrid@next vastgrid-js@next`.
+
+Make the engine and its transport once, outside the component, and give the grid the name of a table and a
+height:
 
 ```tsx
-import { ArraySource, DataGrid } from "vastgrid";
+import { DataGrid, localTransport } from "vastgrid";
 import "vastgrid/styles.css";
-import { useMemo } from "react";
+import { memoryEngine } from "vastgrid-js";
 
-export function People({ people }: { people: { name: string; born: number; field: string }[] }) {
-  const source = useMemo(
-    () =>
-      new ArraySource({
-        columns: ["name", "born", "field"],
-        rows: people.map((person) => [person.name, person.born, person.field]),
-      }),
-    [people],
-  );
-  return (
-    <div style={{ height: 600 }}>
-      <DataGrid source={source} />
-    </div>
-  );
+const transport = localTransport(
+  memoryEngine({
+    tables: {
+      people: {
+        columns: [
+          { name: "name", type: "string" },
+          { name: "born", type: "integer" },
+          { name: "field", type: "string" },
+        ],
+        rows: [
+          ["Ada Lovelace", 1815, "Mathematics"],
+          ["Grace Hopper", 1906, "Computer science"],
+        ],
+      },
+    },
+  }),
+);
+
+export function App() {
+  return <DataGrid transport={transport} table="people" style={{ height: 600 }} />;
 }
 ```
 
-The grid fills its parent, so the parent needs a height (a fixed one, or a flex or grid item that
-stretches). Create the source once per table: a new source starts a new grid.
+- The grid fills its parent's height, or the height you give it. It draws only the rows on screen.
+- The memory engine takes rows with their columns' types, Arrow tables and files: see
+  [Data in memory](/guides/in-memory/).
+- `localTransport` calls the engine in the same thread. For a large table, run the engine in a Web Worker with
+  `workerTransport` so that sorting never stops the page: see [Large files in the browser](/guides/browser/).
 
-`ArraySource` sorts, filters and summarizes on the main thread and suits up to a few hundred thousand
-rows. See [Data in memory](/guides/in-memory/) for its options.
+## A file in the browser
+
+The memory engine reads a file that a person picks, in a Web Worker, without uploading it: CSV, TSV, JSON Lines,
+Excel and Parquet, and Parquet files at a URL by HTTP ranges. A million-row CSV file opens in about a second.
+[Large files in the browser](/guides/browser/) has the worker and the page. [Open a file](/open/) is that page,
+ready to try.
 
 ## Files on a server
 
@@ -66,104 +86,42 @@ rows. See [Data in memory](/guides/in-memory/) for its options.
 npm install vastgrid vastgrid-duckdb
 ```
 
-The server opens files with DuckDB and answers the grid's requests. The handler takes a Fetch API
-`Request`, so it works in any framework that has them:
-
-<Tabs>
-  <TabItem label="Next.js">
+On the server, `DuckDBEngine` opens the files under the folders you allow, and `createHttpHandler` answers the
+grid's requests:
 
 ```ts
-// app/api/table/route.ts
-import path from "node:path";
-import { createTableHandler, TableEngine } from "vastgrid-duckdb";
+// server.ts
+import { createServer } from "node:http";
+import { createHttpHandler, DuckDBEngine } from "vastgrid-duckdb";
 
-const root = "/srv/data";
-const engine = TableEngine.create({ allowedDirectories: [root], tempDirectory: "/tmp/vastgrid" });
-
-export const POST = createTableHandler({
-  engine: () => engine,
-  // Map the client's reference to a file, refusing anything outside your folder.
-  resolve: (ref) => {
-    const file = path.resolve(root, ref);
-    if (!file.startsWith(`${root}${path.sep}`)) throw new Error("Not allowed");
-    return file;
-  },
-});
-```
-
-```ts
-// next.config.ts
-export default {
-  serverExternalPackages: ["@duckdb/node-api", "@duckdb/node-bindings"],
-};
-```
-
-  </TabItem>
-  <TabItem label="Hono">
-
-```ts
-import path from "node:path";
-import { Hono } from "hono";
-import { createTableHandler, TableEngine } from "vastgrid-duckdb";
-
-const root = "/srv/data";
-const engine = TableEngine.create({ allowedDirectories: [root], tempDirectory: "/tmp/vastgrid" });
-const table = createTableHandler({
-  engine: () => engine,
-  resolve: (ref) => {
-    const file = path.resolve(root, ref);
-    if (!file.startsWith(`${root}${path.sep}`)) throw new Error("Not allowed");
-    return file;
-  },
+const engine = await DuckDBEngine.create({
+  allowedDirectories: ["/srv/data"],
+  tempDirectory: "/tmp/vastgrid",
 });
 
-const app = new Hono();
-app.post("/api/table", (c) => table(c.req.raw));
-export default app;
+createServer(createHttpHandler(engine, { path: "/api/table" })).listen(8080);
 ```
 
-  </TabItem>
-</Tabs>
-
-In the browser, a `RemoteSource` names the endpoint and the file:
+In the page, `httpTransport` posts the grid's messages, and `table` is a file under an allowed folder:
 
 ```tsx
-"use client";
-import { DataGrid, RemoteSource } from "vastgrid";
+import { DataGrid, httpTransport } from "vastgrid";
 import "vastgrid/styles.css";
-import { useMemo } from "react";
 
-export function Table({ file }: { file: string }) {
-  const source = useMemo(() => new RemoteSource({ endpoint: "/api/table", ref: file }), [file]);
-  return (
-    <div style={{ height: 600 }}>
-      <DataGrid source={source} />
-    </div>
-  );
+const transport = httpTransport("/api/table", { events: "/api/table/events" });
+
+export function Sales() {
+  return <DataGrid transport={transport} table="sales/2025.parquet" style={{ height: 600 }} />;
 }
 ```
 
-`vastgrid-duckdb` uses `@duckdb/node-api`, a native module: keep it out of server bundles and ship the
-platform package (`@duckdb/node-bindings-<platform>`, about 120 MB on macOS) with your server.
-[Files on a server](/guides/server/) covers the engine's options, security and deployment.
-
-## Files in the browser
-
-With no server, `vastgrid-browser` reads a file the user picks, or a Parquet file at a URL, in a Web Worker:
-
-```tsx
-import { BrowserSource } from "vastgrid-browser";
-
-const source = new BrowserSource({ file }); // or { url: "https://example.com/data.parquet" }
-<DataGrid source={source} />;
-// source.close() when it is no longer shown
-```
-
-[Files in the browser](/guides/browser/) covers the formats, what works with URLs, and serving Parquet.
+DuckDB reads the file where it is, and the page receives only the rows it shows. A 100-million-row Parquet file
+shows its first sorted rows in under a second. [Files on a server](/guides/server/) covers the options,
+frameworks with the Fetch API, Server Functions and rendering the first rows on the server.
 
 ## Next steps
 
-- Try the [demo](/demo/), or see [what the grid does](/guides/using-the-grid/) with the mouse and the
-  keyboard.
-- Restyle it with [CSS variables](/guides/theming/).
-- Connect your own engine with a [custom `TableSource`](/guides/custom-source/).
+<LinkCard title="Using the grid" description="What a person can do with the mouse and the keys." href="/guides/using-the-grid/" />
+<LinkCard title="State and your own controls" description="Keep the view, and drive the grid from your own buttons." href="/guides/state/" />
+<LinkCard title="DataGrid" description="Every prop of the component." href="/reference/data-grid/" />
+<LinkCard title="Migrating from v1" description="What changed from vastgrid 0.1." href="/migrating-from-v1/" />

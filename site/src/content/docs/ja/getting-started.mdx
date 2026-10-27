@@ -1,59 +1,73 @@
 ---
 title: 使い始める
-description: vastgrid をインストールして、メモリ上のデータやサーバーのファイルを表で表示します。
+description: vastgrid をインストールして、メモリ上のデータ、ブラウザーで開くファイル、サーバーのファイルを表で表示します。
 ---
 
-import { Tabs, TabItem } from "@astrojs/starlight/components";
+import { LinkCard } from "@astrojs/starlight/components";
 
-vastgrid は 4 つのパッケージからなります。
+グリッドは 1 つのパッケージで、データはエンジンから読みます。エンジンはデータのある場所で選びます。
 
 | パッケージ | 内容 |
 | --- | --- |
-| [`vastgrid`](https://www.npmjs.com/package/vastgrid) | React の `DataGrid` コンポーネント。`vastgrid-core` のものをすべて再エクスポートします。 |
-| [`vastgrid-core`](https://www.npmjs.com/package/vastgrid-core) | 表のプロトコル、`ArraySource`・`RemoteSource`、行のキャッシュ、選択とスクロールの写像、書式。フレームワークに依存しません。 |
-| [`vastgrid-duckdb`](https://www.npmjs.com/package/vastgrid-duckdb) | DuckDB を使う Node.js の表のサーバーと、Fetch API の要求の受け口。 |
-| [`vastgrid-browser`](https://www.npmjs.com/package/vastgrid-browser) | ローカルのファイルと URL の Parquet（HTTP Range）を Web Worker で読みます。サーバーは不要です。 |
+| [`vastgrid`](https://www.npmjs.com/package/vastgrid) | React の `DataGrid`・`GridProvider` とフック。`vastgrid/core` には React を使わないストアとトランスポート、`vastgrid/server` にはサーバーで最初の行を読む関数があります。 |
+| [`vastgrid-js`](https://www.npmjs.com/package/vastgrid-js) | ページか Web Worker の中で動くメモリエンジン。JavaScript の行、Arrow の表、CSV・TSV・JSON Lines・Excel のファイル、ディスク上や URL の Parquet を扱います。 |
+| [`vastgrid-duckdb`](https://www.npmjs.com/package/vastgrid-duckdb) | Node.js の DuckDB のエンジン。どんな大きさのファイルも開け、HTTP の受け口が付いています。 |
+| [`vastgrid-spec`](https://www.npmjs.com/package/vastgrid-spec) | コードにした仕様。型、コマンド、プランの検査、適合性のテストがあり、自作のエンジンで使います。 |
+| [`vastgrid-sql`](https://www.npmjs.com/package/vastgrid-sql) | プランを DuckDB の SQL にします。DuckDB の上に自作のエンジンを作るときに使います。 |
+
+同じグリッドは、コードを書かずにそのまま使える形でもあります。コマンド（`npx vastgrid-cli data.parquet`）、VS Code の拡張機能、チャットの中の MCP App、Jupyter のノートブックのウィジェットです。[アプリ](/ja/apps/overview/)を参照してください。
 
 ## 動作環境
 
-- **`vastgrid`**: React 18 以降と、CSS の `light-dark()` に対応したブラウザー（Chrome・Edge 123、Firefox 120、Safari 17.5 以降）。
-- **`vastgrid-duckdb`**: Node.js 20 以降。DuckDB のバイナリがある Linux（x64・arm64、glibc・musl）、macOS（x64・arm64）、Windows（x64・arm64）で動きます。
-- **`vastgrid-browser`**: モジュールの Worker に対応したブラウザー（Chrome・Edge 80、Firefox 114、Safari 15 以降）。特別なヘッダー（COOP/COEP）は要りません。
-- **`vastgrid-core`** は依存がなく、同じブラウザーと Node.js 20 以降で動きます。
+- **`vastgrid`**: React 19.3 以降と、CSS の `light-dark()` に対応したブラウザー（Chrome・Edge 123、Firefox 120、Safari 17.5 以降）。React が要るのは `DataGrid` とフックだけで、`vastgrid/core` と `vastgrid/server` は React なしで動きます。
+- **`vastgrid-js`**: 同じブラウザー（Web Worker で動かすにはモジュールの Worker に対応したもの）か、Node.js 20 以降。
+- **`vastgrid-duckdb`**: Node.js 20 以降。DuckDB の Node.js のバインディングがある Linux（x64・arm64、glibc・musl）、macOS（x64・arm64）、Windows（x64・arm64）で動きます。
 
 ## メモリ上のデータ
 
 ```bash
-npm install vastgrid
+npm install vastgrid vastgrid-js
 ```
 
-グリッドには `TableSource` と高さを渡します。`ArraySource` は、すでにブラウザーにある行を持ちます。
+2.0.0 が出るまでは、`npm install vastgrid` で入るのは vastgrid 0.1 のままです。それまでにバージョン 2 を試すには、`next` タグのプレリリースを入れます。`npm install vastgrid@next vastgrid-js@next` です。
+
+エンジンとトランスポートはコンポーネントの外で一度だけ作り、グリッドには表の名前と高さを渡します。
 
 ```tsx
-import { ArraySource, DataGrid } from "vastgrid";
+import { DataGrid, localTransport } from "vastgrid";
 import "vastgrid/styles.css";
-import { useMemo } from "react";
+import { memoryEngine } from "vastgrid-js";
 
-export function People({ people }: { people: { name: string; born: number; field: string }[] }) {
-  const source = useMemo(
-    () =>
-      new ArraySource({
-        columns: ["name", "born", "field"],
-        rows: people.map((person) => [person.name, person.born, person.field]),
-      }),
-    [people],
-  );
-  return (
-    <div style={{ height: 600 }}>
-      <DataGrid source={source} />
-    </div>
-  );
+const transport = localTransport(
+  memoryEngine({
+    tables: {
+      people: {
+        columns: [
+          { name: "name", type: "string" },
+          { name: "born", type: "integer" },
+          { name: "field", type: "string" },
+        ],
+        rows: [
+          ["Ada Lovelace", 1815, "Mathematics"],
+          ["Grace Hopper", 1906, "Computer science"],
+        ],
+      },
+    },
+  }),
+);
+
+export function App() {
+  return <DataGrid transport={transport} table="people" style={{ height: 600 }} />;
 }
 ```
 
-グリッドは親の要素いっぱいに広がるので、親に高さが必要です（固定の高さか、伸びる flex や grid の子要素）。ソースは表ごとに 1 回だけ作ってください。新しいソースを渡すと、グリッドを最初から作り直します。
+- グリッドは親の高さか、渡した高さいっぱいに広がります。描くのは画面に見えている行だけです。
+- メモリエンジンは、列の型を付けた行、Arrow の表、ファイルを受け取ります。[メモリ上のデータ](/ja/guides/in-memory/)を参照してください。
+- `localTransport` は同じスレッドのエンジンを呼びます。大きな表では、エンジンを Web Worker に置いて `workerTransport` でつなぐと、並べ替えの間もページが止まりません。[ブラウザーで開く大きなファイル](/ja/guides/browser/)を参照してください。
 
-`ArraySource` は並べ替え・絞り込み・集計を画面のスレッドで行います。数十万行までが目安です。オプションは[メモリ上のデータ](/ja/guides/in-memory/)を参照してください。
+## ブラウザーで開くファイル
+
+メモリエンジンは、利用者が選んだファイルを Web Worker の中で、アップロードせずに読みます。CSV・TSV・JSON Lines・Excel・Parquet のファイルと、HTTP の範囲指定で読む URL の Parquet です。100 万行の CSV は約 1 秒で開きます。Worker とページのコードは[ブラウザーで開く大きなファイル](/ja/guides/browser/)にあります。それをそのまま試せるページが[ファイルを開く](/ja/open/)です。
 
 ## サーバーのファイル
 
@@ -61,100 +75,39 @@ export function People({ people }: { people: { name: string; born: number; field
 npm install vastgrid vastgrid-duckdb
 ```
 
-サーバーは DuckDB でファイルを開き、グリッドの要求に答えます。受け口は Fetch API の `Request` を受け取るので、それを使うどのフレームワークでも動きます。
-
-<Tabs>
-  <TabItem label="Next.js">
+サーバーでは、`DuckDBEngine` が許可したフォルダーの中のファイルを開き、`createHttpHandler` がグリッドの要求に答えます。
 
 ```ts
-// app/api/table/route.ts
-import path from "node:path";
-import { createTableHandler, TableEngine } from "vastgrid-duckdb";
+// server.ts
+import { createServer } from "node:http";
+import { createHttpHandler, DuckDBEngine } from "vastgrid-duckdb";
 
-const root = "/srv/data";
-const engine = TableEngine.create({ allowedDirectories: [root], tempDirectory: "/tmp/vastgrid" });
-
-export const POST = createTableHandler({
-  engine: () => engine,
-  // 画面から受け取った ref をファイルに対応させる。フォルダーの外は拒否する。
-  resolve: (ref) => {
-    const file = path.resolve(root, ref);
-    if (!file.startsWith(`${root}${path.sep}`)) throw new Error("Not allowed");
-    return file;
-  },
-});
-```
-
-```ts
-// next.config.ts
-export default {
-  serverExternalPackages: ["@duckdb/node-api", "@duckdb/node-bindings"],
-};
-```
-
-  </TabItem>
-  <TabItem label="Hono">
-
-```ts
-import path from "node:path";
-import { Hono } from "hono";
-import { createTableHandler, TableEngine } from "vastgrid-duckdb";
-
-const root = "/srv/data";
-const engine = TableEngine.create({ allowedDirectories: [root], tempDirectory: "/tmp/vastgrid" });
-const table = createTableHandler({
-  engine: () => engine,
-  resolve: (ref) => {
-    const file = path.resolve(root, ref);
-    if (!file.startsWith(`${root}${path.sep}`)) throw new Error("Not allowed");
-    return file;
-  },
+const engine = await DuckDBEngine.create({
+  allowedDirectories: ["/srv/data"],
+  tempDirectory: "/tmp/vastgrid",
 });
 
-const app = new Hono();
-app.post("/api/table", (c) => table(c.req.raw));
-export default app;
+createServer(createHttpHandler(engine, { path: "/api/table" })).listen(8080);
 ```
 
-  </TabItem>
-</Tabs>
-
-ブラウザーでは、`RemoteSource` に受け口の URL とファイルを指定します。
+ページでは、`httpTransport` がグリッドのメッセージを送ります。`table` は許可したフォルダーの中のファイルです。
 
 ```tsx
-"use client";
-import { DataGrid, RemoteSource } from "vastgrid";
+import { DataGrid, httpTransport } from "vastgrid";
 import "vastgrid/styles.css";
-import { useMemo } from "react";
 
-export function Table({ file }: { file: string }) {
-  const source = useMemo(() => new RemoteSource({ endpoint: "/api/table", ref: file }), [file]);
-  return (
-    <div style={{ height: 600 }}>
-      <DataGrid source={source} />
-    </div>
-  );
+const transport = httpTransport("/api/table", { events: "/api/table/events" });
+
+export function Sales() {
+  return <DataGrid transport={transport} table="sales/2025.parquet" style={{ height: 600 }} />;
 }
 ```
 
-`vastgrid-duckdb` が使う `@duckdb/node-api` はネイティブの拡張です。サーバーのバンドルに含めず、OS ごとのパッケージ（`@duckdb/node-bindings-<platform>`。macOS で約 120 MB）をサーバーと一緒に配布してください。エンジンのオプション、安全性、デプロイは[サーバーのファイル](/ja/guides/server/)で説明します。
-
-## ブラウザーで開くファイル
-
-サーバーがなくても、`vastgrid-browser` が利用者の選んだファイルや URL の Parquet を Web Worker で読みます。
-
-```tsx
-import { BrowserSource } from "vastgrid-browser";
-
-const source = new BrowserSource({ file }); // URL なら { url: "https://example.com/data.parquet" }
-<DataGrid source={source} locale="ja" />;
-// 表示しなくなったら source.close()
-```
-
-対応する形式、URL でできること、Parquet の配信は[ブラウザーで開くファイル](/ja/guides/browser/)で説明します。
+DuckDB はファイルをその場で読み、ページが受け取るのは表示する行だけです。1 億行の Parquet でも、並べ替えの最初の行は 1 秒以内に表示されます。設定、Fetch API のフレームワーク、Server Functions、サーバーでの最初の行の描画は、[サーバーのファイル](/ja/guides/server/)にあります。
 
 ## 次に読む
 
-- [デモ](/ja/demo/)を試すか、マウスとキーボードでの[グリッドの操作](/ja/guides/using-the-grid/)を見てください。
-- [CSS 変数](/ja/guides/theming/)で見た目を変えられます。
-- [自作の `TableSource`](/ja/guides/custom-source/)で、ほかのエンジンにつなげられます。
+<LinkCard title="グリッドの操作" description="マウスとキーでできること。" href="/ja/guides/using-the-grid/" />
+<LinkCard title="状態と自作の操作部品" description="表示の設定を残し、自作のボタンからグリッドを動かします。" href="/ja/guides/state/" />
+<LinkCard title="DataGrid" description="コンポーネントのすべての props。" href="/ja/reference/data-grid/" />
+<LinkCard title="v1 からの移行" description="vastgrid 0.1 から変わったこと。" href="/ja/migrating-from-v1/" />

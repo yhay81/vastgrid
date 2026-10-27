@@ -1,268 +1,174 @@
 ---
 title: Editing cells
-description: Sources that can write cells, the cell editor, how values are checked, and how saving works.
+description: When cells are writable, the editor, how typed text is read, pasting, filling, undo, failed writes and saving into the file.
 ---
 
-The grid edits cells of sources that can write them. Other sources stay read-only, as before:
+The grid edits like a spreadsheet: type into a cell, paste a range, clear, fill, undo. The engine keeps written
+values apart from the file, and every later read sees them: sorts, filters, groups, find and exports. The DuckDB
+engine can also save them into the CSV or TSV file they came from.
 
-| Source | Editing |
-| --- | --- |
-| `ArraySource` | With `editable: true`. Values are written into its arrays. |
-| `RemoteSource` + `vastgrid-duckdb` | When the engine is created with `editable: true`. Written values are kept in the engine, apart from the file. |
-| `BrowserSource` (`vastgrid-browser`) | Read-only. |
-| Your own `TableSource` | When it reports `capabilities.edit` and has `updateCells`. |
+## When cells are writable
 
-A grid can stay read-only with `readOnly`. Columns marked `readOnly` in the schema, columns whose type
-cannot be typed (lists, structs, maps, binary values, intervals), and [formula columns](/guides/formulas/)
-stay read-only too: typing, pasting, filling and clearing never write them. A formula that uses a written
-column shows its new value, and a view sorted or filtered by a formula column is created again.
+A cell is writable when the engine writes (`capabilities.write`), its column is a column of the table (not a
+[formula](/guides/formulas/) column) that is not `readOnly` and not of type `interval` or `binary`, and the view
+is not [grouped](/guides/grouping/). Typing into another cell says "This cell is not written."
 
-```tsx
-const source = useMemo(() => new ArraySource({ columns, rows, editable: true }), [rows]);
+| Engine | Writes | Saves into the file |
+| --- | --- | --- |
+| Memory engine (`vastgrid-js`) | Tables given with `editable: true` | No: written values stay in memory, apart from the `rows` you gave |
+| DuckDB engine (`vastgrid-duckdb`) | Every table | With `saveFiles: true`, for CSV and TSV files that are not compressed |
 
-<DataGrid
-  source={source}
-  validateCell={(cell) => (cell.schema.name === "age" && Number(cell.value) < 0 ? "Age cannot be negative." : null)}
-  onCellsChange={(event) => {
-    if (event.status === "saved") console.log(`${event.changes.length} cells saved`);
-  }}
-/>
+```ts
+import { memoryEngine } from "vastgrid-js";
+
+const engine = memoryEngine({ tables: { orders: { columns, rows, editable: true } } });
 ```
 
-## Editing with the keyboard and the pointer
+```ts
+import { DuckDBEngine } from "vastgrid-duckdb";
 
-| Keys | Action |
+const engine = await DuckDBEngine.create({
+  allowedDirectories: ["/srv/data"],
+  tempDirectory: "/tmp/vastgrid",
+  saveFiles: true,
+});
+```
+
+The DuckDB engine's written values belong to the table: every grid that has the same file open through the same
+engine sees them, and they are dropped, unless saved, when the last of them closes.
+
+## The editor
+
+- Typing a character opens the editor with that character in it. An IME composition starts in the editor too, so
+  Japanese, Chinese or Korean text goes in whole.
+- F2 or a double click opens it with the cell's value as text (`2024-01-31`, `1234.50`).
+- Enter writes and moves down (Shift + Enter up), and Tab writes and moves right (Shift + Tab left). In a
+  selection of several cells, they walk through it.
+- Alt + Enter (⌃ + Return on a Mac) starts a new line. Esc cancels. Clicking elsewhere in the page writes.
+- Text that is not a value of the column keeps the editor open and says so ("This is not a value of price.").
+
+The grid shows a written value at once, before the engine answers. If the write fails, the cell shows its value
+again and the status bar says why (see [When a write fails](#when-a-write-fails)).
+
+## How typed text is read
+
+| Type | Accepted |
 | --- | --- |
-| Typing a character (also with an IME) | Replace the active cell's value; the character goes into the editor |
-| F2 · double click | Edit the value (the cursor goes to its end) |
-| Enter · Shift + Enter | Save and move down · up |
-| Tab · Shift + Tab | Save and move right · left |
-| Alt + Enter (also ⌃↩ on a Mac) | New line in the editor |
-| Esc | Cancel, keeping the value |
-| ⌘/Ctrl + S | Save the written cells into the file (sources that can, see [Saving into the file](#saving-into-the-file)) |
-| Delete · Backspace | Clear the selected cells (every range) |
-| ⌘/Ctrl + V | Paste from the selection's top-left cell (see [Pasting](#pasting)) |
-| ⌘/Ctrl + D · ⌘/Ctrl + R | Fill down · right (see [Filling](#filling)) |
-| ⌘/Ctrl + Z · ⌘/Ctrl + Shift + Z (also Ctrl + Y) | Undo · redo the last write (see [Undo and redo](#undo-and-redo)) |
+| `string` | The text as typed; text of only white space is null |
+| `integer`, `bigint` | Digits with an optional sign, within the type's range |
+| `decimal` | `12.5`, `.5`: no more fraction digits than the column's scale, no exponent |
+| `float` | `1.5`, `1.5e3`, `inf`, `-infinity`, `nan` |
+| `boolean` | `true`, `false`, `1`, `0`, in any letter case |
+| `date` | `2024-01-31`, `2024/1/31`, `2024.1.31`, naming a real day |
+| `time` | `9:05`, `09:05:30`, `09:05:30.25` (up to 6 fraction digits) |
+| `timestamp` | A date, then a space or `T` and a time |
+| `timestamptz` | A timestamp, then `Z` or an offset such as `+09:00`; without one, UTC |
+| `uuid` | 32 hex digits, with or without dashes |
+| `interval`, `binary` | Not typed |
 
-Clicking elsewhere saves too. Keys that end an IME composition (Enter, Esc) are left to the IME. The
-editor is a text field over the cell, in the page rather than on the canvas, so it works with IMEs,
-spell-checking and screen readers; its label names the cell, and a refused value is described next to it.
+White space around the text is removed, except for strings, and empty text is null for every type. Pasted numbers
+may group their digits with commas (`1,234.5`). The full rules are in
+[§7.3](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#73-reading-typed-text) of the specification.
 
-`onCellDoubleClick` is called first for a double click and for F2: `event.preventDefault()` keeps the
-editor (and the cell inspector) closed. In a grid that edits, the inspector is in the context menu
-("Show full value"), which also has "Edit cell" and "Clear contents". In a read-only grid, F2 and a double
-click open the inspector, as before.
+## Pasting, clearing and filling
 
-## How values are checked
+- **Paste** (⌘/Ctrl + V) writes the clipboard's tab-separated text, or the first table of its HTML, from the
+  top-left cell of each range. The values repeat over a range whose rows and columns are whole multiples of
+  theirs. A single value goes into every selected cell, also of several ranges; several values cannot go into
+  several ranges. Rows and columns beyond the view are left out, and rows are never added.
+- **Clear** (Delete or Backspace) writes null into the selected cells that are writable and not blank.
+- **Fill down** (⌘/Ctrl + D) and **fill right** (⌘/Ctrl + R) copy the first row or column of each range into the
+  rest. A range of one row takes the row above it, and one of one column the column to its left. Values keep
+  their type when the two columns have the same one, and are read from their text otherwise.
 
-Typed text is read as the column's type with `parseCellInput` from `vastgrid-core`, which sources also
-use (`normalizeCellValue`), so the grid and the source accept the same values:
-
-| Type | Accepted text | Written value |
-| --- | --- | --- |
-| `integer`, `bigint` | Digits with an optional sign, in the range of the engine's type (`TINYINT` … `UHUGEINT`) | A number, or text when a JS number cannot hold it exactly |
-| `decimal` | Digits with an optional point; at most the scale and precision of `DECIMAL(p,s)` | Text with the digits as typed (never rounded) |
-| `float` | A number, `NaN`, `Infinity` | A number (`"NaN"`, `"Infinity"` as text) |
-| `boolean` | `true`, `false`, `1`, `0` | `true` or `false` |
-| `date` | `yyyy-mm-dd` (also `/` or `.`) | `yyyy-mm-dd` |
-| `time` | `hh:mm[:ss[.fraction]]` (with an offset for `TIME WITH TIME ZONE`) | `hh:mm:ss[.fraction]` |
-| `timestamp`, `timestamptz` | A date, a space or `T`, and a time (with `Z` or an offset for `timestamptz`) | `yyyy-mm-dd hh:mm:ss[.fraction][offset]` |
-| `uuid`, `json`, `string` | A UUID · valid JSON · any text | The same text |
-
-An empty text (or only spaces) is a blank (`null`). Numbers are typed without grouping or the column's
-display format; the editor starts with the value itself, not with its formatted text. Long text cut for
-display is read whole before it is edited.
-
-After the type, `validateCell` checks the value: return a message to refuse it, or nothing to accept it.
-It may return a promise, for example to ask a server; the editor shows "Checking…" meanwhile. A refused
-value keeps the editor open with the message.
-
-## Pasting
-
-⌘/Ctrl + V (or "Paste" in the context menu, which may ask for permission to read the clipboard) pastes
-what Excel, Numbers, Google Sheets or a web page copied:
-
-- **What is read.** The clipboard's text as tab-separated values (`parseTsv`): rows end with a line
-  break, quoted fields may hold tabs, line breaks and `""` quotes, and empty cells are blanks. Without
-  text, the first HTML table (`parseHtmlTable`), with `colspan` and `rowspan` filled with empty cells.
-- **Where it goes.** From the top-left cell of the selection, over the visible columns in display order.
-  A selection that is a whole multiple of the pasted rows and columns is filled by repeating them, as in
-  spreadsheets. One value fills every selected cell, also of several ranges; more values cannot be
-  pasted into several ranges.
-- **Past the end.** Rows and columns beyond the end of the view are left out, and the notice says how
-  many; rows are never added.
-- **Values.** Every value is checked first, as typed values are, except that numbers may group their
-  digits with commas (`1,234.50`). One value that does not fit, a read-only column in the target, or a
-  value `validateCell` refuses, refuses the whole paste, and the notice names the first cell and the
-  number of cells. Nothing is written then.
-- **One write.** The cells are written with one `updateCells` request, which the source saves together
-  or not at all; a failure is shown as for one cell (Retry, Discard). At most 100,000 cells
-  (`MAX_UPDATE_CELLS`) are pasted at once.
-- **Rows not loaded.** Pasting into rows that are not loaded first reads their positions (a request
-  without columns). Esc cancels the paste while it reads them; nothing is written then.
-
-## Saving
-
-A change is sent with `TableSource.updateCells` as one request. Writes are sent one at a time, in the
-order they were made:
-
-- **While saving**, the cell shows the new value with a mark in its corner; the status line says so when
-  saving takes more than a moment.
-- **Saved**: the grid reads the rows again (showing the old values meanwhile, so nothing blinks). When the
-  view's sort, filters or search use a written column, the view is created again and the grid returns to
-  the same place; other views are kept. The selection summary, statistics, the detail panel and exports
-  read the new values.
-- **Failed**: the cell shows the value the source has again, with a red mark, and a line above the status
-  bar says why, with **Retry** and **Discard**.
-- **Conflict**: each change carries the value it was made from. When another user changed the cell
-  meanwhile, nothing is written (`edit_conflict`), the cells are read again, and the user can
-  **Overwrite** or **Discard**.
-- **Another revision**: a write carries the table's `revision`. Once the file was read again
-  (`revision_changed`), row positions may name other records, so the write can only be discarded.
-
-`onCellsChange` reports each write once it is saved or failed, with its cells (`rowId`, `column`,
-`value`, `previous`), the reason (`edit`, `clear`, …) and the error.
-
-Cells are named by the row's position in the table (`rowId`), which stays the same while the view is
-sorted or filtered again and while cells are written, so checked rows stay checked. Writes keep the
-table's `revision` and change `info().edits.version` instead; other grids of the same source learn of
-them through `subscribe` (`RemoteSource` asks the server every 2 seconds) and read the rows again.
-
-## Filling
-
-⌘/Ctrl + D fills down: the first row of each selected range is copied into the rows below it. ⌘/Ctrl + R
-fills right: the first column is copied into the columns right of it. A range of one row (one column)
-takes the row above it (the column left of it), as in spreadsheets. The context menu has "Fill down" and
-"Fill right". While the grid has focus, these keys fill instead of the browser's bookmark and reload
-shortcuts; in a read-only grid they are left to the browser.
-
-- **Values are copied as they are.** Nothing is counted up: numbers and dates are repeated, not extended
-  into a series, so a fill never guesses. Values are copied whole (also text cut for display) and checked
-  for the target column like typed values; a fill right across columns of other types is refused when a
-  value does not fit. A read-only column among the targets refuses the fill.
-- **Every range and every row.** Several ranges are filled at once, and rows that are not loaded (or
-  scrolled away) are read first, so the result does not depend on what is on the screen.
-- **One write, one undo.** The cells are written as one write and undone with one ⌘/Ctrl + Z.
-- **Limit.** At most `copyLimit` cells (and 100,000) are filled at once.
-
-There is no fill handle to drag; select the range and press the keys instead.
+Each write is atomic, every cell or none, and holds at most 100,000 cells (`too_many_cells`).
 
 ## Undo and redo
 
-Every saved write — a typed value, a cleared selection, a paste, a fill — is one step of the history, so a paste
-of thousands of cells is undone at once. ⌘/Ctrl + Z undoes it by writing the values before as a new
-write; ⌘/Ctrl + Shift + Z (or Ctrl + Y) writes it again. The context menu has both, disabled when there
-is nothing to do. Inside the cell editor, these keys undo typing in the editor instead.
+⌘/Ctrl + Z undoes the last write (a typed value, a paste, a clear or a fill), and ⌘/Ctrl + Shift + Z, or Ctrl + Y
+off Apple platforms, redoes it. Writes name cells by row key, so an undo finds its cells after a sort or a filter.
+The history is the session's (`session.history`): at most 100 steps and 1,000,000 cells, emptied when the table is
+read again as another revision. An undo waits for the writes sent before it.
 
-- **Types and digits.** The history keeps the values as the source sent them (64-bit integers and
-  decimals as text), and writes them back as they were. Before writing into cells whose values are not
-  loaded or were cut for display, the grid reads their whole values, so that the write can be undone.
-- **Saving and failures.** Undo and redo wait until no write is saving or failed. An undo is a write like
-  others: when it fails it shows Retry and Discard, and it moves in the history only once it is saved.
-- **Changes by others.** An undo carries the values it expects to find, which the source compares as
-  the column's type (`1.5` matches a `DECIMAL(10,3)` holding `1.500`, and a `FLOAT` its nearest value). When another user changed one of
-  the cells meanwhile, nothing is written (`edit_conflict`); the user can **Overwrite** or **Discard**.
-- **A new write** drops what could be redone. **A new revision** of the table (for example the file was
-  read again) forgets the whole history, since row positions may name other records then.
-- **Limits.** The history keeps at most 100 writes, 1,000,000 cells and 32,000,000 characters of text; the
-  oldest writes are forgotten beyond them, and a single write larger than that cannot be undone.
+## When a write fails
 
-The app reads the state with `onHistoryChange` (`canUndo`, `canRedo`, the number of steps and what the
-next step is), and runs the steps with `undo()` and `redo()` on the grid's ref, for example from its own
-toolbar. `EditHistory` in `vastgrid-core` is the same history without the grid.
+Each write carries the value its cells had (`previous`). When one of them was changed meanwhile, by another tab,
+another person on the same server or an agent, the engine refuses the write with `edit_conflict`; the cells show
+their values now, and the status bar says "Not written: the cells were changed meanwhile. Their values now are
+shown." with buttons:
 
-```tsx
-const grid = useRef<DataGridHandle>(null);
-const [history, setHistory] = useState<GridHistoryState | null>(null);
+| Button | When | What it does |
+| --- | --- | --- |
+| Retry | The connection was lost, or the engine failed (`internal`, `cancelled`, `not_ready`, `table_not_found`) | Sends the same write again (`store.retryWrite()`) |
+| Overwrite | After `edit_conflict` | Writes over the cells; an undo gives back the values written over |
+| Discard | Always | Forgets the write (`store.discardWrite()`) |
 
-<button disabled={!history?.canUndo} onClick={() => grid.current?.undo()}>Undo</button>
-<DataGrid ref={grid} source={source} onHistoryChange={setHistory} />
-```
+A write refused for its values or cells (`invalid_value`, `read_only`), or because the table was read again
+(`revision_changed`), can only be discarded. Until then the write is in the snapshot's `failedWrite`, with its
+command, its cells, its error and `retry` (`"retry"`, `"overwrite"` or null), for an app that shows it its own way.
 
 ## Saving into the file
 
-The DuckDB server can write the edited cells back into the CSV or TSV file they came from, when its
-engine is created with `editable: true` and `saveFiles: true` (`capabilities.save`). While cells are
-written but not saved, a line above the status bar says how many, with **Save to file**; ⌘/Ctrl + S and
-the ref's `save()` do the same.
+With `saveFiles: true`, the DuckDB engine saves written cells into the CSV or TSV file they came from:
 
-```ts
-const engine = await TableEngine.create({ allowedDirectories: [dataDir], tempDirectory, editable: true, saveFiles: true });
-```
+- The toolbar's **Save** button is shown while cells are unsaved, and ⌘/Ctrl + S saves too, also from the editor,
+  which writes its text first. The status bar says "Unsaved 3", then "Saving…" and "Saved rows: 2".
+- Only the edited fields of the edited records are written. Every other byte stays as it was: byte order mark,
+  header, other records and fields, quoting, delimiters, line breaks and encoding. A value is written as the file
+  reads it back (dates in the file's format), quoted when it needs it, into a new file that replaces the old one
+  once complete.
+- A file that someone else changed since it was read is not saved over: the status bar says "Not saved: the file
+  was changed by someone else…" and the edits are kept.
+- Parquet, JSON Lines, Excel and compressed files are never written. Their cells can still be edited, and
+  [exported](/guides/export/) with the edits.
 
-**Every byte that holds no edited cell stays as it was.** The engine finds the file's records as DuckDB
-read them and writes anew only the records with cells written since the last save — and in those, only
-the edited fields. The other fields keep their text (`1.50` stays `1.50`, not `1.5`), and the delimiters
-and line breaks stay. A 74 MB file of a million rows with 100 edited cells saves in about 0.4 s, and
-exactly those 100 lines differ.
+The memory engine does not save. To keep its written values, [export](/guides/export/) the whole table: exports
+hold the written values.
 
-| Part of the file | How it is written |
-| --- | --- |
-| Byte order mark, header, lines before the header | Kept |
-| Records without edited cells | Kept, also with line breaks inside quotes |
-| Edited records | The edited fields written anew; the other fields, delimiters and the record's own line break kept |
-| An edited field | DuckDB's text of the value (`12.50`, `true`); dates and timestamps in the format DuckDB read the file with (`25/12/2024` stays `dd/mm/yyyy`), and a format that would not read back the same value refuses the save. Quoted with the file's quote when it holds the delimiter, a quote, an escape or a line break; quotes inside are doubled (or escaped with the file's escape); a blank is an empty field |
-| A short record (fewer fields than columns) | Filled with empty fields up to the edited one |
-| Last line break | Kept as it was: present or absent |
-| Encoding | The file's: UTF-8 (with or without a byte order mark), UTF-16 (LE or BE, with its byte order mark), Shift_JIS, EUC-JP and Latin-1. A value the encoding cannot hold (for example an emoji in Shift_JIS) refuses the save (`invalid_value`). |
-| Delimiter, quote, escape | As DuckDB detected them (`sniff_csv`); one ASCII character each. Shift_JIS files whose delimiter, quote or escape is `@` or above (such as `|` or `\`) cannot be saved, since those bytes also occur inside characters. |
+## Files that change on disk
 
-**Safety.**
+The DuckDB engine follows the files of open tables
+([§7.6](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#76-files-that-change-on-disk)):
 
-- The file is written under a temporary name next to it (`.name.random.tmp`), synced, and renamed over
-  the original once complete, keeping its permissions. A failed or cancelled save deletes the temporary
-  file and leaves the original as it was.
-- **Changed by someone else.** The engine keeps the revision of the file it read (or last saved). When
-  the file differs before or after writing, nothing is saved (`file_changed`) and the written cells are
-  kept; reopen the file to edit its new content.
-- **Allowed folders.** The file is saved only at its real location (links followed), inside the allowed
-  folders; a file replaced by a link to another place is refused (`not_allowed`).
-- **What cannot be saved** (`save_unsupported`): Parquet, JSON and workbooks, compressed files (`.gz`,
-  `.zst`), files DuckDB could read only as irregular text (all columns as text), files with comment lines,
-  and files whose records do not match the table's rows (for example a file changed in a way the revision
-  missed).
+- A table without written cells is read again, and the grid shows the file as it is now. The history is emptied,
+  since its row keys belong to the old revision.
+- A table with written cells stays as it was read, so that the edits are not lost. The status bar says "The file
+  changed on disk. Your unsaved edits are kept.", saving is refused, and the toolbar's **Discard edits and
+  reload** reads the file as it is now, without them (`store.reload()`).
 
-A cell written back to the value the file holds (for example by an undo before saving) is no change:
-it does not count as unsaved, and its record is not written.
+## Writing from code
 
-After a save the table keeps its revision and row positions: checked rows, the undo history and the view
-stay. The cells count as saved (`edits.cells` is 0), and saving again writes only cells written since. A
-hard link to the file keeps the old content, since the file is replaced.
+A write from code is the commands that a person's keys dispatch, with the same checks, history and failures:
 
-## Writing to the DuckDB server
+```tsx
+import { useRef } from "react";
+import { DataGrid, type DataGridHandle, type Transport } from "vastgrid";
 
-```ts
-const engine = await TableEngine.create({ allowedDirectories: [dataDir], tempDirectory, editable: true });
-```
+export function Orders({ transport }: { transport: Transport }) {
+  const grid = useRef<DataGridHandle>(null);
 
-Written values are checked, converted to the column's DuckDB type, and kept in a table per edited column
-inside the engine. A view joins them to the file's rows, so rows, sorted and filtered views, statistics,
-summaries, find and exports all read them; reading a block of a 5M-row table with 1,000 written cells
-takes about as long as before (3–4 ms). Views whose rows or order may depend on the written columns are
-dropped and created again on the next request. The file itself is not changed until it is saved (see
-above).
-
-A table with written cells stays open: it is not closed to keep `maxTables`, nor opened again when its
-file changes. Closing the table (`close`) or disposing the engine discards them.
-
-## Your own source
-
-Report `capabilities.edit`, mark columns you do not write with `readOnly`, and implement `updateCells`:
-
-```ts
-async updateCells({ updates, revision }: UpdateRequest): Promise<UpdateResult> {
-  if (revision !== undefined && revision !== this.revision) throw new SourceError("revision_changed", "…", 409);
-  for (const update of updates) {
-    const checked = normalizeCellValue(update.value, this.columns[update.column]);
-    if (!checked.ok) throw new SourceError("invalid_value", "…", 422);
-    if (update.previous !== undefined && !sameCellValue(this.get(update), update.previous))
-      throw new SourceError("edit_conflict", "…", 409);
+  async function setPrice(row: number, text: string) {
+    const dispatch = grid.current!.dispatch;
+    await dispatch({ command: "select", row, column: "price" });
+    await dispatch({ command: "edit.begin", text });
+    const outcome = await dispatch({ command: "edit.commit", move: null });
+    if (!outcome.ok) console.error(outcome.error.code, outcome.error.message);
   }
-  // Write every update, or none of them.
-  return { updated: updates.length, edits: { version: ++this.version, cells: this.edited } };
+
+  return <DataGrid ref={grid} transport={transport} table="orders" />;
 }
 ```
 
-See [`TableSource`](/reference/table-source/#writing-cells) and the
-[protocol](/reference/protocol/) for the `update` request.
+`row` is a position in the view, and the text is read as a person's typing is. The other writes:
+
+| Command | Writes |
+| --- | --- |
+| `{ command: "edit.clear" }` | Null into the selected cells |
+| `dispatch({ command: "edit.paste" }, { clipboard: { text: "1\t2\n3\t4" } })` | The text into the selection; the output is `{ cutRows, cutColumns }` |
+| `{ command: "edit.fill", direction: "down" }` | The first row of each range into the rest (`"right"`: the first column) |
+| `{ command: "history.undo" }`, `{ command: "history.redo" }` | The values before or after the last step |
+| `{ command: "save" }` | The written cells into the file; `unsupported` when the engine does not save |
+
+The store reads the rows that a command needs before it writes them. Like a person's writes, those from code
+carry `previous`, so a write over a cell that changed meanwhile fails with `edit_conflict` instead of losing the
+other change. The commands are listed in [Commands](/reference/commands/).

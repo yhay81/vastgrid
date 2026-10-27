@@ -17,58 +17,82 @@ import { ThemedGrid } from "../../../../components/examples.tsx";
 }
 ```
 
-次の見本は、それぞれいくつかのプロパティを書いたクラスで（[CSS](https://github.com/yhay81/vastgrid/blob/main/site/src/styles/docs.css)）、`className` でグリッドに渡しています。
+次の見本は、それぞれいくつかのプロパティを書いたクラスで（[CSS](https://github.com/yhay81/vastgrid/blob/main/site/src/styles/docs.css)）、`className` でグリッドに渡しています。`rowHeight` を渡しているものもあります。
 
 <ThemedGrid client:only="react" locale="ja" />
 
 ## ライトとダーク
 
-既定の色は `light-dark()` を使うので、ページか、グリッドを囲む要素の `color-scheme` に従います。アプリでテーマを決める所で `color-scheme: light`、`dark`、`light dark` のどれかを設定すれば、グリッドはそれに従い、グリッドを開いている間に変わっても追従します。自分で色を決めるときも同じように `light-dark()` を使うか、ダークのテーマのセレクターの下でプロパティを設定してください。
+色は `light-dark()` の組で、スタイルシートは `.vg-root` に `color-scheme: light dark` を指定しているので、グリッドは OS のライトとダークに従います。この指定には詳細度がなく、`.vg-root` に書いた自分の `color-scheme` がそれに代わります。
 
-強制カラーモード（Windows のハイコントラスト）では、グリッドはシステムの色を使います。
+```css
+/* いつもライト。 */
+.vg-root {
+  color-scheme: light;
+}
 
-## プロパティを読むとき
+/* ページ自身の切り替えに従う。 */
+:root[data-theme="light"] .vg-root {
+  color-scheme: light;
+}
+:root[data-theme="dark"] .vg-root {
+  color-scheme: dark;
+}
+```
 
-グリッドがプロパティを読むのは、マウントしたとき、`className` か `style` が変わったとき、文書のルートの要素の `class`・`style`・`data-theme` 属性が変わったとき、システムの配色が変わったときです。ほかの方法で見た目を変えるときは、`className` を変えてください。
+自分で色を決めるときも同じように `light-dark()` を使うか、ダークのテーマのセレクターの下でプロパティを設定してください。`.vg-root` の `color-scheme` は残してください。古いブラウザーのために `light-dark()` を変数に置き換えるバンドラー（Vite が使う Lightning CSS）はそれを必要とし、ないとキャンバスが黒く塗られます。
 
-行と見出しの高さは、マウントしたときに読みます。あとから変えるには、`rowHeight`・`headerHeight`・`groupHeaderHeight` を渡してください。
+## キャンバスがプロパティを読むとき
+
+キャンバスがプロパティを読むのは、次のときです。
+
+- グリッドがマウントされたときと、Web フォントの読み込みが終わったとき
+- ページの `<html>` か `<body>` の `class`、`style`、`data-theme` の属性（と JupyterLab が設定する `data-jp-theme-light`）が変わったとき
+- グリッド自身の `className` か `style` が変わったとき
+- OS がライトとダークを切り替えたとき
+- `rowHeight`、`headerHeight`、`columnGroups`、`groupHeaderHeight` が変わったとき
+
+## 大きさ
+
+行と見出しの高さは `--vg-row-height` と `--vg-header-height`、または props の `rowHeight` と `headerHeight` で決まり、props が優先します。テキストを折り返す列があるとき、行は `wrapLines` 行分（既定は 2）の高さになり、1 行は `--vg-line-height` です。列のグループは、グループの 1 段ごとに `--vg-group-header-height` か `groupHeaderHeight` の高さです。
+
+幅が 640 ピクセル未満のとき、詳細パネルは行の横（幅 `--vg-detail-width`）ではなく下（高さ `--vg-detail-height`）に出ます。
 
 ## プロパティ
 
-| プロパティ | ライト | ダーク | 用途 |
+| プロパティ | ライト | ダーク | 使う所 |
 | --- | --- | --- | --- |
 | `--vg-font-family` | `system-ui, …` | | すべての文字 |
-| `--vg-font-size` | `13px` | | セル。見出しとメニューはこれをもとにする |
-| `--vg-row-height` | `24px` | | 行の高さ（`rowHeight` を渡さないとき） |
-| `--vg-line-height` | 文字の大きさの 1.4 倍 | | 折り返す列で、2 行目以降の 1 行ごとの高さ |
-| `--vg-header-height` | `32px` | | 列名の段の高さ（`headerHeight` を渡さないとき） |
-| `--vg-group-header-height` | `24px` | | 列のグループの段 1 段の高さ（`groupHeaderHeight` を渡さないとき） |
+| `--vg-font-size` | `13px` | | セル。見出しとメニューはここから決まります |
+| `--vg-row-height` | `24px` | | 行の高さ（`rowHeight` がないとき） |
+| `--vg-line-height` | 文字の大きさの 1.4 倍 | | 折り返す列の 1 行の高さ |
+| `--vg-header-height` | `32px` | | 列名の行の高さ（`headerHeight` がないとき） |
+| `--vg-group-header-height` | `24px` | | 列のグループの 1 段の高さ（`groupHeaderHeight` がないとき） |
 | `--vg-radius` | `6px` | | 入力欄・ボタン・メニュー・パネルの角 |
 | `--vg-bg` | `#ffffff` | `#16161a` | セル |
 | `--vg-fg` | `#1f2328` | `#e6e6eb` | 文字 |
 | `--vg-muted` | `#656d76` | `#9a9aa6` | 補助の文字 |
 | `--vg-surface` | `#ffffff` | `#1e1e24` | メニュー・パネル・入力欄・ボタン |
-| `--vg-surface-muted` | `#f6f8fa` | `#24242b` | 「値の全体を表示」の値 |
+| `--vg-surface-muted` | `#f6f8fa` | `#24242b` | グループの一覧と、セルのメニューの値 |
 | `--vg-border` | `#d0d7de` | `#3a3a44` | 入力欄・ボタン・メニュー・パネルの枠 |
-| `--vg-header-bg` | `#f6f8fa` | `#1d1d23` | 列見出し |
-| `--vg-header-fg` | `#1f2328` | `#e6e6eb` | 列名 |
-| `--vg-header-active-bg` | `#eaeef2` | `#2b2b33` | 選択範囲の見出し。ポインターを載せたボタンとメニューの項目 |
-| `--vg-gutter-bg` | `#f6f8fa` | `#1b1b20` | 行見出し |
-| `--vg-gutter-fg` | `#656d76` | `#8a8a96` | 行番号 |
-| `--vg-gutter-view-fg` | `#0b57d0` | `#8ab4f8` | 並べ替え・絞り込みしたビューの行番号 |
-| `--vg-line` | `#e6e9ed` | `#2a2a31` | 罫線 |
-| `--vg-line-strong` | `#c8ced5` | `#3d3d47` | 見出しと固定した列に沿う線。ツールバーとステータスバーの枠 |
-| `--vg-selection-bg` | 青、12% | 青、18% | 選択したセル |
+| `--vg-header-bg` | `#f6f8fa` | `#1d1d23` | 列の見出しとステータスバー |
+| `--vg-header-fg` | `#1f2328` | `#e6e6eb` | 列名と、アクティブな行の番号 |
+| `--vg-header-active-bg` | `#eaeef2` | `#2b2b33` | アクティブな行の番号の背景 |
+| `--vg-gutter-bg` | `#f6f8fa` | `#1b1b20` | 行番号の列 |
+| `--vg-gutter-fg` | `#656d76` | `#8a8a96` | 行番号とチェックボックス |
+| `--vg-line` | `#e6e9ed` | `#2a2a31` | 罫線と、メニュー・パネルの中の線 |
+| `--vg-line-strong` | `#c8ced5` | `#3d3d47` | 見出しと固定した列に沿う線 |
+| `--vg-selection-bg` | 青 12% | 青 18% | 選択したセル |
 | `--vg-selection-border` | `#0b57d0` | `#8ab4f8` | 選択範囲の枠 |
-| `--vg-active-border` | `#0b57d0` | `#8ab4f8` | アクティブなセルの枠 |
-| `--vg-accent` | `#0b57d0` | `#8ab4f8` | 並べ替えと絞り込みの印、主なボタン、進み具合、分布 |
-| `--vg-accent-fg` | `#ffffff` | `#0d1b33` | 主なボタンの文字 |
-| `--vg-null-fg` | `#8c959f` | `#6e6e7a` | 空白のセルの `nullText` |
-| `--vg-placeholder` | `#eef1f4` | `#26262d` | 行を読み込み中のセル |
-| `--vg-match-bg` | 黄、45% | 黄、28% | 検索で見つかったセル |
-| `--vg-error-fg` | `#b42318` | `#ff8a80` | エラーメッセージ |
+| `--vg-active-border` | `#0b57d0` | `#8ab4f8` | アクティブなセルと編集欄の枠 |
+| `--vg-accent` | `#0b57d0` | `#8ab4f8` | 並べ替えと絞り込みの印、チェックした箱、列の幅の変更と移動、主ボタン |
+| `--vg-accent-fg` | `#ffffff` | `#0d1b33` | 主ボタンの文字とチェックの印 |
+| `--vg-placeholder` | `#eef1f4` | `#26262d` | 行を読んでいる途中のセル |
+| `--vg-error-fg` | `#b42318` | `#ff8a80` | エラーの文言 |
 | `--vg-link-fg` | `#0b57d0` | `#8ab4f8` | `cellAction` でリンクにしたセル |
 | `--vg-focus` | `#0b57d0` | `#8ab4f8` | フォーカスの枠 |
-| `--vg-shadow` | | | メニューとパネルの影 |
+| `--vg-shadow` | | | 編集欄の影 |
+| `--vg-detail-width` | `340px` | | グリッドの横に出す詳細パネルの幅 |
+| `--vg-detail-height` | `45%` | | 狭いグリッドの下に出す詳細パネルの高さ |
 
-正確な値は [`styles.css`](https://github.com/yhay81/vastgrid/blob/main/packages/react/src/styles.css) にあります。ツールバー、ステータスバー、メニュー、パネルのクラス名もあるので、さらに細かく変えるときに使えます。
+正確な値と、ツールバー・ステータスバー・メニュー・パネルのクラス名は [`styles.css`](https://github.com/yhay81/vastgrid/blob/main/packages/grid/src/styles.css) にあります。テーマではなく一部のセルの色を変えるには、`cellStyle` か列の条件付きの色を使います。[DataGrid](/ja/reference/data-grid/) を参照してください。

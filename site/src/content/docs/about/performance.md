@@ -1,66 +1,98 @@
 ---
 title: Performance
-description: Measurements of the DuckDB engine and of the canvas renderer.
+description: Measurements of the grid in the browser, of the DuckDB engine and of the memory engine, with the budgets that CI keeps.
 ---
+
+All the numbers below were measured on an Apple M2 Pro. Each table says when, with what, and how to measure it
+again. Times on your machine will differ; the counts of React commits will not.
+
+## The grid in the browser
+
+The bench (`examples/bench`) mounts the grid on a table of 1,000,000 rows and 8 columns (integers, strings,
+floats, dates, booleans) held by the memory engine, in the page or in a Web Worker, and the end-to-end tests
+measure it in Chromium 156 with Playwright (headless, 60 Hz). Measured on 2026-10-24 with Node.js 24 and React
+19.3.1; ranges are those of the last four runs. vastgrid 0.1 is there for comparison.
+
+| Measure | vastgrid 0.1 | v2, engine in the page | v2, engine in a worker |
+| --- | ---: | ---: | ---: |
+| From mount to the first rows on screen | 46–65 ms | 43–49 ms | 36–49 ms |
+| React commits per arrow key | 1 | 1 | 1 |
+| From a key press to the next frame, p95 | 13.8–14.1 ms | 13.4–14.1 ms | 13.5–13.9 ms |
+| React commits while scrolling for 100 frames | 0 | 0 | 0 |
+| The gap between frames while scrolling, p95 | 16.7–16.8 ms | 16.7–16.8 ms | 16.7–16.8 ms |
+| Sorting by a float column until the sorted rows are on screen | 494–516 ms | 85–98 ms | 112–113 ms |
+| The longest task of the page meanwhile | 490–512 ms | 81–93 ms | none |
+| JavaScript heap of the page | 190 MB | 202 MB | 10 MB |
+
+The grid scrolls without dropping a frame at 60 Hz and commits React once per key. It sorts five to six
+times faster than vastgrid 0.1, and with the engine in a worker the page never stops while a million rows are
+sorted, and holds none of the table.
+
+## Budgets
+
+The end-to-end tests fail when the grid goes over one of these, so they hold for every release:
+
+| Measure | Budget |
+| --- | --- |
+| React commits per arrow key | at most 1 |
+| React commits while scrolling for 100 frames | 0 |
+| The gap between frames while scrolling, p95 | under 25 ms |
+| From a key press to the next frame, p95 | under 25 ms |
+| From mount to the first rows on screen, a million rows in memory | under 300 ms |
+| What a page loads first of `DataGrid` with a table in memory, minified with gzip | under 200 KB |
+
+On 2026-10-27, a page loaded 100.9 KB with gzip first, and 133.2 KB in all: the column and cell menus, the
+toolbar's menus, the find bar and the detail panel load when they first open. `npm run size` measures it, after
+`npm run build`.
 
 ## The DuckDB engine
 
-`npm run bench -- --csv-rows=10000000 --parquet-rows=100000000` on an Apple M2 Pro (12 threads, 32 GB),
-Node.js 24, DuckDB 1.5. Times include DuckDB but not HTTP.
+Measured on 2026-10-25 with Node.js 24.22.1, DuckDB's Node.js API 1.5.6-r.1, 8 DuckDB threads and a 2 GB memory
+limit. Each request reads 256 rows of all eight columns through the engine's messages, with Arrow encoding and
+decoding, without HTTP or drawing. The sort is `price DESC`, the filter `city = 'Tokyo'`. Deep reads are five
+reads at 25%, 50%, 75%, 99% and the end of the finished view.
 
-| Operation | Time |
-| --- | ---: |
-| CSV 735 MB, 10M rows: first rows readable | 143 ms |
-| CSV: fully loaded (sort, filter and statistics available) | 5.3 s |
-| CSV: 256 rows × 8 columns at a random position (median) | 1.8 ms |
-| CSV: sort by a number / text column | 1.2 s / 1.1 s |
-| CSV: filter by values (2.5M rows) / search all columns | 293 ms / 544 ms |
-| CSV: column statistics (histogram, quartiles) | 117 ms |
-| CSV: sum, average, min, max of 1M rows × 2 columns | 7.8 ms |
-| Parquet 1.38 GB, 100M rows: open (read in place) | 20 ms |
-| Parquet: 256 rows × 8 columns at a random position (median) | 24 ms |
-| Parquet: sort by a number column | 1.9 s |
-| Parquet sorted: 256 rows at a random position (median / 95th percentile) | 147 ms / 208 ms |
+| File and plan | First rows | Deep reads, p50 / largest |
+| --- | ---: | ---: |
+| Parquet, 100M rows (1.38 GB), sort | 778 ms | 676 / 681 ms |
+| Parquet, 100M rows, filter | 191 ms | 21 / 24 ms |
+| CSV, 10M rows (735 MB), sort | 53 ms | 3.1 / 3.4 ms |
+| CSV, 10M rows, filter | 179 ms | 2.7 / 2.9 ms |
 
-The sorted Parquet file has 100M rows, above `materializeRows`, so its view holds only the order of the
-rows: it is built in 1.9 s, and each block of rows is read from the file in that order. A table below the
-limit gets a sorted copy instead, which reads as fast as the table itself.
+- The first rows of a sort of a million rows or more come from a top-N query, in the order of the finished view,
+  while the rest is built: 2.3 seconds more for the Parquet file, 1.0 for the CSV file.
+- The 100-million-row view keeps only the order of the rows, above the 20 million rows of a sorted copy, so its
+  deep reads gather rows from all over the file. The CSV file's view is a sorted copy, and reads in milliseconds.
+- Over the whole run, the process peaked at 2.66 GB of memory and its session folder at 0.83 GB.
 
-### First rows of a sort
+On an Apple-silicon laptop, saving two edited cells takes about 60 ms in a 200,000-row CSV file and 0.3 s in a
+2-million-row one, and a sorted view of a million rows of four columns exports in 0.3 s as CSV, 0.1 s as Parquet,
+0.2 s as JSON and 2.2 s as an Excel workbook.
 
-The grid accepts a preview of a sort, so for tables of 1M rows or more the server first reads the first
-1,000 rows with a top-N query and builds the rest of the view in the background. The same benchmark
-compares it with waiting for the whole view, in a new engine each time (memory is what DuckDB holds, of
-its default 4 GB limit; temporary space is the growth of the engine's folder). The machine was busy with
-other work, so times vary by about ±30%.
+[`v2-views-benchmark.md`](https://github.com/yhay81/vastgrid/blob/main/docs/v2-views-benchmark.md) has the method,
+the numbers before this version and the commands to run it again.
 
-| Parquet, 100M rows | First 256 rows shown | View ready | Memory / temporary space until the first rows |
-| --- | ---: | ---: | ---: |
-| Sort by a number column, whole view first | 1.9 s | 1.9 s | 1,963 MB / 407 MB |
-| … with a preview | 0.8 s | 2.6 s | 127 MB / 0 MB |
-| Sort by a text column, whole view first | 4.9 s | 4.9 s | 3,816 MB / 1,047 MB |
-| … with a preview | 0.9 s | 6.4 s | 134 MB / 0 MB |
-| Sort by text, then time, whole view first | 5.9 s | 5.9 s | 3,815 MB / 1,447 MB |
-| … with a preview | 1.0 s | 6.7 s | 135 MB / 0 MB |
+## The memory engine
 
-The first rows appear in under a second whatever the sort; the view is ready about 0.6–1.5 s later than
-without a preview, the time of the top-N query, and needs the same memory and temporary space as before.
+Measured on 2026-10-27 with Node.js 24.22.1: each request goes through the engine's messages, with the file
+given as a page gives it a `File`, without a worker, a page or drawing. One run, in milliseconds, with the default
+`maxBytes` of 1 GiB.
 
-The benchmark is in
-[`packages/duckdb/bench/run.ts`](https://github.com/yhay81/vastgrid/blob/main/packages/duckdb/bench/run.ts)
-and generates its own files.
+| Request | 1M CSV (69 MB) | 1M Parquet (13 MB) | 10M CSV (701 MB) | 10M Parquet (132 MB) |
+| --- | ---: | ---: | ---: | ---: |
+| Open | 1,059 | 26 | 10,499 | 38 |
+| First 256 rows | 9.3 | 201 | 6.8 | 206 |
+| Sort by a float | 91 | 1,078 | 881 | 8,723 |
+| Sort by a string | 483 | 247 | 5,040 | 2,880 |
+| Filter, then sort by a timestamp | 189 | 100 | 2,470 | 1,813 |
+| Group with three measures | 411 | 322 | 4,974 | 3,523 |
+| Export every row as CSV | 1,450 | 1,324 | 14,785 | 13,653 |
+| Write a cell | 0.5 | 0.3 | 0.4 | 0.3 |
 
-## The canvas
+A million rows of CSV take about 60 MB once open, and the Parquet file 1 MB until its columns are read. A file
+whose columns do not fit in `maxBytes` still opens, and its requests read the columns they need; one that needs
+more at once than `maxBytes` fails with `load_failed`, and the table stays open. For those files, use the DuckDB
+engine, which spills to disk.
 
-Rendering a 2280 × 1371 px viewport (56 rows × 20 columns) takes 2.0 ms per frame at the median and
-3.0 ms at the 99th percentile, measured with the canvas flushed after every frame. Drawing does not
-depend on the number of rows.
-
-The [demo](/demo/) shows the average and slowest of the last frames drawn in your browser, from
-`renderer.timings()`.
-
-## `ArraySource`
-
-`ArraySource` works on the main thread. On the same machine in Node.js 24, a table of 300,000 rows and
-13 columns sorts by a decimal column in 0.55 s and by a text column in 0.15 s, and searches all columns in 0.13 s.
-See [Data in memory](/guides/in-memory/#how-large).
+[`v2-memory-engine-benchmark.md`](https://github.com/yhay81/vastgrid/blob/main/docs/v2-memory-engine-benchmark.md)
+has every request, the memory, the limits and the command to run it again.

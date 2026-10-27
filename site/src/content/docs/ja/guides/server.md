@@ -1,168 +1,173 @@
 ---
 title: サーバーのファイル
-description: どんな大きさの CSV・TSV・Parquet・JSON Lines のファイルと Excel のブックを、vastgrid-duckdb で Node.js から配信します。
+description: どんな大きさの CSV・TSV・Parquet・JSON Lines のファイルと Excel のブックも、vastgrid-duckdb の DuckDB エンジンで Node.js から配信します。
 ---
 
-`vastgrid-duckdb` は表のファイルを DuckDB で開き、グリッドの要求に答えます。指定した範囲の行、並べ替え・絞り込みしたビュー、列の統計、値の一覧、選択範囲の集計、検索、書き出しです。ブラウザーでは、`RemoteSource` がこれらの要求を送ります。
+`vastgrid-duckdb` は、表のファイルを Node.js の DuckDB で開き、グリッドのメッセージに答えます。行、並べ替え・絞り込みしたビュー、グループ化とピボット、集計、検索、書き込み、保存、書き出しです。ページが受け取るのは、表示する行だけです。Node.js 20 以降が必要で、DuckDB の Node.js バインディングが対応するプラットフォームで動きます。
 
 ```bash
 npm install vastgrid vastgrid-duckdb
 ```
 
-## エンジンと受け口
+## エンジンとハンドラー
 
 ```ts
-import path from "node:path";
-import { createTableHandler, TableEngine, type TableHandlerOptions } from "vastgrid-duckdb";
+// server.ts
+import { createServer } from "node:http";
+import { createHttpHandler, DuckDBEngine } from "vastgrid-duckdb";
 
-const root = "/srv/data";
-const engine = TableEngine.create({ allowedDirectories: [root], tempDirectory: "/tmp/vastgrid" });
+const engine = await DuckDBEngine.create({
+  allowedDirectories: ["/srv/data"],
+  tempDirectory: "/tmp/vastgrid",
+});
 
-export const options: TableHandlerOptions = {
-  engine: () => engine,
-  resolve: (ref) => {
-    const file = path.resolve(root, ref);
-    if (!file.startsWith(`${root}${path.sep}`)) throw new Error("Not allowed");
-    return file;
-  },
-};
-
-export const handler = createTableHandler(options);
+createServer(createHttpHandler(engine, { path: "/api/table" })).listen(8080);
 ```
 
-`TableEngine.create` は Promise を返し、受け口はその完了を待ちます。エンジンはプロセスごとに 1 つ作り、要求の間で共有してください。エンジンは開いた表とそのビュー、DuckDB の接続のプールを持っています。
+エンジンはプロセスごとに 1 つ作り、共有してください。開いた表とそのビュー、DuckDB のデータベースを要求の間で持ち続けます。プロセスを止めるときは `engine.dispose()` を呼びます。DuckDB を閉じ、エンジンのファイルを削除します。
 
-`createTableHandler` は、Fetch API の `Request` を受けて `Response` を返す関数を返します。Next.js のルートハンドラー、Hono、Bun、Deno など、これらを使うものなら何でも使えます。要求は `signal` ごと渡してください。ブラウザーが取りやめた要求（グリッドが遠くへスクロールした場合）のクエリーが止まります。
+`createHttpHandler` が返すのは、Node.js のハンドラー `(request, response, next?)` です。`node:http` のリスナーとして使えるほか、Express・Connect・Vite の開発サーバーのミドルウェアにもなり、ほかのパスは `next` に渡します。Fetch API のハンドラーではありません。Fetch API を使うフレームワークについては後述します。
+
+```ts
+app.use(authenticate); // your own check comes first
+app.use(createHttpHandler(engine, { path: "/api/table" }));
+```
+
+答えるのは `POST /api/table`（要求。行は JSON に Arrow を添えて返ります）、`GET /api/table/events`（エンジンのイベントを Server-Sent Events で）、`GET /api/table/exports/<name>`（書き出したファイルのダウンロード）です。ほかのオプションは `events`、`exports`、`maxBody`（64 MiB）、`keepAlive`（15 秒）です。
+
+ページでは、`httpTransport` がグリッドのメッセージを POST します。
 
 ```tsx
-import { DataGrid, RemoteSource } from "vastgrid";
+import { DataGrid, httpTransport } from "vastgrid";
+import "vastgrid/styles.css";
 
-const source = new RemoteSource({ endpoint: "/api/table", ref: "sales/2024.parquet" });
-<DataGrid source={source} />;
+const transport = httpTransport("/api/table", { events: "/api/table/events" });
+
+export function Sales() {
+  return <DataGrid transport={transport} table="sales/2025.parquet" style={{ height: 600 }} />;
+}
 ```
 
-`ref` は、`resolve` が解釈できるものなら何でもかまいません。フォルダーからの相対パス、データベースの ID、アップロードしたファイルのキーなどです。
+`table` は、エンジンが開く `ref` です。`httpTransport(url, options)` は、`events`、`headers`（認可など、すべての要求に付けるヘッダー）、`fetch`、`exports`（既定は `<url>/exports/`）を受け取ります。`events` は渡してください。グリッドは、読み込み中のファイル、完了までの並べ替え、変更されたファイルを、イベントで追いかけます。要求を中断するとクエリーも止まります。グリッドは、新しいプランに替わったビューの読み取りを中断します。
 
-### Fetch API の要求を使わないフレームワーク
+### Fetch API のフレームワーク
 
-`handleTableRequest(body, options, signal)` は解析済みの要求 1 つに答え、`errorBody(error)` はエラーを、送るステータスと本文に変えます。Express では次のようにします。
+Next.js のルートハンドラー、Hono、Bun、Deno は `Request` を受け取ります。メッセージは自分で `engine.handle` に渡してください。
 
 ```ts
-import express from "express";
-import { errorBody, handleTableRequest } from "vastgrid-duckdb";
-import { options } from "./table.ts"; // 上の options
+// app/api/table/route.ts
+import { ERROR_STATUS, type ErrorCode, toTextEncoding } from "vastgrid-spec";
+import { engine } from "@/lib/engine"; // a module that makes one engine for the process
 
-const app = express();
-app.post("/api/table", express.json({ limit: "1mb" }), async (request, response) => {
-  const controller = new AbortController();
-  response.on("close", () => controller.abort());
-  try {
-    const result = await handleTableRequest(request.body, options, controller.signal);
-    response.json({ result });
-  } catch (error) {
-    const { status, body } = errorBody(error, console.error);
-    response.status(status).json(body);
-  }
-});
+export async function POST(request: Request) {
+  const message = await request.json().catch(() => null);
+  const answer = await engine.handle(message, { signal: request.signal });
+  if (answer === undefined) return new Response(null, { status: 204 });
+  const error = answer.error as { code: ErrorCode } | undefined;
+  if (error) return Response.json(answer, { status: ERROR_STATUS[error.code] });
+  return Response.json(toTextEncoding(answer));
+}
 ```
+
+`vastgrid-spec` は `vastgrid-duckdb` と一緒に入りますが、import するには依存関係に加えてください。ブロックは JSON の中の base64 になり、Node.js のハンドラーの Arrow より 3 分の 1 ほど大きくなります。イベントは、`engine.subscribe(listener)` を `GET` のルートから Server-Sent Events で流します。書き出しは、`engine.exportFile(name)` が指すファイルを返します。
+
+### Server Functions
+
+`serverFunctionTransport` は、`"use server"` の関数を通してメッセージを運びます。
+
+```ts
+// app/table-action.ts
+"use server";
+import type { RequestMessage } from "vastgrid/core";
+import { engine } from "@/lib/engine";
+
+export async function tableAction(request: RequestMessage) {
+  // Check here that this person may use the grid.
+  return engine.handle(request);
+}
+```
+
+```tsx
+"use client";
+import { DataGrid, serverFunctionTransport } from "vastgrid";
+import { tableAction } from "./table-action";
+
+const transport = serverFunctionTransport(tableAction);
+
+export function Sales() {
+  return <DataGrid transport={transport} table="sales/2025.parquet" />;
+}
+```
+
+この関数は、どのクライアントが送るものも受け取ります。`engine.handle` は各要求を仕様に照らして確かめ（`checkRequest`）、`resolve` が拒むものは拒みます。Server Functions はイベントを運ばず、フレームワークによっては 1 つずつしか実行しないので、スクロールは `httpTransport` のほうが速くなります。書き出しをダウンロードさせるには、トランスポートに `exportUrl` を加え、`engine.exportFile` のファイルを返すルートを用意します。
 
 ## オプション
 
-### `TableEngine.create(options)`
-
-| オプション | 既定値 | 説明 |
+| `DuckDBEngine.create` | 既定 | |
 | --- | --- | --- |
-| `allowedDirectories` | （必須） | DuckDB が読み込みと書き出しをしてよいフォルダー。ほかのファイルへのアクセスはすべて無効にし、あとから有効にはできません。 |
-| `tempDirectory` | （必須） | エンジンがデータベースのファイル、メモリからあふれたデータ、変換したファイルを置く場所。エンジンごとにその中に専用のフォルダーを作り、`dispose()` で削除します。異常終了したプロセスが残したフォルダーは、次の起動時に削除します。 |
-| `memoryLimit` | メモリの 5 分の 1（1〜4 GB） | DuckDB のメモリの上限。たとえば `"4GB"`。 |
-| `threads` | CPU の数 − 1 | DuckDB の作業スレッドの数。 |
-| `maxTables` | `4` | 開いたままにする表の数。これを超えると、最も長く使っていない表から閉じます。 |
-| `maxViews` | `2` | 表ごとに残す、並べ替え・絞り込みしたビューの数。 |
-| `materializeRows` | `20000000` | これより行の多い表では、ビューは並べ替えた複製ではなく、行の順番だけを持ちます（後述）。 |
-| `viewPreviewMinRows` | `1000000` | この行数以上の表の並べ替えでは、ビュー全体を作り終える前に先頭の行を表示します（後述）。 |
-| `viewPreviewRows` | `1000` | そうした並べ替えで、ビューの完成前に読める行の数。 |
-| `abandonedViewTimeout` | `3000` | 表のほかのビューが順番を待っていて、このビューがこのミリ秒数のあいだ求められなかったとき、背景での作成をやめます。 |
-| `previewRows` | `1000` | 区切りのテキストや JSON のファイルの読み込み中に読める行の数。 |
-| `textLimit` | `2000` | 既定でセルごとに送る文字列の最大の長さ。 |
-| `log` | | 要求が原因ではない問題を受け取ります。ログに使います。 |
+| `allowedDirectories` | 必須 | 開いてよいファイルのフォルダー。DuckDB はほかのファイルを読みません |
+| `tempDirectory` | 必須 | エンジンのデータベース、ディスクに書き出したデータ、変換したファイルを置く場所（専用のフォルダーを作ります） |
+| `resolve` | パス。相対パスは最初の許可フォルダーの中 | `ref` が指すファイル。例外を投げると拒否（`not_allowed`） |
+| `resolveTarget` | なし：書き出しはダウンロード用に保持 | 書き出しの `target` が指すファイル |
+| `memoryLimit` | メモリの 5 分の 1（1〜4 GB） | DuckDB のメモリ上限（`"4GB"` など） |
+| `maxTempDirectorySize` | `"8GB"` | ディスクに書き出すファイルの上限 |
+| `threads` | CPU の数 − 1 | DuckDB のスレッド数 |
+| `maxTables` | 4 | どのハンドルも使っていない表を、開き直しに備えて残しておく数 |
+| `previewRows` | 1,000 | 読み込み中のファイルで、すぐに読める行数 |
+| `textLimit` | 2,000 | 要求が指定しないときに、セルが送る文字列の最大長 |
+| `saveFiles` | `false` | `save` で CSV・TSV のファイルにセルを書き込めるようにする |
+| `watchFiles` | `true` | 開いている表のファイルの変更を追いかける |
+| `maxViews`、`materializeRows`、`viewPreviewMinRows`、`viewPreviewRows` | 8、2,000 万、100 万、1,000 | 保持するビューの数と、並べ替えの保持のしかた・先行の答え方（後述） |
+| `log` | なし | どの要求にも由来しない問題 |
 
-### `createTableHandler(options)`
+## セキュリティ
 
-| オプション | 説明 |
-| --- | --- |
-| `engine` | エンジン、またはエンジンかその Promise を返す関数。 |
-| `resolve(ref)` | 要求の `ref` をファイルの絶対パスに変えます。拒否するには例外を投げます。クライアントが何を開けるかは、ここで決めます。 |
-| `resolveTarget(target)` | 書き出し（グリッドの書き出しパネル、またはアプリから呼ぶ `source.exportView(…)`）の書き出し先を、許可したフォルダーの中の新しいファイルの絶対パスに変えます。[書き出し](/ja/guides/export/)を参照してください。これがないと書き出しは拒否され、`capabilities.export` は `false` になります。 |
-| `onError(error)` | 要求が原因ではないエラーを受け取ります。ログに使います。 |
+- DuckDB が読むのは `allowedDirectories` の中のファイルだけです。リンクをたどった実際の場所で判定し、拡張機能は読み込みません。要求には SQL もパスも含まれません。SQL はエンジンが組み立て、値はすべてパラメーターです。
+- エラーメッセージには、サーバーのフォルダーや SQL は含まれません。
+- `resolve` は開かれるすべての `ref` について、どのクライアントにも同じように実行されます。エンジンはすべてのクライアントを信頼し、表の ID（`t1`、`t2`、…）は秘密ではありません。1 つのエンジンは同じファイルを見てよい人たちの間で共有するか、`engine.handle` の前に各 `open` 要求の `ref` を確かめてください。
+- 1 回の `rows` 要求で読めるのは、最大 1,000,000 行かつ 1,000,000 セルです。
 
-## 安全性
+## ファイルと形式
 
-- DuckDB が読めるのは、`allowedDirectories` と DuckDB 自身の一時フォルダーだけです。エンジンは起動時にこれを設定し、そのあとは変更できないようにするので、どの要求も、SQL を通しても、ほかのファイルには届きません。
-- ファイルは、リンクをたどった実際の場所で許可します。許可したフォルダーの中のリンクが外のファイルを指している場合は、`not_allowed` で拒否します。
-- SQL はエンジンが組み立て、値はすべてパラメーターで渡します。クライアントが送るのは列の番号だけで、列名や SQL は送りません。
-- クライアントに送るエラーメッセージでは、ファイル名からサーバーのフォルダーを除き、DuckDB が引用する SQL も省きます。
-- `resolve` は表を開くたびに呼ばれます。ダウンロードのときと同じように、そのユーザーがそのファイルを開いてよいかを、ここで確かめてください。
-- 1 回の `rows` の要求で読めるのは、最大 1,000,000 行・1,000,000 セルです。フレームワークの側でも、要求の本文の大きさを制限してください。
-
-## ファイル
-
-形式はファイルの拡張子で決まります。
-
-| 形式 | 拡張子 |
+| 形式 | 名前 |
 | --- | --- |
 | CSV | `.csv`、`.csv.gz`、`.csv.zst` |
 | TSV | `.tsv`、`.tab`、`.tsv.gz`、`.tsv.zst` |
 | Parquet | `.parquet`、`.pq` |
-| JSON Lines | `.jsonl`、`.ndjson`、`.jsonl.gz`、`.ndjson.gz` |
+| JSON Lines | `.jsonl`、`.ndjson`、それぞれの `.gz` |
 | JSON | `.json`、`.json.gz` |
 | Excel | `.xlsx`、`.xlsm` |
 
-- **区切りのテキストと JSON** は、エンジンのデータベースのファイルの中で DuckDB の表になります。最初の行（`previewRows`）はすぐに読めます。グリッドは残りを読み込む間それを表示し、読み込みが終わると並べ替え・絞り込み・統計を使えるようにします。735 MB・1,000 万行の CSV は 0.15 秒で最初の行を表示し、5.3 秒で読み込みを終えます。
-- **Parquet** はファイルのまま、行の位置で読みます。読み込みはなく、1.4 GB・1 億行のファイルが 20 ms で開きます。
-- **文字コード**は Shift_JIS・EUC-JP・BOM 付き UTF-16（両方のバイト順）を検出して、先に UTF-8 に変換します。そのとき表の `notes` には `encoding:shift_jis` のように記録され、グリッドのステータスバーに表示されます。値が 1 つの型に収まらない列は文字列として読み（`all_varchar`）、UTF-8 として正しくない部分は置き換えます（`invalid_utf8_replaced`）。
-- **ディスク上のファイルが変わると**（大きさ・更新日時・先頭の 64 KiB）、次の `info` はそのファイルを開き直し、新しい `revision` を返します。`RemoteSource` のグリッドはこれを自分で検出します。グリッドが表を表示している間 2 秒ごとに送る `revision` 要求でファイルの変更を知り、クエリー・列の設定・スクロール位置を保ったまま読み直します（`followTail` を指定すると、行が追記される間は末尾を表示し続けます）。ファイル全体を読み込み直すので、毎秒変わるようなファイルは間隔を長めにしてください（`pollChanges({ interval })`）。`reloadKey` で好きなときに読み直すこともできます。
+`tableFormatOf(file)` は、ファイル名から形式を返します（表のファイルでなければ null）。`findTableFiles(folders, limit)` は、フォルダーの中の表のファイルを、2 階層下まで、隠しファイルを除いて列挙します。ファイルの一覧を見せるのに使えます。
 
-### Excel のブック
+- **Parquet** は、その場で行番号から読みます。1 億行のファイルでも、どのブロックも数十ミリ秒で読めます。
+- **区切り文字のファイル・JSON・Excel** は、エンジンのデータベースに読み込みます。最初の `previewRows` 行はすぐに読め、読み込みの進み具合は `progress` イベントで伝わります。UTF-16・Shift_JIS・EUC-JP などの文字コードは判別して変換し、表の `notes` にそのことが入ります（`encoding:shift_jis`）。
+- **Excel** は、最初の表示されているシートで開きます。別のシートはグリッドの `open` プロパティで選びます（`<DataGrid key={sheet} open={{ sheet }} … />`）。`headerRow`・`keepEmptyRows`・`keepEmptyColumns` も指定できます。`open` はグリッドがストアを作るときに読まれるので、`key` を一緒に渡します。
 
-`.xlsx` と `.xlsm` のブックは、エンジンが自分で読みます。パッケージを追加したり、DuckDB の拡張をダウンロードしたりする必要はありません。シートをストリームとして読み、列ごとに 1 つの型を決めた CSV をエンジンの一時フォルダーに書き出して、DuckDB がほかの区切りのテキストと同じように読み込みます。`info` は最初の応答から、シートを読み込んでいる間も、`sheets`（隠しシートには `hidden: true`）を返し、`sheet` は読んだシートの名前です。行はシート全体を読み込んでから読めます。その間は `progress` が進みます。
+## 段階的な並べ替え
 
-ブックの読み方は `read` で選びます。`RemoteSource` の `read`、`info` の要求の `read`、`engine.open` の 3 つ目の引数のどれでも同じです。シートごと、設定の組み合わせごとに別の表になります。
+100 万行以上の並べ替えは、まず最終的な順序での先頭 1,000 行を答え、グリッドは残りを作っている間それを表示します。完成すると `view` イベントで伝わります。2,000 万行までのビューは並べ替えた写しを持ち、それより大きいビューは行の順序だけを持ちます。2026-10-25 に Apple M2 Pro、Node.js 24、DuckDB 1.5.6、8 スレッド、メモリ上限 2 GB で、8 列の 256 行を読んで計測しました（[計測の記録](https://github.com/yhay81/vastgrid/blob/main/docs/v2-views-benchmark.md)）。
 
-```ts
-new RemoteSource({ endpoint: "/api/table", ref: "sales.xlsx", read: { sheet: "2026", headerRow: 3 } });
-```
+| ファイルと操作 | 最初の行 | その後のビュー内の読み取り（中央値） |
+| --- | ---: | ---: |
+| 1 億行の Parquet（1.38 GB）、並べ替え | 778 ms | 676 ms |
+| 1 億行の Parquet、絞り込み | 191 ms | 21 ms |
+| 1,000 万行の CSV（735 MB）、並べ替え | 53 ms | 3.1 ms |
+| 1,000 万行の CSV、絞り込み | 179 ms | 2.7 ms |
 
-| 設定 | 既定 | 説明 |
-| --- | --- | --- |
-| `sheet` | 最初の表示されているシート | 読むシートの名前。 |
-| `headerRow` | 値のある最初の行 | 列の名前がある行（1 から数える）。それより上の行は読みません。`0` は名前なしで、列は列番号の文字（`A`、`B`、…）になります。空の名前は列番号の文字に、重なった名前には番号（`name_2`）を付けます。 |
-| `keepEmptyRows` | `false` | 最初と最後のデータ行の間にある、値のない行を残します。 |
-| `keepEmptyColumns` | `false` | 使われている範囲の中にある、値も名前もない列を残します。 |
+並べ替えたビューが完成するまで、さらに Parquet で 2.3 秒、CSV で 1.0 秒かかりました。
 
-セルの読み方:
+## 保存とファイルの追跡
 
-- **型**: 列ごとに、セルの値から 1 つの型を決めます。整数は `BIGINT`、それ以外の数値は `DOUBLE`、`TRUE`/`FALSE` は `BOOLEAN`、日付は `DATE`、時刻のある日付は `TIMESTAMP`、時刻だけは `TIME` です。いくつもの種類の値がある列は文字列になり、数値は最も短い表記、真偽値は `TRUE`/`FALSE`、日付は `2024-01-31` や `2024-01-31 12:00:00` になります。
-- **日付**は、日付か時刻の表示形式（組み込みのものと、`yyyy"年"m"月"d"日"` のような独自のもの）を持つ数値です。1900 年と 1904 年の日付システムに対応し、ミリ秒に丸めます。時刻の表示形式で 1 日未満の値は時刻だけになります。Excel が数える、実在しない 1900 年 2 月 29 日（シリアル値 60）は 1900-03-01 になります。
-- **表示形式**は反映しません。`12.5%` は `0.125` になり、通貨記号や小数の桁数も残りません。
-- **数式**は、最後に計算したときに Excel が保存した値を表示します。vastgrid は数式を計算しません。値が保存されていない数式は空欄になり、表の `notes` に `formulas_without_values` が入ります。`#DIV/0!` のようなエラーは文字列です。
-- **空のセル**と空の文字列は空欄（`null`）です。
-- **結合セル**は左上のセルにだけ値があり、範囲のほかのセルは空欄です。表の `notes` に `merged_cells` が入ります。
-- **文字列**: 書式付きの文字列は書式を除いて読み、ふりがなは含めません。
-- **再現しないもの**: 書式、コメント、画像、グラフ、非表示の行と列（ほかと同じように読みます）、フィルター、入力規則。グラフシートは一覧に含めません。
+書き込んだセルは、ファイルとは別にエンジンが持ちます。`saveFiles: true` にすると、グリッドの保存ボタン（または ⌘S、Ctrl+S）で、元の CSV・TSV ファイルに書き込みます。変わるのはそのフィールドだけで、引用符・改行・文字コードはそのままです。ファイルは一時的な名前で書いてから元のファイルに置き換えます。読んだ後に他の人が変更したファイルは上書きしません（`file_changed`）。Apple シリコンのノートパソコンで、2 つのセルの保存は 20 万行のファイルで約 60 ms、200 万行のファイルで 0.3 秒でした。
 
-読めないブックは読み込みに失敗し（`status: "error"`、以降の要求は `load_failed`）、`error` に理由が入ります。ZIP ではない、暗号化されているか古い `.xls` 形式、バイナリの `.xlsb`、必要な部分がない、圧縮されたデータが壊れている、Excel の上限（1,048,576 行・16,384 列）を超える行やセル、指定した名前のシートがない、のいずれかです。`.xls` や `.xlsb` という名前のファイルは表のファイルとして扱いません（`unsupported_format`）。
+`watchFiles`（既定でオン）では、エンジンが開いているファイルのフォルダーを監視します。変更されたファイルは読み直し、グリッドは並べ替えや絞り込みを保ったまま新しい内容に移ります。書き込んだセルがある表はそのまま残し、ファイルが変わったことをグリッドが知らせます。
 
-シートを読む間、ブックの共有文字列はメモリーに置き、セルはストリームで処理します。100 万行・8 列（64 MB）のブックは Apple M2 Pro で約 8 秒で開き、JavaScript のヒープは最大約 130 MB、プロセス全体（DuckDB を含む）の常駐メモリーは 600〜700 MB です。手元のブックは `packages/duckdb/bench/xlsx.ts` で測れます。
-
-## 並べ替え・絞り込みしたビュー
-
-並べ替えや絞り込みをすると、ビューを作ります。`materializeRows` 行（既定で 2,000 万行）までの表では、ビューは表を並べ替えた複製なので、元の表と同じ速さでスクロールできます（行のまとまり 1 つで約 2 ms）。それより大きな表では、ビューは行の順番だけを持ちます。作るのは 1 桁速く、一時領域も数分の 1 で済みますが、1 億行の Parquet では、行のまとまり 1 つを読むのに 0.1〜0.2 秒かかります。[性能](/ja/about/performance/)を参照してください。
-
-`viewPreviewMinRows` 行（既定で 100 万行）以上の表では、グリッドが求めた並べ替えは、先頭の `viewPreviewRows` 行が分かった時点で答えます。先頭だけを取り出す問い合わせ（top-N）は、すべての行を並べるよりずっと速く終わります。残りのビューは背景で作ります。グリッドはその行をツールバーの「並べ替えています…」とともに表示し、ビューの状態を繰り返し問い合わせ、完成すると残りの行も表示します。先頭の行は完成したビューと同じ順番で、同じ値の行はファイルでの位置の順に並ぶので、完成しても行は動きません。完成までは、先頭の行より先を含むコピーと選択範囲の集計、検索、書き出し、絞り込んだビューの統計は待ちます。ビューは表ごとに 1 つずつ作り、もう問い合わせのないビューは、ほかのビューが順番を待っていると作るのをやめます（`abandonedViewTimeout`）。そのため、並べ替えをすばやく変えても、古い作業がたまりません。
+書き出し（CSV・TSV・Parquet・JSON・xlsx）はサーバーで行います。`resolveTarget` がなければ、エンジンはファイルを 1 時間保持し、グリッドは `<path>/exports/<name>` からダウンロードします。同じノートパソコンで、100 万行 × 4 列の並べ替えたビューの書き出しは、CSV で 0.3 秒、xlsx で 2.2 秒でした。
 
 ## デプロイ
 
-- `@duckdb/node-api` はネイティブの拡張です。サーバーのバンドルに含めず、サーバーと一緒にインストールしてください。Next.js では次のようにします。
+- `@duckdb/node-api` はネイティブモジュールです。サーバーのバンドルには含めず、サーバーと一緒にインストールしてください。Next.js では次のようにします。
 
   ```ts
   // next.config.ts
@@ -171,6 +176,37 @@ new RemoteSource({ endpoint: "/api/table", ref: "sales.xlsx", read: { sheet: "20
   };
   ```
 
-- OS ごとのパッケージ `@duckdb/node-bindings-<platform>`（macOS で約 120 MB）を一緒に配布してください。バンドルの大きさの上限が小さいサーバーレスの環境には、収まらないことがあります。
-- `tempDirectory` には十分な空きを用意してください。読み込んだファイル、並べ替えたビュー、メモリからあふれたデータを置きます。
-- エンジンは要求の間で表を保つので、長く動き続けるプロセスで動かしてください。プロセスを終えるときに `dispose()` を呼ぶと、DuckDB を閉じて一時ファイルを削除します。
+- プラットフォームのパッケージ `@duckdb/node-bindings-<platform>` も配置してください。Apple シリコンの macOS で約 110 MB あり、バンドルの上限が小さいサーバーレス環境には収まらないことがあります。
+- `tempDirectory` には余裕を持たせてください。読み込んだファイル、並べ替えたビュー、ディスクに書き出したデータが置かれます。`maxTempDirectorySize` が制限するのは、書き出したデータのファイルだけです。
+- エンジンは要求の間で表を持ち続けるので、長く動き続けるプロセスで動かしてください。
+
+## サーバーレンダリング
+
+`vastgrid/server` の `readInitialView` は、表とそのビュー、最初の行をサーバーで読み、グリッドの `initial` プロパティに渡せる形にします。Promise のまま渡すと、ページはすぐに送られ、行は読めたところでストリーミングされます。
+
+```tsx
+// app/sales/page.tsx (a Server Component)
+import { localTransport } from "vastgrid/core";
+import { readInitialView } from "vastgrid/server";
+import { engine } from "@/lib/engine";
+import { SalesGrid } from "./sales-grid";
+
+export default function Page() {
+  const initial = readInitialView(localTransport(engine), { table: "sales/2025.parquet", rows: 100 });
+  return <SalesGrid initial={initial} />;
+}
+```
+
+```tsx
+// app/sales/sales-grid.tsx
+"use client";
+import { DataGrid, httpTransport, type InitialView } from "vastgrid";
+
+const transport = httpTransport("/api/table", { events: "/api/table/events" });
+
+export function SalesGrid({ initial }: { initial: Promise<InitialView> }) {
+  return <DataGrid transport={transport} table="sales/2025.parquet" initial={initial} style={{ height: 600 }} />;
+}
+```
+
+サーバーは最初の行を HTML の表として送り、canvas は最初のフレームでその行を描きます。`readInitialView` は `document` と `open` も受け取ります。グリッドにも同じものを渡し、両方が同じビューを読むようにしてください。
