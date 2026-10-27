@@ -19,6 +19,7 @@ import {
 } from "vastgrid-spec";
 import { comparer, decimalText, exactJson, filter, toFloat, unscaled } from "./evaluate.js";
 import type { ColumnRanks } from "./order.js";
+import type { Vector } from "./table.js";
 
 /** What grouping reads: the columns of the rows before grouping, by name, and the rows that `where` keeps. */
 export interface GroupInput {
@@ -30,7 +31,7 @@ export interface GroupInput {
   /** The rows of the table. */
   count: number;
   /** A column's values by row ID: a column of the table or a derived one. */
-  values(name: string): readonly JsonValue[];
+  values(name: string): Vector;
   /** A column's ranks by row ID (§3.3). */
   ranks(name: string): ColumnRanks;
 }
@@ -133,7 +134,7 @@ function accumulator(measure: CheckedMeasure, input: GroupInput, cells: number):
       const counts = new Float64Array(cells);
       return {
         add: (cell, row) => {
-          if (values[row] !== null) counts[cell]++;
+          if (values.at(row) !== null) counts[cell]++;
         },
         result: (cell) => counts[cell],
       };
@@ -165,7 +166,7 @@ function accumulator(measure: CheckedMeasure, input: GroupInput, cells: number):
       const squares = new Float64Array(cells);
       return {
         add: (cell, row) => {
-          const value = values[row];
+          const value = values.at(row);
           if (!takes(value)) return;
           const number = toFloat(value, column);
           const count = ++counts[cell];
@@ -183,7 +184,7 @@ function accumulator(measure: CheckedMeasure, input: GroupInput, cells: number):
       const best: JsonValue[] = new Array(cells).fill(null);
       return {
         add: (cell, row) => {
-          const value = values[row];
+          const value = values.at(row);
           if (!takes(value)) return;
           const now = best[cell];
           if (now === null || (greatest ? compare(value, now) > 0 : compare(value, now) < 0)) best[cell] = value;
@@ -196,7 +197,7 @@ function accumulator(measure: CheckedMeasure, input: GroupInput, cells: number):
       const numbers: (number[] | undefined)[] = new Array(cells);
       return {
         add: (cell, row) => {
-          const value = values[row];
+          const value = values.at(row);
           if (!takes(value)) return;
           let list = numbers[cell];
           if (!list) {
@@ -225,12 +226,12 @@ function finite(value: number): JsonValue {
 }
 
 /** `sum` and `avg` of floats, leaving out NaN and the infinities (§3.8). */
-function floatSum(measure: CheckedMeasure, values: readonly JsonValue[], cells: number): Accumulator {
+function floatSum(measure: CheckedMeasure, values: Vector, cells: number): Accumulator {
   const counts = new Float64Array(cells);
   const sums = new Float64Array(cells);
   return {
     add: (cell, row) => {
-      const value = values[row];
+      const value = values.at(row);
       if (typeof value !== "number") return;
       counts[cell]++;
       sums[cell] += value;
@@ -246,19 +247,14 @@ function floatSum(measure: CheckedMeasure, values: readonly JsonValue[], cells: 
  * `sum` and `avg` of exact numbers: an exact sum, in numbers while they stay exact and in BigInt beyond; a sum
  * that does not fit decimal(38, s) is null, and the average is computed from the exact sum (§3.8).
  */
-function exactSum(
-  measure: CheckedMeasure,
-  column: ValueType,
-  values: readonly JsonValue[],
-  cells: number,
-): Accumulator {
+function exactSum(measure: CheckedMeasure, column: ValueType, values: Vector, cells: number): Accumulator {
   const scale = column.type === "decimal" ? (column.scale ?? 0) : 0;
   const counts = new Float64Array(cells);
   const small = new Float64Array(cells);
   const large: (bigint | undefined)[] = new Array(cells);
   return {
     add: (cell, row) => {
-      const value = values[row];
+      const value = values.at(row);
       if (value === null) return;
       counts[cell]++;
       let number = Number.NaN;
@@ -337,7 +333,7 @@ function groupColumns(input: GroupInput): { columns: Column[]; values: Map<strin
     const source = input.values(key.name);
     values.set(
       key.name,
-      groups.firsts.map((row) => source[row]),
+      groups.firsts.map((row) => source.at(row)),
     );
   }
   const results = (measure: number, combination: number) =>
@@ -350,7 +346,7 @@ function groupColumns(input: GroupInput): { columns: Column[]; values: Map<strin
   }
   const taken = new Set(columns.map((column) => column.name));
   combinations.firsts.forEach((row, combination) => {
-    const combinationValues = pivot.columns.map((column) => input.values(column.name)[row]);
+    const combinationValues = pivot.columns.map((column) => input.values(column.name).at(row));
     const labels = combinationValues.map((value, index) => {
       const text = textOf(value, pivot.columns[index]);
       return text === null ? "(null)" : text === "" ? "(empty)" : text;

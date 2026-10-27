@@ -29,11 +29,23 @@ import {
 import { type ColumnRanks, type RankedKey, rankColumn, sortRows } from "./order.js";
 import type { ViewColumn, ViewShape } from "./plan.js";
 import { Summary } from "./summary.js";
-import { checkTable, type MemoryTable, shown, TableProblem, valueChecker } from "./table.js";
+import {
+  type ArrowTable,
+  type CheckedTable,
+  checkTable,
+  isArrowTable,
+  type MemoryTable,
+  shown,
+  TableProblem,
+  type Vector,
+  valueChecker,
+  vectorOf,
+  vectorValue,
+} from "./table.js";
 
 export interface MemoryEngineOptions {
-  /** The tables that `open` opens, by the `ref` that names them. */
-  tables: Record<string, MemoryTable>;
+  /** The tables that `open` opens, by the `ref` that names them: rows of typed JSON, or Arrow. */
+  tables: Record<string, MemoryTable | ArrowTable>;
 }
 
 export interface MemoryEngine {
@@ -110,8 +122,13 @@ interface Table {
   columns: Column[];
   /** The index of each column by name. */
   index: Map<string, number>;
-  /** The rows as the engine reads them: the host's, with copies of the rows that writes changed. */
-  rows: readonly (readonly JsonValue[])[];
+  /** The host's rows, of a table given as rows; null for a table given as Arrow. */
+  rows: readonly (readonly JsonValue[])[] | null;
+  /** The columns of a table given as Arrow; null for a table given as rows. */
+  vectors: Vector[] | null;
+  /** The module that reads tables given as Arrow, for a table given as Arrow. */
+  arrow: typeof import("./arrow.js") | null;
+  rowCount: number;
   revision: string;
   editable: boolean;
   /** The edits version and the cells written so far (§8.2). */
@@ -124,10 +141,13 @@ interface Table {
   ranks: (ColumnRanks | undefined)[];
   /** Checks of each column's values (§2.2); a column is checked whole before anything reads all of it. */
   checkers: ((value: unknown, row: number) => void)[];
-  /** The columns whose values are all checked. */
-  checked: boolean[];
-  /** Each checked column's values by row ID, which ranks, summaries and expressions read. */
-  values: (JsonValue[] | undefined)[];
+  /**
+   * Each checked column's values by row ID, which ranks, summaries and expressions read: an array of the
+   * engine's own, or the column of an Arrow table until a write makes a copy of it.
+   */
+  values: (Vector | undefined)[];
+  /** The columns whose values are arrays of the engine's own, which writes change. */
+  owned: boolean[];
   /** Views by plan hash, the most recently used last. */
   views: Map<string, View>;
   /** The table IDs open on it. */
@@ -153,16 +173,13 @@ interface View {
   firsts: Map<string, Int32Array>;
 }
 
-/** The row of a table that a view of groups reads: none, as it reads only its own columns. */
-const EMPTY: readonly JsonValue[] = [];
-
 /** A column that a request reads: a table's column at its index, or a derived column with its values. */
 interface Source {
   name: string;
   column: Column;
   /** The index of a table's column; −1 for a derived column. */
   index: number;
-  values: readonly JsonValue[] | null;
+  values: Vector | null;
 }
 
 /** The position of a row that a view leaves out, in `View.positions`. */
@@ -177,7 +194,7 @@ interface Running {
 const revisions = new WeakMap<object, string>();
 let revisionCount = 0;
 
-function revisionOf(table: MemoryTable): string {
+function revisionOf(table: MemoryTable | ArrowTable): string {
   let revision = revisions.get(table);
   if (revision === undefined) {
     revision = `memory-${++revisionCount}`;
@@ -219,7 +236,7 @@ function mergeRanges(ranges: readonly (readonly [number, number])[], count: numb
 }
 
 class Engine implements MemoryEngine {
-  private readonly sources: Map<string, MemoryTable>;
+  private readonly sources: Map<string, MemoryTable | ArrowTable>;
   /** Tables by ref, while a table ID is open on them. */
   private readonly prepared = new Map<string, Table>();
   /** Tables by table ID. */
@@ -326,24 +343,31 @@ class Engine implements MemoryEngine {
     }
   }
 
-  private open(ref: string) {
+  private async open(ref: string) {
     if (!this.sources.has(ref)) throw new Failure("not_allowed", `The host does not open ${shown(ref)}.`);
-    const source = this.sources.get(ref) as MemoryTable;
+    const source = this.sources.get(ref) as MemoryTable | ArrowTable;
+    // Arrow tables are read by a module of their own, loaded before the table is looked up so that two opens of
+    // one table do not both make it.
+    const arrow = isArrowTable(source) ? await import("./arrow.js") : null;
     let table = this.prepared.get(ref);
     if (!table) {
-      let columns: Column[];
+      let checked: CheckedTable;
       try {
-        columns = checkTable(source);
+        checked = arrow ? arrow.checkArrow((source as ArrowTable).arrow) : checkTable(source);
       } catch (error) {
         if (!(error instanceof TableProblem)) throw error;
         const at = error.path === "" ? "" : `at ${error.path}, `;
         throw new Failure("load_failed", `The table ${shown(ref)} cannot be read: ${at}${error.message}`);
       }
+      const { columns } = checked;
       table = {
         ref,
         columns,
         index: new Map(columns.map((column, index) => [column.name, index])),
-        rows: source.rows,
+        rows: checked.rows,
+        vectors: checked.vectors,
+        arrow,
+        rowCount: checked.rowCount,
         revision: revisionOf(source),
         editable: source.editable === true,
         edits: { version: 0, cells: 0 },
@@ -351,8 +375,8 @@ class Engine implements MemoryEngine {
         keys: new Map(),
         ranks: columns.map(() => undefined),
         checkers: columns.map((column, index) => valueChecker(column, index)),
-        checked: columns.map(() => false),
         values: columns.map(() => undefined),
+        owned: columns.map(() => false),
         views: new Map(),
         open: 0,
       };
@@ -372,8 +396,8 @@ class Engine implements MemoryEngine {
       edits: { ...table.edits },
       status: "ready",
       progress: 1,
-      rowCount: table.rows.length,
-      readableRows: table.rows.length,
+      rowCount: table.rowCount,
+      readableRows: table.rowCount,
       columns: table.columns.map((column) => ({ ...column })),
       capabilities: capabilities(table.editable),
     };
@@ -397,32 +421,79 @@ class Engine implements MemoryEngine {
     );
   }
 
-  /** Checks every value of a column, once, before something reads all of it, and gives its values by row ID. */
-  private valuesOf(table: Table, index: number): JsonValue[] {
+  /**
+   * Checks every value of a column, once, before something reads all of it, and gives its values by row ID: of a
+   * table given as rows, an array of the engine's own; of one given as Arrow, its column.
+   */
+  private valuesOf(table: Table, index: number): Vector {
     const made = table.values[index];
     if (made) return made;
     const check = table.checkers[index];
-    const rows = table.rows;
-    const values: JsonValue[] = new Array(rows.length);
+    let values: Vector;
     try {
-      for (let row = 0; row < rows.length; row++) {
-        const value = rows[row][index];
-        if (!table.checked[index]) check(value, row);
-        values[row] = value;
+      if (table.vectors) {
+        values = table.vectors[index];
+        const column = table.columns[index];
+        // Numbers are checked as numbers; a value found wrong is then read, which fails as its JSON would.
+        if (values.numbers && table.arrow) {
+          const row = table.arrow.firstInvalid(column, values.numbers, values.validity ?? null);
+          if (row >= 0) check(vectorValue(values, column, index, row), row);
+        } else {
+          for (let row = 0; row < table.rowCount; row++) check(vectorValue(values, column, index, row), row);
+        }
+      } else {
+        const rows = table.rows as readonly (readonly JsonValue[])[];
+        const array: JsonValue[] = new Array(rows.length);
+        for (let row = 0; row < rows.length; row++) {
+          const value = rows[row][index];
+          check(value, row);
+          array[row] = value;
+        }
+        values = vectorOf(array);
+        table.owned[index] = true;
       }
     } catch (error) {
       if (error instanceof TableProblem) this.loadFailed(table, error);
       throw error;
     }
-    table.checked[index] = true;
     table.values[index] = values;
     return values;
+  }
+
+  /** The value of a table's column at a row as the table holds it, checked when its column is not (§2.2). */
+  private cell(table: Table, row: number, index: number): JsonValue {
+    const values = table.values[index];
+    if (values) return values.at(row);
+    try {
+      const value = table.vectors
+        ? vectorValue(table.vectors[index], table.columns[index], index, row)
+        : (table.rows as readonly (readonly JsonValue[])[])[row][index];
+      table.checkers[index](value, row);
+      return value;
+    } catch (error) {
+      if (error instanceof TableProblem) this.loadFailed(table, error);
+      throw error;
+    }
+  }
+
+  /** The values of a table's column in an array of the engine's own, which a write changes. */
+  private ownValues(table: Table, index: number): JsonValue[] {
+    const values = this.valuesOf(table, index);
+    if (table.owned[index]) return values as unknown as JsonValue[];
+    const array = Array.from({ length: values.length }, (_, row) => values.at(row));
+    table.values[index] = vectorOf(array);
+    table.owned[index] = true;
+    return array;
   }
 
   private ranksOf(table: Table, index: number): ColumnRanks {
     let ranks = table.ranks[index];
     if (!ranks) {
-      ranks = rankColumn(table.columns[index], this.valuesOf(table, index));
+      const column = table.columns[index];
+      const values = this.valuesOf(table, index);
+      // An Arrow table's column is ranked from its numbers, until a write makes it an array.
+      const write = values.numbers && table.arrow ? table.arrow.numberWriter(column, values.numbers) : null;
+      ranks = rankColumn(column, values, write);
       table.ranks[index] = ranks;
     }
     return ranks;
@@ -439,7 +510,7 @@ class Engine implements MemoryEngine {
       table.views.set(hash, kept);
       return kept;
     }
-    const count = table.rows.length;
+    const count = table.rowCount;
     const ranks = (name: string) => this.ranksOf(table, table.index.get(name) as number);
     let shape: ViewShape;
     if (checked.derive.length > 0 || checked.where || checked.aggregate) {
@@ -488,7 +559,7 @@ class Engine implements MemoryEngine {
   private columnsOf(table: Table, view: View, names: string[]): Source[] {
     return names.map((name, at) => {
       const derived = view.derived.get(name);
-      if (derived) return { name, column: derived.column, index: -1, values: derived.values };
+      if (derived) return { name, column: derived.column, index: -1, values: vectorOf(derived.values) };
       const index = table.index.get(name);
       if (index === undefined || !view.columns.some((column) => column.name === name)) {
         throw new Failure("invalid_request", `The view has no column ${shown(name)}.`, {
@@ -509,29 +580,18 @@ class Engine implements MemoryEngine {
     const end = Math.max(start, Math.min(request.end as number, view.rowCount));
     const limit = (request.textLimit as number | undefined) ?? MESSAGE_LIMITS.textLimitDefault;
     const columns = sources.map((source) => source.column);
-    // The values read are checked, of the table's columns not checked whole (§2.2).
-    const checks = sources.map(({ index }) => (index < 0 || table.checked[index] ? null : table.checkers[index]));
     const rowIds: number[] = [];
     const values: JsonValue[][] = [];
     // By name in a Map: a column may be named "__proto__".
     const truncated = new Map<string, number[]>();
     for (let position = start; position < end; position++) {
       const row = view.order ? view.order[position] : position;
-      const source = view.grouped ? EMPTY : table.rows[row];
       const offset = position - start;
       rowIds.push(row);
       values.push(
         sources.map(({ index, values }, at) => {
-          const value = values ? values[row] : source[index];
-          const check = checks[at];
-          if (check) {
-            try {
-              check(value, row);
-            } catch (error) {
-              if (error instanceof TableProblem) this.loadFailed(table, error);
-              throw error;
-            }
-          }
+          // The values read are checked, of the table's columns not checked whole (§2.2).
+          const value = values ? values.at(row) : this.cell(table, row, index);
           if (typeof value !== "string" || columns[at].type !== "string") return value;
           const shorter = cut(value, limit);
           if (shorter === null) return value;
@@ -606,7 +666,7 @@ class Engine implements MemoryEngine {
         if ("rowId" in key) return view.grouped ? null : this.positionOf(view, key.rowId);
         if (view.grouped && !group) return null;
         // The first position in the view of a row whose value equals the key's (§3.1).
-        ranks ??= group ? rankColumn(group.column, group.values) : this.ranksOf(table, column as number);
+        ranks ??= group ? rankColumn(group.column, vectorOf(group.values)) : this.ranksOf(table, column as number);
         const rank = ranks.rankOf(key.value);
         if (rank < 0) return null;
         const first = this.firstsOf(view, name, ranks)[rank];
@@ -617,14 +677,14 @@ class Engine implements MemoryEngine {
 
   /** The row ID of a row key (§5.3): `{ rowId }`, or `{ value }` of `rowKey`'s column; null when no row has it. */
   private rowOf(table: Table, key: RowKey, column: number | undefined): number | null {
-    if ("rowId" in key) return Number.isSafeInteger(key.rowId) && key.rowId < table.rows.length ? key.rowId : null;
+    if ("rowId" in key) return Number.isSafeInteger(key.rowId) && key.rowId < table.rowCount ? key.rowId : null;
     if (column === undefined) return null;
     let byText = table.keys.get(column);
     if (!byText) {
       const values = this.valuesOf(table, column);
       byText = new Map();
       for (let row = values.length - 1; row >= 0; row--) {
-        const value = values[row];
+        const value = values.at(row);
         if (value !== null) byText.set(keyText({ value }), row);
       }
       table.keys.set(column, byText);
@@ -679,25 +739,16 @@ class Engine implements MemoryEngine {
           details: { update: at },
         });
       }
-      const now = table.rows[row][index];
+      const now = this.cell(table, row, index);
       if (update.previous !== undefined && !sameCellValue(now, update.previous, column)) {
         throw new Failure("edit_conflict", "The cell holds another value now.", { details: { update: at } });
       }
       return { row, index, value: update.value };
     });
     if (changes.length === 0) return { updated: 0, edits: { ...table.edits } };
-    // The host's rows stay as they were: the engine reads its own list, with copies of the rows it wrote.
-    if (table.written.size === 0) table.rows = [...table.rows];
-    const rows = table.rows as JsonValue[][];
-    const copied = new Set<number>();
+    // The host's rows and Arrow columns stay as they were: writes change the engine's own arrays of values.
     for (const { row, index, value } of changes) {
-      if (!copied.has(row)) {
-        rows[row] = [...rows[row]];
-        copied.add(row);
-      }
-      rows[row][index] = value;
-      const values = table.values[index];
-      if (values) values[row] = value;
+      this.ownValues(table, index)[row] = value;
       table.written.add(row * width + index);
       table.ranks[index] = undefined;
       table.keys.delete(index);

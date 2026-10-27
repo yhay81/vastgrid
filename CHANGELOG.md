@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `vastgrid-js` (unreleased v2): the memory engine takes tables as Arrow, `{ arrow }` with the bytes of an IPC
+  stream or file of any number of record batches, and keeps their columns as Arrow holds them: values of fixed
+  width in typed arrays, checked and sorted as numbers, and the others read when they are asked for. A million
+  rows of six columns take half the memory of the same rows as JSON (258 MB against 494 MB), and sort by a date,
+  a decimal or a timestamp in 50–70 ms instead of 170–250 ms. Every case of the conformance corpus passes with its
+  tables as Arrow too. Writes no longer copy the host's rows; they change the engine's own copy of a column. The
+  code that reads Arrow loads with the first such table.
+- `vastgrid-spec` (unreleased v2): `decodeColumns` of `vastgrid-spec/columns` reads the columns of an Arrow IPC
+  stream or file of any number of record batches: typed JSON by row, read when it is asked for, and the typed
+  arrays that hold values of fixed width.
 - `vastgrid-duckdb`, `vastgrid-duckdb-engine` (unreleased v2): exports to Parquet keep intervals as they are. DuckDB
   1.5's Parquet dictionaries keep one of the values that compare equal, so a column of "1 month" and "30 days" was
   written with one in place of the other; a Parquet export with an interval column is now written without

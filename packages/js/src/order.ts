@@ -19,6 +19,7 @@ import {
   type JsonValue,
   normalizeInterval,
 } from "vastgrid-spec";
+import type { Vector } from "./table.js";
 
 /** The ranks of one column's values. */
 export interface ColumnRanks {
@@ -34,7 +35,7 @@ export interface ColumnRanks {
 }
 
 /** The values of a column by row ID. */
-type Values = readonly JsonValue[];
+type Values = Vector;
 
 /** How the values of a column of fixed width become words. */
 interface WordCodec {
@@ -45,19 +46,19 @@ interface WordCodec {
   accept(value: JsonValue): JsonValue | null;
 }
 
-const TWO_32 = 4_294_967_296;
+export const TWO_32 = 4_294_967_296;
 const MASK_32 = 0xffff_ffffn;
-const SIGN = 0x8000_0000;
+export const SIGN = 0x8000_0000;
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
 
 /** A signed 32-bit integer as a word whose unsigned order is the integer's order. */
-function int32Word(value: number): number {
+export function int32Word(value: number): number {
   return (value ^ SIGN) >>> 0;
 }
 
 /** Writes a safe integer as a signed 64-bit integer, in two words. */
-function writeInt64(value: number, high: Uint32Array, low: Uint32Array, at: number) {
+export function writeInt64(value: number, high: Uint32Array, low: Uint32Array, at: number) {
   const upper = Math.floor(value / TWO_32);
   high[at] = int32Word(upper);
   low[at] = value - upper * TWO_32;
@@ -82,15 +83,15 @@ function writeBigInt128(value: bigint, words: readonly Uint32Array[], at: number
 const floatBits = new Float64Array(1);
 const floatWords = new Uint32Array(floatBits.buffer);
 const littleEndian = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
-const HIGH = littleEndian ? 1 : 0;
-const LOW = littleEndian ? 0 : 1;
+export const HIGH = littleEndian ? 1 : 0;
+export const LOW = littleEndian ? 0 : 1;
 
 /**
  * Writes a float in two words: the bits of a positive number with the sign bit set, and those of a negative
  * number inverted, so that the words order as the numbers do. −0.0 is written as 0.0, and every NaN as the
  * greatest words, above Infinity (§3.1).
  */
-function writeFloat(value: number, high: Uint32Array, low: Uint32Array, at: number) {
+export function writeFloat(value: number, high: Uint32Array, low: Uint32Array, at: number) {
   if (Number.isNaN(value)) {
     high[at] = 0xffff_ffff;
     low[at] = 0xffff_ffff;
@@ -274,6 +275,9 @@ function codecOf(column: Column): WordCodec {
   }
 }
 
+/** Writes the words of the value at a row of a column's numbers (`Vector.numbers`) at a row of `words`. */
+export type NumberWriter = (row: number, words: readonly Uint32Array[], at: number) => void;
+
 /**
  * Sorts rows by their words, most significant first, compared as unsigned integers: a least significant digit
  * radix sort with 16-bit digits, which keeps the order of `rows` among rows with the same words.
@@ -307,18 +311,33 @@ function radixSort(rows: Uint32Array, words: readonly Uint32Array[]): Uint32Arra
   return order;
 }
 
-/** Ranks a column of fixed width through its words. */
-function rankWords(column: Column, values: Values): ColumnRanks {
+/**
+ * Ranks a column of fixed width through its words: written by `write` from the numbers that hold its values
+ * when it is given (for an Arrow table's column), otherwise from their JSON.
+ */
+function rankWords(column: Column, values: Values, write: NumberWriter | null): ColumnRanks {
   const codec = codecOf(column);
   const count = values.length;
   const words = Array.from({ length: codec.width }, () => new Uint32Array(count));
   const filled = new Uint32Array(count);
   let present = 0;
-  for (let row = 0; row < count; row++) {
-    const value = values[row];
-    if (value === null) continue;
-    codec.write(value, words, row);
-    filled[present++] = row;
+  const validity = values.validity ?? null;
+  const isNull = write
+    ? (row: number) => validity !== null && ((validity[row >> 3] >> (row & 7)) & 1) === 0
+    : (row: number) => values.at(row) === null;
+  if (write) {
+    for (let row = 0; row < count; row++) {
+      if (isNull(row)) continue;
+      write(row, words, row);
+      filled[present++] = row;
+    }
+  } else {
+    for (let row = 0; row < count; row++) {
+      const value = values.at(row);
+      if (value === null) continue;
+      codec.write(value, words, row);
+      filled[present++] = row;
+    }
   }
   const order = radixSort(filled.subarray(0, present), words);
   const ranks = new Uint32Array(count);
@@ -334,7 +353,7 @@ function rankWords(column: Column, values: Values): ColumnRanks {
     }
     ranks[row] = distinct - 1;
   }
-  for (let row = 0; row < count; row++) if (values[row] === null) ranks[row] = distinct + 1;
+  if (present < count) for (let row = 0; row < count; row++) if (isNull(row)) ranks[row] = distinct + 1;
   const key = words.map(() => new Uint32Array(1));
   return {
     ranks,
@@ -388,16 +407,19 @@ function byteString(bytes: Uint8Array): string {
 function rankTexts(column: Column, values: Values): ColumnRanks {
   const strings = column.type === "string";
   const count = values.length;
+  // Each value is read once: the rows that have no key are null, or empty strings marked in `blank`.
   const keys: string[] = new Array(count);
+  const blank = new Uint8Array(count);
   const filled = new Uint32Array(count);
   let present = 0;
   let empty = false;
   let surrogates = false;
   for (let row = 0; row < count; row++) {
-    const value = values[row];
+    const value = values.at(row);
     if (value === null) continue;
     if (strings && value === "") {
       empty = true;
+      blank[row] = 1;
       continue;
     }
     const text = value as string;
@@ -422,10 +444,9 @@ function rankTexts(column: Column, values: Values): ColumnRanks {
     ranks[order[at]] = distinctKeys.length - 1;
   }
   const distinct = distinctKeys.length;
-  for (let row = 0; row < count; row++) {
-    const value = values[row];
-    if (value === null) ranks[row] = distinct + 1;
-    else if (strings && value === "") ranks[row] = distinct;
+  if (present < count) {
+    for (let row = 0; row < count; row++)
+      if (keys[row] === undefined) ranks[row] = blank[row] ? distinct : distinct + 1;
   }
   return {
     ranks,
@@ -450,10 +471,13 @@ function rankTexts(column: Column, values: Values): ColumnRanks {
 }
 
 /**
- * Ranks the values of a column by row ID in the order of §3.1; blanks rank after the other values (§3.2).
+ * Ranks the values of a column by row ID in the order of §3.1; blanks rank after the other values (§3.2). A column
+ * of fixed width that has numbers (`Vector.numbers`) is ranked from them by `write`, when it is given.
  */
-export function rankColumn(column: Column, values: Values): ColumnRanks {
-  return column.type === "string" || column.type === "binary" ? rankTexts(column, values) : rankWords(column, values);
+export function rankColumn(column: Column, values: Values, write: NumberWriter | null = null): ColumnRanks {
+  return column.type === "string" || column.type === "binary"
+    ? rankTexts(column, values)
+    : rankWords(column, values, write);
 }
 
 /** A sort key of a view: the ranks of its column and its direction. */

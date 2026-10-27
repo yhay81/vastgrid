@@ -22,6 +22,9 @@ The [vastgrid v2 specification](../../docs/v2-spec.md) as code. It is a draft an
 - **Messages** (§8): `checkRequest`, `checkResponse` and `checkEvent` check messages; `encodeBlock` and
   `decodeBlock` write and read Arrow blocks; `toTextEncoding`, `frameAttached` and `readAttached` carry blocks
   on transports.
+- `vastgrid-spec/columns` reads Arrow tables of any number of record batches as columns (§2.3): `decodeColumns`
+  gives each column's typed JSON by row, read when it is asked for, and the typed arrays that hold values of
+  fixed width. It is a module of its own so that bundles that read only blocks do not load it.
 - `vastgrid-spec/conformance` reads the corpus in [`conformance/`](conformance) and runs or compares its cases
   (§10). It uses Node.js. The corpus has three parts: [`plans`](conformance/plans) for engines,
   [`commands`](conformance/commands) for cores and [`messages`](conformance/messages) for both.

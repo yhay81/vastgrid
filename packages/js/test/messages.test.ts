@@ -150,7 +150,7 @@ test("a table that does not follow §2 fails to load, with the place at fault", 
     assert.ok(error.message.includes(`at ${path},`), `${ref}: ${error.message}`);
   }
   const none = await new Client({ none: null as never }).error("open", { ref: "none" });
-  assert.equal(none.message, 'The table "none" cannot be read: A table is an object: { columns, rows }.');
+  assert.equal(none.message, 'The table "none" cannot be read: A table is an object: { columns, rows } or { arrow }.');
   assert.throws(() => memoryEngine({} as never), TypeError);
 });
 

@@ -69,21 +69,21 @@ const UNITS = {
   ns: TimeUnit.NANOSECOND,
 } as const;
 
-const UNIT_NAMES: TimestampUnit[] = ["s", "ms", "us", "ns"];
+export const UNIT_NAMES: TimestampUnit[] = ["s", "ms", "us", "ns"];
 
 // A string that starts with U+FEFF keeps it (§8.4).
 const decoder = new TextDecoder("utf-8", { ignoreBOM: true, fatal: true });
 const encoder = new TextEncoder();
 
 /** The JSON of a 64-bit integer (§2.2): a number when it is safe, otherwise its digits. */
-function integerJson(value: bigint): JsonValue {
+export function integerJson(value: bigint): JsonValue {
   return value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER)
     ? Number(value)
     : value.toString();
 }
 
 /** The decimal text of an unscaled integer (§2.2). */
-function decimalJson(unscaled: bigint, scale: number): string {
+export function decimalJson(unscaled: bigint, scale: number): string {
   const negative = unscaled < 0n;
   const digits = (negative ? -unscaled : unscaled).toString().padStart(scale + 1, "0");
   const text = scale === 0 ? digits : `${digits.slice(0, -scale)}.${digits.slice(-scale)}`;
@@ -310,7 +310,7 @@ export function encodeBlock(columns: readonly Column[], rows: readonly (readonly
   return tableToIPC(table, { format: "stream" }) as Uint8Array;
 }
 
-interface RawBatch {
+export interface RawBatch {
   length: number;
   nullCount: number;
   validity?: Uint8Array;
@@ -319,7 +319,7 @@ interface RawBatch {
   data?: Uint8Array[];
 }
 
-interface ArrowField {
+export interface ArrowField {
   name: string;
   type: {
     typeId: number;
@@ -334,12 +334,12 @@ interface ArrowField {
   metadata?: Map<string, string> | null;
 }
 
-function bytesOf(view: ArrayBufferView | undefined): Uint8Array {
+export function bytesOf(view: ArrayBufferView | undefined): Uint8Array {
   return view ? new Uint8Array(view.buffer, view.byteOffset, view.byteLength) : new Uint8Array(0);
 }
 
 /** The logical type of an Arrow field (§2.1, §8.4). */
-function logicalType(arrow: ArrowField): ValueType {
+export function logicalType(arrow: ArrowField): ValueType {
   const type = arrow.type;
   switch (type.typeId) {
     case Type.Bool:
@@ -387,8 +387,8 @@ function logicalType(arrow: ArrowField): ValueType {
   throw new TypeError(`A block has no column type for the Arrow type ${type.typeId} of "${arrow.name}".`);
 }
 
-/** Reads the values of one batch of a field as typed JSON of a logical type. */
-function readBatch(arrow: ArrowField, batch: RawBatch, logical: ValueType): JsonValue[] {
+/** Reads the values of one batch of a field as typed JSON of a logical type: a function of a value's index. */
+export function batchReader(arrow: ArrowField, batch: RawBatch, logical: ValueType): (index: number) => JsonValue {
   const type = arrow.type;
   const valid = (index: number) =>
     batch.nullCount === 0 ||
@@ -501,7 +501,7 @@ function readBatch(arrow: ArrowField, batch: RawBatch, logical: ValueType): Json
     }
     throw new TypeError(`A block has no reader for the Arrow type ${type.typeId}.`);
   };
-  return Array.from({ length: batch.length }, (_, index) => (valid(index) ? value(index) : null));
+  return (index) => (valid(index) ? value(index) : null);
 }
 
 /**
@@ -515,7 +515,10 @@ export function decodeBlock(bytes: Uint8Array): { columns: Column[]; rows: JsonV
   const fields = table.schema.fields as unknown as ArrowField[];
   const columns: Column[] = fields.map((arrow) => ({ name: arrow.name, ...logicalType(arrow) }));
   const values = fields.map((arrow, index) =>
-    (table.children[index].data as unknown as RawBatch[]).flatMap((batch) => readBatch(arrow, batch, columns[index])),
+    (table.children[index].data as unknown as RawBatch[]).flatMap((batch) => {
+      const read = batchReader(arrow, batch, columns[index]);
+      return Array.from({ length: batch.length }, (_, at) => read(at));
+    }),
   );
   const rowCount = values[0]?.length ?? 0;
   const rows = Array.from({ length: rowCount }, (_, row) => values.map((column) => column[row]));

@@ -1,13 +1,15 @@
 /**
  * The order of views (docs/v2-spec.md §3.1, §3.3) beyond the conformance corpus, through the engine's
  * messages: each order is checked against a reference that compares values one pair at a time, written
- * independently of the engine's ranks and radix sorts.
+ * independently of the engine's ranks and radix sorts. Tables are sorted as rows and as Arrow, whose columns of
+ * fixed width are ranked from the numbers that hold them.
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   type Column,
   dateText,
+  encodeBlock,
   floatOf,
   fromBase64,
   type JsonValue,
@@ -141,21 +143,30 @@ function referenceOrder(table: MemoryTable, sort: SortKey[]): number[] {
     });
 }
 
+/** A client of a table given as rows, and of the same table given as Arrow. */
+function clients(table: MemoryTable): [string, Client][] {
+  return [
+    ["rows", new Client({ t: table })],
+    ["Arrow", new Client({ t: { arrow: encodeBlock(table.columns, table.rows) } })],
+  ];
+}
+
 /** Sorts a table of one column both ways, and checks the engine against the reference and `expected`. */
 async function checkOrder(table: MemoryTable, expected?: { asc: number[]; desc?: number[] }) {
-  const client = new Client({ t: table });
-  const info = await client.open("t");
-  const name = table.columns[0].name;
-  for (const direction of ["asc", "desc"] as const) {
-    const sort: SortKey[] = [{ column: name, direction }];
-    const got = await client.sorted(info, sort);
-    assert.deepEqual(
-      got,
-      referenceOrder(table, sort),
-      `${direction}: ${JSON.stringify(got.map((row) => table.rows[row][0]))}`,
-    );
-    const wanted = direction === "asc" ? expected?.asc : expected?.desc;
-    if (wanted) assert.deepEqual(got, wanted, direction);
+  for (const [form, client] of clients(table)) {
+    const info = await client.open("t");
+    const name = table.columns[0].name;
+    for (const direction of ["asc", "desc"] as const) {
+      const sort: SortKey[] = [{ column: name, direction }];
+      const got = await client.sorted(info, sort);
+      assert.deepEqual(
+        got,
+        referenceOrder(table, sort),
+        `${form}, ${direction}: ${JSON.stringify(got.map((row) => table.rows[row][0]))}`,
+      );
+      const wanted = direction === "asc" ? expected?.asc : expected?.desc;
+      if (wanted) assert.deepEqual(got, wanted, `${form}, ${direction}`);
+    }
   }
 }
 
@@ -539,16 +550,23 @@ function mixedTable(count: number, seed: number): MemoryTable {
 
 test("sorts of several keys break ties with the next key, then by row ID", async () => {
   const table = mixedTable(2000, 7);
-  const client = new Client({ t: table });
+  const [[, client]] = clients(table);
   const info = await client.open("t");
-  const next = random(99);
   const names = table.columns.map((column) => column.name);
-  for (let trial = 0; trial < 60; trial++) {
-    const sort: SortKey[] = Array.from({ length: 1 + Math.floor(next() * 3) }, () => ({
-      column: names[Math.floor(next() * names.length)],
-      direction: next() < 0.5 ? "asc" : "desc",
-    }));
-    assert.deepEqual(await client.sorted(info, sort), referenceOrder(table, sort), JSON.stringify(sort));
+  for (const [form, each] of clients(table)) {
+    const opened = await each.open("t");
+    const next = random(99);
+    for (let trial = 0; trial < 60; trial++) {
+      const sort: SortKey[] = Array.from({ length: 1 + Math.floor(next() * 3) }, () => ({
+        column: names[Math.floor(next() * names.length)],
+        direction: next() < 0.5 ? "asc" : "desc",
+      }));
+      assert.deepEqual(
+        await each.sorted(opened, sort),
+        referenceOrder(table, sort),
+        `${form}: ${JSON.stringify(sort)}`,
+      );
+    }
   }
   // A key on a column that an earlier key sorts by changes nothing.
   assert.deepEqual(

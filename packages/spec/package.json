@@ -20,6 +20,11 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./columns": {
+      "vastgrid-source": "./src/columns.ts",
+      "types": "./dist/columns.d.ts",
+      "default": "./dist/columns.js"
+    },
     "./conformance": {
       "vastgrid-source": "./src/conformance.ts",
       "types": "./dist/conformance.d.ts",

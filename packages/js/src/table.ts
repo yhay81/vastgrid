@@ -3,6 +3,23 @@
  * §2: columns of §2.1 with unique names, and rows of typed JSON values (§2.2).
  */
 import { type Column, isValueOf, type JsonValue, LOGICAL_TYPES, typeName } from "vastgrid-spec";
+import type { ColumnNumbers } from "vastgrid-spec/columns";
+
+/**
+ * A column's values by row ID as typed JSON (§2.2): an array of them, or a column of an Arrow table
+ * (`ColumnValues` of vastgrid-spec), whose numbers a sort reads without making JSON.
+ */
+export interface Vector {
+  readonly length: number;
+  at(row: number): JsonValue;
+  readonly numbers?: ColumnNumbers | null;
+  readonly validity?: Uint8Array | null;
+}
+
+/** An array of typed JSON as a vector, which arrays are: they have `length` and `at`. */
+export function vectorOf(values: readonly JsonValue[]): Vector {
+  return values as unknown as Vector;
+}
 
 /** A table in memory: its columns (§2.1), and its rows of typed JSON values (§2.2) in row ID order. */
 export interface MemoryTable {
@@ -12,6 +29,17 @@ export interface MemoryTable {
    * Whether `write` writes the table's cells (§7). Written values are kept apart from `rows`, which stay as the
    * host gave them, and every later request sees them.
    */
+  editable?: boolean;
+}
+
+/**
+ * A table as Apache Arrow (§2.3): the bytes of an IPC stream or file, of any number of record batches. Its
+ * columns have the logical types of their Arrow types, and are kept as Arrow holds them: values of fixed width
+ * as typed arrays, which sorts read as they are, and the others read when they are asked for.
+ */
+export interface ArrowTable {
+  arrow: Uint8Array;
+  /** Whether `write` writes the table's cells (§7), as for a `MemoryTable`. */
   editable?: boolean;
 }
 
@@ -81,21 +109,39 @@ function checkColumn(value: unknown, path: string): Column {
   return { ...value } as unknown as Column;
 }
 
+/** A table that the engine reads: its columns, and its host's rows or its Arrow columns. */
+export interface CheckedTable {
+  columns: Column[];
+  rows: readonly (readonly JsonValue[])[] | null;
+  vectors: Vector[] | null;
+  rowCount: number;
+}
+
+/** Throws a `TableProblem` at `path(index)` for the first column whose name an earlier column has. */
+export function checkNames(columns: readonly Column[], path: (index: number) => string) {
+  const names = new Set<string>();
+  columns.forEach((column, index) => {
+    if (names.has(column.name)) throw new TableProblem(path(index), `"${column.name}" names two columns.`);
+    names.add(column.name);
+  });
+}
+
+/** Whether a host's table is given as Arrow (`ArrowTable`), which `checkArrow` of arrow.ts checks. */
+export function isArrowTable(table: unknown): table is ArrowTable {
+  return isObject(table) && "arrow" in table;
+}
+
 /**
- * Checks the form of a table against §2: its columns, with unique names, and rows of one value per column.
- * Gives copies of the columns. Throws a `TableProblem` with the JSON Pointer of the first member at fault.
+ * Checks the form of a table given as rows against §2: its columns, with unique names, and rows of one value per
+ * column. Gives copies of the columns. Throws a `TableProblem` with the JSON Pointer of the first member at fault.
  * The values are checked as they are read (`valueChecker`), so that opening a table of millions of rows costs
  * nothing per value.
  */
-export function checkTable(table: unknown): Column[] {
-  if (!isObject(table)) throw new TableProblem("", "A table is an object: { columns, rows }.");
+export function checkTable(table: unknown): CheckedTable {
+  if (!isObject(table)) throw new TableProblem("", "A table is an object: { columns, rows } or { arrow }.");
   if (!Array.isArray(table.columns)) throw new TableProblem("/columns", "columns is a list of columns (§2.1).");
   const columns = table.columns.map((column, index) => checkColumn(column, `/columns/${index}`));
-  const names = new Set<string>();
-  columns.forEach((column, index) => {
-    if (names.has(column.name)) throw new TableProblem(`/columns/${index}/name`, `"${column.name}" names two columns.`);
-    names.add(column.name);
-  });
+  checkNames(columns, (index) => `/columns/${index}/name`);
   const rows = table.rows;
   if (!Array.isArray(rows)) throw new TableProblem("/rows", "rows is a list of rows.");
   for (let row = 0; row < rows.length; row++) {
@@ -104,7 +150,7 @@ export function checkTable(table: unknown): Column[] {
       throw new TableProblem(`/rows/${row}`, `A row is a list of ${columns.length} values, one per column.`);
     }
   }
-  return columns;
+  return { columns, rows, vectors: null, rowCount: rows.length };
 }
 
 /**
@@ -126,4 +172,19 @@ export function valueChecker(column: Column, index: number): (value: unknown, ro
       );
     }
   };
+}
+
+/**
+ * The value of a column of an Arrow table at a row. A value that has no typed JSON, such as text that is not
+ * UTF-8 or a time beyond a day, throws a `TableProblem` at `/rows/{row}/{index}`.
+ */
+export function vectorValue(vector: Vector, column: Column, index: number, row: number): JsonValue {
+  try {
+    return vector.at(row);
+  } catch (error) {
+    throw new TableProblem(
+      `/rows/${row}/${index}`,
+      `the value is not a ${typeName(column)} value of column "${column.name}" (§2.2): ${(error as Error).message}`,
+    );
+  }
 }

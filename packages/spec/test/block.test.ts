@@ -4,18 +4,25 @@ import {
   Column as ArrowColumn,
   Batch,
   columnFromValues,
+  dateMillisecond,
+  decimal,
   Endianness,
   field,
   int8,
   largeUtf8,
   Table,
+  TimeUnit,
+  tableFromColumns,
   tableFromIPC,
   tableToIPC,
+  timeMillisecond,
+  timestamp,
   uint32,
   utf8,
   utf8View,
   Version,
 } from "@uwdata/flechette";
+import { decodeColumns } from "../src/columns.ts";
 import { type Column, decodeBlock, encodeBlock, type JsonValue, UUID_EXTENSION } from "../src/index.ts";
 
 function roundTrip(columns: Column[], rows: JsonValue[][]) {
@@ -217,4 +224,134 @@ test("integers of other widths read as integer and bigint", () => {
   const unsigned = decodeBlock(stream("u", columnFromValues([4294967295], uint32())));
   assert.deepEqual(unsigned.columns, [{ name: "u", type: "bigint" }]);
   assert.deepEqual(unsigned.rows, [[4294967295]]);
+});
+
+/** The values of the columns of Arrow bytes, read by row as decodeColumns gives them. */
+function readColumns(bytes: Uint8Array) {
+  const { columns, length, values } = decodeColumns(bytes);
+  return { columns, rows: Array.from({ length }, (_, row) => values.map((column) => column.at(row))), values };
+}
+
+test("columns read by row hold the values of a block, with the numbers of types of fixed width", () => {
+  const columns: Column[] = [
+    { name: "b", type: "boolean" },
+    { name: "i", type: "integer" },
+    { name: "g", type: "bigint" },
+    { name: "d", type: "decimal", precision: 18, scale: 2 },
+    { name: "w", type: "decimal", precision: 38, scale: 2 },
+    { name: "f", type: "float" },
+    { name: "f32", type: "float", bits: 32 },
+    { name: "s", type: "string" },
+    { name: "dt", type: "date" },
+    { name: "t", type: "time" },
+    { name: "ns", type: "timestamp", unit: "ns" },
+    { name: "tz", type: "timestamptz" },
+    { name: "iv", type: "interval" },
+  ];
+  const rows: JsonValue[][] = [
+    [
+      true,
+      -2147483648,
+      "9223372036854775807",
+      "-9999999999999999.99",
+      "1.00",
+      "NaN",
+      0.10000000149011612,
+      "日本語 😀",
+      "0001-01-01",
+      "23:59:59.999999",
+      "2262-04-11 23:47:16.854775807",
+      "2024-01-31 03:00:00+00",
+      "1 year",
+    ],
+    [null, null, null, null, null, null, null, null, null, null, null, null, null],
+    [
+      false,
+      7,
+      -3,
+      "0.05",
+      "-0.50",
+      -0,
+      "-Infinity",
+      "",
+      "1969-12-31",
+      "00:00:00",
+      "1677-09-21 00:12:43.145224192",
+      "1969-12-31 23:59:59.5+00",
+      "-01:30:00",
+    ],
+  ];
+  const read = readColumns(encodeBlock(columns, rows));
+  assert.deepEqual(read.columns, columns);
+  assert.deepEqual(read.rows, rows);
+  assert.deepEqual(
+    read.values.map((column) => column.numbers?.constructor.name ?? null),
+    [
+      null,
+      "Int32Array",
+      "BigInt64Array",
+      "BigInt64Array",
+      null,
+      "Float64Array",
+      "Float32Array",
+      null,
+      "Int32Array",
+      "BigInt64Array",
+      "BigInt64Array",
+      "BigInt64Array",
+      null,
+    ],
+  );
+  assert.deepEqual(
+    Array.from(read.values[3].numbers as BigInt64Array).filter((_, row) => row !== 1),
+    [-999999999999999999n, 5n],
+  );
+  assert.ok(read.values.every((column) => column.validity !== null && (column.validity[0] & 0b111) === 0b101));
+});
+
+test("columns of several record batches read as one, from a stream or a file", () => {
+  const options = { maxBatchRows: 2 };
+  const table = tableFromColumns({
+    i: columnFromValues([1, null, 3, 4, null], int8(), options),
+    s: columnFromValues(["a", "b", null, "d", "e"], utf8(), options),
+    t: columnFromValues([1000, 86_399_999, null, 0, 1], timeMillisecond(), options),
+    ms: columnFromValues([0, 1, -1, null, 1000], timestamp(TimeUnit.MILLISECOND), options),
+    // Flechette takes timestamps in milliseconds, whatever their unit.
+    tz: columnFromValues([0, 1000, -1000, null, 1_000_000], timestamp(TimeUnit.SECOND, "UTC"), options),
+    dm: columnFromValues([0, -86_400_000, null, 86_400_000 * 366, 1], dateMillisecond(), options),
+  });
+  assert.equal(table.children[0].data.length, 3);
+  for (const format of ["stream", "file"] as const) {
+    const read = readColumns(tableToIPC(table, { format }) as Uint8Array);
+    assert.deepEqual(read.columns, [
+      { name: "i", type: "integer" },
+      { name: "s", type: "string" },
+      { name: "t", type: "time" },
+      { name: "ms", type: "timestamp", unit: "ms" },
+      { name: "tz", type: "timestamptz" },
+      { name: "dm", type: "date" },
+    ]);
+    assert.deepEqual(read.rows, [
+      [1, "a", "00:00:01", "1970-01-01 00:00:00", "1970-01-01 00:00:00+00", "1970-01-01"],
+      [null, "b", "23:59:59.999", "1970-01-01 00:00:00.001", "1970-01-01 00:00:01+00", "1969-12-31"],
+      [3, null, null, "1969-12-31 23:59:59.999", "1969-12-31 23:59:59+00", null],
+      [4, "d", "00:00:00", null, null, "1971-01-02"],
+      [null, "e", "00:00:00.001", "1970-01-01 00:00:01", "1970-01-01 00:16:40+00", "1970-01-01"],
+    ]);
+    assert.deepEqual(
+      Array.from(read.values[0].numbers as Int32Array).filter((_, row) => row % 3 !== 1),
+      [1, 3, 4],
+    );
+    assert.deepEqual(Array.from(read.values[4].numbers as BigInt64Array).slice(0, 3), [0n, 1_000_000n, -1_000_000n]);
+  }
+});
+
+test("decimals that do not fit 64 bits have no numbers, and read by their digits", () => {
+  const big = 10n ** 20n;
+  const read = readColumns(stream("d", columnFromValues([big, -1n, null], decimal(18, 0, 128))));
+  assert.equal(read.values[0].numbers, null);
+  assert.deepEqual(read.rows, [["100000000000000000000"], ["-1"], [null]]);
+  const fits = readColumns(stream("d", columnFromValues([-(10n ** 17n), 1n], decimal(18, 3, 128))));
+  assert.deepEqual(Array.from(fits.values[0].numbers as BigInt64Array), [-(10n ** 17n), 1n]);
+  assert.deepEqual(fits.rows, [["-100000000000000.000"], ["0.001"]]);
 });
