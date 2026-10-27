@@ -1,7 +1,7 @@
 {
   "name": "vastgrid-vscode",
   "displayName": "vastgrid",
-  "version": "0.0.0",
+  "version": "0.2.0-next.1",
   "private": true,
   "description": "Huge CSV, TSV, Parquet, JSON Lines and Excel files in a grid in VS Code, read by DuckDB in the extension: scroll to the last row, sort, filter, group, edit cells and save CSV and TSV files with the bytes that were not edited kept as they are.",
   "license": "MIT",
@@ -154,9 +154,9 @@
     "test:vscode": "node scripts/test-vscode.mjs"
   },
   "dependencies": {
-    "vastgrid-duckdb": "0.0.0",
-    "vastgrid": "0.0.0",
-    "vastgrid-spec": "0.0.0"
+    "vastgrid-duckdb": "0.2.0-next.1",
+    "vastgrid": "0.2.0-next.1",
+    "vastgrid-spec": "0.2.0-next.1"
   },
   "devDependencies": {
     "@types/vscode": "1.100.0",

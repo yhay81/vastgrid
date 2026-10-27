@@ -11,8 +11,8 @@
   "dependencies": {
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "vastgrid": "0.0.0",
-    "vastgrid-js": "0.0.0"
+    "vastgrid": "0.2.0-next.1",
+    "vastgrid-js": "0.2.0-next.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "6.1.2",

@@ -2300,7 +2300,7 @@ wheels = [
 
 [[package]]
 name = "vastgrid"
-version = "0.0.0"
+version = "0.2.0rc1"
 source = { editable = "." }
 dependencies = [
     { name = "anywidget" },

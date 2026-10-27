@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0-next.1 — 2026-10-27
 
 vastgrid 0.2.0 replaces 0.1.x with a new design, specified by [spec.md](docs/spec.md) and
 [react.md](docs/react.md): engines answer the same messages wherever they run (in memory in the page or a Web
