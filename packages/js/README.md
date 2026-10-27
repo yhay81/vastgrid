@@ -48,6 +48,17 @@ const info = await engine.handle({ v: 2, id: 1, op: "open", ref: "orders" });
   without making rows of JSON. The open waits for both; opens of a file share one reading, and a table that every
   ID has closed is read again. A CSV file of a million rows of six columns (55 MB) opens in about 0.9 seconds into
   32 MB, where the same rows as JSON take 248 MB. The code that reads files loads with the first such table.
+- A table may also be a sheet of an Excel workbook (`.xlsx`, `.xlsm`): `{ file, format: "xlsx" }`, the format by
+  default from the file's name. `open`'s `read` (§8.2) chooses the sheet (the first visible one by default), the
+  row of the names (`headerRow`: by default the first row with a value; `0` for none, which names the columns by
+  their letters) and whether empty rows and columns are kept (`keepEmptyRows`, `keepEmptyColumns`); `TableInfo`
+  lists the workbook's `sheets`, the `sheet` read and `notes` (`merged_cells`, `formulas_without_values`). The sheet
+  is read with `vastgrid-spec/workbook`, as the DuckDB engine reads it: a column has one type (`bigint`, `float`,
+  `boolean`, `date`, `timestamp`, `time` or `string`) by its cells and their number formats, a formula its saved
+  value, and a date the workbook's calendar. Its rows are kept as lines of CSV in a `Blob` and read as a CSV file
+  is, within `maxBytes`; each set of `read` options is a table of its own, and other tables ignore `read`. A file
+  that is not a workbook, and one that is encrypted or in the old `.xls` format, fail with `load_failed` at
+  `/file`. The code that reads workbooks loads with the first such table.
 - A file's column has the first of these types that every value of it fits, and is a `string` otherwise:
   `boolean` (`true` and `false` in any case), `integer` and `bigint` by their range, `float` (with `nan`, `inf`
   and `infinity`), `time` (`HH:MM:SS` with up to 6 fraction digits), `date` (`YYYY-MM-DD` of the years 0001 to

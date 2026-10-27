@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFile, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { after, before, test } from "node:test";
+import { formatDateStyle, serialDate } from "vastgrid-spec/workbook";
 import { tableFormatOf } from "../src/index.ts";
-import { formatDateStyle, serialDate } from "../src/xlsx.ts";
 import { type Client, type Json, setUp } from "./client.ts";
 import { cell, type FixtureWorkbook, row, writeWorkbook } from "./xlsx-fixture.ts";
 

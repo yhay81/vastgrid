@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `vastgrid-js` (unreleased v2): the memory engine opens sheets of Excel workbooks (`.xlsx`, `.xlsm`) given as a
+  `Blob` or a `File`, with `open`'s `read` (`sheet`, `headerRow`, `keepEmptyRows`, `keepEmptyColumns`) and the
+  workbook's `sheets`, `sheet` and `notes` in `TableInfo`, and with the columns, types and values that the DuckDB
+  engine reads. A sheet is kept as lines of CSV and read within `maxBytes` as a CSV file is.
+- `vastgrid-spec` (unreleased v2): `vastgrid-spec/workbook` reads workbooks through a `WorkbookSource` (`blobSource`
+  for a `Blob`), moved from `vastgrid-duckdb-engine` so that both engines read them alike.
+- `vastgrid-duckdb-engine` (unreleased v2): workbooks are read with `vastgrid-spec/workbook`, and the test of the
+  memory engine against DuckDB opens the same workbooks with the same read options in both engines.
 - `vastgrid-js` (unreleased v2): the memory engine opens Parquet files, `{ parquet }` with a `Blob`, a `File` or the
   URL of a file whose server answers range requests (`headers`, `fetch`), read with hyparquet: opening reads the
   footer, `rows` the row groups of its rows (a cache of 4 million cells), and sorts, filters, groups, summaries,

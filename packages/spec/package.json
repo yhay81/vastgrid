@@ -35,6 +35,11 @@
       "types": "./dist/export.d.ts",
       "default": "./dist/export.js"
     },
+    "./workbook": {
+      "vastgrid-source": "./src/workbook.ts",
+      "types": "./dist/workbook.d.ts",
+      "default": "./dist/workbook.js"
+    },
     "./xlsx": {
       "vastgrid-source": "./src/xlsx.ts",
       "types": "./dist/xlsx.d.ts",

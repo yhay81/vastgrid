@@ -4,6 +4,7 @@
  */
 import { type Column, isValueOf, type JsonValue, LOGICAL_TYPES, typeName } from "vastgrid-spec";
 import type { ColumnNumbers } from "vastgrid-spec/columns";
+import type { SheetInfo } from "vastgrid-spec/workbook";
 
 /**
  * A column's values by row ID as typed JSON (§2.2): an array of them, or a column of an Arrow table
@@ -51,18 +52,22 @@ export interface TextFile {
   slice(start?: number, end?: number): { arrayBuffer(): Promise<ArrayBuffer> };
 }
 
-/** The formats of text files: CSV, TSV and JSON Lines. */
-export type TextFormat = "csv" | "tsv" | "jsonl";
+/** The formats of text files: CSV, TSV and JSON Lines; and `xlsx`, of Excel workbooks. */
+export type TextFormat = "csv" | "tsv" | "jsonl" | "xlsx";
 
 /**
  * A table as a text file: CSV, TSV or JSON Lines in UTF-8, read whole into typed columns when it is first opened.
  * Each column has the first of the types boolean, integer, bigint, float, time, date, timestamp and timestamptz
- * that every value of it fits, and otherwise is a string.
+ * that every value of it fits, and otherwise is a string. Or a sheet of an Excel workbook (`.xlsx`, `.xlsm`), which
+ * `open` chooses with `read` (§8.2): its columns have the types that the DuckDB engine reads them as.
  */
 export interface FileTable {
   /** The file, a `Blob` or a `File`: in a Web Worker or the page, read in slices without a copy of it whole. */
   file: TextFile;
-  /** `csv`, `tsv` or `jsonl`; by default from the file's name (`.csv`, `.tsv` or `.tab`, `.jsonl` or `.ndjson`). */
+  /**
+   * `csv`, `tsv`, `jsonl` or `xlsx`; by default from the file's name (`.csv`, `.tsv` or `.tab`, `.jsonl` or
+   * `.ndjson`, `.xlsx` or `.xlsm`).
+   */
   format?: TextFormat;
   /**
    * The field separator of a CSV file, one character; by default the one of `,`, tab, `;` and `|` that splits its
@@ -197,6 +202,8 @@ export interface CheckedTable {
   rowCount: number;
   /** The file of a table whose columns are read when requests need them: a Parquet file, or a large text file. */
   reader?: import("./lazy.js").FileColumns;
+  /** The sheets of a workbook, the one read, and what its reading changed (§8.2). */
+  workbook?: { sheets: SheetInfo[]; sheet: string; notes: string[] };
 }
 
 /** Throws a `TableProblem` at `path(index)` for the first column whose name an earlier column has. */
@@ -221,6 +228,13 @@ export function isParquetTable(table: unknown): table is ParquetTable {
 /** Whether a host's table is given as a text file (`FileTable`), which `readFile` of text.ts reads. */
 export function isFileTable(table: unknown): table is FileTable {
   return isObject(table) && "file" in table;
+}
+
+/** Whether a table given as a file is an Excel workbook, which workbook.ts reads. */
+export function isWorkbook(table: FileTable): boolean {
+  if (table.format !== undefined) return table.format === "xlsx";
+  const name = isObject(table.file) ? table.file.name : undefined;
+  return typeof name === "string" && /\.xls[xm]$/i.test(name);
 }
 
 /**

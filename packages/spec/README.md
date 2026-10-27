@@ -30,6 +30,12 @@ The [vastgrid v2 specification](../../docs/v2-spec.md) as code. It is a draft an
   typed JSON, as streams of bytes: `writeDelimited` CSV and TSV and `writeJson` JSON as DuckDB's `COPY` writes them,
   and `writeXlsx` a workbook of one sheet (compressed by `webDeflate`, the platform's `CompressionStream`, or a
   deflate of the host's). Both engines write their files with them.
+- `vastgrid-spec/workbook` reads Excel workbooks (`.xlsx`, `.xlsm`) for engines: `readWorkbook` lists the sheets,
+  and `convertSheet` writes a sheet as lines of CSV with one logical type per column (by its cells and their number
+  formats, in the workbook's calendar), and the notes of what a table cannot keep (merged cells, formulas without
+  saved values). It reads through a `WorkbookSource` of ranges of bytes and of inflated text: `blobSource` makes
+  one of a `Blob` with the platform's `DecompressionStream`, and the DuckDB engine one of a file with `node:fs` and
+  `node:zlib`. Both engines read workbooks with it.
 - `vastgrid-spec/conformance` reads the corpus in [`conformance/`](conformance) and runs or compares its cases
   (§10). It uses Node.js. The corpus has three parts: [`plans`](conformance/plans) for engines,
   [`commands`](conformance/commands) for cores and [`messages`](conformance/messages) for both.

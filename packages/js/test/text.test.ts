@@ -317,7 +317,7 @@ test("CSV's separator is detected from the first line; TSV, a header, names and 
     lines: { file: new File(['{"a":1}\n'], "data.ndjson") },
     text: { file: new File(["a\n"], "data.txt") },
     blob: { file: new Blob(["a\n"]) },
-    wrong: { file: new Blob(["a\n"]), format: "xlsx" as "csv" },
+    wrong: { file: new Blob(["a\n"]), format: "xls" as "csv" },
     separator: { file: new Blob(["a\n"]), format: "csv", delimiter: "ab" },
     tsvSeparator: { file: new Blob(["a\n"]), format: "tsv", delimiter: ";" },
     notFile: { file: "a,b\n" as unknown as TextFile, format: "csv" },

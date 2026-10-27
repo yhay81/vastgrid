@@ -39,6 +39,7 @@ import {
   isArrowTable,
   isFileTable,
   isParquetTable,
+  isWorkbook,
   type MemoryTable,
   type ParquetTable,
   shown,
@@ -136,6 +137,8 @@ class Failure extends Error {
 /** A table that is open: its checked columns, its rows, and what the engine computed of them. */
 interface Table {
   ref: string;
+  /** The key of the table among those prepared: its `ref`, and the options a workbook is read with. */
+  key: string;
   columns: Column[];
   /** The index of each column by name. */
   index: Map<string, number>;
@@ -172,6 +175,8 @@ interface Table {
   views: Map<string, View>;
   /** The table IDs open on it. */
   open: number;
+  /** The sheets of a workbook, the one read, and what its reading changed (§8.2). */
+  workbook: CheckedTable["workbook"] | null;
 }
 
 /** A view of a table (§4.2): its rows in order. */
@@ -390,7 +395,7 @@ class Engine implements MemoryEngine {
   private async answer(request: Request, running: Running): Promise<unknown> {
     switch (request.op) {
       case "open":
-        return this.open(request.ref as string);
+        return this.open(request.ref as string, request.read);
       case "info": {
         const id = request.table as string;
         return this.info(id, this.table(request));
@@ -408,7 +413,7 @@ class Engine implements MemoryEngine {
         // A table that no ID names any more forgets its ranks and views, unless it holds written values, which
         // every later request sees (§7.2); opening it again checks it again.
         if (--table.open === 0 && table.written.size === 0) {
-          this.prepared.delete(table.ref);
+          this.prepared.delete(table.key);
           table.reader?.close();
         }
         return null;
@@ -440,7 +445,7 @@ class Engine implements MemoryEngine {
     }
   }
 
-  private async open(ref: string) {
+  private async open(ref: string, read: unknown) {
     if (!this.sources.has(ref)) throw new Failure("not_allowed", `The host does not open ${shown(ref)}.`);
     const source = this.sources.get(ref) as HostTable;
     // Arrow tables and files are read by modules of their own, loaded before the table is looked up so that two
@@ -449,24 +454,34 @@ class Engine implements MemoryEngine {
     const file = isFileTable(source);
     const parquet = isParquetTable(source);
     const typed = arrow || file || parquet ? await import("./numbers.js") : null;
-    let table = this.prepared.get(ref);
+    // A workbook is read once for each set of options of `read`; other tables ignore them.
+    const workbook = file && isWorkbook(source as FileTable) ? await import("./workbook.js") : null;
+    const options = workbook ? workbook.readOptionsOf(read) : null;
+    const key = options ? `${ref}\u0000${JSON.stringify(options)}` : ref;
+    let table = this.prepared.get(key);
     if (!table) {
       let checked: CheckedTable;
       try {
         checked = arrow
           ? arrow.checkArrow((source as ArrowTable).arrow)
-          : file
-            ? await this.readFile(ref, source as FileTable)
-            : parquet
-              ? await this.openParquet(ref, source as ParquetTable)
-              : checkTable(source);
+          : workbook && options
+            ? await this.reads(key, () => workbook.readSheet(source as FileTable, options))
+            : file
+              ? await this.reads(key, async () => (await import("./text.js")).readFile(source as FileTable))
+              : parquet
+                ? await this.reads(key, async () =>
+                    (await import("./parquet.js")).ParquetFile.open(source as ParquetTable).then((file) =>
+                      file.checked(),
+                    ),
+                  )
+                : checkTable(source);
       } catch (error) {
         if (!(error instanceof TableProblem)) throw error;
         const at = error.path === "" ? "" : `at ${error.path}, `;
         throw new Failure(error.code, `The table ${shown(ref)} cannot be read: ${at}${error.message}`);
       }
       // Another open of the file may have made the table while the file was read.
-      table = this.prepared.get(ref) ?? this.prepare(ref, source, checked, typed);
+      table = this.prepared.get(key) ?? this.prepare(ref, key, source, checked, typed);
     }
     const id = `t${this.nextTable++}`;
     this.tables.set(id, table);
@@ -474,33 +489,25 @@ class Engine implements MemoryEngine {
     return this.info(id, table);
   }
 
-  /** Reads a table given as a file, once for every open that waits for it (text.ts). */
-  private readFile(ref: string, source: FileTable): Promise<CheckedTable> {
-    let reading = this.reading.get(ref);
+  /**
+   * Reads a table given as a file, once for every open that waits for it: a text file (text.ts), a sheet of a
+   * workbook (workbook.ts), or the footer of a Parquet file (parquet.ts).
+   */
+  private reads(key: string, read: () => Promise<CheckedTable>): Promise<CheckedTable> {
+    let reading = this.reading.get(key);
     if (!reading) {
-      reading = import("./text.js").then((text) => text.readFile(source)).finally(() => this.reading.delete(ref));
-      this.reading.set(ref, reading);
-    }
-    return reading;
-  }
-
-  /** Opens a table given as a Parquet file, once for every open that waits for it: reads its footer (parquet.ts). */
-  private openParquet(ref: string, source: ParquetTable): Promise<CheckedTable> {
-    let reading = this.reading.get(ref);
-    if (!reading) {
-      reading = import("./parquet.js")
-        .then(async ({ ParquetFile }) => (await ParquetFile.open(source)).checked())
-        .finally(() => this.reading.delete(ref));
-      this.reading.set(ref, reading);
+      reading = read().finally(() => this.reading.delete(key));
+      this.reading.set(key, reading);
     }
     return reading;
   }
 
   /** A table that is opened from its host's table, checked or read. */
-  private prepare(ref: string, source: HostTable, checked: CheckedTable, typed: Table["typed"]): Table {
+  private prepare(ref: string, key: string, source: HostTable, checked: CheckedTable, typed: Table["typed"]): Table {
     const { columns } = checked;
     const table: Table = {
       ref,
+      key,
       columns,
       index: new Map(columns.map((column, index) => [column.name, index])),
       rows: checked.rows,
@@ -519,6 +526,7 @@ class Engine implements MemoryEngine {
       overlays: columns.map(() => undefined),
       views: new Map(),
       open: 0,
+      workbook: checked.workbook ?? null,
     };
     // What the engine made of a column of a file that is forgotten, it makes again when a request reads it whole.
     if (table.reader) {
@@ -526,13 +534,13 @@ class Engine implements MemoryEngine {
         table.values[index] = undefined;
       };
     }
-    this.prepared.set(ref, table);
+    this.prepared.set(key, table);
     return table;
   }
 
   /** TableInfo (§8.2). */
   private info(id: string, table: Table) {
-    return {
+    const info: Json = {
       table: id,
       revision: table.revision,
       edits: { ...table.edits },
@@ -543,6 +551,13 @@ class Engine implements MemoryEngine {
       columns: table.columns.map((column) => ({ ...column })),
       capabilities: capabilities(table.editable),
     };
+    const { workbook } = table;
+    if (workbook) {
+      if (workbook.notes.length > 0) info.notes = [...workbook.notes];
+      info.sheets = workbook.sheets.map((sheet) => ({ ...sheet }));
+      info.sheet = workbook.sheet;
+    }
+    return info;
   }
 
   /** The table a request names, at the revision it names when it names one (§8.3). */

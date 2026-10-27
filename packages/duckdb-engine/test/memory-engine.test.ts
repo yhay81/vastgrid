@@ -6,6 +6,7 @@
  * differ within a relative tolerance, as conformance allows for sums (§3.8).
  *
  * The memory engine answers them twice: from the table as rows, and from the Parquet file that this engine reads.
+ * Both engines also read the same Excel workbooks with the same read options (§8.2).
  *
  * The plans come from a seeded generator, so that a run is repeatable. `VASTGRID_PLANS` sets how many (300 by
  * default) and `VASTGRID_SEED` the seed; a difference names the plan's seed and shows the plan.
@@ -22,6 +23,7 @@ import { memoryEngine } from "vastgrid-js";
 import { type Column, checkResponse, decodeBlock, type JsonValue, type Operation } from "vastgrid-spec";
 import { sameValue } from "vastgrid-spec/conformance";
 import { setUp, type TableInfo, writeParquet } from "./client.ts";
+import { cell, type FixtureWorkbook, row, writeWorkbook } from "./xlsx-fixture.ts";
 
 type Json = Record<string, unknown>;
 
@@ -938,4 +940,158 @@ test("reads a Parquet file over HTTP by range requests, the row groups of the ro
     columns: ["padding"],
   });
   assert.equal((changed.error as { code: string } | undefined)?.code, "file_changed");
+});
+
+/** Workbooks with every type of cell, sheets to choose, a layout that read options change, and notes. */
+const WORKBOOKS: Record<string, FixtureWorkbook> = {
+  "types.xlsx": {
+    // Styles: 0 General, 1 date, 2 date and time, 3 time, 4 a Japanese date, 5 a percentage.
+    numberFormats: [
+      { id: 164, code: 'yyyy"年"m"月"d"日"' },
+      { id: 165, code: "0.0%" },
+    ],
+    cellStyles: [0, 14, 22, 21, 164, 165],
+    sharedStrings: [
+      "id",
+      "name",
+      "price",
+      "member",
+      "day",
+      "at",
+      "time",
+      "mixed",
+      "formula",
+      "jp",
+      "rate",
+      "東京",
+      "x",
+    ],
+    sheets: [
+      {
+        name: "Data",
+        rows: [
+          row(
+            1,
+            Array.from({ length: 11 }, (_, index) => cell(`${String.fromCharCode(65 + index)}1`, { t: "s", v: index })),
+          ),
+          ...Array.from({ length: 40 }, (_, index) => {
+            const at = index + 2;
+            const cells = [
+              cell(`A${at}`, { v: index % 7 === 3 ? 2 ** 53 + index : index }),
+              cell(
+                `B${at}`,
+                index % 5 === 0 ? { t: "s", v: 11 + (index % 2) } : { t: "inlineStr", is: `name ${index}` },
+              ),
+              cell(`C${at}`, { v: index / 8 - 2 }),
+              cell(`D${at}`, { t: "b", v: index % 2 }),
+              cell(`E${at}`, { s: 1, v: 45306 + index * 31 }),
+              cell(`F${at}`, { s: 2, v: 45306 + index / 24 }),
+              cell(`G${at}`, { s: 3, v: (index % 24) / 24 }),
+              cell(`H${at}`, index % 3 === 0 ? { t: "s", v: 12 } : { v: index }),
+              cell(`I${at}`, index % 9 === 0 ? { f: "1/0", t: "e", v: "#DIV/0!" } : { f: `A${at}*2`, v: index * 2 }),
+              cell(`J${at}`, { s: 4, v: 45306 - index }),
+              cell(`K${at}`, { s: 5, v: index / 100 }),
+            ];
+            // Every sixth row has blank cells.
+            return row(at, index % 6 === 5 ? cells.filter((_, column) => column % 2 === 0) : cells);
+          }),
+        ],
+      },
+    ],
+  },
+  "sheets.xlsx": {
+    sharedStrings: ["name", "first", "second", "hidden"],
+    chartSheet: "Chart",
+    sheets: [
+      {
+        name: "Secret",
+        state: "hidden",
+        rows: [row(1, [cell("A1", { t: "s", v: 0 })]), row(2, [cell("A2", { t: "s", v: 3 })])],
+      },
+      { name: "First", rows: [row(1, [cell("A1", { t: "s", v: 0 })]), row(2, [cell("A2", { t: "s", v: 1 })])] },
+      {
+        name: "Second & more",
+        rows: [row(1, [cell("A1", { t: "s", v: 0 })]), row(2, [cell("A2", { t: "s", v: 2 })])],
+      },
+    ],
+  },
+  "layout.xlsx": {
+    sharedStrings: ["Report title", "name", "", "name", "value", "a", "b"],
+    sheets: [
+      {
+        name: "S",
+        merges: ["B1:D1"],
+        rows: [
+          row(1, [cell("B1", { t: "s", v: 0 })]),
+          row(3, [
+            cell("B3", { t: "s", v: 1 }),
+            cell("C3", { t: "s", v: 2 }),
+            cell("D3", { t: "s", v: 3 }),
+            cell("F3", { t: "s", v: 4 }),
+          ]),
+          row(4, [cell("B4", { t: "s", v: 5 }), cell("D4", { v: 1 }), cell("F4", { f: "SUM(D:D)" })]),
+          row(5, []),
+          row(7, [cell("B7", { t: "s", v: 6 }), cell("C7", { v: 2 }), cell("F7", { v: 20 })]),
+          row(9, [cell("A9", { s: 0 })]),
+        ],
+      },
+    ],
+  },
+};
+
+test("both engines read the same sheets of a workbook with the same read options", async () => {
+  const cases: [string, Json | undefined][] = [
+    ["types.xlsx", undefined],
+    ["sheets.xlsx", undefined],
+    ["sheets.xlsx", { sheet: "Second & more" }],
+    ["sheets.xlsx", { sheet: "Secret", headerRow: 0 }],
+    ["sheets.xlsx", { sheet: "Chart" }],
+    ["layout.xlsx", undefined],
+    ["layout.xlsx", { headerRow: 3 }],
+    ["layout.xlsx", { headerRow: 3, keepEmptyRows: true, keepEmptyColumns: true }],
+    ["layout.xlsx", { headerRow: 0, keepEmptyColumns: true }],
+  ];
+  const files = new Map<string, Uint8Array>();
+  for (const [name, workbook] of Object.entries(WORKBOOKS)) {
+    await writeWorkbook(path.join(context.workspace, name), workbook);
+    files.set(name, await readFile(path.join(context.workspace, name)));
+  }
+  // A `File` is a workbook by its name; a `Blob` by the table's format.
+  const send = sender(
+    memoryEngine({
+      tables: Object.fromEntries(
+        [...files].map(([name, bytes], index) => [
+          name,
+          index % 2 === 0 ? { file: new File([bytes], name) } : { file: new Blob([bytes]), format: "xlsx" },
+        ]),
+      ),
+    }),
+  );
+  for (const [name, read] of cases) {
+    const label = `${name} ${JSON.stringify(read ?? {})}`;
+    const duckdb = await context.client.open(name, read);
+    const opened = await send("open", read === undefined ? { ref: name } : { ref: name, read });
+    if (duckdb.status === "error") {
+      // The memory engine reads a workbook before it answers, so a sheet it cannot read fails the open.
+      const error = opened.error as { code: string; message: string };
+      assert.equal(error.code, "load_failed", label);
+      assert.ok(error.message.includes(duckdb.error as string), `${label}: ${error.message}`);
+      continue;
+    }
+    assert.ok(opened.result, `${label}: ${JSON.stringify(opened.error)}`);
+    const memory = opened.result as TableInfo;
+    const strip = ({ sourceType: _sourceType, ...column }: Column) => column;
+    assert.deepEqual(memory.columns, duckdb.columns.map(strip), label);
+    for (const member of ["sheets", "sheet", "notes"] as const) assert.deepEqual(memory[member], duckdb[member], label);
+    const duckdbSend: Send = (op, members) => context.client.send(op, members);
+    for (const plan of [{}, { sort: [{ column: duckdb.columns[0].name, direction: "desc" }] }]) {
+      const differs = differences(await answer(send, memory, plan), await answer(duckdbSend, duckdb, plan));
+      assert.deepEqual(differs, [], `${label} ${JSON.stringify(plan)}`);
+    }
+  }
+  // Read options other than a workbook's are ignored, as before.
+  const csv = sender(memoryEngine({ tables: { csv: { file: new File(["a\n1\n"], "a.csv") } } }));
+  const plain = (await csv("open", { ref: "csv", read: { sheet: "Other" } })).result as TableInfo;
+  assert.deepEqual(plain.columns, [{ name: "a", type: "integer" }]);
+  assert.equal(plain.sheets, undefined);
 });

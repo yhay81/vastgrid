@@ -131,9 +131,14 @@ function found(name: string): Found {
 /**
  * Reads a table given as a text file into typed columns. Throws a `TableProblem` at the member of the table at
  * fault, or at `/rows/{row}/{column}` (`/rows/{row}` for a line of JSON Lines) for text that is not UTF-8 or a
- * line that is not JSON.
+ * line that is not JSON. `fields` gives the column of each field of a CSV file, whose values fit its type, or null
+ * for a field that is left out (workbook.ts); by default each field is a column of the type its values fit.
  */
-export async function readFile(table: FileTable, chunkBytes = CHUNK_BYTES): Promise<CheckedTable> {
+export async function readFile(
+  table: FileTable,
+  chunkBytes = CHUNK_BYTES,
+  fields?: readonly (Column | null)[],
+): Promise<CheckedTable> {
   const { file } = table;
   if (
     file === null ||
@@ -148,8 +153,8 @@ export async function readFile(table: FileTable, chunkBytes = CHUNK_BYTES): Prom
     throw new TableProblem(
       "/format",
       table.format === undefined
-        ? `The file's name (${shown(file.name ?? null)}) does not tell its format: give format, csv, tsv or jsonl.`
-        : "format is csv, tsv or jsonl.",
+        ? `The file's name (${shown(file.name ?? null)}) does not tell its format: give format, csv, tsv, jsonl or xlsx.`
+        : "format is csv, tsv, jsonl or xlsx.",
     );
   }
   const { delimiter, header = true, maxBytes = MAX_BYTES } = table;
@@ -171,18 +176,31 @@ export async function readFile(table: FileTable, chunkBytes = CHUNK_BYTES): Prom
     format === "jsonl" ? null : { separator: format === "tsv" ? TAB : (delimiter?.charCodeAt(0) ?? null), header };
   const survey = csv ? await surveyCsv(file, csv, chunkBytes) : await surveyJson(file, chunkBytes);
   const { rows } = survey;
-  const columns = survey.found.map(columnOf);
-  const total = columns.reduce((sum, column, index) => sum + sizeOf(column, survey.found[index], rows), 0);
+  const fieldOf = fields
+    ? fields.flatMap((column, field) => (column ? [field] : []))
+    : survey.found.map((_, field) => field);
+  const kept = fieldOf.map((field) => survey.found[field] ?? found(""));
+  const columns = fields ? fieldOf.map((field) => ({ ...(fields[field] as Column) })) : kept.map(columnOf);
+  const total = columns.reduce((sum, column, index) => sum + sizeOf(column, kept[index], rows), 0);
   if (total > maxBytes) {
     const text: TextOf = csv ? { separator: survey.separator, header: csv.header } : null;
-    return new TextColumns(file, text, columns, survey, maxBytes, chunkBytes).checked();
+    return new TextColumns(file, text, columns, { ...survey, found: kept }, fieldOf, maxBytes, chunkBytes).checked();
   }
-  const built = columns.map((column, index) => build(column, survey.found[index], rows));
+  const built = columns.map((column, index) => build(column, kept[index], rows));
   const read = csv
-    ? await keepCsv(file, survey.separator, csv.header, built, rows, chunkBytes)
+    ? await keepCsv(file, survey.separator, csv.header, byField(built, fieldOf), rows, chunkBytes)
     : await keepJson(file, built, rows, chunkBytes);
   if (read !== rows) throw changed();
   return { columns, rows: null, vectors: built.map((column) => vectorOf(column, rows)), rowCount: rows };
+}
+
+/** The columns of a CSV file's fields, by field: null for the fields that are not columns. */
+function byField<T>(columns: (T | null)[], fieldOf: readonly number[]): (T | null)[] {
+  const fields: (T | null)[] = new Array(fieldOf.length === 0 ? 0 : Math.max(...fieldOf) + 1).fill(null);
+  fieldOf.forEach((field, index) => {
+    fields[field] = columns[index];
+  });
+  return fields;
 }
 
 function changed() {
@@ -218,6 +236,8 @@ class TextColumns extends FileColumns {
     private readonly text: TextOf,
     columns: Column[],
     survey: Survey,
+    /** The field of a CSV file that each column is. */
+    private readonly fieldOf: readonly number[],
     maxBytes: number,
     private readonly chunkBytes: number,
   ) {
@@ -286,7 +306,15 @@ class TextColumns extends FileColumns {
   private async keep(built: (Built | null)[], rows: number, span: Span): Promise<void> {
     const { file, text, chunkBytes } = this;
     const read = text
-      ? await keepCsv(file, text.separator, text.header && span.start === undefined, built, rows, chunkBytes, span)
+      ? await keepCsv(
+          file,
+          text.separator,
+          text.header && span.start === undefined,
+          byField(built, this.fieldOf),
+          rows,
+          chunkBytes,
+          span,
+        )
       : await keepJson(file, built, rows, chunkBytes, span);
     if (read !== rows) throw changed();
   }
