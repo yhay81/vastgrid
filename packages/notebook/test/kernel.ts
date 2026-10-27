@@ -6,11 +6,12 @@
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 import { checkResponse, type Operation } from "vastgrid-spec";
 
 export type Json = Record<string, unknown>;
 
-const folder = new URL("../python/", import.meta.url).pathname;
+const folder = fileURLToPath(new URL("../python/", import.meta.url));
 
 /** Why the tests of the engine are skipped, or false when they run. */
 export const skip = spawnSync("uv", ["--version"]).status === 0 ? false : "uv is not installed";
