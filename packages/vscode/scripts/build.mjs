@@ -2,10 +2,11 @@
 // the webview's page, `dist/webview.js` and `dist/webview.css`. It bundles the packages' builds (`npm run build` at
 // the root first), React Compiler's output included. DuckDB's native bindings stay outside, as `require`s of
 // `@duckdb/node-bindings`, which a package of the extension carries (scripts/package.mjs).
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const root = new URL("..", import.meta.url);
-const file = (name) => new URL(name, root).pathname;
+const file = (name) => fileURLToPath(new URL(name, root));
 
 await build({
   entryPoints: [file("src/extension.ts")],

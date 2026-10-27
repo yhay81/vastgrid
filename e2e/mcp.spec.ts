@@ -65,10 +65,11 @@ test("the App shows the file in a sandboxed frame with the default CSP, and its 
   const calls = await page.evaluate(() => window.host.calls);
   expect(calls).toContain("vastgrid_message");
   expect(calls).toContain("grid_sync");
-  // The page is one file: no WebAssembly, no workers, no requests of its own.
+  // The page is one file: no WebAssembly, no workers, no requests of its own. (The grid's download of exports that
+  // an engine answers with their bytes is in it, unused: the server writes its exports as files.)
   const resource = await page.request.get(`${site}/app`);
   const html = await resource.text();
-  expect(html).not.toMatch(/WebAssembly|new Worker|createObjectURL/);
+  expect(html).not.toMatch(/WebAssembly|new Worker/);
   expect(resource.headers()["content-security-policy"]).toContain("connect-src 'none'");
 });
 

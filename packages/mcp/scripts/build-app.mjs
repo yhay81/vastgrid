@@ -1,11 +1,12 @@
 // Builds the App's page (docs/mcp-app.md): one HTML file with its script and styles inside, as hosts take a UI
 // resource. It bundles the packages' builds (`npm run build` at the root first), React Compiler's output included.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const root = new URL("..", import.meta.url);
 const result = await build({
-  entryPoints: [new URL("app/main.tsx", root).pathname],
+  entryPoints: [fileURLToPath(new URL("app/main.tsx", root))],
   bundle: true,
   write: false,
   format: "esm",

@@ -1,12 +1,13 @@
 // Builds the notebook's grid (docs/notebook.md): `python/src/vastgrid/static/widget.js` and `widget.css`, the anywidget
 // module and styles that the Python package `vastgrid` carries. It bundles the packages' builds (`npm run build` at
 // the root first), React Compiler's output included.
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const root = new URL("..", import.meta.url);
 const result = await build({
-  entryPoints: { widget: new URL("widget/main.tsx", root).pathname },
-  outdir: new URL("python/src/vastgrid/static", root).pathname,
+  entryPoints: { widget: fileURLToPath(new URL("widget/main.tsx", root)) },
+  outdir: fileURLToPath(new URL("python/src/vastgrid/static", root)),
   bundle: true,
   format: "esm",
   target: "es2022",

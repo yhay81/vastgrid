@@ -84,18 +84,26 @@ async function appGrid(grid: string, document: GridDocument) {
     if (answer.session) store.setSession(answer.session);
     return answer;
   };
-  const ready = () =>
-    new Promise<void>((resolve) => {
-      const check = () => {
-        const snapshot = store.getSnapshot();
-        if (snapshot.status === "ready" && snapshot.view && !snapshot.pending) {
-          off();
-          resolve();
-        }
-      };
-      const off = store.subscribe(check);
-      check();
-    });
+  // Until the view is read, as the App's loop of `grid_sync` does, the store gets the engine's events: a table that
+  // was still loading when it opened, or a view still being made, is read once their events come. A version that no
+  // change is newer than leaves the document and the session to `take`.
+  const ready = async () => {
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      const snapshot = store.getSnapshot();
+      if (snapshot.status === "error") throw snapshot.error ?? new Error("The App's grid failed.");
+      const read = snapshot.table?.status === "ready" && snapshot.view?.status === "ready";
+      if (snapshot.status === "ready" && read && !snapshot.pending) return;
+      if (Date.now() > deadline) {
+        const { status, table, view, pending } = snapshot;
+        const state = { status, table: table?.status, view: view?.status, pending: pending?.plan };
+        throw new Error(`The App's grid is not ready: ${JSON.stringify(state)}`);
+      }
+      const answer = await sync(app, link, { version: Number.MAX_SAFE_INTEGER });
+      transport.deliver(answer.events);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  };
   await ready();
   return { store, take, ready, stop };
 }

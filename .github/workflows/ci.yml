@@ -12,6 +12,7 @@ jobs:
   check:
     name: Lint, typecheck and build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -26,6 +27,7 @@ jobs:
   test:
     name: Test (${{ matrix.os }}, Node.js ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -49,6 +51,7 @@ jobs:
   notebook:
     name: Test the notebook's package
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -58,12 +61,15 @@ jobs:
       # The Python package and its tests; the TypeScript tests of packages/notebook run it with uv.
       - uses: astral-sh/setup-uv@v10.3.0
       - run: npm ci
+      # The grid's module that the package carries (static/widget.js).
+      - run: npm run build
       - run: uv run --frozen ruff check && uv run --frozen ruff format --check && uv run --frozen pytest
         working-directory: packages/notebook/python
       - run: node --conditions=vastgrid-source --import tsx --test packages/notebook/test/*.test.ts
   react-18:
     name: Test with React 18
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -80,6 +86,7 @@ jobs:
   e2e:
     name: End-to-end tests and performance budgets
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -93,6 +100,7 @@ jobs:
   vscode:
     name: VS Code extension (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
