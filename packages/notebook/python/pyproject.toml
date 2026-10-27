@@ -21,7 +21,7 @@ Repository = "https://github.com/yhay81/vastgrid"
 Issues = "https://github.com/yhay81/vastgrid/issues"
 
 [dependency-groups]
-dev = ["pytest==9.1.1", "pandas==3.0.6", "polars==2.0.0", "ruff==0.17.0", "jupyterlab==4.6.4", "notebook==7.6.3"]
+dev = ["pytest==9.1.1", "pandas==3.1.0", "polars==2.1.0", "ruff==0.17.3", "jupyterlab==4.6.4", "notebook==7.6.3"]
 
 [build-system]
 requires = ["hatchling==1.32.4"]
@@ -33,8 +33,6 @@ artifacts = ["src/vastgrid/static/*"]
 
 [tool.uv]
 python-preference = "managed"
-# Versions released at least two weeks before they were chosen.
-exclude-newer = "2026-10-13T00:00:00Z"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

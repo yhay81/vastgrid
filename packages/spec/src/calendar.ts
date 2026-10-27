@@ -178,15 +178,20 @@ export function parseIntervalText(text: string): IntervalParts | null {
 
 const NANOS_PER_DAY = 86_400_000_000_000n;
 
+const NANOS_PER_MONTH = 30n * NANOS_PER_DAY;
+
 /**
- * The parts of an interval as DuckDB 1.5 compares them (§3.1): whole days of the nanoseconds go into the days,
- * then whole 30-day months of the days into the months, each by a division that truncates toward zero. Intervals
- * compare by these months, then days, then nanoseconds; `1 month` equals `30 days`, and `1 month -1 day` is
- * greater than `29 days`. Null when the text is not an interval.
+ * The parts of an interval as DuckDB 2.0 compares them (§3.1): its length in nanoseconds, with months of 30 days
+ * and days of 24 hours, as whole months, then the days (0 to 29) and the nanoseconds (less than a day) of the rest.
+ * Intervals compare by these months, then days, then nanoseconds; `1 month` equals `30 days`, and `1 month -1 day`
+ * equals `29 days`. Null when the text is not an interval.
  */
 export function normalizeInterval(text: string): [bigint, bigint, bigint] | null {
   const parts = parseIntervalText(text);
   if (!parts) return null;
-  const days = BigInt(parts.days) + parts.nanos / NANOS_PER_DAY;
-  return [BigInt(parts.months) + days / 30n, days % 30n, parts.nanos % NANOS_PER_DAY];
+  const length = (BigInt(parts.months) * 30n + BigInt(parts.days)) * NANOS_PER_DAY + parts.nanos;
+  // Division truncates toward zero: take a month more off a negative length, so that the rest is not negative.
+  const months = length / NANOS_PER_MONTH - (length % NANOS_PER_MONTH < 0n ? 1n : 0n);
+  const rest = length - months * NANOS_PER_MONTH;
+  return [months, rest / NANOS_PER_DAY, rest % NANOS_PER_DAY];
 }

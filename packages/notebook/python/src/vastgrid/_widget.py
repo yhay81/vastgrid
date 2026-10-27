@@ -216,7 +216,7 @@ class Grid(anywidget.AnyWidget):
         names = ", ".join(quote_identifier(column["name"]) for column in table.columns) or "NULL AS vg_none"
         cursor = self._engine.session.cursor()
         try:
-            return cursor.execute(f"SELECT {names} FROM {relation.sql} ORDER BY {relation.row_id}").to_arrow_table()
+            return cursor.sql(f"SELECT {names} FROM {relation.sql} ORDER BY {relation.row_id}").to_arrow_table()
         finally:
             cursor.close()
 

@@ -45,7 +45,7 @@ export async function createTable(connection: DuckDBConnection, name: string, ta
 
 /**
  * Reads exact numbers, dates and times as their text, which is how JSON writes them (§2.2). Strings get a
- * leading "." that `jsonOf` removes: `@duckdb/node-api` 1.5.6-r.1 decodes text with a `TextDecoder` that drops
+ * leading "." that `jsonOf` removes: `@duckdb/node-api` 2.0.0-r.1 decodes text with a `TextDecoder` that drops
  * a U+FEFF at the start of a value.
  */
 export function output(column: Column, sql: string): string {

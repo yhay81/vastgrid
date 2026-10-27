@@ -225,7 +225,7 @@ function floorDivide(a: bigint, b: bigint): bigint {
   return a % b !== 0n && a < 0n ? quotient - 1n : quotient;
 }
 
-// Simple case mappings that DuckDB 1.5 (utf8proc) makes where JavaScript maps a code point to several (§3.4).
+// Simple case mappings that DuckDB 2.0 (utf8proc) makes where JavaScript maps a code point to several (§3.4).
 const LOWER_SPECIAL = new Map<number, string>([[0x130, "i"]]);
 const UPPER_SPECIAL = new Map<number, string>([
   [0xdf, "ẞ"],
@@ -293,7 +293,7 @@ function whole(value: JsonValue): number {
 const NUMBER = /^[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?$/;
 const TIMESTAMP_TEXT = /^([0-9]{4}-[0-9]{2}-[0-9]{2})[ T]([0-9]{2}:[0-9]{2})(?::([0-9]{2})(?:\.([0-9]{1,9}))?)?$/;
 
-/** `to_timestamp` (§4.4): the fraction cut to microseconds, as DuckDB 1.5 casts it. */
+/** `to_timestamp` (§4.4): the fraction cut to microseconds, as DuckDB 2.0 casts it. */
 function toTimestamp(text: string): JsonValue {
   const match = TIMESTAMP_TEXT.exec(text);
   if (!match) return null;

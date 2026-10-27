@@ -18,4 +18,4 @@ always parameters and names are always quoted. The DuckDB session's time zone mu
 A pivot (§4.6) takes two steps: run `pivotQuery` to read the combinations of values, then pass them to
 `compileView`.
 
-The tests run the whole conformance corpus of `vastgrid-spec` on DuckDB 1.5.
+The tests run the whole conformance corpus of `vastgrid-spec` on DuckDB 2.0.

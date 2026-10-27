@@ -313,7 +313,7 @@ class Compiler {
         if (type.type === "float") return finite(`round(${this.double(args[0])}, ${digits})`);
         if (type.type === "decimal") return `TRY(${cast(`round(${arg(0)}, ${digits})`, type)})`;
         if (digits >= 0) return arg(0);
-        // DuckDB 1.5 wraps around when it rounds a BIGINT past its range; rounding a decimal overflows instead.
+        // DuckDB 1.5 wrapped around when it rounded a BIGINT past its range (2.0 fails); a decimal overflows.
         return `TRY(${cast(`round(CAST(${arg(0)} AS DECIMAL(19,0)), ${digits})`, type)})`;
       }
       case "floor":
@@ -390,6 +390,26 @@ class Compiler {
     }
   }
 
+  /**
+   * The sum of a wide decimal column as a HUGEINT of its digits, or null for other columns. DuckDB sums a
+   * decimal(p, s) as a decimal(38, s) and refuses a sum beyond 38 digits, also inside avg; a decimal of up to 18
+   * digits needs more rows than a table has to get there. The digits after the point are multiplied out as a
+   * decimal of 38 digits, which holds those of up to 19.
+   */
+  private unscaledSum(measure: CheckedMeasure, filter: string): string | null {
+    const decimal = measure.column;
+    const scale = decimal?.scale ?? 0;
+    if (decimal?.type !== "decimal" || (decimal.precision ?? 38) <= 18 || scale > 19) return null;
+    const column = quoteIdentifier(decimal.name);
+    const factor = `1${"0".repeat(scale)}`;
+    // trunc keeps the type: both parts and their sum fit in a HUGEINT.
+    const digits =
+      scale === 0
+        ? `CAST(${column} AS HUGEINT)`
+        : `CAST(trunc(${column}) AS HUGEINT) * ${factor} + CAST((${column} - trunc(${column})) * ${factor} AS HUGEINT)`;
+    return `sum(${digits})${filter}`;
+  }
+
   /** A measure (§3.8, §4.5), optionally over the rows of a pivot's combination. */
   measure(measure: CheckedMeasure, condition?: string): string {
     const column = measure.column ? quoteIdentifier(measure.column.name) : null;
@@ -406,17 +426,30 @@ class Compiler {
         return measure.approx ? `approx_count_distinct(${column})${filter}` : `count(DISTINCT ${column})${filter}`;
       case "sum": {
         if (measure.type.type === "float") return `sum(${column})${filter}`;
-        // DuckDB refuses aggregates inside TRY(); TRY_CAST takes them. A decimal(38, s) sum is a HUGEINT, which
+        const scale = measure.type.scale ?? 0;
+        const unscaled = this.unscaledSum(measure, filter);
+        if (unscaled) {
+          // A HUGEINT of the sum's digits, which holds more than 38 of them: a sum beyond them is null (§3.8).
+          const sum = `(CAST(${unscaled} AS DECIMAL(38, 0)) * ${scale > 0 ? `0.${"0".repeat(scale - 1)}1` : "1"})`;
+          return `(CASE WHEN abs(${unscaled}) <= ${"9".repeat(38)} THEN ${sum} END)`;
+        }
+        // DuckDB refuses aggregates inside TRY(); TRY_CAST takes them. The sum of integers is a HUGEINT, which
         // holds more than 38 digits: a sum beyond them is null (§3.8).
         const sum = `TRY_CAST(sum(${column})${filter} AS ${duckdbType(measure.type)})`;
-        const scale = measure.type.scale ?? 0;
         const largest = `${"9".repeat(38 - scale)}${scale > 0 ? `.${"9".repeat(scale)}` : ""}`;
         return `(CASE WHEN abs(${sum}) <= ${largest} THEN ${sum} END)`;
       }
-      case "avg":
+      case "avg": {
+        const unscaled = this.unscaledSum(measure, filter);
+        const scale = measure.column?.scale ?? 0;
+        if (unscaled) return `(CAST(${unscaled} AS DOUBLE) / 1e${scale} / count(${column})${filter})`;
         return `CAST(avg(${column})${filter} AS DOUBLE)`;
-      case "stddev":
-        return `CAST(stddev_samp(${column})${filter} AS DOUBLE)`;
+      }
+      case "stddev": {
+        // DuckDB gives the infinities and NaN for squares beyond the largest float; the JS engine gives null.
+        const stddev = `CAST(stddev_samp(${column})${filter} AS DOUBLE)`;
+        return `(CASE WHEN isfinite(${stddev}) THEN ${stddev} END)`;
+      }
       case "min":
       case "max":
         return `${measure.fn}(${column})${filter}`;

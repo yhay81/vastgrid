@@ -35,7 +35,7 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 - **Plan**: a JSON description of a view of a table (§4): derived columns, a condition, grouping, a
   condition on groups and an order. A plan holds no table and no range.
 - **View**: the rows a plan makes of a table, in order. Positions in a view count from 0.
-- **Engine**: computes views. The reference engine is DuckDB 1.5 through the SQL that
+- **Engine**: computes views. The reference engine is DuckDB 2.0 through the SQL that
   [`vastgrid-sql`](../packages/sql) makes; the JS engine computes the same results in JavaScript.
 - **Core**: the grid without a screen: state (§5), commands (§6), the cache of blocks, the selection.
 - **Surface**: a place the grid runs: a React app, a VS Code editor, a notebook, an MCP App, a browser
@@ -44,7 +44,7 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 - **Transport**: what carries messages (§8) between the core and an engine: a function call, a Web
   Worker, HTTP, an MCP tool call, a VS Code webview, a notebook comm.
 
-The meaning of plans (§3) follows DuckDB 1.5 unless this document says otherwise. Where it does, the SQL
+The meaning of plans (§3) follows DuckDB 2.0 unless this document says otherwise. Where it does, the SQL
 that `vastgrid-sql` makes implements this document, not DuckDB's default. Appendix B lists the DuckDB
 results this draft was checked against.
 
@@ -217,7 +217,7 @@ in every engine.
 
 - `contains`, `starts_with`, `ends_with` and `eq` on strings compare code points and respect letter case.
   An empty needle matches every string that is not null.
-- `lower` and `upper` map each code point by itself, with the simple case mappings that DuckDB 1.5 uses
+- `lower` and `upper` map each code point by itself, with the simple case mappings that DuckDB 2.0 uses
   (from utf8proc): `lower("İ")` is `"i"`, `lower("ΣΑΣ")` is `"σασ"` (no final sigma) and `upper("ß")` is
   `"ẞ"` (U+1E9E). No context is used, and every code point stays one code point. JavaScript's
   `toLowerCase` gives `"i̇"` and `"σας"`, and `toUpperCase` gives `"SS"`; JS engines MUST map code points
@@ -1434,7 +1434,7 @@ A plan case:
 - A message case checks a request with `checkRequest`, a response to an operation with `checkResponse`, or
   an event with `checkEvent`, and `expect` gives `{ "valid": true }` or the `error` (`code`, `reason` and
   `path`).
-- Expected results are written from this document. Plan cases are checked against DuckDB 1.5 through
+- Expected results are written from this document. Plan cases are checked against DuckDB 2.0 through
   `vastgrid-sql`; a case on which DuckDB and this document disagree is a mistake in one of them, settled
   before the case is added.
 - Every engine runs the plan cases, and every core runs the command cases. Beyond them, engines are compared
@@ -1464,8 +1464,9 @@ against DuckDB, and the JS engine follows in the same change.
 Found while writing the memory engine of [`vastgrid-js`](../packages/js), which answers them as noted:
 
 - The order of intervals (§3.1). Sort keys on interval columns validate, but §3.1 does not order intervals.
-  DuckDB moves whole days of the nanoseconds into the days and whole 30-day months of the days into the months,
-  truncating toward zero, then compares months, days and nanoseconds; `vastgrid-js` does the same.
+  DuckDB 2.0 compares their lengths, with months of 30 days and days of 24 hours, so that `1 month -1 day` equals
+  `29 days`; `vastgrid-js` does the same. (DuckDB 1.5 moved whole days of the nanoseconds into the days and whole
+  30-day months of the days into the months, truncating toward zero, and put `1 month -1 day` above `29 days`.)
 - An operation that the capabilities do not offer has no error code in §8.7; `vastgrid-js` answers
   `invalid_request` with the reason `unknown_op`, and an `export` of a format that `capabilities.export` does not
   list (`parquet`) `invalid_request` at `/format` with the reason `syntax`. It answers exports as data (§8.2) and
@@ -1520,18 +1521,20 @@ column as a literal of that type.
 
 ## Appendix B. DuckDB behavior this draft was checked against
 
-DuckDB 1.5 through `@duckdb/node-api` 1.5.6-r.1, on 2026-10-24:
+DuckDB 2.0 through `@duckdb/node-api` 2.0.0-r.1, on 2026-10-27 (first checked with DuckDB 1.5 on 2026-10-24):
 
 | Query | Result |
 | --- | --- |
 | `'NaN'::DOUBLE = 'NaN'::DOUBLE`, `'NaN'::DOUBLE > 'Infinity'::DOUBLE`, `-0.0::DOUBLE = 0.0::DOUBLE` | true, true, true |
 | −Infinity, −1, 1, Infinity, NaN and NULL, ordered ascending and descending with `NULLS LAST` | −Infinity, −1, 1, Infinity, NaN, NULL; and NaN, Infinity, 1, −1, −Infinity, NULL |
-| `1/0`, `0::DOUBLE/0`, `1 % 0` | Infinity, NaN, NULL |
+| `1/0`, `0::DOUBLE/0`, `1 % 0` | Infinity, NaN, an error (NULL in `TRY()`; DuckDB 1.5: NULL) |
 | `9223372036854775807::BIGINT + 1`, and the same in `TRY()` | an error, NULL |
-| `sqrt(-1)`, `ln(0)`, `ln(-1)` | errors |
+| `sqrt(-1)`, `ln(0)`, `ln(-1)` | NULL (DuckDB 1.5: errors) |
 | `exp(1000)`, `power(-8, 1/3)`, `power(0, -1)` | Infinity, NaN, Infinity |
 | the types of `DECIMAL(10,2) + DECIMAL(5,3)`, of `*` and `/` on them, of `BIGINT + DECIMAL(3,1)`, `DECIMAL(3,1) % INTEGER` and `INTEGER / INTEGER` | DECIMAL(12,3), DECIMAL(15,5), DOUBLE, DECIMAL(21,1), DECIMAL(11,1), DOUBLE |
 | the types of `sum(BIGINT)`, `sum(DECIMAL(10,2))` and `avg(DECIMAL(10,2))` | HUGEINT, DECIMAL(38,2), DOUBLE |
+| `sum` and `avg` of `DECIMAL(38,4)` values whose sum has more than 38 digits | errors (DuckDB 1.5 gave the sum): `vastgrid-sql` sums the digits of wide decimals as a HUGEINT |
+| `stddev_samp` of 1.7e308 and −1.7e308 | NaN (DuckDB 1.5: an error); `vastgrid-sql` gives null, as the JS engine does |
 | `sum`, `min`, `max` and `avg` of NaN, 1 and Infinity | NaN, 1, NaN, NaN (v2 leaves the values that are not finite out, §3.8) |
 | `count(DISTINCT x)` of NaN, NaN, 0.0, −0.0 and NULL | 2 |
 | groups of NaN, NaN, 0.0, −0.0, NULL and NULL | 3 groups of 2 rows |
@@ -1547,13 +1550,15 @@ DuckDB 1.5 through `@duckdb/node-api` 1.5.6-r.1, on 2026-10-24:
 | `NULL IN ('a')`, `'b' IN ('a', NULL)` | NULL, NULL |
 | `contains('', '')`, `contains(NULL, 'a')` | true, NULL |
 | `isodow(DATE '2024-01-07')` (a Sunday), `date_diff('day', TIMESTAMP '2024-01-01 23:00', TIMESTAMP '2024-01-02 01:00')` | 7, 1 |
-| `round(9223372036854775807::BIGINT, -1)`, `round(2147483647::INTEGER, -1)` | `-9223372036854775800`, `-2147483646`: the result wraps around instead of failing, so `vastgrid-sql` rounds integers through `DECIMAL(19,0)`, where overflow fails (and gives null, §3.6) |
+| `round(9223372036854775807::BIGINT, -1)`, `round(2147483647::INTEGER, -1)` | errors (DuckDB 1.5 wrapped around to `-9223372036854775800` and `-2147483646`, so `vastgrid-sql` rounds integers through `DECIMAL(19,0)`, where overflow fails and gives null, §3.6) |
 | `TRY(sum(x))` | refused (`aggregates are not allowed inside the TRY expression`), so measures use `TRY_CAST` |
 | `CAST(0.5::DECIMAL(1,1) AS VARCHAR)`, `CAST(-0.10::DECIMAL(2,2) AS VARCHAR)` | `.5`, `-.10`: decimals without whole digits lose the 0 of §2.4, which `vastgrid-sql` puts back (`textSql`) |
 | `COPY (…) TO … (FORMAT csv)` of `0.5::DECIMAL(1,1)`; `(FORMAT json, ARRAY true)` of a column of `'NaN'::DOUBLE`, of `0.1::FLOAT`, of `12.50::DECIMAL(10,2)` | `.5`; `NaN` (not JSON), `0.10000000149011612`, `12.5`: `vastgrid-duckdb` selects such decimals with `textSql` for CSV and TSV, and writes JSON from the rows itself (`writeJson` of `vastgrid-spec/export`), as `vastgrid-js` does (§8.2) |
 | `greatest(NULL, 0)`, `left('abc', NULL)` | 0, NULL: `greatest` leaves nulls out, so the counts of `left`, `right` and `substr` are not bounded with it (§3.6) |
+| `INTERVAL '1 month -1 day' = INTERVAL '29 days'`, `INTERVAL '1 month' = INTERVAL '30 days'` | true, true: intervals compare by their length (DuckDB 1.5: false, true, §3.1) |
+| `read_csv` with `null_padding=true` of a file with a line break in quotes | an error unless `parallel=false` (DuckDB 1.5 read it): `vastgrid-duckdb` reads such files again in one thread |
 
-Two behaviors of `@duckdb/node-api` 1.5.6-r.1 matter to engines built on it:
+Two behaviors of `@duckdb/node-api` 2.0.0-r.1 (and 1.5.6-r.1) matter to engines built on it:
 
 - It reads text with a `TextDecoder` that drops a U+FEFF at the start of a value: `SELECT chr(65279) || 'a'` reads
   as `"a"` in JavaScript, while its `length` is 2. Engines read such strings another way (the conformance tests

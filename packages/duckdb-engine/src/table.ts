@@ -130,6 +130,8 @@ export class LoadedTable {
   loadedSource: string;
   /** The reader that loaded the table (`readerFunction`): 2 for delimited files read as text. */
   attempt = 0;
+  /** Delimited files: whether DuckDB reads them in one thread, which it needs for quoted line breaks. */
+  sequential = false;
   /** The quoted name of the session's table that holds the loaded rows; null for a Parquet file read in place. */
   base: string | null = null;
   private readonly objects: string[] = [];
@@ -279,7 +281,9 @@ export class LoadedTable {
   delimitedOptions(attempt = this.attempt): string {
     // Without null_padding, DuckDB's sniffer may settle on the last consistent part of a file whose rows have
     // different numbers of fields and silently skip the rest.
-    const options = `${this.format === "tsv" ? ", delim='\\t'" : ""}, null_padding=true`;
+    let options = `${this.format === "tsv" ? ", delim='\\t'" : ""}, null_padding=true`;
+    // DuckDB 2.0 reads with null_padding in parallel only files without line breaks in quotes (`refusesParallel`).
+    if (this.sequential) options += ", parallel=false";
     if (attempt === 0) return options;
     // Types sniffed from the beginning did not hold for the whole file: sniff all rows.
     if (attempt === 1) return `${options}, sample_size=-1`;
@@ -307,7 +311,7 @@ export class LoadedTable {
         this.format === "csv" || this.format === "tsv" ? 3 : this.format === "json" || this.format === "ndjson" ? 2 : 1;
       for (let attempt = 0; attempt < attempts; attempt++) {
         try {
-          await this.loadTable(source, attempt, workbook);
+          await this.sequentialOnRefusal(() => this.loadTable(source, attempt, workbook));
           if (attempt === 2) this.notes.push("all_varchar");
           return;
         } catch (error) {
@@ -397,27 +401,42 @@ export class LoadedTable {
 
   private async loadPreview(source: string, workbook: string) {
     try {
-      await this.session.withConnection(undefined, async (connection) => {
-        const preview = await this.createTable(
-          connection,
-          this.readerFunction(0, workbook),
-          source,
-          this.options.previewRows,
-        );
-        if (this.status !== "loading" || this.disposed) {
-          await this.drop(connection, preview.objects);
-          return;
-        }
-        this.preview = preview.objects;
-        this.columns = preview.columns;
-        this.relation = preview.relation;
-        this.previewed();
-        this.options.onChange(this, "progress");
-      });
+      await this.sequentialOnRefusal(() => this.readPreview(source, workbook));
     } catch (error) {
       // The full load reports the error; the preview is only a head start.
       this.options.log?.(`The preview of ${this.path} failed`, error);
     }
+  }
+
+  /** Runs a read of a delimited file again in one thread when DuckDB refuses to read it in parallel. */
+  private async sequentialOnRefusal(read: () => Promise<void>) {
+    try {
+      await read();
+    } catch (error) {
+      if (this.sequential || !refusesParallel(error)) throw error;
+      this.sequential = true;
+      await read();
+    }
+  }
+
+  private async readPreview(source: string, workbook: string) {
+    await this.session.withConnection(undefined, async (connection) => {
+      const preview = await this.createTable(
+        connection,
+        this.readerFunction(0, workbook),
+        source,
+        this.options.previewRows,
+      );
+      if (this.status !== "loading" || this.disposed) {
+        await this.drop(connection, preview.objects);
+        return;
+      }
+      this.preview = preview.objects;
+      this.columns = preview.columns;
+      this.relation = preview.relation;
+      this.previewed();
+      this.options.onChange(this, "progress");
+    });
   }
 
   private async loadTable(source: string, attempt: number, workbook: string) {
@@ -474,4 +493,9 @@ export class LoadedTable {
       .catch(() => undefined);
     for (const file of this.tempFiles) await rm(file, { force: true });
   }
+}
+
+/** Whether DuckDB refused to read a delimited file in parallel, with null_padding, because it has line breaks in quotes. */
+function refusesParallel(error: unknown) {
+  return /parallel scanner does not support null_padding/i.test(errorMessage(error));
 }

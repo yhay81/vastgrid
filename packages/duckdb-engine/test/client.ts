@@ -168,7 +168,7 @@ export async function writeParquet(file: string, table: { columns: Column[]; row
       await connection.run(`INSERT INTO t VALUES (${[...values, String(index)].join(", ")})`, params);
     }
     const names = table.columns.map((column) => quoteIdentifier(column.name)).join(", ");
-    // Without dictionaries: DuckDB 1.5's dictionaries keep one of the intervals that compare equal, so that a
+    // Without dictionaries: DuckDB's dictionaries keep one of the intervals that compare equal, so that a
     // column of "1 month" and "30 days" would read back as one of them.
     await connection.run(
       `COPY (SELECT ${names} FROM t ORDER BY vg_order) TO '${file.replaceAll("'", "''")}' (FORMAT parquet, DICTIONARY_SIZE_LIMIT 1)`,

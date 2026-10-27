@@ -298,6 +298,8 @@ class Table:
         self.byte_size: int | None = None
         self.handles = 0
         self.objects: list[str] = []
+        # Delimited files: whether DuckDB reads them in one thread, which it needs for quoted line breaks.
+        self.sequential = False
         self.edits = Edits(session, self)
 
     # ----- loading -----
@@ -327,8 +329,7 @@ class Table:
         error: Exception | None = None
         for attempt in range(attempts):
             try:
-                reader = self._reader(attempt)
-                self.session.run(running, lambda cursor, reader=reader: self._create(cursor, reader, [path]))
+                self.session.run(running, lambda cursor, attempt=attempt: self._create_file(cursor, attempt, path))
                 if attempt == 2:
                     self.notes.append("all_varchar")
                 return
@@ -338,6 +339,16 @@ class Table:
                 error = failure
         message = str(error).replace(path, os.path.basename(path))
         raise EngineError("load_failed", message)
+
+    def _create_file(self, cursor: duckdb.DuckDBPyConnection, attempt: int, path: str) -> None:
+        """Loads the file with the reader of an attempt, in one thread when DuckDB refuses to read it in parallel."""
+        try:
+            self._create(cursor, self._reader(attempt), [path])
+        except duckdb.Error as failure:
+            if self.sequential or not _refuses_parallel(failure):
+                raise
+            self.sequential = True
+            self._create(cursor, self._reader(attempt), [path])
 
     def _reader(self, attempt: int) -> str:
         fmt = self.source.format
@@ -355,6 +366,9 @@ class Table:
         # different numbers of fields and silently skip the rest.
         options = ", delim='\\t'" if fmt == "tsv" else ""
         options += ", null_padding=true"
+        if self.sequential:
+            # DuckDB 2.0 reads such files in parallel only without quoted line breaks (`_refuses_parallel`).
+            options += ", parallel=false"
         if attempt == 1:
             # Types sniffed from the beginning did not hold for the whole file: sniff all rows.
             options += ", sample_size=-1"
@@ -384,7 +398,8 @@ class Table:
         named = [f'"c{index}" AS {quote_identifier(column["name"])}' for index, column in enumerate(columns)]
         cursor.execute(f"CREATE VIEW {view} AS SELECT {', '.join([*named, f'rowid AS {row_id}'])} FROM {table}")
         self.objects.insert(0, f"VIEW {view}")
-        rows = cursor.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        # fetchall finishes the result: DuckDB 2.0 refuses to unregister data (`_load_data`) while one is unfinished.
+        rows = cursor.execute(f"SELECT count(*) FROM {table}").fetchall()[0][0]
         self.columns = columns
         self.relation = Relation(view, row_id, int(rows))
         self.row_count = int(rows)
@@ -428,6 +443,11 @@ class Table:
     def dispose(self) -> None:
         self.session.drop(self.objects)
         self.objects.clear()
+
+
+def _refuses_parallel(error: Exception) -> bool:
+    """Whether DuckDB refused to read a delimited file in parallel because it has quoted line breaks."""
+    return "parallel scanner does not support null_padding" in str(error).lower()
 
 
 class Edits:

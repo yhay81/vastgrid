@@ -174,8 +174,8 @@ test("writes the requested headers to CSV and TSV, keeps the names in Parquet an
 });
 
 test("Parquet keeps intervals that compare equal as they are: 1 month is not 30 days (§2.2)", async () => {
-  // DuckDB 1.5's dictionaries keep one of the values that compare equal, and intervals compare by their parts
-  // normalized (§3.1): a column of both would read back as one of them.
+  // DuckDB's dictionaries keep one of the values that compare equal, and intervals compare by their length
+  // (§3.1): a column of both would read back as one of them.
   const spans = ["1 month", "30 days", "29 days", "1 day 02:00:00", "01:00:00", "1 year 2 months", null];
   const rows = Array.from({ length: 3_000 }, (_, row) => [row, spans[(row * 5) % spans.length], `n${row % 3}`]);
   await writeParquet(path.join(workspace, "spans.parquet"), {

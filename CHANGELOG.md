@@ -41,6 +41,12 @@ that was not edited kept. [From v1 to v2](docs/v2-from-v1.md) is the migration g
 
 ### New in v2
 
+- `vastgrid-duckdb` and `vastgrid-sql` run on DuckDB 2.0 (`@duckdb/node-api` 2.0.0-r.1), and the Python package on
+  `duckdb` 1.5.6 or later, 2.0 included. CSV and TSV files with line breaks in quotes are read in one thread, which
+  DuckDB 2.0 needs; sums and averages of decimals of more than 18 digits stay exact beyond 38 digits (a sum beyond
+  them is null), and a `stddev` beyond the largest float is null, as in the memory engine.
+- `vastgrid-spec`, `vastgrid-js`: intervals compare by their length (§3.1), as DuckDB 2.0 compares them:
+  `1 month -1 day` equals `29 days` (DuckDB 1.5 put it above).
 - `vastgrid-notebook` (the Python package `vastgrid` in `packages/notebook/python`): vastgrid's grid in
   JupyterLab 4 and Jupyter Notebook 7 as an anywidget, with DuckDB in the kernel. `vastgrid.show` opens a pandas or
   Polars DataFrame, a PyArrow table, a DuckDB relation, or a CSV, TSV, JSON, JSON Lines, Parquet or Excel file; the
@@ -184,7 +190,7 @@ that was not edited kept. [From v1 to v2](docs/v2-from-v1.md) is the migration g
   null (§3.6). `locate` and `summarize` work on the rows a view keeps and on groups, which have no row IDs. Every
   case of the conformance corpus passes; a million rows derive, filter and sort, or group by 1,000 keys, in under
   a second. Plans other than sorts load their code when first used.
-- `vastgrid-spec`: `normalizeInterval` gives the parts by which DuckDB 1.5 compares intervals
+- `vastgrid-spec`: `normalizeInterval` gives the parts by which DuckDB 2.0 compares intervals
   (§3.1), before in `vastgrid-js`.
 - `vastgrid-vscode`: a VS Code extension (docs/vscode.md). CSV, TSV, Parquet, JSON Lines and Excel
   files of any size open in a grid as a custom editor, read by DuckDB in the extension's process; Parquet and Excel

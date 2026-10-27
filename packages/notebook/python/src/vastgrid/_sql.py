@@ -292,7 +292,7 @@ class _Compiler:
                 return f"TRY({_cast(f'round({arg(0)}, {digits})', type)})"
             if places >= 0:
                 return arg(0)
-            # DuckDB 1.5 wraps around when it rounds a BIGINT past its range; rounding a decimal overflows instead.
+            # DuckDB 1.5 wrapped around when it rounded a BIGINT past its range (2.0 fails); a decimal overflows.
             return f"TRY({_cast(f'round(CAST({arg(0)} AS DECIMAL(19,0)), {digits})', type)})"
         if fn in ("floor", "ceil"):
             if type["type"] == "float":
@@ -357,6 +357,26 @@ class _Compiler:
             return f"(CASE WHEN year({total}) BETWEEN 1 AND 9999 THEN {total} END)"
         raise ValueError(f"There is no function {fn}.")
 
+    def unscaled_sum(self, measure: CheckedMeasure, where: str) -> str | None:
+        """The sum of a wide decimal column as a HUGEINT of its digits, or None for other columns. DuckDB sums a
+        decimal(p, s) as a decimal(38, s) and refuses a sum beyond 38 digits, also inside avg; a decimal of up to 18
+        digits needs more rows than a table has to get there. The digits after the point are multiplied out as a
+        decimal of 38 digits, which holds those of up to 19."""
+        decimal = measure.column
+        scale = (decimal or {}).get("scale") or 0
+        if decimal is None or decimal["type"] != "decimal" or (decimal.get("precision") or 38) <= 18 or scale > 19:
+            return None
+        column = quote_identifier(decimal["name"])
+        factor = "1" + "0" * scale
+        # trunc keeps the type: both parts and their sum fit in a HUGEINT.
+        whole = f"CAST(trunc({column}) AS HUGEINT) * {factor}"
+        digits = (
+            f"CAST({column} AS HUGEINT)"
+            if scale == 0
+            else f"{whole} + CAST(({column} - trunc({column})) * {factor} AS HUGEINT)"
+        )
+        return f"sum({digits}){where}"
+
     def measure(self, measure: CheckedMeasure, condition: str | None = None) -> str:
         """A measure (§3.8, §4.5), optionally over the rows of a pivot's combination."""
         column = quote_identifier(measure.column["name"]) if measure.column else None
@@ -374,16 +394,28 @@ class _Compiler:
         if fn == "sum":
             if measure.type["type"] == "float":
                 return f"sum({column}){where}"
-            # DuckDB refuses aggregates inside TRY(); TRY_CAST takes them. A decimal(38, s) sum is a HUGEINT, which
+            scale = measure.type.get("scale") or 0
+            unscaled = self.unscaled_sum(measure, where)
+            if unscaled:
+                # A HUGEINT of the sum's digits, which holds more than 38 of them: a sum beyond them is null (§3.8).
+                point = f"0.{'0' * (scale - 1)}1" if scale > 0 else "1"
+                total = f"(CAST({unscaled} AS DECIMAL(38, 0)) * {point})"
+                return f"(CASE WHEN abs({unscaled}) <= {'9' * 38} THEN {total} END)"
+            # DuckDB refuses aggregates inside TRY(); TRY_CAST takes them. The sum of integers is a HUGEINT, which
             # holds more than 38 digits: a sum beyond them is null (§3.8).
             total = f"TRY_CAST(sum({column}){where} AS {duckdb_type(measure.type)})"
-            scale = measure.type.get("scale") or 0
             largest = "9" * (38 - scale) + (f".{'9' * scale}" if scale > 0 else "")
             return f"(CASE WHEN abs({total}) <= {largest} THEN {total} END)"
         if fn == "avg":
+            unscaled = self.unscaled_sum(measure, where)
+            if unscaled:
+                scale = (measure.column or {}).get("scale") or 0
+                return f"(CAST({unscaled} AS DOUBLE) / 1e{scale} / count({column}){where})"
             return f"CAST(avg({column}){where} AS DOUBLE)"
         if fn == "stddev":
-            return f"CAST(stddev_samp({column}){where} AS DOUBLE)"
+            # DuckDB gives the infinities and NaN for squares beyond the largest float; the JS engine gives null.
+            stddev = f"CAST(stddev_samp({column}){where} AS DOUBLE)"
+            return f"(CASE WHEN isfinite({stddev}) THEN {stddev} END)"
         if fn in ("min", "max"):
             return f"{fn}({column}){where}"
         # quantile, interpolated in doubles, also for a 32-bit float column (§3.7).

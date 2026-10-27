@@ -201,12 +201,12 @@ def parse_interval_text(text: str) -> IntervalParts | None:
 
 
 def normalize_interval(text: str) -> tuple[int, int, int] | None:
-    """The parts of an interval as DuckDB 1.5 compares them (§3.1): whole days of the nanoseconds go into the days,
-    then whole 30-day months of the days into the months, each by a division that truncates toward zero. Intervals
-    compare by these months, then days, then nanoseconds; `1 month` equals `30 days`, and `1 month -1 day` is greater
-    than `29 days`. None when the text is not an interval."""
+    """The parts of an interval as DuckDB 2.0 compares them (§3.1): its length in nanoseconds, with months of 30 days
+    and days of 24 hours, as whole months, then the days (0 to 29) and the nanoseconds (less than a day) of the rest.
+    Intervals compare by these months, then days, then nanoseconds; `1 month` equals `30 days`, and `1 month -1 day`
+    equals `29 days`. None when the text is not an interval."""
     parts = parse_interval_text(text)
     if parts is None:
         return None
-    days = parts.days + _trunc_div(parts.nanos, _NANOS_PER_DAY)
-    return (parts.months + _trunc_div(days, 30), _trunc_rem(days, 30), _trunc_rem(parts.nanos, _NANOS_PER_DAY))
+    months, rest = divmod((parts.months * 30 + parts.days) * _NANOS_PER_DAY + parts.nanos, 30 * _NANOS_PER_DAY)
+    return (months, *divmod(rest, _NANOS_PER_DAY))

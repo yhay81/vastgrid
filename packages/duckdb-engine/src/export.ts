@@ -60,7 +60,7 @@ export async function writeExport(connection: DuckDBConnection, job: ExportJob, 
     return;
   }
   if (format === "json") {
-    // DuckDB 1.5's JSON has NaN and Infinity, which JSON does not, float32 as the double it widens to, and
+    // DuckDB's JSON has NaN and Infinity, which JSON does not, float32 as the double it widens to, and
     // decimals of up to 18 digits as doubles (12.5 for 12.50): the rows are written here instead.
     await pipeline(
       Readable.from(writeJson(columns, rowsOf(connection, job))),
@@ -90,7 +90,7 @@ export async function writeExport(connection: DuckDBConnection, job: ExportJob, 
   const options = {
     csv: `FORMAT csv, HEADER ${header}`,
     tsv: `FORMAT csv, HEADER ${header}, DELIMITER '\\t'`,
-    // Without dictionaries when there are intervals: DuckDB 1.5's dictionaries keep one of the values that compare
+    // Without dictionaries when there are intervals: DuckDB's dictionaries keep one of the values that compare
     // equal, and "1 month" and "30 days" compare equal (§3.1), so one would be written for the other. A limit of
     // one byte leaves every column without one.
     parquet: columns.some((column) => column.type === "interval")

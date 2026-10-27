@@ -49,12 +49,11 @@ function compareBytes(a: Uint8Array, b: Uint8Array): number {
 
 const NANOS_PER_DAY = 86_400_000_000_000n;
 
-/** DuckDB 1.5's comparison of intervals: nanoseconds into days, then days into 30-day months, truncating. */
+/** DuckDB 2.0's comparison of intervals: by their length, with months of 30 days and days of 24 hours. */
 function intervalKey(text: string): bigint[] {
   const parts = parseIntervalText(text);
   assert.ok(parts, text);
-  const days = BigInt(parts.days) + parts.nanos / NANOS_PER_DAY;
-  return [BigInt(parts.months) + days / 30n, days % 30n, parts.nanos % NANOS_PER_DAY];
+  return [(BigInt(parts.months) * 30n + BigInt(parts.days)) * NANOS_PER_DAY + parts.nanos];
 }
 
 /** Compares two values that are not blank, by §3.1. */
@@ -483,7 +482,7 @@ test("the text of dates, times and timestamps orders as their time does, so text
 });
 
 test("UUIDs and binary values compare by their bytes", async () => {
-  // DuckDB 1.5.6 orders these UUIDs and BLOBs so.
+  // DuckDB 1.5.6 and 2.0.0 order these UUIDs and BLOBs so.
   await checkOrder(
     single({ type: "uuid" }, [
       "ffffffff-0000-0000-0000-000000000000",
@@ -506,9 +505,9 @@ test("UUIDs and binary values compare by their bytes", async () => {
   await checkOrder(single({ type: "binary" }, blobs));
 });
 
-test("intervals compare as DuckDB 1.5 compares them", async () => {
-  // Orders read from DuckDB 1.5.6 (ORDER BY x, id): 1 month equals 30 days and 1 day equals 24 hours, but
-  // 1 month −1 day is greater than 29 days, since days and months are normalized by truncating division.
+test("intervals compare as DuckDB 2.0 compares them", async () => {
+  // Orders read from DuckDB 2.0.0 (ORDER BY x, id): 1 month equals 30 days and 1 day equals 24 hours, so that
+  // 1 month −1 day equals 29 days (DuckDB 1.5 normalized by truncating division, and put it above).
   const values = [
     "1 month",
     "30 days",
@@ -528,8 +527,8 @@ test("intervals compare as DuckDB 1.5 compares them", async () => {
     null,
   ];
   await checkOrder(single({ type: "interval" }, values), {
-    asc: [6, 7, 8, 9, 10, 11, 12, 3, 14, 2, 13, 0, 1, 4, 5, 15],
-    desc: [4, 5, 0, 1, 13, 2, 14, 3, 11, 12, 10, 8, 9, 6, 7, 15],
+    asc: [6, 7, 8, 9, 10, 11, 12, 2, 3, 13, 14, 0, 1, 4, 5, 15],
+    desc: [4, 5, 0, 1, 13, 14, 2, 3, 11, 12, 10, 8, 9, 6, 7, 15],
   });
 });
 

@@ -245,7 +245,7 @@ function codecOf(column: Column): WordCodec {
         accept,
       };
     case "interval":
-      // The months (64 bits), the days (−29 to 29) and the nanoseconds (64 bits) of normalizeInterval.
+      // The months (64 bits), the days (0 to 29) and the nanoseconds (64 bits) of normalizeInterval.
       return {
         width: 5,
         write: (value, words, at) => {

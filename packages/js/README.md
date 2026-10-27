@@ -179,7 +179,7 @@ The engine can also be called directly: `await engine.handle({ v: 2, id: 1, op: 
 - Expressions are compiled once per view to functions of a row ID (§3.6, §3.7, §4.4): exact numbers are
   computed as integers at their scale, with BigInt where a number would not be exact, so a result that does not
   fit its type is null rather than rounded; floats are 64-bit, and results that are not finite are null.
-  Strings compare by code point, and `lower` and `upper` map code points one by one as DuckDB 1.5 does (`İ` →
+  Strings compare by code point, and `lower` and `upper` map code points one by one as DuckDB 2.0 does (`İ` →
   `i`, `ß` → `ẞ`). Derived columns are computed for every row of the table, then `where` keeps the rows of the
   view; `locate` gives null for rows that it leaves out. A million rows derive a decimal product, filter by it
   and sort by it in about 0.7 seconds.
@@ -194,9 +194,9 @@ The engine can also be called directly: `await engine.handle({ v: 2, id: 1, op: 
   pages whose plans only sort do not load it.
 - Views are in the order of §3.3. Each column's values are ranked once, by a radix sort of their bits for
   values of fixed width and by code point for strings; a view is then one counting sort per sort key. A
-  million floats sort in about 0.2 seconds. Intervals compare as DuckDB 1.5 compares them (`normalizeInterval`
-  of `vastgrid-spec`): whole days of the time go into the days, then whole 30-day months of the days into the
-  months, truncating, and the parts compare in that order.
+  million floats sort in about 0.2 seconds. Intervals compare as DuckDB 2.0 compares them (`normalizeInterval`
+  of `vastgrid-spec`): by their length, with months of 30 days and days of 24 hours, so that `1 month -1 day`
+  equals `29 days`.
 - `locate` finds a value of `rowKey` at its first position in the view; `summarize` counts each cell of
   `ranges` × `columns` once, sums exact numbers exactly, and gives floats that are not finite as cells but
   not as numbers.
