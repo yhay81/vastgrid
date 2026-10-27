@@ -31,21 +31,33 @@ function decoded(value: unknown): unknown {
 /** The engine in a Python process, which answers each line in turn. */
 export class Kernel {
   private readonly child: ChildProcess;
-  private readonly waiting: ((value: Json) => void)[] = [];
+  private readonly waiting: { resolve(value: Json): void; reject(error: Error): void }[] = [];
+  private failure: Error | undefined;
   private id = 0;
 
-  constructor() {
-    this.child = spawn("uv", ["run", "--quiet", "--frozen", "python", "tests/stdio_server.py"], {
+  constructor(command = "uv", args = ["run", "--quiet", "--frozen", "python", "tests/stdio_server.py"]) {
+    this.child = spawn(command, args, {
       cwd: folder,
       stdio: ["pipe", "pipe", "inherit"],
     });
+    this.child.on("error", (error) => this.fail(error));
+    this.child.stdin?.on("error", (error) => this.fail(error));
+    this.child.on("close", (code, signal) => {
+      this.fail(new Error(`The notebook test kernel closed (code ${code}, signal ${signal}).`));
+    });
     const lines = createInterface({ input: this.child.stdout as NodeJS.ReadableStream });
-    lines.on("line", (line) => this.waiting.shift()?.(decoded(JSON.parse(line)) as Json));
+    lines.on("line", (line) => this.waiting.shift()?.resolve(decoded(JSON.parse(line)) as Json));
+  }
+
+  private fail(error: Error): void {
+    this.failure ??= error;
+    for (const pending of this.waiting.splice(0)) pending.reject(this.failure);
   }
 
   line(message: Json): Promise<Json> {
-    return new Promise((resolve) => {
-      this.waiting.push(resolve);
+    if (this.failure) return Promise.reject(this.failure);
+    return new Promise((resolve, reject) => {
+      this.waiting.push({ resolve, reject });
       this.child.stdin?.write(`${JSON.stringify(message)}\n`);
     });
   }
