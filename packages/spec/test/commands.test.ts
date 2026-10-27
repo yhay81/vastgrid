@@ -248,8 +248,11 @@ test("moving the active cell costs the same with a large history and many loaded
     return (performance.now() - started) / 200;
   };
   time(bigState(1));
-  // Copying a history of 100,000 updates took about 74 ms per move; a move now copies nothing of it.
-  assert.ok(time(bigState(100_000)) < 1, "a move takes less than 1 ms");
+  // Copying a history of 100,000 updates took about 74 ms per move; a move now copies nothing of it. The best of
+  // three runs, so that a pause of the garbage collector or a busy machine does not count.
+  const large = bigState(100_000);
+  const best = Math.min(time(large), time(large), time(large));
+  assert.ok(best < 1, `a move takes less than 1 ms, not ${best.toFixed(2)} ms`);
 });
 
 test("commands read rows through lookup when the core gives it", () => {

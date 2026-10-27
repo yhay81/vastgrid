@@ -24,6 +24,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm run size
+      # The packages installed from their tarballs in a new project, as users install them.
+      - run: npm run pack-check
   test:
     name: Test (${{ matrix.os }}, Node.js ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
@@ -66,23 +68,6 @@ jobs:
       - run: uv run --frozen ruff check && uv run --frozen ruff format --check && uv run --frozen pytest
         working-directory: packages/notebook/python
       - run: node --conditions=vastgrid-source --import tsx --test packages/notebook/test/*.test.ts
-  react-18:
-    name: Test with React 18
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      # The oldest React that v1's peerDependencies allow; v2 (packages/grid) needs React 19.3.
-      - run: npm install --no-save --legacy-peer-deps react@18 react-dom@18 @types/react@18 @types/react-dom@18
-      - run: npx tsc -b packages/core packages/duckdb packages/react
-      - run: >-
-          node --conditions=vastgrid-source --import tsx --test packages/core/test/*.test.ts
-          packages/duckdb/test/*.test.ts packages/browser/test/*.test.ts packages/react/test/*.test.ts
   e2e:
     name: End-to-end tests and performance budgets
     runs-on: ubuntu-latest

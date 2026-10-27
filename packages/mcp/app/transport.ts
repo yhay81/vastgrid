@@ -3,7 +3,7 @@
  * and the calls that keep the App's document and session in step with the grid's.
  */
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { Transport } from "vastgrid-grid";
+import type { Transport } from "vastgrid";
 import type { GridDocument, GridSession } from "vastgrid-spec";
 
 type Json = Record<string, unknown>;

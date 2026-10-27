@@ -1,11 +1,11 @@
 /**
- * The grid of the notebook (docs/notebook.md): an anywidget module that shows vastgrid-grid's `DataGrid` in a cell's
+ * The grid of the notebook (docs/notebook.md): an anywidget module that shows vastgrid's `DataGrid` in a cell's
  * output, with the engine in the kernel (the Python package `vastgrid`). Messages travel over the widget's comm as
  * custom messages; the bytes of blocks and exports travel as its buffers, which a mark stands for in the message.
  */
 import { createRoot } from "react-dom/client";
-import { createGridStore, DataGrid, type WorkerLike, workerTransport } from "vastgrid-grid";
-import "vastgrid-grid/styles.css";
+import { createGridStore, DataGrid, type WorkerLike, workerTransport } from "vastgrid";
+import "vastgrid/styles.css";
 import "./notebook.css";
 import type { GridDocument } from "vastgrid-spec";
 

@@ -47,13 +47,8 @@ body {
   text-decoration: none;
 }
 
-.demo__datasets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  border: none;
+.demo__dataset {
+  font-weight: 600;
 }
 
 .demo__bar :is(button, select) {
@@ -65,12 +60,6 @@ body {
   color: inherit;
   font: inherit;
   cursor: pointer;
-}
-
-.demo__datasets button[aria-pressed="true"] {
-  border-color: var(--demo-accent);
-  background: var(--demo-accent-bg);
-  font-weight: 600;
 }
 
 .demo__options {

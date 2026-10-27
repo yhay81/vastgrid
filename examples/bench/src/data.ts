@@ -1,4 +1,4 @@
-/** The bench's table: the same values for v1 and v2, made from the row number. */
+/** The bench's table: values made from the row number. */
 export interface BenchColumn {
   name: string;
   type: "integer" | "string" | "float" | "date" | "boolean";
@@ -29,7 +29,7 @@ export function benchColumns(count: number): BenchColumn[] {
   });
 }
 
-/** A value of a column for a row, as typed JSON (§2.2 of the specification), which v1 reads as well. */
+/** A value of a column for a row, as typed JSON (§2.2 of the specification). */
 function cellValue(column: number, type: BenchColumn["type"], row: number): string | number | boolean | null {
   const mix = (row * 2_654_435_761 + column * 40_503) >>> 0;
   switch (type) {
@@ -48,12 +48,11 @@ function cellValue(column: number, type: BenchColumn["type"], row: number): stri
   }
 }
 
-/** The table by column (for v1's `ArraySource`) and by row (for v2's memory engine). */
+/** The table by row, for the memory engine. */
 export function benchTable(rows: number, count: number) {
   const columns = benchColumns(count);
-  const columnData = columns.map((column, index) =>
-    Array.from({ length: rows }, (_, row) => cellValue(index, column.type, row)),
+  const rowData = Array.from({ length: rows }, (_, row) =>
+    columns.map((column, index) => cellValue(index, column.type, row)),
   );
-  const rowData = Array.from({ length: rows }, (_, row) => columnData.map((values) => values[row]));
-  return { columns, columnData, rowData };
+  return { columns, rowData };
 }

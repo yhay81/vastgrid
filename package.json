@@ -6,10 +6,6 @@
     "node": ">=20"
   },
   "workspaces": [
-    "packages/core",
-    "packages/react",
-    "packages/duckdb",
-    "packages/browser",
     "packages/spec",
     "packages/sql",
     "packages/duckdb-engine",
@@ -19,22 +15,22 @@
     "packages/vscode",
     "packages/cli",
     "packages/notebook",
-    "examples/playground",
     "examples/bench",
     "examples/files",
     "site"
   ],
   "scripts": {
-    "build": "tsc -b packages/core packages/duckdb packages/browser packages/react packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp packages/vscode packages/cli && node scripts/copy-assets.mjs && node scripts/compile-react.mjs packages/grid && npm run build -w vastgrid-mcp && node packages/vscode/scripts/build.mjs && node packages/cli/scripts/build-app.mjs && node packages/notebook/scripts/build.mjs",
+    "build": "tsc -b packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp packages/vscode packages/cli && node scripts/copy-assets.mjs && node scripts/compile-react.mjs packages/grid && npm run build -w vastgrid-mcp && node packages/vscode/scripts/build.mjs && node packages/cli/scripts/build-app.mjs && node packages/notebook/scripts/build.mjs",
     "clean": "rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo",
-    "typecheck": "tsc -b packages/core packages/duckdb packages/browser packages/react packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp packages/vscode packages/cli && tsc -p packages/mcp/app && tsc -p packages/mcp/host && tsc -p packages/vscode/webview && tsc -p packages/cli/app && tsc -p packages/notebook/widget && tsc -p examples/playground --noEmit && tsc -p examples/bench --noEmit && tsc -p examples/files --noEmit && tsc -p site --noEmit",
+    "typecheck": "tsc -b packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp packages/vscode packages/cli && tsc -p packages/mcp/app && tsc -p packages/mcp/host && tsc -p packages/vscode/webview && tsc -p packages/cli/app && tsc -p packages/notebook/widget && tsc -p examples/bench --noEmit && tsc -p examples/files --noEmit && tsc -p site --noEmit",
     "test": "node --conditions=vastgrid-source --import tsx --test packages/*/test/*.test.ts",
     "lint": "biome check . && eslint",
     "format": "biome check --write .",
-    "dev": "npm run dev -w vastgrid-playground",
-    "bench": "node --conditions=vastgrid-source --import tsx packages/duckdb/bench/run.ts",
+    "dev": "npm run dev -w vastgrid-files-example",
+    "bench": "node --conditions=vastgrid-source --import tsx packages/duckdb-engine/bench/open.ts",
     "e2e": "npm run build -w vastgrid-bench && playwright test",
-    "size": "node scripts/bundle-size.mjs"
+    "size": "node scripts/bundle-size.mjs",
+    "pack-check": "node scripts/pack-check.mjs"
   },
   "devDependencies": {
     "@babel/core": "7.29.7",

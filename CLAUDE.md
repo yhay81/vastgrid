@@ -6,13 +6,14 @@ before such a change.
 
 ## Map
 
-- v1: `packages/core` (vastgrid-core: protocol, row cache, models; no dependencies, no React or Node.js APIs),
-  `packages/react` (vastgrid, the React grid), `packages/browser` (sources in a Web Worker),
-  `packages/duckdb` (a DuckDB table server for Node.js).
-- v2: `packages/spec` (types, plan checking, conformance corpus), `packages/sql` (plans as DuckDB SQL),
-  `packages/js` (engine in memory), `packages/duckdb-engine` (DuckDB engine for Node.js), `packages/grid`
-  (the React grid). Specified by `docs/v2-spec.md` and `docs/v2-react.md`.
-- `examples/` (playground, bench, files), `site/` (Astro on Cloudflare), `e2e/` (Playwright), `scripts/`.
+- `packages/spec` (vastgrid-spec: types, plan checking, commands, schemas, conformance corpus), `packages/sql`
+  (vastgrid-sql: plans as DuckDB SQL), `packages/js` (vastgrid-js: the engine in memory), `packages/duckdb-engine`
+  (vastgrid-duckdb: the DuckDB engine for Node.js), `packages/grid` (vastgrid: the React grid; `vastgrid/core` without
+  React). Specified by `docs/v2-spec.md` and `docs/v2-react.md`.
+- Entry points: `packages/cli` (vastgrid-cli), `packages/mcp` (vastgrid-mcp), `packages/vscode` (the extension),
+  `packages/notebook` (the Python package, with its widget).
+- `examples/` (bench, files), `site/` (Astro on Cloudflare), `e2e/` (Playwright), `scripts/` (build, release,
+  `pack-check.mjs`).
 - Tests are `packages/*/test/*.test.ts` and import the sources (`--conditions=vastgrid-source`), so they need
   no build.
 
@@ -21,7 +22,7 @@ before such a change.
 - `.claude/settings.json` sets `NODE_OPTIONS=--test-reporter=dot`, so a test run prints dots and then only the
   failures. For another reporter clear it first, or Node stops with an error:
   `NODE_OPTIONS= node --test --test-reporter=spec …`.
-- One file: `node --conditions=vastgrid-source --import tsx --test packages/core/test/format.test.ts`, and
+- One file: `node --conditions=vastgrid-source --import tsx --test packages/spec/test/formula.test.ts`, and
   `--test-name-pattern='…'` for one test. `npm test` runs all of them in about 5 seconds.
 - `npm run typecheck` and `npm run lint` print little when clean; add `2>&1 | head -n 40` when many errors are
   likely.
@@ -35,10 +36,10 @@ before such a change.
 
 Find the lines with `rg -n`, then read only those lines.
 
-- Over 2,000 lines: `packages/react/src/data-grid.tsx`, `packages/react/src/controller.ts`,
-  `packages/duckdb/src/engine.ts`, `packages/spec/src/commands.ts`; 1,500: `packages/core/src/formula.ts`.
+- Over 1,000 lines: `packages/spec/src/commands.ts` (2,000), `packages/grid/src/core/store.ts`,
+  `packages/js/src/engine.ts`; check others with `wc -l` first.
 - Code and tests cite the specs by section (§2.4). `rg -n '^#' docs/v2-spec.md` is the outline of its 1,400
-  lines; read only the section. The same goes for `docs/v2-react.md` and `docs/protocol.md`.
+  lines; read only the section. The same goes for `docs/v2-react.md`.
 - `packages/spec/conformance/` holds JSON files of up to 80 KB: query them with `jq` or `rg`.
 - Never read `package-lock.json` (`npm ls <name>` instead). README.md, README.ja.md, CHANGELOG.md and the
   site's reference pages are 35–50 KB: read only the section you change.

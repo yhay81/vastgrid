@@ -1,8 +1,17 @@
 {
   "name": "vastgrid-js",
   "version": "0.0.0",
-  "private": true,
-  "description": "The JavaScript engine of vastgrid v2: answers the messages of the v2 specification over tables in memory.",
+  "description": "vastgrid's engine in memory, for the browser and Node.js: tables of rows, Apache Arrow, CSV, TSV, JSON Lines, Excel and Parquet files (over HTTP ranges too), with sorting, filters, groups, pivots, formulas, writes and exports.",
+  "keywords": [
+    "data grid",
+    "csv",
+    "parquet",
+    "excel",
+    "xlsx",
+    "arrow",
+    "in-memory",
+    "web worker"
+  ],
   "license": "MIT",
   "author": "yhay81",
   "repository": {

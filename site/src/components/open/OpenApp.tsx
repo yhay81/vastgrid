@@ -1,13 +1,6 @@
 import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
-import {
-  createGridStore,
-  DataGrid,
-  GridProvider,
-  type Transport,
-  useGridSelector,
-  workerTransport,
-} from "vastgrid-grid";
-import "vastgrid-grid/styles.css";
+import { createGridStore, DataGrid, GridProvider, type Transport, useGridSelector, workerTransport } from "vastgrid";
+import "vastgrid/styles.css";
 
 type Theme = "auto" | "light" | "dark";
 type Language = "en" | "ja";
@@ -16,14 +9,13 @@ const SAMPLE_ROWS = 1_000_000;
 
 const texts = {
   en: {
-    preview: "v2 preview",
     drop: "Drop a CSV, TSV, JSON Lines, Parquet or Excel file here",
     or: "or",
     choose: "Choose a file",
     sample: "Try a sample of 1,000,000 rows",
     another: "Open another file",
     reading: "Reading",
-    note: "The file stays in your browser: vastgrid v2's memory engine reads it in a Web Worker. Open a column's menu to sort, filter or group, type over a cell or double-click it to edit, and export CSV, TSV, JSON or Excel from the toolbar. The file itself is not changed: export to keep your edits.",
+    note: "The file stays in your browser: vastgrid's memory engine reads it in a Web Worker. Open a column's menu to sort, filter or group, type over a cell or double-click it to edit, and export CSV, TSV, JSON or Excel from the toolbar. The file itself is not changed: export to keep your edits.",
     sheet: "Sheet",
     hidden: "hidden",
     theme: "Theme",
@@ -34,14 +26,13 @@ const texts = {
     docs: "Docs",
   },
   ja: {
-    preview: "v2 プレビュー",
     drop: "CSV・TSV・JSON Lines・Parquet・Excel のファイルをここにドロップ",
     or: "または",
     choose: "ファイルを選ぶ",
     sample: "100 万行のサンプルで試す",
     another: "別のファイルを開く",
     reading: "読み込み中",
-    note: "ファイルはブラウザーの外へ出ません。vastgrid v2 のメモリエンジンが Web Worker の中で読みます。列のメニューで並べ替え・絞り込み・グループ化、セルは上から入力するかダブルクリックで編集、ツールバーから CSV・TSV・JSON・Excel に書き出せます。元のファイルは変わらないので、編集を残すには書き出してください。",
+    note: "ファイルはブラウザーの外へ出ません。vastgrid のメモリエンジンが Web Worker の中で読みます。列のメニューで並べ替え・絞り込み・グループ化、セルは上から入力するかダブルクリックで編集、ツールバーから CSV・TSV・JSON・Excel に書き出せます。元のファイルは変わらないので、編集を残すには書き出してください。",
     sheet: "シート",
     hidden: "非表示",
     theme: "テーマ",
@@ -184,7 +175,7 @@ export default function OpenApp({ language: pageLanguage }: { language: Language
       <header className="demo__bar">
         <a className="demo__brand" href={language === "ja" ? "/ja/" : "/"}>
           <img src="/favicon.svg" alt="" width="22" height="22" />
-          vastgrid <span className="open__badge">{t.preview}</span>
+          vastgrid
         </a>
         {opened && (
           <span className="open__file">

@@ -11,7 +11,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { createHttpHandler, DuckDBEngine, findTableFiles, tableFormatOf } from "vastgrid-duckdb-engine";
+import { createHttpHandler, DuckDBEngine, findTableFiles, tableFormatOf } from "vastgrid-duckdb";
 
 export interface ServeOptions {
   /** The files and folders to open: a folder gives its table files, up to two folders deep. */

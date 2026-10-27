@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
-import { type CellActionEvent, type ColumnGroup, DataGrid, type DataGridHandle, httpTransport } from "vastgrid-grid";
-import "vastgrid-grid/styles.css";
+import { type CellActionEvent, type ColumnGroup, DataGrid, type DataGridHandle, httpTransport } from "vastgrid";
+import "vastgrid/styles.css";
 
 /**
  * A file of the server's folder in v2's grid: `?file=sales-100000000.parquet`. The DuckDB engine reads it on the

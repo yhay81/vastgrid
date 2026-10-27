@@ -1,8 +1,14 @@
 {
   "name": "vastgrid-spec",
   "version": "0.0.0",
-  "private": true,
-  "description": "The vastgrid v2 specification as code: types, plan checking, the normal form and hash of plans, and the conformance corpus.",
+  "description": "The vastgrid specification as code: types, plan checking, the commands of the document and session, the normal form and hash of plans, the message schemas, and the conformance corpus.",
+  "keywords": [
+    "data grid",
+    "specification",
+    "conformance",
+    "arrow",
+    "json schema"
+  ],
   "license": "MIT",
   "author": "yhay81",
   "repository": {

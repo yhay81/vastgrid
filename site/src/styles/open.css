@@ -1,12 +1,3 @@
-.open__badge {
-  padding: 1px 6px;
-  border: 1px solid var(--demo-accent);
-  border-radius: 999px;
-  color: var(--demo-accent);
-  font-size: 11px;
-  font-weight: 600;
-}
-
 .open__file {
   overflow: hidden;
   color: var(--demo-muted);

@@ -1,6 +1,6 @@
 /**
  * The notebook's engine, the Python package in `python/`, against the memory engine of `vastgrid-js` (docs/v2-spec.md
- * §10), as `vastgrid-duckdb-engine` is compared with it: the generated table and plans of its tests
+ * §10), as `vastgrid-duckdb` is compared with it: the generated table and plans of its tests
  * (`../../duckdb-engine/test/generated.ts`), whose views, rows, row IDs and errors must be the same; and finds,
  * summaries, locates, writes and exports of every format on them. `VASTGRID_PLANS` sets how many plans (150 by
  * default) and `VASTGRID_SEED` the seed; a difference names the plan's seed and shows the plan.

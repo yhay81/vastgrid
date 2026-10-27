@@ -16,7 +16,7 @@ const directory = mkdtempSync(path.join(tmpdir(), "vastgrid-size-"));
 const entry = path.join(directory, "entry.js");
 writeFileSync(
   entry,
-  'import { DataGrid, localTransport } from "vastgrid-grid";\nimport { memoryEngine } from "vastgrid-js";\nexport { DataGrid, localTransport, memoryEngine };\n',
+  'import { DataGrid, localTransport } from "vastgrid";\nimport { memoryEngine } from "vastgrid-js";\nexport { DataGrid, localTransport, memoryEngine };\n',
 );
 try {
   const result = await build({

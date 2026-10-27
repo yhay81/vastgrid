@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { openBench } from "./bench.ts";
 
 test.beforeEach(async ({ page }) => {
-  await openBench(page, "v2", { rows: 10_000 });
+  await openBench(page, { rows: 10_000 });
 });
 
 test("the grid is an ARIA grid with the rows on screen under the canvas", async ({ page }) => {

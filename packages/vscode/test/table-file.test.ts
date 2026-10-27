@@ -7,7 +7,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { type GridSnapshot, GridStore, type WorkerLike, workerTransport } from "vastgrid-grid/core";
+import { type GridSnapshot, GridStore, type WorkerLike, workerTransport } from "vastgrid/core";
 import { newSteps } from "../src/history.ts";
 import type { HostMessage } from "../src/messages.ts";
 import { type FileKey, type FileView, type KeptFile, TableFile, type TableFileOptions } from "../src/table-file.ts";

@@ -5,8 +5,8 @@
  */
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
-import { DataGrid, type GridStore, httpTransport, useCreateGridStore } from "vastgrid-grid";
-import "vastgrid-grid/styles.css";
+import { DataGrid, type GridStore, httpTransport, useCreateGridStore } from "vastgrid";
+import "vastgrid/styles.css";
 import "./app.css";
 
 /** What `/files` answers. */

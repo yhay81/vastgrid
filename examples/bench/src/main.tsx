@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { benchTable } from "./data.ts";
 
 /**
- * The bench (v2-react.md §10): `?grid=v1|v2&rows=…&columns=…` mounts one grid on a generated table and gives
+ * The bench (v2-react.md §10): `?rows=…&columns=…&engine=main|worker` mounts the grid on a generated table and gives
  * `window.bench` to the end-to-end tests, which scroll it, press keys and read what React and the frames did.
  */
 interface Commit {
@@ -13,8 +13,7 @@ interface Commit {
 }
 
 export interface Bench {
-  grid: "v1" | "v2";
-  /** Where v2's engine runs: in the page, or in a Web Worker. */
+  /** Where the engine runs: in the page, or in a Web Worker. */
   engine: "main" | "worker";
   rows: number;
   columns: number;
@@ -41,20 +40,18 @@ declare global {
 }
 
 const params = new URLSearchParams(location.search);
-const grid = params.get("grid") === "v1" ? "v1" : "v2";
 const engineAt = params.get("engine") === "worker" ? "worker" : "main";
 const rows = Number(params.get("rows") ?? 1_000_000);
 const columns = Number(params.get("columns") ?? 8);
 
 const started = performance.now();
-// A worker makes its own table; the page makes it for v1 and for an engine in the page.
-const table = grid === "v2" && engineAt === "worker" ? null : benchTable(rows, columns);
+// A worker makes its own table; the page makes it for an engine in the page.
+const table = engineAt === "worker" ? null : benchTable(rows, columns);
 
 let sortBy: (column: string) => void = () => {};
 let isPending: () => boolean = () => false;
 
 const bench: Bench = {
-  grid,
   engine: engineAt,
   rows,
   columns,
@@ -142,82 +139,53 @@ async function main() {
   const element = document.getElementById("root");
   if (!element) throw new Error("There is no #root.");
   const root = createRoot(element);
-  if (grid === "v1") {
-    await import("vastgrid/styles.css");
-    const { ArraySource, DataGrid } = await import("vastgrid");
-    if (!table) throw new Error("v1 makes its table in the page.");
-    const source = new ArraySource({ columns: table.columns, columnData: table.columnData });
-    let handle: {
-      controller: { cache: { value(row: number, column: number): unknown }; viewPending: boolean };
-      setQuery(query: { sort: { column: number; direction: "asc" | "desc" }[] }): void;
-    } | null = null;
-    bench.ready = () => handle?.controller.cache.value(0, 0) !== undefined;
-    sortBy = (column) => {
-      const index = table.columns.findIndex((item) => item.name === column);
-      handle?.setQuery({ sort: [{ column: index, direction: "asc" }] });
-    };
-    isPending = () => handle?.controller.viewPending ?? false;
-    bench.mountedAt = performance.now();
-    root.render(
-      <Profiler id="grid" onRender={onRender}>
-        <DataGrid
-          ref={(value) => {
-            handle = value as typeof handle;
-          }}
-          source={source}
-          style={{ height: "100%" }}
-        />
-      </Profiler>,
-    );
-  } else {
-    await import("vastgrid-grid/styles.css");
-    const { DataGrid, localTransport, workerTransport } = await import("vastgrid-grid");
-    let transport: Parameters<typeof DataGrid>[0]["transport"];
-    if (table) {
-      const { memoryEngine } = await import("vastgrid-js");
-      const engine = memoryEngine({
-        tables: {
-          bench: {
-            columns: table.columns.map((column) => (column.type === "float" ? { ...column, bits: 64 } : column)),
-            rows: table.rowData,
-            editable: true,
-          },
+  await import("vastgrid/styles.css");
+  const { DataGrid, localTransport, workerTransport } = await import("vastgrid");
+  let transport: Parameters<typeof DataGrid>[0]["transport"];
+  if (table) {
+    const { memoryEngine } = await import("vastgrid-js");
+    const engine = memoryEngine({
+      tables: {
+        bench: {
+          columns: table.columns.map((column) => (column.type === "float" ? { ...column, bits: 64 } : column)),
+          rows: table.rowData,
+          editable: true,
         },
+      },
+    });
+    transport = localTransport(engine);
+  } else {
+    const worker = new Worker(new URL("./engine-worker.ts", import.meta.url), { type: "module" });
+    await new Promise<void>((resolve) => {
+      worker.addEventListener("message", function ready(event) {
+        if ((event.data as { ready?: boolean }).ready !== true) return;
+        worker.removeEventListener("message", ready);
+        resolve();
       });
-      transport = localTransport(engine);
-    } else {
-      const worker = new Worker(new URL("./engine-worker.ts", import.meta.url), { type: "module" });
-      await new Promise<void>((resolve) => {
-        worker.addEventListener("message", function ready(event) {
-          if ((event.data as { ready?: boolean }).ready !== true) return;
-          worker.removeEventListener("message", ready);
-          resolve();
-        });
-        worker.postMessage({ init: { rows, columns } });
-      });
-      transport = workerTransport(worker);
-    }
-    let handle: import("vastgrid-grid").DataGridHandle | null = null;
-    bench.ready = () => handle?.store.cell(0, "id") !== undefined;
-    sortBy = (column) => {
-      void handle?.dispatch({ command: "sort.set", keys: [{ column, direction: "asc" }] });
-    };
-    isPending = () => handle?.store.getSnapshot().pending !== null;
-    bench.mountedAt = performance.now();
-    root.render(
-      <Profiler id="grid" onRender={onRender}>
-        <DataGrid
-          ref={(value) => {
-            handle = value;
-          }}
-          transport={transport}
-          table="bench"
-          locale="en"
-          style={{ height: "100%" }}
-        />
-      </Profiler>,
-    );
+      worker.postMessage({ init: { rows, columns } });
+    });
+    transport = workerTransport(worker);
   }
+  let handle: import("vastgrid").DataGridHandle | null = null;
+  bench.ready = () => handle?.store.cell(0, "id") !== undefined;
+  sortBy = (column) => {
+    void handle?.dispatch({ command: "sort.set", keys: [{ column, direction: "asc" }] });
+  };
+  isPending = () => handle?.store.getSnapshot().pending !== null;
+  bench.mountedAt = performance.now();
+  root.render(
+    <Profiler id="grid" onRender={onRender}>
+      <DataGrid
+        ref={(value) => {
+          handle = value;
+        }}
+        transport={transport}
+        table="bench"
+        locale="en"
+        style={{ height: "100%" }}
+      />
+    </Profiler>,
+  );
   requestAnimationFrame(watchFirstRows);
 }
 

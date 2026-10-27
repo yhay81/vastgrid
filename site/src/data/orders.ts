@@ -1,4 +1,6 @@
-import { ArraySource, type CellValue, type ColumnSchema } from "vastgrid";
+import type { MemoryTable } from "vastgrid-js";
+
+type Value = MemoryTable["rows"][number][number];
 
 /** A small, fast pseudo-random generator, so that every visitor sees the same table. */
 function mulberry32(seed: number) {
@@ -72,7 +74,7 @@ const longNote =
   "Cells show one line and end with an ellipsis, the cell inspector shows the whole value, and copying " +
   "a cell copies its whole text. ".repeat(4);
 
-export const orderColumns: ColumnSchema[] = [
+export const orderColumns: MemoryTable["columns"] = [
   { name: "order_id", type: "integer" },
   { name: "ordered_at", type: "timestamp" },
   { name: "customer", type: "string" },
@@ -81,9 +83,9 @@ export const orderColumns: ColumnSchema[] = [
   { name: "category", type: "string" },
   { name: "product", type: "string" },
   { name: "quantity", type: "integer" },
-  // Decimals arrive as text, as from DuckDB, so that they keep their digits.
-  { name: "unit_price", type: "decimal", sourceType: "DECIMAL(10,2)" },
-  { name: "total", type: "decimal", sourceType: "DECIMAL(12,2)" },
+  // Decimals are text with their digits (§2.2 of the specification), as DuckDB's are.
+  { name: "unit_price", type: "decimal", precision: 10, scale: 2, sourceType: "DECIMAL(10,2)" },
+  { name: "total", type: "decimal", precision: 12, scale: 2, sourceType: "DECIMAL(12,2)" },
   { name: "paid", type: "boolean" },
   { name: "rating", type: "integer" },
   { name: "note", type: "string" },
@@ -97,9 +99,9 @@ function pad(value: number) {
  * A table of made-up orders, generated in the browser: `rows` rows of numbers, decimals, dates, text in several
  * scripts, booleans, blanks and a few long values. The same `rows` always gives the same table.
  */
-export function generateOrders(rows: number): CellValue[][] {
+export function generateOrders(rows: number): Value[][] {
   const random = mulberry32(20261020);
-  const columns: CellValue[][] = orderColumns.map(() => new Array<CellValue>(rows));
+  const columns: Value[][] = orderColumns.map(() => new Array<Value>(rows));
   const [
     orderId,
     orderedAt,
@@ -149,7 +151,12 @@ export function generateOrders(rows: number): CellValue[][] {
   return columns;
 }
 
-/** The made-up orders as an `ArraySource`. */
-export function ordersSource(rows: number) {
-  return new ArraySource({ columns: orderColumns, columnData: generateOrders(rows) });
+/** The made-up orders as a table of the memory engine, by row, whose cells can be written. */
+export function ordersTable(rows: number): MemoryTable {
+  const columns = generateOrders(rows);
+  return {
+    columns: orderColumns,
+    rows: Array.from({ length: rows }, (_, row) => columns.map((values) => values[row])),
+    editable: true,
+  };
 }

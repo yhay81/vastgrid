@@ -124,7 +124,7 @@ export class Client {
 
 /** A folder with a workspace (the allowed folder) and an engine over it, with a client. */
 export async function setUp(options: Partial<DuckDBEngineOptions> = {}) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "vastgrid-duckdb-engine-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "vastgrid-duckdb-"));
   const workspace = path.join(root, "workspace");
   await mkdir(workspace);
   const engine = await DuckDBEngine.create({

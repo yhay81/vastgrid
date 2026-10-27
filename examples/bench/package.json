@@ -2,7 +2,7 @@
   "name": "vastgrid-bench",
   "private": true,
   "type": "module",
-  "description": "v1 and v2 of the grid on the same generated table, measured in the browser (v2-react.md §10).",
+  "description": "v2's grid on a generated table in the memory engine, in the page or in a Web Worker, measured in the browser (v2-react.md §10).",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -11,9 +11,7 @@
   "dependencies": {
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "vastgrid": "0.1.1",
-    "vastgrid-core": "0.1.1",
-    "vastgrid-grid": "0.0.0",
+    "vastgrid": "0.0.0",
     "vastgrid-js": "0.0.0"
   },
   "devDependencies": {

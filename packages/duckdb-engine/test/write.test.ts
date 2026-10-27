@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { DuckDBInstance } from "@duckdb/node-api";
-import { createGridStore, localTransport } from "vastgrid-grid/core";
+import { createGridStore, localTransport } from "vastgrid/core";
 import { type Client, type Json, setUp, type TableInfo } from "./client.ts";
 
 let context: Awaited<ReturnType<typeof setUp>>;

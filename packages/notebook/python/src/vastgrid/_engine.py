@@ -1,5 +1,5 @@
 """The engine of the notebook (docs/v2-spec.md §8): tables of DataFrames and files in DuckDB, answered with the
-messages of §8.1 as vastgrid-duckdb-engine answers them. It runs in the kernel, so that the grid in the notebook's
+messages of §8.1 as vastgrid-duckdb answers them. It runs in the kernel, so that the grid in the notebook's
 page reads tables of any size a row range at a time, and the notebook gets the edited table back.
 
 Every request runs on a cursor of its own (`cancel` interrupts it), so requests run side by side on threads. Writes

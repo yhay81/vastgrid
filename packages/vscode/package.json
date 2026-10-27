@@ -154,8 +154,8 @@
     "test:vscode": "node scripts/test-vscode.mjs"
   },
   "dependencies": {
-    "vastgrid-duckdb-engine": "0.0.0",
-    "vastgrid-grid": "0.0.0",
+    "vastgrid-duckdb": "0.0.0",
+    "vastgrid": "0.0.0",
     "vastgrid-spec": "0.0.0"
   },
   "devDependencies": {

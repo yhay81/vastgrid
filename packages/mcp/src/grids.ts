@@ -13,7 +13,7 @@ import {
   type Handler,
   localTransport,
   RequestIds,
-} from "vastgrid-grid/core";
+} from "vastgrid/core";
 import {
   type CommandError,
   checkDocument,

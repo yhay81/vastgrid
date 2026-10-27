@@ -1,10 +1,10 @@
 /// <reference lib="webworker" />
 /**
- * v2's memory engine in a Web Worker, for the page that opens a file: the page posts the file (or asks for a sample),
+ * The memory engine in a Web Worker, for the page that opens a file: the page posts the file (or asks for a sample),
  * and the engine reads it here, so that reading, sorting and exporting never block the page. The file stays in the
  * browser.
  */
-import { serveEngine, type WorkerLike } from "vastgrid-grid/core";
+import { serveEngine, type WorkerLike } from "vastgrid/core";
 import { memoryEngine } from "vastgrid-js";
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;

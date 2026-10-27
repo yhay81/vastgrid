@@ -6,8 +6,8 @@
  */
 import { copyFile, mkdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
-import { DuckDBEngine, type DuckDBEngineOptions, tableFormatOf } from "vastgrid-duckdb-engine";
-import { type Handler, RequestIds } from "vastgrid-grid/core";
+import { type Handler, RequestIds } from "vastgrid/core";
+import { DuckDBEngine, type DuckDBEngineOptions, tableFormatOf } from "vastgrid-duckdb";
 import type { HostMessage, ViewMessage } from "./messages.js";
 
 type Json = Record<string, unknown>;

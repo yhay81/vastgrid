@@ -2,7 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { openBench } from "./bench.ts";
 
 test.beforeEach(async ({ page }) => {
-  await openBench(page, "v2", { rows: 1_000 });
+  await openBench(page, { rows: 1_000 });
 });
 
 /** The text of a cell as the accessibility rows give it (row and column from 0). */

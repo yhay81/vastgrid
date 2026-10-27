@@ -1,8 +1,13 @@
 {
   "name": "vastgrid-sql",
   "version": "0.0.0",
-  "private": true,
-  "description": "vastgrid v2 plans as DuckDB SQL: the meaning of the specification in SQL, with every value as a parameter.",
+  "description": "vastgrid's plans as DuckDB SQL: the meaning of the specification in SQL, with every value as a parameter.",
+  "keywords": [
+    "duckdb",
+    "sql",
+    "data grid",
+    "query builder"
+  ],
   "license": "MIT",
   "author": "yhay81",
   "repository": {

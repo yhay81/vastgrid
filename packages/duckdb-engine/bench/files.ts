@@ -1,7 +1,4 @@
-/**
- * The large files of the benches and the end-to-end tests: those of v1's `npm run bench`
- * (`packages/duckdb/bench/run.ts`), so that both engines read the same files.
- */
+/** The large files of the benches and the end-to-end tests, generated with DuckDB when they are missing. */
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";

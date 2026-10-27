@@ -3,11 +3,10 @@ import type { Page } from "@playwright/test";
 /** Opens the bench with a grid and waits for its first rows on screen. */
 export async function openBench(
   page: Page,
-  grid: "v1" | "v2",
   options: { rows?: number; columns?: number; engine?: "main" | "worker" } = {},
 ) {
   const { rows = 1_000_000, columns = 8, engine = "main" } = options;
-  await page.goto(`/?grid=${grid}&rows=${rows}&columns=${columns}&engine=${engine}`);
+  await page.goto(`/?rows=${rows}&columns=${columns}&engine=${engine}`);
   await page.waitForFunction(() => window.bench?.firstRowsAt !== null, undefined, { timeout: 60_000 });
   // Let the first reads and the accessibility rows settle.
   await page.waitForTimeout(300);

@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { inflateRawSync } from "node:zlib";
-import { createGridStore, localTransport } from "vastgrid-grid/core";
+import { createGridStore, localTransport } from "vastgrid/core";
 import { XLSX_MAX_ROWS } from "vastgrid-spec/xlsx";
 import { createHttpHandler } from "../src/index.ts";
 import { type Client, type Json, setUp, type TableInfo, writeParquet } from "./client.ts";

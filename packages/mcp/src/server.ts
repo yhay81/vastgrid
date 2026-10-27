@@ -6,7 +6,7 @@
 import { readFile } from "node:fs/promises";
 import { RESOURCE_MIME_TYPE, registerAppResource, registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { CallToolResult, McpServer } from "@modelcontextprotocol/server";
-import { findTableFiles } from "vastgrid-duckdb-engine";
+import { findTableFiles } from "vastgrid-duckdb";
 import { COMMANDS, toTextEncoding } from "vastgrid-spec";
 import { z } from "zod";
 import { type Grid, type GridEngine, Grids, ROWS_LIMIT, ToolError } from "./grids.js";

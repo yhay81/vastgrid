@@ -11,16 +11,18 @@ on:
     paths:
       - "site/**"
       - "docs/**"
-      - "packages/core/src/**"
-      - "packages/react/src/**"
+      - "packages/spec/src/**"
+      - "packages/js/src/**"
+      - "packages/grid/src/**"
       - "package-lock.json"
       - ".github/workflows/site.yml"
   pull_request:
     paths:
       - "site/**"
       - "docs/**"
-      - "packages/core/src/**"
-      - "packages/react/src/**"
+      - "packages/spec/src/**"
+      - "packages/js/src/**"
+      - "packages/grid/src/**"
       - "package-lock.json"
       - ".github/workflows/site.yml"
   workflow_dispatch:

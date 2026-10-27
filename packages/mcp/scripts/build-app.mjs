@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const root = new URL("..", import.meta.url);
+const { version } = JSON.parse(readFileSync(new URL("package.json", root), "utf8"));
 const result = await build({
   entryPoints: [fileURLToPath(new URL("app/main.tsx", root))],
   bundle: true,
@@ -15,7 +16,7 @@ const result = await build({
   // The menus and panels that the grid loads when they open are in the same file: a page of a host loads nothing.
   splitting: false,
   outdir: "out",
-  define: { "process.env.NODE_ENV": '"production"' },
+  define: { "process.env.NODE_ENV": '"production"', VASTGRID_VERSION: JSON.stringify(version) },
   legalComments: "none",
   logLevel: "warning",
 });

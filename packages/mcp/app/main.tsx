@@ -6,8 +6,8 @@
 import { App, applyDocumentTheme, type McpUiHostContext } from "@modelcontextprotocol/ext-apps";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { DataGrid } from "vastgrid-grid";
-import "vastgrid-grid/styles.css";
+import { DataGrid } from "vastgrid";
+import "vastgrid/styles.css";
 import "./app.css";
 import type { GridDocument, GridSession } from "vastgrid-spec";
 import { callTool, type GridLink, mcpTransport, sync, ToolCallError } from "./transport.js";
@@ -156,7 +156,7 @@ function GridApp({ app, opened, host, onReopen }: GridAppProps) {
 const element = document.getElementById("root");
 if (!element) throw new Error("There is no #root.");
 const root: Root = createRoot(element);
-const app = new App({ name: "vastgrid", version: "0.0.0" }, {});
+const app = new App({ name: "vastgrid", version: VASTGRID_VERSION }, {});
 let host: McpUiHostContext | undefined;
 let opened: Opened | null = null;
 

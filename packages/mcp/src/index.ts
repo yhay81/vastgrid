@@ -3,7 +3,7 @@
  * and the agent reads and changes with the commands of the specification, and the App that shows them.
  */
 
-export { type Handler, RequestIds } from "vastgrid-grid/core";
+export { type Handler, RequestIds } from "vastgrid/core";
 export {
   Grid,
   type GridEngine,

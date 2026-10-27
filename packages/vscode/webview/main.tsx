@@ -13,8 +13,8 @@ import {
   useCreateGridStore,
   type WorkerLike,
   workerTransport,
-} from "vastgrid-grid";
-import "vastgrid-grid/styles.css";
+} from "vastgrid";
+import "vastgrid/styles.css";
 import "./editor.css";
 import type { GridDocument, GridSession } from "vastgrid-spec";
 import { newSteps } from "../src/history.js";

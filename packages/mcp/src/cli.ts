@@ -4,11 +4,12 @@
  * (the current folder when none is named); `--save` lets them save written cells into CSV and TSV files.
  */
 import { mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
-import { DuckDBEngine } from "vastgrid-duckdb-engine";
+import { DuckDBEngine } from "vastgrid-duckdb";
 import { Grids } from "./grids.js";
 import { registerVastgrid } from "./server.js";
 
@@ -36,8 +37,9 @@ const engine = await DuckDBEngine.create({
   log: (message, error) => process.stderr.write(`vastgrid-mcp: ${message}: ${String(error ?? "")}\n`),
 });
 const grids = new Grids({ engine });
+const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
 const handle = serveStdio(() => {
-  const server = new McpServer({ name: "vastgrid", version: "0.0.0" });
+  const server = new McpServer({ name: "vastgrid", version });
   registerVastgrid(server, { engine, folders, grids });
   return server;
 });

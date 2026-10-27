@@ -7,7 +7,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { DuckDBEngine } from "vastgrid-duckdb-engine";
+import { DuckDBEngine } from "vastgrid-duckdb";
 import { type GridEngine, Grids } from "../src/index.ts";
 
 type Json = Record<string, unknown>;
