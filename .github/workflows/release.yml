@@ -52,17 +52,17 @@ jobs:
           done
           mkdir -p "$RUNNER_TEMP/vscode"
           cp packages/vscode/dist/*.vsix "$RUNNER_TEMP/vscode"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: packages
           path: ${{ runner.temp }}/packages
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: python
           path: ${{ runner.temp }}/python
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vscode
           path: ${{ runner.temp }}/vscode
@@ -87,7 +87,7 @@ jobs:
         with:
           node-version-file: .nvmrc
           registry-url: https://registry.npmjs.org
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: packages
           path: ${{ runner.temp }}/packages
@@ -116,7 +116,7 @@ jobs:
       id-token: write
     steps:
       - uses: astral-sh/setup-uv@v10.3.0
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: python
           path: ${{ runner.temp }}/python
@@ -137,7 +137,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: vscode
           path: ${{ runner.temp }}/vscode
@@ -163,7 +163,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: ${{ runner.temp }}/assets
       - name: Create the release
