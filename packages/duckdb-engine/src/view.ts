@@ -237,6 +237,8 @@ export class Views {
     const sql = view.sql;
     const outputs = orderOnly ? [] : sql.columns.map((column, index) => `${quoteIdentifier(column.name)} AS c${index}`);
     if (sql.rowId) outputs.push(`${sql.rowId} AS source_id`);
+    // A view without columns (a pivot without keys and combinations) still has its rows.
+    if (outputs.length === 0) outputs.push("NULL AS vg_none");
     const order = sql.order.length ? ` ORDER BY ${sql.order.join(", ")}` : "";
     const suffix = limit === undefined ? "" : ` LIMIT ${limit}`;
     await this.session.withConnection(signal, (connection) =>

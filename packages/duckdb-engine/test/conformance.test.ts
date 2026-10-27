@@ -5,11 +5,9 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
-import { DuckDBInstance } from "@duckdb/node-api";
-import type { Column, JsonValue } from "vastgrid-spec";
-import { type CorpusTable, compareResult, isFailure, readCorpus } from "vastgrid-spec/conformance";
-import { duckdbType, quoteIdentifier } from "vastgrid-sql";
-import { type Client, setUp, type TableInfo } from "./client.ts";
+import type { Column } from "vastgrid-spec";
+import { compareResult, isFailure, readCorpus } from "vastgrid-spec/conformance";
+import { type Client, setUp, type TableInfo, writeParquet } from "./client.ts";
 
 for (const materializeRows of [0, 20_000_000])
   describe(`materializeRows=${materializeRows}`, () => {
@@ -24,36 +22,6 @@ for (const materializeRows of [0, 20_000_000])
     after(async () => {
       await context.tearDown();
     });
-
-    /** A typed JSON value (§2.2) as SQL: numbers and text as parameters read as text, which DuckDB reads exactly. */
-    function input(value: JsonValue, column: Column, params: string[]): string {
-      const type = duckdbType(column);
-      if (value === null) return `CAST(NULL AS ${type})`;
-      if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
-      params.push(Object.is(value, -0) ? "-0.0" : String(value));
-      return `CAST(CAST($${params.length} AS VARCHAR) AS ${type})`;
-    }
-
-    async function writeParquet(file: string, table: CorpusTable) {
-      const instance = await DuckDBInstance.create(":memory:");
-      const connection = await instance.connect();
-      try {
-        const columns = table.columns.map((column) => `${quoteIdentifier(column.name)} ${duckdbType(column)}`);
-        await connection.run(`CREATE TABLE t (${columns.join(", ")}, vg_order BIGINT)`);
-        for (const [index, row] of table.rows.entries()) {
-          const params: string[] = [];
-          const values = row.map((value, column) => input(value, table.columns[column], params));
-          await connection.run(`INSERT INTO t VALUES (${[...values, String(index)].join(", ")})`, params);
-        }
-        const names = table.columns.map((column) => quoteIdentifier(column.name)).join(", ");
-        await connection.run(
-          `COPY (SELECT ${names} FROM t ORDER BY vg_order) TO '${file.replaceAll("'", "''")}' (FORMAT parquet)`,
-        );
-      } finally {
-        connection.closeSync();
-        instance.closeSync();
-      }
-    }
 
     for (const file of readCorpus()) {
       test(`plan corpus through the engine: ${file.file}`, async (t) => {

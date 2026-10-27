@@ -53,6 +53,10 @@ Tests use `node:test` and live in `packages/*/test/*.test.ts`. A bug fix comes w
 without it, where the bug can be reproduced outside a browser. For changes to the DuckDB engine that may
 affect speed, run `npm run bench` before and after and put both results in the pull request.
 
+`packages/duckdb-engine/test/memory-engine.test.ts` sends 300 generated plans to v2's memory engine and its DuckDB
+engine and compares their answers. After a change to either engine or to `vastgrid-sql`, run more of them:
+`VASTGRID_PLANS=3000 VASTGRID_SEED=7` with the test, and `VASTGRID_ONLY=<plan seed>` to see one plan that differs.
+
 ## Guidelines
 
 - `vastgrid-core` has no dependencies and uses neither React nor Node.js APIs; keep it that way.

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb-engine` (unreleased v2): a test sends generated plans to the memory
+  engine and the DuckDB engine and compares their answers, which found and fixed these. The memory engine reads a
+  date as a timestamp of any unit (it failed for dates that nanoseconds do not hold), and keeps −0.0 in float
+  results. Plans as DuckDB SQL: `left`, `right` and `substr` take counts beyond 2^32; `add_days` gives null for
+  days that are not an integer and for years beyond 1 to 9999, instead of failing or sorting what reads as null;
+  `if`, `coalesce`, `least` and `greatest` give null for a value that does not fit their common type; `round` and
+  `quantile` of 32-bit floats compute in 64 bits; a decimal(38, s) sum beyond 38 digits is null; and a pivot
+  without keys or combinations no longer fails. Sums and averages of decimals of more than 18 digits whose partial
+  sums overflow, and `stddev` of floats near the largest, still fail in the DuckDB engine.
 - `vastgrid-grid` (unreleased v2): `npm run size` fails over 200 KB with gzip instead of 100 KB, so that features
   are not shaped by the budget before v2 is complete.
 - `vastgrid-js` (unreleased v2): the memory engine evaluates every plan of §4.1: `derive`, `where` and `search` with

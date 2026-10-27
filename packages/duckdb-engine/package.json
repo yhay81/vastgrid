@@ -37,6 +37,7 @@
     "vastgrid-sql": "0.0.0"
   },
   "devDependencies": {
-    "vastgrid-grid": "0.0.0"
+    "vastgrid-grid": "0.0.0",
+    "vastgrid-js": "0.0.0"
   }
 }

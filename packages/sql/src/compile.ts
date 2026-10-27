@@ -132,12 +132,21 @@ export function textSql(sql: string, type: ValueType): string {
 }
 
 /** A whole number, or `low` when it is below; null stays null (§3.6), where DuckDB's `greatest` would skip it. */
+/**
+ * A count of code points from `low`: below it counts as `low`, and beyond 2^32 − 1, the most that DuckDB's
+ * `substring` takes, as 2^32 − 1, which no string reaches.
+ */
 function atLeast(sql: string, low: number) {
-  return `(CASE WHEN CAST(${sql} AS BIGINT) < ${low} THEN ${low} ELSE CAST(${sql} AS BIGINT) END)`;
+  const value = `CAST(${sql} AS BIGINT)`;
+  return `(CASE WHEN ${value} < ${low} THEN ${low} WHEN ${value} > 4294967295 THEN 4294967295 ELSE ${value} END)`;
 }
 
 function cast(sql: string, type: ValueType) {
   return `CAST(${sql} AS ${duckdbType(type)})`;
+}
+
+function tryCast(sql: string, type: ValueType) {
+  return `TRY_CAST(${sql} AS ${duckdbType(type)})`;
 }
 
 /**
@@ -231,7 +240,8 @@ class Compiler {
     const { args, type } = node;
     const arg = (index: number) => this.expression(args[index]);
     const all = (separator: string) => args.map((item) => this.expression(item)).join(separator);
-    const typed = () => args.map((item) => cast(this.expression(item), type)).join(", ");
+    // Values in their common type (§4.4); a value that does not fit it is null (§3.6).
+    const typed = () => args.map((item) => tryCast(this.expression(item), type)).join(", ");
     switch (node.fn) {
       case "and":
         return `(${all(" AND ")})`;
@@ -264,9 +274,12 @@ class Compiler {
         return args[0].type.type === "string" ? `(${value} IS NULL OR ${value} = '')` : `(${value} IS NULL)`;
       }
       case "if":
-        return `(CASE WHEN ${arg(0)} THEN ${cast(arg(1), type)} ELSE ${cast(arg(2), type)} END)`;
-      case "coalesce":
-        return `coalesce(${typed()})`;
+        return `(CASE WHEN ${arg(0)} THEN ${tryCast(arg(1), type)} ELSE ${tryCast(arg(2), type)} END)`;
+      case "coalesce": {
+        // The first value that is not null, in the common type: null when it does not fit, as in the JS engine.
+        const cases = args.map((_, index) => `WHEN ${arg(index)} IS NOT NULL THEN ${tryCast(arg(index), type)}`);
+        return `(CASE ${cases.join(" ")} END)`;
+      }
       case "least":
       case "greatest":
         return `${node.fn}(${typed()})`;
@@ -287,7 +300,8 @@ class Compiler {
         return type.type === "float" ? finite(`abs(${this.number(args[0])})`) : `TRY(${cast(`abs(${arg(0)})`, type)})`;
       case "round": {
         const digits = args.length === 2 ? Number((args[1] as LiteralExpr).value) : 0;
-        if (type.type === "float") return finite(`round(${this.number(args[0])}, ${digits})`);
+        // 64-bit, also for a 32-bit float column (§3.7).
+        if (type.type === "float") return finite(`round(${this.double(args[0])}, ${digits})`);
         if (type.type === "decimal") return `TRY(${cast(`round(${arg(0)}, ${digits})`, type)})`;
         if (digits >= 0) return arg(0);
         // DuckDB 1.5 wraps around when it rounds a BIGINT past its range; rounding a decimal overflows instead.
@@ -357,10 +371,13 @@ class Compiler {
         const side = (index: number) => (mixed ? `CAST(${arg(index)} AS TIMESTAMP)` : arg(index));
         return `date_diff('day', ${side(0)}, ${side(1)})`;
       }
-      case "add_days":
-        return type.type === "date"
-          ? `TRY(${arg(0)} + CAST(${arg(1)} AS INTEGER))`
-          : `TRY(${arg(0)} + to_days(CAST(${arg(1)} AS INTEGER)))`;
+      case "add_days": {
+        const days = `TRY_CAST(${arg(1)} AS INTEGER)`;
+        const sum = type.type === "date" ? `TRY(${arg(0)} + ${days})` : `TRY(${arg(0)} + to_days(${days}))`;
+        // Years from 1 to 9999 (§2.2), as the JS engine gives them: DuckDB's dates go further, and a later date
+        // would sort as itself and read as null.
+        return `(CASE WHEN year(${sum}) BETWEEN 1 AND 9999 THEN ${sum} END)`;
+      }
     }
   }
 
@@ -378,11 +395,15 @@ class Compiler {
         return `count(${column ?? "*"})${filter}`;
       case "count_distinct":
         return measure.approx ? `approx_count_distinct(${column})${filter}` : `count(DISTINCT ${column})${filter}`;
-      case "sum":
-        // DuckDB refuses aggregates inside TRY(); TRY_CAST takes them.
-        return measure.type.type === "float"
-          ? `sum(${column})${filter}`
-          : `TRY_CAST(sum(${column})${filter} AS ${duckdbType(measure.type)})`;
+      case "sum": {
+        if (measure.type.type === "float") return `sum(${column})${filter}`;
+        // DuckDB refuses aggregates inside TRY(); TRY_CAST takes them. A decimal(38, s) sum is a HUGEINT, which
+        // holds more than 38 digits: a sum beyond them is null (§3.8).
+        const sum = `TRY_CAST(sum(${column})${filter} AS ${duckdbType(measure.type)})`;
+        const scale = measure.type.scale ?? 0;
+        const largest = `${"9".repeat(38 - scale)}${scale > 0 ? `.${"9".repeat(scale)}` : ""}`;
+        return `(CASE WHEN abs(${sum}) <= ${largest} THEN ${sum} END)`;
+      }
       case "avg":
         return `CAST(avg(${column})${filter} AS DOUBLE)`;
       case "stddev":
@@ -392,7 +413,8 @@ class Compiler {
         return `${measure.fn}(${column})${filter}`;
       case "quantile": {
         const fn = measure.approx ? "approx_quantile" : "quantile_cont";
-        return `CAST(${fn}(${column}, ${Number(measure.p)})${filter} AS DOUBLE)`;
+        // Interpolated in doubles, also for a 32-bit float column (§3.7).
+        return `${fn}(CAST(${column} AS DOUBLE), ${Number(measure.p)})${filter}`;
       }
     }
   }
@@ -523,6 +545,8 @@ export function compileView(plan: CheckedPlan, source: SqlSource, combinations?:
     for (const measure of measures) outputs.push(`${compiler.measure(measure)} AS ${quoteIdentifier(measure.name)}`);
   }
   const groupBy = keys.length > 0 ? ` GROUP BY ${keys.map((key) => quoteIdentifier(key.name)).join(", ")}` : "";
+  // A pivot without keys whose rows make no combination has no columns, and one group.
+  if (outputs.length === 0) outputs.push("count(*) AS vg_none");
   entries.push(`vg_groups AS (SELECT ${outputs.join(", ")} FROM vg_rows${groupBy})`);
   const having = plan.having ? ` WHERE ${compiler.expression(plan.having)}` : "";
   entries.push(`vg_view AS (SELECT * FROM vg_groups${having})`);

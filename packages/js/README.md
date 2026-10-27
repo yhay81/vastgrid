@@ -68,6 +68,7 @@ const info = await engine.handle({ v: 2, id: 1, op: "open", ref: "orders" });
   `ranges` × `columns` once, sums exact numbers exactly, and gives floats that are not finite as cells but
   not as numbers.
 
-The tests run every case of the conformance corpus of [`vastgrid-spec`](../spec) whose plan the engine
-evaluates, check the order against a comparison of values one pair at a time on generated tables, and check
-every response with `checkResponse`.
+The tests run every case of the conformance corpus of [`vastgrid-spec`](../spec), check the order against a
+comparison of values one pair at a time on generated tables, and check every response with `checkResponse`. The
+DuckDB engine's tests compare this engine's answers with its own on a generated table and generated plans
+(`packages/duckdb-engine/test/memory-engine.test.ts`).

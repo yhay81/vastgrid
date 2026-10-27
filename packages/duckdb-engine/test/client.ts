@@ -6,7 +6,9 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { DuckDBInstance } from "@duckdb/node-api";
 import { type Column, checkResponse, decodeBlock, type JsonValue, type Operation } from "vastgrid-spec";
+import { duckdbType, quoteIdentifier } from "vastgrid-sql";
 import { DuckDBEngine, type DuckDBEngineOptions } from "../src/index.ts";
 
 export type Json = Record<string, unknown>;
@@ -142,4 +144,37 @@ export async function setUp(options: Partial<DuckDBEngineOptions> = {}) {
       await rm(root, { recursive: true, force: true });
     },
   };
+}
+
+/** A typed JSON value (§2.2) as SQL: numbers and text as parameters read as text, which DuckDB reads exactly. */
+function input(value: JsonValue, column: Column, params: string[]): string {
+  const type = duckdbType(column);
+  if (value === null) return `CAST(NULL AS ${type})`;
+  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  params.push(Object.is(value, -0) ? "-0.0" : String(value));
+  return `CAST(CAST($${params.length} AS VARCHAR) AS ${type})`;
+}
+
+/** Writes a table of typed JSON values (§2) as a Parquet file, whose row numbers are the table's row IDs. */
+export async function writeParquet(file: string, table: { columns: Column[]; rows: JsonValue[][] }) {
+  const instance = await DuckDBInstance.create(":memory:");
+  const connection = await instance.connect();
+  try {
+    const columns = table.columns.map((column) => `${quoteIdentifier(column.name)} ${duckdbType(column)}`);
+    await connection.run(`CREATE TABLE t (${columns.join(", ")}, vg_order BIGINT)`);
+    for (const [index, row] of table.rows.entries()) {
+      const params: string[] = [];
+      const values = row.map((value, column) => input(value, table.columns[column], params));
+      await connection.run(`INSERT INTO t VALUES (${[...values, String(index)].join(", ")})`, params);
+    }
+    const names = table.columns.map((column) => quoteIdentifier(column.name)).join(", ");
+    // Without dictionaries: DuckDB 1.5's dictionaries keep one of the intervals that compare equal, so that a
+    // column of "1 month" and "30 days" would read back as one of them.
+    await connection.run(
+      `COPY (SELECT ${names} FROM t ORDER BY vg_order) TO '${file.replaceAll("'", "''")}' (FORMAT parquet, DICTIONARY_SIZE_LIMIT 1)`,
+    );
+  } finally {
+    connection.closeSync();
+    instance.closeSync();
+  }
 }

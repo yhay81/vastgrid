@@ -206,12 +206,14 @@ function caster(from: ValueType, to: ValueType): (value: JsonValue) => JsonValue
   }
   if (to.type === "timestamp") {
     const unit = to.unit ?? "us";
+    // Counted in the source's unit, which holds its values (a date at midnight in microseconds), then in the
+    // result's.
+    const source = from.type === "timestamp" ? (from.unit ?? "us") : "us";
+    const [a, b] = [UNIT_PER_SECOND[source], UNIT_PER_SECOND[unit]];
     return (value) => {
       if (value === null) return null;
-      const text = asTimestampText(value as string, from);
-      const nanos = parseTimestampText(text, "ns") as bigint;
-      const count = floorDivide(nanos, 1_000_000_000n / UNIT_PER_SECOND[unit]);
-      const result = timestampText(count, unit);
+      const count = parseTimestampText(asTimestampText(value as string, from), source) as bigint;
+      const result = timestampText(b >= a ? count * (b / a) : floorDivide(count, a / b), unit);
       return isValueOf(result, to) ? result : null;
     };
   }
@@ -479,7 +481,7 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
           const x = a(row);
           if (x === null) return null;
           const number = toFloat(x, types[0]);
-          return Number.isFinite(number) ? (negate ? -number : Math.abs(number)) + 0 : null;
+          return Number.isFinite(number) ? (negate ? -number : Math.abs(number)) : null;
         };
       }
       return (row) => {
@@ -681,7 +683,7 @@ function float1(a: RowValue, type: ValueType, apply: (x: number) => number): Row
     const value = a(row);
     if (value === null) return null;
     const number = toFloat(value, type);
-    return Number.isFinite(number) ? finite(apply(number) + 0) : null;
+    return Number.isFinite(number) ? finite(apply(number)) : null;
   };
 }
 
@@ -708,7 +710,7 @@ function arithmetic(
       if (y === null) return null;
       const p = toFloat(x, ta);
       const q = toFloat(y, tb);
-      return Number.isFinite(p) && Number.isFinite(q) ? finite(op(p, q) + 0) : null;
+      return Number.isFinite(p) && Number.isFinite(q) ? finite(op(p, q)) : null;
     };
   }
   // Operands at the result's scale; mul's scale is the sum of theirs.
@@ -735,6 +737,7 @@ function arithmetic(
     if (y === null) return null;
     if (whole && typeof x === "number" && typeof y === "number") {
       const result = quick(x, y);
+      // An integer has no −0, which JavaScript makes of 0 × −1.
       if (Number.isSafeInteger(result)) return result + 0;
       if (Number.isNaN(result)) return null;
     }
