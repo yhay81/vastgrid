@@ -41,7 +41,7 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@duckdb/node-api": "1.5.6-r.1",
+    "@duckdb/node-api": "1.5.6-r.2",
     "vastgrid-spec": "0.0.0",
     "vastgrid-sql": "0.0.0"
   },

@@ -4,9 +4,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    # Wait two weeks after a release, as CONTRIBUTING.md asks, so that a compromised version is likely found first.
-    cooldown:
-      default-days: 14
     ignore:
       # The workspace packages themselves.
       - dependency-name: "vastgrid*"
@@ -31,8 +28,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    cooldown:
-      default-days: 14
     groups:
       actions:
         patterns: ["*"]

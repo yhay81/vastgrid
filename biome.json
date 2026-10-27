@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.6.3/schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
     "includes": ["**", "!!**/node_modules", "!!**/dist", "!!**/.data", "!**/package-lock.json"]
@@ -8,6 +8,7 @@
   "linter": { "rules": { "preset": "recommended" } },
   "javascript": { "formatter": { "quoteStyle": "double" } },
   "css": { "parser": { "cssModules": false } },
+  "markdown": { "formatter": { "enabled": false } },
   "overrides": [
     {
       "includes": ["**/*.css"],

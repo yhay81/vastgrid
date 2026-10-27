@@ -44,7 +44,7 @@
     "build": "tsc -b && node scripts/build-app.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "2.0.3",
+    "@modelcontextprotocol/ext-apps": "2.1.0",
     "@modelcontextprotocol/server": "2.4.0",
     "vastgrid-duckdb": "0.0.0",
     "vastgrid": "0.0.0",

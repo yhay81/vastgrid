@@ -78,7 +78,7 @@ engine and compares their answers. After a change to either engine or to `vastgr
 - Changes to the API or the features update both [README.md](README.md) and [README.ja.md](README.ja.md), the
   package's README, and the matching pages of the site in `site/src/content/docs` (English) and
   `site/src/content/docs/ja`.
-- Dependencies are pinned to exact versions released at least two weeks before they are added.
+- Dependencies are pinned to exact versions.
 - Commit messages start with a short summary in the imperative ("Fix …", "Add …"). Larger commits list
   their changes by package in the body.
 

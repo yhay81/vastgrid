@@ -61,7 +61,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       # The Python package and its tests; the TypeScript tests of packages/notebook run it with uv.
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.2
       - run: npm ci
       # The grid's module that the package carries (static/widget.js).
       - run: npm run build
@@ -117,7 +117,7 @@ jobs:
           else
             npm run test:vscode -w vastgrid-vscode
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vastgrid-vscode-${{ matrix.target }}
           path: packages/vscode/dist/*.vsix

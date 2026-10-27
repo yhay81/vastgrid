@@ -14,7 +14,7 @@
 export const MAX_NATIVE_SCROLL = 8_000_000;
 
 function clamp(value: number, min: number, max: number) {
-  return value < min ? min : value > max ? max : value;
+  return Math.min(Math.max(value, min), max);
 }
 
 export class ScrollAxis {
