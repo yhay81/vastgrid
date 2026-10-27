@@ -68,8 +68,9 @@ run sequentially by `npm run test:performance` on a dedicated CI runner. Shared 
 on smaller tables in `npm test` and on a million rows in the performance suite.
 
 E2E suites start just their own server. After `npm run build`, use `npm run e2e -- grid grid.spec.ts` for one file,
-or `npm run e2e -- cli` for the CLI. The functional suites are `grid`, `files` (menus and panels), `mcp`, `cli` and
-`open`; without a suite name, they all run in turn. Further arguments go to Playwright, for example
+or `npm run e2e -- cli` for the CLI. The functional suites are `grid`, `strict` (the grid in Strict Mode, on Vite's
+development server), `files` (menus and panels), `mcp`, `cli` and `open`; without a suite name, they all run in
+turn. Further arguments go to Playwright, for example
 `npm run e2e -- files --grep "column menu"`. Direct `npx playwright test` defaults to `grid`. Browser performance
 (`performance`) and large files (`large`) have separate commands and CI jobs; both keep their full-size fixtures.
 

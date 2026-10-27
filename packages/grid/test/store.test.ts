@@ -63,6 +63,54 @@ test("connecting again after disconnecting works, as Strict Mode does it", async
   assert.equal(engine.open.size, 0);
 });
 
+test("connecting again after the table opened reads the view again, and closes the first table", async () => {
+  const engine = fakeEngine(numbers(100));
+  const store = createGridStore({ transport: localTransport(engine), table: "numbers" });
+  const first = store.connect();
+  store.setViewport({ top: 0, rows: 20, columns: ["id", "name"] });
+  await until(store, (snapshot) => snapshot.view !== null);
+  await settle();
+  first();
+  const second = store.connect();
+  store.setViewport({ top: 0, rows: 20, columns: ["id", "name"] });
+  await until(store, (snapshot) => snapshot.status === "ready" && store.cell(5, "name") !== undefined);
+  await settle();
+  assert.equal(engine.open.size, 1, "one table stays open");
+  assert.equal(store.cell(5, "name"), "name 5");
+  await store.dispatch({ command: "sort.set", keys: [{ column: "id", direction: "desc" }] });
+  await until(store, () => store.cell(0, "id") === 99);
+  second();
+  await settle();
+  assert.equal(engine.open.size, 0);
+});
+
+test("connecting twice keeps the rows read on a server, as Strict Mode does with `initial`", async () => {
+  const { readInitialView } = await import("../src/server.ts");
+  const reads = async (twice: boolean) => {
+    const engine = fakeEngine(numbers(300));
+    const transport = localTransport(engine);
+    const initial = await readInitialView(transport, { table: "numbers", rows: 50 });
+    const store = createGridStore({ transport, table: "numbers", initial });
+    const before = engine.requests.length;
+    if (twice) store.connect()();
+    const disconnect = store.connect();
+    assert.equal(store.cell(10, "name"), "name 10", "the rows stay while the table opens");
+    store.setViewport({ top: 0, rows: 20, columns: ["id", "name"] });
+    await until(store, (snapshot) => snapshot.status === "ready");
+    await settle(5);
+    assert.equal(store.cell(10, "name"), "name 10");
+    assert.equal(engine.open.size, 1, "one table stays open");
+    disconnect();
+    await settle();
+    assert.equal(engine.open.size, 0);
+    return engine.requests
+      .slice(before)
+      .filter((request) => request.op === "rows")
+      .map(({ start, end, columns }) => ({ start, end, columns }));
+  };
+  assert.deepEqual(await reads(true), await reads(false), "the rows are read as after one connection");
+});
+
 test("a command changes the snapshot at once and keeps what it does not change", async () => {
   const { store, disconnect } = await ready();
   const before = store.getSnapshot();

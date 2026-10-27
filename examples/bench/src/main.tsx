@@ -1,10 +1,11 @@
-import { Profiler, type ProfilerOnRenderCallback } from "react";
+import { Profiler, type ProfilerOnRenderCallback, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { benchTable } from "./data.ts";
 
 /**
  * The bench (react.md §10): `?rows=…&columns=…&engine=main|worker` mounts the grid on a generated table and gives
  * `window.bench` to the end-to-end tests, which scroll it, press keys and read what React and the frames did.
+ * `&strict` mounts it in Strict Mode, and `&initial` gives it its first rows as a promise.
  */
 interface Commit {
   phase: string;
@@ -31,6 +32,9 @@ export interface Bench {
   /** Sorts by a column and waits until the sorted rows are on screen: the time, and the longest task meanwhile. */
   sort(column: string): Promise<{ ms: number; longestTask: number }>;
   heap(): number | null;
+  /** The tables the grid has open in the engine, and how many times it opened one. */
+  openTables: Set<string>;
+  opens: number;
 }
 
 declare global {
@@ -62,6 +66,8 @@ const bench: Bench = {
   longTasks: [],
   ready: () => false,
   latencies: [],
+  openTables: new Set(),
+  opens: 0,
   heap: () => (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? null,
   sort(column) {
     const tasks = bench.longTasks.length;
@@ -166,14 +172,33 @@ async function main() {
     });
     transport = workerTransport(worker);
   }
+  // The tables open in the engine, for the tests that mount the grid twice.
+  const engineTransport = transport;
+  transport = {
+    ...engineTransport,
+    async send(request, options) {
+      const response = await engineTransport.send(request, options);
+      const result = (response as { result?: { table?: string } } | null)?.result;
+      if (request.op === "open" && result?.table) {
+        bench.openTables.add(result.table);
+        bench.opens++;
+      }
+      if (request.op === "close" && typeof request.table === "string") bench.openTables.delete(request.table);
+      return response;
+    },
+  };
   let handle: import("vastgrid").DataGridHandle | null = null;
   bench.ready = () => handle?.store.cell(0, "id") !== undefined;
   sortBy = (column) => {
     void handle?.dispatch({ command: "sort.set", keys: [{ column, direction: "asc" }] });
   };
   isPending = () => handle?.store.getSnapshot().pending !== null;
+  // `?initial` gives the first rows as a promise, read as a server would (§7 of react.md).
+  const initial = params.has("initial")
+    ? import("vastgrid/server").then(({ readInitialView }) => readInitialView(transport, { table: "bench" }))
+    : undefined;
   bench.mountedAt = performance.now();
-  root.render(
+  const grid = (
     <Profiler id="grid" onRender={onRender}>
       <DataGrid
         ref={(value) => {
@@ -181,11 +206,14 @@ async function main() {
         }}
         transport={transport}
         table="bench"
+        initial={initial}
         locale="en"
         style={{ height: "100%" }}
       />
-    </Profiler>,
+    </Profiler>
   );
+  // `?strict` mounts the grid twice in development, as Strict Mode does.
+  root.render(params.has("strict") ? <StrictMode>{grid}</StrictMode> : grid);
   requestAnimationFrame(watchFirstRows);
 }
 

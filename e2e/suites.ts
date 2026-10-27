@@ -3,6 +3,8 @@ const bench = {
   command: "npm run build -w vastgrid-bench && npm run preview -w vastgrid-bench",
   url: "http://127.0.0.1:5181",
 };
+// Vite's development server, with React's development build: Strict Mode mounts twice only there.
+const benchDev = { command: "npm run dev -w vastgrid-bench", url: "http://127.0.0.1:5180" };
 const files = {
   command: "npm run build -w vastgrid-files-example && npm run preview -w vastgrid-files-example",
   url: "http://127.0.0.1:5183",
@@ -10,6 +12,7 @@ const files = {
 
 export const suites = {
   grid: { tests: ["grid", "editing"], server: bench },
+  strict: { tests: ["strict"], server: benchDev },
   files: {
     tests: ["cells", "checked", "column-menu", "find", "format", "formulas", "panels", "totals"],
     server: files,
@@ -44,7 +47,7 @@ export const suites = {
 } as const;
 
 export type Suite = keyof typeof suites;
-export const functionalSuites: Suite[] = ["grid", "files", "mcp", "cli", "open"];
+export const functionalSuites: Suite[] = ["grid", "strict", "files", "mcp", "cli", "open"];
 export function isSuite(name: string): name is Suite {
   return Object.hasOwn(suites, name);
 }
