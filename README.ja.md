@@ -302,15 +302,15 @@ Apple M2 Pro で測りました。Chromium で、メモリーエンジンの 100
 | float の列で並べ替えて行を表示するまで: エンジンがページの中・Web Worker | 85〜98 ms・112〜113 ms |
 | その間のページの最長のタスク: エンジンがページの中・Web Worker | 81〜93 ms・なし |
 
-Node.js 24・DuckDB 1.5.6・8 スレッド・メモリー 2 GB の DuckDB エンジンで、HTTP を含めず、8 列の 256 行ずつ読んだ結果です
+Node.js 24・DuckDB 2.0・8 スレッド・メモリー 2 GB の DuckDB エンジンで、HTTP を含めず、8 列の 256 行ずつ読んだ 3 回の中央値です
 （[v2-views-benchmark.md](docs/v2-views-benchmark.md)）。
 
 | ファイルとビュー | 最初の行 | ビューの任意の位置の 256 行（中央値） |
 | --- | ---: | ---: |
-| Parquet 1.38 GB・1 億行、float の列で並べ替え | 778 ms | 676 ms |
-| Parquet 1 億行、絞り込み | 191 ms | 21 ms |
-| CSV 735 MB・1,000 万行、並べ替え | 53 ms | 3.1 ms |
-| CSV 1,000 万行、絞り込み | 179 ms | 2.7 ms |
+| Parquet 1.38 GB・1 億行、float の列で並べ替え | 834 ms | 957 ms |
+| Parquet 1 億行、絞り込み | 207 ms | 31 ms |
+| CSV 735 MB・1,000 万行、並べ替え | 63 ms | 6.3 ms |
+| CSV 1,000 万行、絞り込み | 144 ms | 4.9 ms |
 
 編集した 2 セルの保存は、6 MB の CSV で約 60 ms、65 MB で 0.3 秒です。並べ替えた 100 万行のビューの書き出しは CSV で 0.3 秒、
 Parquet で 0.1 秒です。メモリーエンジンは 100 万行の Parquet を 26 ms、CSV を約 1 秒で開きます

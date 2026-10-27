@@ -48,6 +48,26 @@ only the row order; their arbitrary reads still fetch scattered source rows, so 
 full saved copy. The session database has no hard byte quota and may keep reusable blocks after LRU eviction.
 Hosts requiring a total disk quota must provision one for `tempDirectory`. See the [engine options and cleanup](../packages/duckdb-engine/README.md#limits-and-cleanup).
 
+## DuckDB 2.0
+
+2026-10-27, main `56a8aef`, the same machine and files, with `@duckdb/node-api` 2.0.0-r.1 against the same
+checkout on 1.5.6-r.1. The two ran in turn, three times each, on a busy machine (load average about 16), so both
+are slower than on 2026-10-25. Each number is the median of the three runs, in milliseconds; the READMEs and the
+site show the 2.0 column.
+
+| File / plan | First rows 1.5.6 | First rows 2.0 | Deep reads p50 1.5.6 | Deep reads p50 2.0 | Built 1.5.6 | Built 2.0 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 100M Parquet / sort | 1,202 | 834 | 1,108 | 957 | 3,116 | 3,345 |
+| 100M Parquet / filter | 266 | 207 | 26 | 31 | | |
+| 735 MB CSV / sort | 57 | 63 | 4.4 | 6.3 | 1,699 | 1,445 |
+| 735 MB CSV / filter | 248 | 144 | 3.1 | 4.9 | | |
+
+The Parquet file's differences stay within what the runs spread over. The CSV file is slower on 2.0 in every run:
+`npm run bench` (`bench/open.ts`) gave 127 ms against 66 ms for its first rows, 5.6 s against 4.7 s for the whole
+load, and 4.8 ms against 3.4 ms for a block at a random place. Its notes have line breaks in quotes, which DuckDB 2.0
+reads with `null_padding` only in one thread. Peaks were 2.44 GB of RSS and 0.85 GB in the session folder on 2.0,
+2.37 GB and 0.83 GB on 1.5.6.
+
 ## Reproduce
 
 Generate the files with `bench/open.ts` if needed, then run:

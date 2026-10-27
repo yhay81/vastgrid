@@ -171,19 +171,19 @@ files of folders, two levels deep, without hidden ones: use it to offer a list o
 
 A sort of 1,000,000 rows or more answers first with its first 1,000 rows in their final order, and the grid
 shows them while the rest is built; a `view` event says when it is ready. Views of up to 20 million rows keep a
-sorted copy; larger ones keep only the order of rows. Measured on 2026-10-25 on an Apple M2 Pro with Node.js 24,
-DuckDB 1.5.6, 8 threads and a 2 GB memory limit
+sorted copy; larger ones keep only the order of rows. Measured on 2026-10-27 on an Apple M2 Pro with Node.js 24,
+DuckDB 2.0, 8 threads and a 2 GB memory limit, the median of three runs
 ([the benchmark](https://github.com/yhay81/vastgrid/blob/main/docs/v2-views-benchmark.md)), reading 256 rows of
 8 columns:
 
 | File and plan | First rows | Later reads anywhere in the view (median) |
 | --- | ---: | ---: |
-| 100M-row Parquet (1.38 GB), sort | 778 ms | 676 ms |
-| 100M-row Parquet, filter | 191 ms | 21 ms |
-| 10M-row CSV (735 MB), sort | 53 ms | 3.1 ms |
-| 10M-row CSV, filter | 179 ms | 2.7 ms |
+| 100M-row Parquet (1.38 GB), sort | 834 ms | 957 ms |
+| 100M-row Parquet, filter | 207 ms | 31 ms |
+| 10M-row CSV (735 MB), sort | 63 ms | 6.3 ms |
+| 10M-row CSV, filter | 144 ms | 4.9 ms |
 
-The complete sorted view took another 2.3 s for the Parquet file and 1.0 s for the CSV file.
+The complete sorted view took another 3.3 s for the Parquet file and 1.4 s for the CSV file.
 
 ## Saving and following files
 

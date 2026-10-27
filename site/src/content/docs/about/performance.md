@@ -47,23 +47,23 @@ toolbar's menus, the find bar and the detail panel load when they first open. `n
 
 ## The DuckDB engine
 
-Measured on 2026-10-25 with Node.js 24.22.1, DuckDB's Node.js API 1.5.6-r.1, 8 DuckDB threads and a 2 GB memory
-limit. Each request reads 256 rows of all eight columns through the engine's messages, with Arrow encoding and
+Measured on 2026-10-27 with Node.js 24.22.1, DuckDB's Node.js API 2.0.0-r.1, 8 DuckDB threads and a 2 GB memory
+limit; each number is the median of three runs. Each request reads 256 rows of all eight columns through the engine's messages, with Arrow encoding and
 decoding, without HTTP or drawing. The sort is `price DESC`, the filter `city = 'Tokyo'`. Deep reads are five
 reads at 25%, 50%, 75%, 99% and the end of the finished view.
 
 | File and plan | First rows | Deep reads, p50 / largest |
 | --- | ---: | ---: |
-| Parquet, 100M rows (1.38 GB), sort | 778 ms | 676 / 681 ms |
-| Parquet, 100M rows, filter | 191 ms | 21 / 24 ms |
-| CSV, 10M rows (735 MB), sort | 53 ms | 3.1 / 3.4 ms |
-| CSV, 10M rows, filter | 179 ms | 2.7 / 2.9 ms |
+| Parquet, 100M rows (1.38 GB), sort | 834 ms | 957 / 1,040 ms |
+| Parquet, 100M rows, filter | 207 ms | 31 / 34 ms |
+| CSV, 10M rows (735 MB), sort | 63 ms | 6.3 / 7.5 ms |
+| CSV, 10M rows, filter | 144 ms | 4.9 / 5.4 ms |
 
 - The first rows of a sort of a million rows or more come from a top-N query, in the order of the finished view,
-  while the rest is built: 2.3 seconds more for the Parquet file, 1.0 for the CSV file.
+  while the rest is built: 3.3 seconds more for the Parquet file, 1.4 for the CSV file.
 - The 100-million-row view keeps only the order of the rows, above the 20 million rows of a sorted copy, so its
   deep reads gather rows from all over the file. The CSV file's view is a sorted copy, and reads in milliseconds.
-- Over the whole run, the process peaked at 2.66 GB of memory and its session folder at 0.83 GB.
+- Over the whole run, the process peaked at 2.44 GB of memory and its session folder at 0.85 GB.
 
 On an Apple-silicon laptop, saving two edited cells takes about 60 ms in a 200,000-row CSV file and 0.3 s in a
 2-million-row one, and a sorted view of a million rows of four columns exports in 0.3 s as CSV, 0.1 s as Parquet,
