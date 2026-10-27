@@ -3,7 +3,7 @@
 Status: **2.0-draft.2** (2026-10-24). This document is normative for the engines, the grid core and the
 surfaces of vastgrid v2. Why v2 is built this way is in
 [the reconsideration of the rebuild](rebuild-decision.ja.md) (Japanese); v1's protocol is
-[protocol.md](protocol.md). The conformance corpus in [`packages/spec/conformance`](../packages/spec/conformance)
+[protocol.md of v0.1.1](https://github.com/yhay81/vastgrid/blob/v0.1.1/docs/protocol.md). The conformance corpus in [`packages/spec/conformance`](../packages/spec/conformance)
 turns the rules of sections 2–8 into cases that every engine and every core runs.
 
 The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
@@ -579,7 +579,7 @@ A formula that does not compile has a reason of §4.7 (`syntax`, `unknown_column
 100,000 characters and 64 levels of nesting, and their expressions the limits of §4.9.
 
 v1 computed every number as a 64-bit float. With the rules of §2–§4, some formulas give other results than in
-v1 (the tests of `vastgrid-duckdb-engine` run v1's formula tests through DuckDB):
+v1 (the tests of `vastgrid-duckdb` run v1's formula tests through DuckDB):
 
 | Formula | v1 | v2 | Why |
 | --- | --- | --- | --- |
@@ -1475,7 +1475,7 @@ Found while writing the memory engine of [`vastgrid-js`](../packages/js), which 
 - `locate` by a value that rows repeat: `vastgrid-js` gives its first position in the view. And whether a key
   `"1.5"` finds the decimal(4, 2) value `"1.50"`.
 - `planHash` needs `crypto.subtle`, which browsers give only to secure pages; a client can take hashes from the
-  engine's answers (as `vastgrid-grid` does), but an engine in such a page cannot make them.
+  engine's answers (as `vastgrid` does), but an engine in such a page cannot make them.
 
 ## Appendix A. From v1
 
@@ -1550,7 +1550,7 @@ DuckDB 1.5 through `@duckdb/node-api` 1.5.6-r.1, on 2026-10-24:
 | `round(9223372036854775807::BIGINT, -1)`, `round(2147483647::INTEGER, -1)` | `-9223372036854775800`, `-2147483646`: the result wraps around instead of failing, so `vastgrid-sql` rounds integers through `DECIMAL(19,0)`, where overflow fails (and gives null, §3.6) |
 | `TRY(sum(x))` | refused (`aggregates are not allowed inside the TRY expression`), so measures use `TRY_CAST` |
 | `CAST(0.5::DECIMAL(1,1) AS VARCHAR)`, `CAST(-0.10::DECIMAL(2,2) AS VARCHAR)` | `.5`, `-.10`: decimals without whole digits lose the 0 of §2.4, which `vastgrid-sql` puts back (`textSql`) |
-| `COPY (…) TO … (FORMAT csv)` of `0.5::DECIMAL(1,1)`; `(FORMAT json, ARRAY true)` of a column of `'NaN'::DOUBLE`, of `0.1::FLOAT`, of `12.50::DECIMAL(10,2)` | `.5`; `NaN` (not JSON), `0.10000000149011612`, `12.5`: `vastgrid-duckdb-engine` selects such decimals with `textSql` for CSV and TSV, and writes JSON from the rows itself (`writeJson` of `vastgrid-spec/export`), as `vastgrid-js` does (§8.2) |
+| `COPY (…) TO … (FORMAT csv)` of `0.5::DECIMAL(1,1)`; `(FORMAT json, ARRAY true)` of a column of `'NaN'::DOUBLE`, of `0.1::FLOAT`, of `12.50::DECIMAL(10,2)` | `.5`; `NaN` (not JSON), `0.10000000149011612`, `12.5`: `vastgrid-duckdb` selects such decimals with `textSql` for CSV and TSV, and writes JSON from the rows itself (`writeJson` of `vastgrid-spec/export`), as `vastgrid-js` does (§8.2) |
 | `greatest(NULL, 0)`, `left('abc', NULL)` | 0, NULL: `greatest` leaves nulls out, so the counts of `left`, `right` and `substr` are not bounded with it (§3.6) |
 
 Two behaviors of `@duckdb/node-api` 1.5.6-r.1 matter to engines built on it:

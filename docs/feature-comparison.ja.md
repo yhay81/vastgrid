@@ -52,7 +52,7 @@ vastgrid は大きなファイルの閲覧に必要な操作をすでに多く�
 | 拡張 | `TableSource`、`RemoteSource`、`ArraySource`、クエリー取得・設定、再読み込み、指定行への移動 |
 | ファイル書き出し | DuckDB 側に CSV・TSV・Parquet・JSON の `exportView`。標準の保存ボタンはない |
 
-根拠: [DataGrid](../packages/react/src/data-grid.tsx)、[GridController](../packages/react/src/controller.ts)、[TableSource](../packages/core/src/source.ts)、[DuckDB エンジン](../packages/duckdb/src/engine.ts)。ARIA の実装があることと、各スクリーンリーダーでの適合性が確認済みであることは別です。今回は読み上げの実機検証はしていません。
+根拠: [DataGrid](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/react/src/data-grid.tsx)、[GridController](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/react/src/controller.ts)、[TableSource](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/source.ts)、[DuckDB エンジン](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/duckdb/src/engine.ts)。ARIA の実装があることと、各スクリーンリーダーでの適合性が確認済みであることは別です。今回は読み上げの実機検証はしていません。
 
 ## 主な不足・部分対応
 
@@ -116,11 +116,11 @@ vastgrid は大きなファイルの閲覧に必要な操作をすでに多く�
 
 | 確認対象 | 根拠 |
 | --- | --- |
-| 公開 props と ref API | [data-grid.tsx](../packages/react/src/data-grid.tsx) の `DataGridProps` / `DataGridHandle` |
-| フィルター・ビュー・書き出しの型 | [types.ts](../packages/core/src/types.ts) の `Filter` / `ViewQuery` / `ExportRequest` |
-| source が提供できる操作 | [source.ts](../packages/core/src/source.ts) の `TableSource` |
-| 列操作、単一範囲のコピー、選択リセット、情報ポーリング | [controller.ts](../packages/react/src/controller.ts) の `moveColumn` / `freezeUpTo` / `copySelection` / `setQuery` / `poll` |
-| セルの描画と表示書式 | [renderer.ts](../packages/react/src/renderer.ts)、[format.ts](../packages/core/src/format.ts) |
-| 各フィルターの AND 結合 | [array-source.ts](../packages/core/src/array-source.ts) の `filters.every`、[engine.ts](../packages/duckdb/src/engine.ts) の `where` |
-| 書き出しの実装とホスト側の有効化 | [engine.ts](../packages/duckdb/src/engine.ts) の `exportView`、[handler.ts](../packages/duckdb/src/handler.ts) の `resolveTarget` |
+| 公開 props と ref API | [data-grid.tsx](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/react/src/data-grid.tsx) の `DataGridProps` / `DataGridHandle` |
+| フィルター・ビュー・書き出しの型 | [types.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/types.ts) の `Filter` / `ViewQuery` / `ExportRequest` |
+| source が提供できる操作 | [source.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/source.ts) の `TableSource` |
+| 列操作、単一範囲のコピー、選択リセット、情報ポーリング | [controller.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/react/src/controller.ts) の `moveColumn` / `freezeUpTo` / `copySelection` / `setQuery` / `poll` |
+| セルの描画と表示書式 | [renderer.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/react/src/renderer.ts)、[format.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/format.ts) |
+| 各フィルターの AND 結合 | [array-source.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/array-source.ts) の `filters.every`、[engine.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/duckdb/src/engine.ts) の `where` |
+| 書き出しの実装とホスト側の有効化 | [engine.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/duckdb/src/engine.ts) の `exportView`、[handler.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/duckdb/src/handler.ts) の `resolveTarget` |
 | 既存の開発予定 | [roadmap.md](../site/src/content/docs/ja/about/roadmap.md) |

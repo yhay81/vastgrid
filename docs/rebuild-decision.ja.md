@@ -254,8 +254,8 @@ v1 の React の層を、React 19.3.1・React Compiler 1.0.0・`eslint-plugin-re
 | 機能コミットが触ったファイル | `419d39f` から `0252abe` までの 23 件の `git show --stat` |
 | 統合後の修正 | `c988589`・`b6d1a4b`・`e3cf9e8`・`2e45c21`・`6e0165f`・`0c31474`・`d764c22` |
 | 置き換える対象への依存 | `packages/*/src` の 68 ファイル（`index.ts` を除く）で、`CellValue`・`TableSource`・`ViewQuery`・`RowBlock`・`ViewInfo`・`GridController` を含むもの |
-| ブラウザーのエンジンの速さ | `packages/browser/bench/run.ts`（Apple M2 Pro・Node.js 24・load average 約 6）。並べ替えの列の集め方は [table.ts](../packages/browser/src/table.ts) の `createView` |
-| 状態の範囲 | [grid-state.ts](../packages/core/src/grid-state.ts) の `GridState` |
+| ブラウザーのエンジンの速さ | `packages/browser/bench/run.ts`（Apple M2 Pro・Node.js 24・load average 約 6）。並べ替えの列の集め方は [table.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/browser/src/table.ts) の `createView` |
+| 状態の範囲 | [grid-state.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/grid-state.ts) の `GridState` |
 | 利用状況 | GitHub の API（スター・フォーク）と npm のダウンロードの API（2026-10-16〜22） |
 
 ## 出典

@@ -1,6 +1,13 @@
 # vastgrid-spec
 
-The [vastgrid v2 specification](../../docs/v2-spec.md) as code. It is a draft and is not published yet.
+The [vastgrid specification](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md) as code: the types,
+plans, state, commands and messages that [`vastgrid`](https://www.npmjs.com/package/vastgrid) and its engines
+share. The grid depends on it, and an engine of your own uses it to check what it receives and to pass the
+conformance corpus.
+
+```sh
+npm install vastgrid-spec
+```
 
 - **Plans** (§4): `checkPlan(plan, columns)` checks a plan against a table's columns and gives the typed tree
   that engines run, or throws a `PlanError` with the `path` and `reason` of the problem. `normalizePlan`,
@@ -36,10 +43,15 @@ The [vastgrid v2 specification](../../docs/v2-spec.md) as code. It is a draft an
   saved values). It reads through a `WorkbookSource` of ranges of bytes and of inflated text: `blobSource` makes
   one of a `Blob` with the platform's `DecompressionStream`, and the DuckDB engine one of a file with `node:fs` and
   `node:zlib`. Both engines read workbooks with it.
-- `vastgrid-spec/conformance` reads the corpus in [`conformance/`](conformance) and runs or compares its cases
-  (§10). It uses Node.js. The corpus has three parts: [`plans`](conformance/plans) for engines,
-  [`commands`](conformance/commands) for cores and [`messages`](conformance/messages) for both.
-- [`schema/`](schema) holds the JSON Schemas of plans, states, commands, messages and the corpus files.
+- `vastgrid-spec/conformance` reads the corpus in
+  [`conformance/`](https://github.com/yhay81/vastgrid/tree/main/packages/spec/conformance) and runs or compares its
+  cases (§10). It uses Node.js. The corpus has three parts:
+  [`plans`](https://github.com/yhay81/vastgrid/tree/main/packages/spec/conformance/plans) for engines,
+  [`commands`](https://github.com/yhay81/vastgrid/tree/main/packages/spec/conformance/commands) for cores and
+  [`messages`](https://github.com/yhay81/vastgrid/tree/main/packages/spec/conformance/messages) for both.
+- [`schema/`](https://github.com/yhay81/vastgrid/tree/main/packages/spec/schema) holds the JSON Schemas of plans,
+  states, commands, messages and the corpus files.
 
-Every engine runs the plan cases: [`vastgrid-sql`](../sql) runs them on DuckDB. Every core runs the command
+Every engine runs the plan cases: [`vastgrid-sql`](https://www.npmjs.com/package/vastgrid-sql) runs them on DuckDB,
+and [`vastgrid-js`](https://www.npmjs.com/package/vastgrid-js) in memory. Every core runs the command
 cases: this package's `applyCommand` runs them.

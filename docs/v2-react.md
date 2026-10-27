@@ -1,17 +1,17 @@
 # vastgrid v2 for React
 
-Status: **draft** (2026-10-24). This document is normative for [`vastgrid-grid`](../packages/grid), the React
-package of v2, which is published as `vastgrid` when v1 is removed. It builds on
+Status: **draft** (2026-10-24). This document is normative for [`vastgrid`](../packages/grid), the React
+package of v2 (and its `vastgrid/core` and `vastgrid/server`). It builds on
 [the v2 specification](v2-spec.md): the state, the commands and the messages are those of the specification,
 and this document says how React holds, shows and changes them. Why React comes first is in
 [the reconsideration of the rebuild](rebuild-decision.ja.md#react-を中心に据える) (Japanese).
 
 The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 
-The code of this draft has the store (§4), `DataGrid` and the hooks (§5), the canvas with scrolling, keys,
-pointers, sorting, resizing columns, copying and pasting (§6), editing with an IME and undo (§6.6), the toolbar's
-search, the status bar, the accessibility rows, server rendering (§7) and the checks of §10 and §11. The panels,
-saving, and the features marked for them in §3 come next, on the same store.
+The code implements this draft: the store (§4), `DataGrid` and the hooks (§5), the canvas with scrolling, keys,
+pointers, sorting, resizing and moving columns, copying and pasting (§6), editing with an IME, undo and saving
+(§6.6), the menus, the totals row and the panels (§6.7–§6.13), the toolbar and the status bar, the accessibility
+rows, server rendering (§7) and the checks of §10 and §11.
 
 ## 1. Principles
 
@@ -35,10 +35,10 @@ saving, and the features marked for them in §3 come next, on the same store.
 
 | Entry | Holds | Imports React |
 | --- | --- | --- |
-| `vastgrid-grid` | the components and hooks, marked `"use client"` | yes |
-| `vastgrid-grid/core` | the store, the client of the messages (§8 of the specification) and the transports | no |
-| `vastgrid-grid/server` | what a Server Component or a server render calls: reading the first rows for `initial` (§7) | no |
-| `vastgrid-grid/styles.css` | the styles, themed by CSS custom properties | — |
+| `vastgrid` | the components and hooks, marked `"use client"` | yes |
+| `vastgrid/core` | the store, the client of the messages (§8 of the specification) and the transports | no |
+| `vastgrid/server` | what a Server Component or a server render calls: reading the first rows for `initial` (§7) | no |
+| `vastgrid/styles.css` | the styles, themed by CSS custom properties | — |
 
 `react` and `react-dom` `^19.3.0` are peer dependencies. Engines are other packages:
 [`vastgrid-js`](../packages/js) in memory and in the browser, `vastgrid-duckdb` on Node.js.
@@ -66,7 +66,7 @@ and to bring the canvas up to date before paint.
 
 ## 4. The store
 
-`createGridStore(options)` from `vastgrid-grid/core` makes a store; `DataGrid` makes one when it is not given
+`createGridStore(options)` from `vastgrid/core` makes a store; `DataGrid` makes one when it is not given
 one.
 
 ```ts
@@ -200,8 +200,8 @@ tool (docs/mcp-app.md). docs/entries.md shows which transport each entry uses.
 ### 5.1 `DataGrid`
 
 ```tsx
-import { DataGrid, localTransport } from "vastgrid-grid";
-import "vastgrid-grid/styles.css";
+import { DataGrid, localTransport } from "vastgrid";
+import "vastgrid/styles.css";
 import { memoryEngine } from "vastgrid-js";
 
 const transport = localTransport(memoryEngine({ tables: { orders } }));
@@ -529,13 +529,13 @@ page's class, style or color scheme changes). Colors are `light-dark()` pairs, a
 
 ## 7. Server rendering and Server Components
 
-- `vastgrid-grid` is a client entry (`"use client"`); `vastgrid-grid/core` and `vastgrid-grid/server` run in
+- `vastgrid` is a client entry (`"use client"`); `vastgrid/core` and `vastgrid/server` run in
   Server Components and on servers.
 - On the server, `DataGrid` renders its toolbar and status bar from the document and `initial`. The body
   renders its canvas only in the browser (`use(browser())`): the server sends the fallback, the first rows of
   `initial` as an accessible grid in HTML, or without `initial` an empty body with `aria-busy`. The body has
   the size it will have, so hydration moves nothing.
-- `readInitialView(transport, { table, document, rows })` from `vastgrid-grid/server` reads the `TableInfo`,
+- `readInitialView(transport, { table, document, rows })` from `vastgrid/server` reads the `TableInfo`,
   the view and its first rows as a block (a `Uint8Array`, which Server Components pass to client components).
   Given as a promise, `initial` streams: the shell is sent at once and the rows when they are read.
 - In the browser, the store starts from `initial`, so the first frame of the canvas draws the rows the server
@@ -563,8 +563,8 @@ page's class, style or color scheme changes). Colors are `light-dark()` pairs, a
 
 ## 10. Performance budgets
 
-The bench ([`examples/bench`](../examples/bench)) mounts v1 or v2 on the same generated table, built for
-production with React's profiling build, and the end-to-end tests ([`e2e`](../e2e)) measure it in Chromium with
+The bench ([`examples/bench`](../examples/bench)) mounts the grid on a generated table, with the memory engine in
+the page or in a Web Worker, built for production with React's profiling build, and the end-to-end tests ([`e2e`](../e2e)) measure it in Chromium with
 Playwright. The tests fail when v2 exceeds a budget:
 
 | Measure | Budget |
@@ -598,7 +598,7 @@ Appendix A gives what was measured.
 
 Measured on 2026-10-24 on an Apple M2 Pro with Node.js 24, React 19.3.1, React Compiler 1.0.0,
 `eslint-plugin-react-hooks` 7.1.1 and, in the browser, Chromium 156 (Playwright 1.64.1, headless, 60 Hz). v1 is
-main at `a925cb3`.
+main at `a925cb3`, when the bench mounted both (v1 was removed later, at 2.0.0).
 
 ### A.1 The React layer
 

@@ -9,24 +9,22 @@ and canvas, with no WebAssembly, no workers and no network of its own.
 
 ## Running it
 
-Build the packages, then add the server to a host that shows MCP Apps (Claude Desktop, VS Code, ChatGPT, Goose,
-and others; see the [clients](https://modelcontextprotocol.io/clients)):
-
-```sh
-npm install
-npm run build
-```
+Add the server to a host that shows MCP Apps (Claude Desktop, VS Code, ChatGPT, Goose, and others; see the
+[clients](https://modelcontextprotocol.io/clients)):
 
 ```json
 {
   "mcpServers": {
     "vastgrid": {
-      "command": "node",
-      "args": ["/path/to/vastgrid/packages/mcp/dist/cli.js", "/path/to/data"]
+      "command": "npx",
+      "args": ["-y", "vastgrid-mcp", "/path/to/data"]
     }
   }
 }
 ```
+
+Before 2.0.0 is released, the pre-release is `vastgrid-mcp@next`. From this repository, `npm install` and `npm run
+build`, then the command `node` with the arguments `/path/to/vastgrid/packages/mcp/dist/cli.js /path/to/data`.
 
 `vastgrid-mcp [--save] <folder>…` opens the files of the folders it is given (the current folder by default) and no
 others: their real location, links followed, must be inside one. `--save` lets the grids save written cells into
@@ -54,7 +52,7 @@ Writing a cell is the person's sequence: `select`, `edit.begin` with the text, `
 
 ## One state for both
 
-The server keeps each grid as a store without a screen (`GridStore` of `vastgrid-grid/core`, §4 of
+The server keeps each grid as a store without a screen (`GridStore` of `vastgrid/core`, §4 of
 v2-react.md) on a table of the DuckDB engine: the agent's commands go to it, exactly as the grid on screen
 dispatches them. The App's `DataGrid` has a store of its own with the same document and session, controlled
 (§5.2 of v2-react.md), and reads its rows through `vastgrid_message`. Both stores read the same loaded table of the

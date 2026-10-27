@@ -61,7 +61,7 @@ CSV file's columns hold their text as UTF-8 bytes.
 ### In a page
 
 `e2e/budgets.spec.ts` measures the grid of `examples/bench` on a million rows in Chromium (Playwright), with the
-memory engine in the page and in a Web Worker (`workerEngine` of `vastgrid-grid`), and v1 for comparison:
+memory engine in the page and in a Web Worker (`workerEngine` of `vastgrid`), and v1 for comparison:
 
 | | sort of a million rows | longest task of the page while it sorts | first rows | heap of the page |
 | --- | ---: | ---: | ---: | ---: |

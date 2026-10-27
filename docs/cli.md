@@ -7,14 +7,15 @@ computer: the server answers on 127.0.0.1 only, to the browser that opened the a
 
 ## Running it
 
-Build the packages, then name files or folders:
+Name files or folders:
 
 ```sh
-npm install
-npm run build
-npx vastgrid sales.parquet
-npx vastgrid --save data/
+npx vastgrid-cli sales.parquet
+npx vastgrid-cli --save data/
 ```
+
+Installed with `npm install --global vastgrid-cli`, the command is `vastgrid`. Before 2.0.0 is released, the
+pre-release is `npx vastgrid-cli@next`. In this repository, `npm run build` and then `node packages/cli/dist/cli.js`.
 
 ```text
 Usage: vastgrid [options] [<file or folder>…]
@@ -31,9 +32,6 @@ The command prints the address of the page and opens it in the browser (`open` o
 the server and DuckDB, which deletes its folder of temporary files (`vastgrid-cli` in the system's temporary
 folder). A second Ctrl+C stops without waiting; folders left by a command that was killed are deleted by the next
 one.
-
-The package is not published yet, so `npx vastgrid` runs it inside this repository only. Publishing it under the
-name `vastgrid` belongs to switching from v1 to v2 ([#45](https://github.com/yhay81/vastgrid/issues/45)).
 
 ## Files
 
@@ -93,7 +91,6 @@ arguments.
 
 ## Not yet
 
-- The package is not published, and `npx vastgrid` still names v1's React package on npm (#45).
 - The server listens on 127.0.0.1 only: to use it from another computer, forward the port with the same number
   (`ssh -L 5185:127.0.0.1:5185`, with `--port 5185`).
 - The page does not keep the view (sorts, filters, column widths) when it is loaded again.

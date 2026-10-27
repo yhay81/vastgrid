@@ -3,7 +3,7 @@
 [日本語](entries.ja.md)
 
 vastgrid v2 opens huge CSV, Parquet and Excel files, and DataFrames, in six places. Each shows the same grid,
-`DataGrid` of `vastgrid-grid` (docs/v2-react.md), with the same document, session and commands (docs/v2-spec.md §5,
+`DataGrid` of `vastgrid` (docs/v2-react.md), with the same document, session and commands (docs/v2-spec.md §5,
 §6), and talks to its engine with the same messages (§8). What differs is the engine, how the messages travel, and
 what the host does with written cells: each engine answers the capabilities of its host (§8.2), and none is made to
 save as the others do.
@@ -13,10 +13,10 @@ save as the others do.
 | Entry | Where the data is read | Engine | Messages travel | Details |
 | --- | --- | --- | --- | --- |
 | Browser page | in the browser, in a Web Worker | `vastgrid-js` | `workerTransport` | the site's `/open/` |
-| React component | where the app puts its engine | `vastgrid-js`, `vastgrid-duckdb-engine`, your own | a transport of §4.4 | [vastgrid-grid](../packages/grid/README.md) |
-| Command line | DuckDB, in the command (Node.js) | `vastgrid-duckdb-engine` | `httpTransport` | [cli.md](cli.md) |
-| VS Code | DuckDB, in the extension (Node.js) | `vastgrid-duckdb-engine` | `workerTransport` over the webview's messages | [vscode.md](vscode.md) |
-| MCP App | DuckDB, in the MCP server (Node.js) | `vastgrid-duckdb-engine` | the App's tool calls | [mcp-app.md](mcp-app.md) |
+| React component | where the app puts its engine | `vastgrid-js`, `vastgrid-duckdb`, your own | a transport of §4.4 | [vastgrid](../packages/grid/README.md) |
+| Command line | DuckDB, in the command (Node.js) | `vastgrid-duckdb` | `httpTransport` | [cli.md](cli.md) |
+| VS Code | DuckDB, in the extension (Node.js) | `vastgrid-duckdb` | `workerTransport` over the webview's messages | [vscode.md](vscode.md) |
+| MCP App | DuckDB, in the MCP server (Node.js) | `vastgrid-duckdb` | the App's tool calls | [mcp-app.md](mcp-app.md) |
 | Notebook | DuckDB, in the kernel (Python) | `vastgrid` (Python) | `workerTransport` over the widget's messages | [notebook.md](notebook.md) |
 
 ## Formats
@@ -49,26 +49,25 @@ since it was read is not saved over (§7.6). Written cells that are not saved st
 
 ## Installing
 
-None of the packages is published yet: publishing them belongs to switching from v1 to v2
-([#45](https://github.com/yhay81/vastgrid/issues/45)). From a clone of the repository:
-
-```sh
-npm install
-npm run build
-```
-
-| Entry | Then |
+| Entry | How |
 | --- | --- |
-| Browser page | `npm run dev -w vastgrid-site`, and open `/open/` (`/ja/open/` in Japanese) |
-| React component | depend on `vastgrid-grid` and an engine in the workspace (React 19.3 or later) |
-| Command line | `npx vastgrid <file or folder>…` (`--save` to save CSV and TSV files) |
-| VS Code | `code --extensionDevelopmentPath="$PWD/packages/vscode" <folder>`, or install the package that `npm run package -w vastgrid-vscode` makes (VS Code 1.100 or later) |
-| MCP App | add `node packages/mcp/dist/cli.js <folder>` to the host's MCP servers |
-| Notebook | `pip install ./packages/notebook/python` (Python 3.11 or later; JupyterLab 4 or Notebook 7) |
+| Browser page | open https://vastgrid.yhay81.com/open/ (`/ja/open/` in Japanese); nothing to install |
+| React component | `npm install vastgrid vastgrid-js`, or `vastgrid-duckdb` for an engine on a server (React 19.3 or later) |
+| Command line | `npx vastgrid-cli <file or folder>…` (`--save` to save CSV and TSV files) |
+| VS Code | the extension `yhay81.vastgrid-vscode` from the Marketplace, or a `.vsix` of a GitHub release (VS Code 1.100 or later) |
+| MCP App | add `npx -y vastgrid-mcp <folder>` to the host's MCP servers |
+| Notebook | `pip install vastgrid` (Python 3.11 or later; JupyterLab 4 or Notebook 7) |
+
+Before 2.0.0 is released, the pre-releases are `vastgrid@next` (and the other npm packages at `@next`), `pip
+install --pre vastgrid`, and the `.vsix` files of the GitHub release. From a clone of the repository, `npm install`
+and `npm run build`, then: `npm run dev -w vastgrid-site` for the page, `node packages/cli/dist/cli.js` and
+`node packages/mcp/dist/cli.js` for the commands, `code --extensionDevelopmentPath="$PWD/packages/vscode"
+<folder>` or the package that `npm run package -w vastgrid-vscode` makes, and `pip install
+./packages/notebook/python`.
 
 ## One grid in every entry
 
-Each entry makes a store with `createGridStore` (`vastgrid-grid/core`) over its transport and shows it with
+Each entry makes a store with `createGridStore` (`vastgrid/core`) over its transport and shows it with
 `<DataGrid store={store}>`; nothing in the grid knows which entry it is in. What the entries needed of the React API,
 and what they showed of it:
 

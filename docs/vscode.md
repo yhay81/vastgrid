@@ -115,17 +115,15 @@ There is no package for the web (vscode.dev) nor for 32-bit Arm Linux: DuckDB's 
 the packages of macOS, Linux and Windows and tests each in VS Code (below); they are kept as the workflow's
 artifacts.
 
-To publish a release, from a clean checkout at its tag:
-
-1. `npm ci`, `npm run build`, and `npm run package -w vastgrid-vscode -- <target>` for each target of the table.
-2. Test the packages of the platforms at hand: `VASTGRID_VSIX=dist/<package>.vsix npm run test:vscode -w
-   vastgrid-vscode`.
-3. Publish them with `npx vsce publish --packagePath dist/*.vsix` in `packages/vscode` (a token of the publisher
-   `yhay81` in `VSCE_PAT`). The Marketplace serves each platform its package.
+A release (CONTRIBUTING.md, "Releasing") makes the package of every target of the table and attaches them to the
+GitHub release; for a version that is not a pre-release, it publishes them to the Marketplace with `vsce publish
+--packagePath`, and the Marketplace serves each platform its package. To try a package of a release by hand:
+`code --install-extension vastgrid-vscode-<version>-<target>.vsix`, and `VASTGRID_VSIX=<package>.vsix npm run
+test:vscode -w vastgrid-vscode` runs the suite on it.
 
 ## Testing
 
-- `packages/vscode/test/table-file.test.ts` runs `TableFile` without VS Code: grids of `vastgrid-grid` talk to it
+- `packages/vscode/test/table-file.test.ts` runs `TableFile` without VS Code: grids of `vastgrid` talk to it
   through messages as the page does. Two editors reading and writing one file, VS Code's undo and redo, saving, a
   file changed on disk, Save As, revert, backups, trust, read-only files, exports, the extension's commands, and the
   engine's lifetime.
@@ -138,5 +136,5 @@ To publish a release, from a clean checkout at its tag:
 
 ## Not yet
 
-- The extension is not in the Marketplace yet (nor in Open VSX): its packages are CI's artifacts.
+- The extension is not in Open VSX; pre-releases are only on the GitHub releases.
 - Files of other schemes than `file:` (a remote file system of another extension, vscode.dev) do not open.

@@ -1,9 +1,18 @@
 # vastgrid-js
 
-The JavaScript engine of [vastgrid v2](../../docs/v2-spec.md): it answers the messages of the specification
-(§8) over tables in memory. It is a draft and is not published yet.
+The memory engine of [vastgrid](https://www.npmjs.com/package/vastgrid), for the browser and Node.js, in the page or
+a Web Worker. It opens tables of rows of typed JSON, Apache Arrow, CSV, TSV, JSON Lines and Excel files, and Parquet
+files (also over HTTP Range requests), and sorts, filters, searches, groups, pivots, derives formulas, writes cells
+and exports, answering the grid's messages
+([§8 of the specification](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#8-messages)).
 
-```ts
+```sh
+npm install vastgrid vastgrid-js
+```
+
+```tsx
+import { DataGrid, localTransport } from "vastgrid";
+import "vastgrid/styles.css";
 import { memoryEngine } from "vastgrid-js";
 
 const engine = memoryEngine({
@@ -17,11 +26,38 @@ const engine = memoryEngine({
         [1, "12.50"],
         [2, "8.00"],
       ],
+      editable: true,
     },
   },
 });
-const info = await engine.handle({ v: 2, id: 1, op: "open", ref: "orders" });
+
+export function Orders() {
+  return <DataGrid transport={localTransport(engine)} table="orders" style={{ height: 480 }} />;
+}
 ```
+
+In a Web Worker, the engine answers through `serveEngine` of `vastgrid/core`, and the page talks to it with
+`workerTransport(worker)`, so that the page never stops while the engine reads a file or sorts a million rows:
+
+```ts
+// engine.worker.ts: the page posts the file that the person dropped or chose
+import { serveEngine, type WorkerLike } from "vastgrid/core";
+import { memoryEngine } from "vastgrid-js";
+
+self.addEventListener(
+  "message",
+  (event: MessageEvent<File>) => {
+    const file = event.data;
+    const table = /\.parquet$/i.test(file.name) ? { parquet: file } : { file, editable: true };
+    serveEngine(memoryEngine({ tables: { [file.name]: table } }), self as unknown as WorkerLike);
+  },
+  { once: true },
+);
+```
+
+The engine can also be called directly: `await engine.handle({ v: 2, id: 1, op: "open", ref: "orders" })`.
+
+## Reference
 
 - `memoryEngine({ tables })` takes the tables that `open` opens, by their `ref`: columns of §2.1 and rows of
   typed JSON values (§2.2) in row ID order. The form of a table (its columns and rows of one value per column)
@@ -79,7 +115,7 @@ const info = await engine.handle({ v: 2, id: 1, op: "open", ref: "orders" });
   does not allow replacing it), a line of JSON Lines that is not an object (at `/rows/{row}`) and a file that cannot
   be read fail with `load_failed`. Answering the first rows while a file loads (§9) is a later step.
 - `maxBytes` (default 1 GiB) is the most memory that a file's columns may take. A file whose columns would take
-  more is not kept, as v1's browser engine kept none: its first reading notes where every 1,024th row starts, and
+  more is not kept: its first reading notes where every 1,024th row starts, and
   the open answers then. Rows are read by those blocks, wherever they lie in a view, and the last 32 MiB of blocks
   read are kept; a sort, a filter, a group, a summary, `find`, `export` and `locate` by value read the columns they
   go through whole, in a reading of the file, while they fit `maxBytes`. A column read whole stays so until a
@@ -101,7 +137,7 @@ const info = await engine.handle({ v: 2, id: 1, op: "open", ref: "orders" });
   read more at once fails with `load_failed` at `/maxBytes`, the table stays open, and its rows are read by row
   groups. A million rows of eight columns (13 MB of Parquet) open in
   30 ms into 2 MB, show their first rows in 0.2 seconds, and take 130 MB once every column is read
-  ([measurements](../../docs/v2-memory-engine-benchmark.md)).
+  ([measurements](https://github.com/yhay81/vastgrid/blob/main/docs/v2-memory-engine-benchmark.md)).
 - A Parquet file's columns have the types that DuckDB reads them as, with DuckDB's names as `sourceType`: integers
   by their width and sign (UINTEGER as `bigint`, UBIGINT as `decimal(38, 0)`), FLOAT and DOUBLE, decimals,
   BOOLEAN, DATE, TIME, timestamps of their unit (`timestamptz` when adjusted to UTC), INTERVAL, UUID, VARCHAR and
@@ -165,7 +201,7 @@ const info = await engine.handle({ v: 2, id: 1, op: "open", ref: "orders" });
   `ranges` × `columns` once, sums exact numbers exactly, and gives floats that are not finite as cells but
   not as numbers.
 
-The tests run every case of the conformance corpus of [`vastgrid-spec`](../spec), with its tables as rows and as
+The tests run every case of the conformance corpus of [`vastgrid-spec`](https://www.npmjs.com/package/vastgrid-spec), with its tables as rows and as
 Arrow, check the order of both against a comparison of values one pair at a time on generated tables, and check
 every response with `checkResponse`. Files are read in slices of every size from 1 byte, and a generated CSV file
 answers sorts, filters, groups and summaries as the same rows given as typed JSON. The
@@ -173,4 +209,4 @@ DuckDB engine's tests compare this engine's answers with its own on a generated 
 (`packages/duckdb-engine/test/memory-engine.test.ts`), with the table as a Parquet file that DuckDB wrote too: the
 same columns, and the same answers. Another test serves a Parquet file over HTTP and counts the bytes that opening,
 reading rows and sorting read. `packages/duckdb-engine/bench/memory-engine.ts` measures a million rows as CSV and as
-Parquet ([results](../../docs/v2-memory-engine-benchmark.md)).
+Parquet ([results](https://github.com/yhay81/vastgrid/blob/main/docs/v2-memory-engine-benchmark.md)).

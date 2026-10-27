@@ -4,615 +4,364 @@
 [![CI](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml/badge.svg)](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/yhay81/vastgrid)](LICENSE)
 
-A data grid for React that opens CSV, TSV, Parquet and JSON Lines files of any size — gigabytes,
-hundreds of millions of rows — and Excel workbooks, and works like a spreadsheet.
+vastgrid opens huge CSV, TSV, Parquet, JSON Lines and Excel files like a spreadsheet, lets people fix them, and
+saves them safely. It is a canvas data grid for React with engines for the browser and Node.js, and the same grid
+comes as a command, a VS Code extension, an MCP App and a Jupyter widget.
 
-**[Try the demo](https://vastgrid.yhay81.com/demo/)** · [Documentation](https://vastgrid.yhay81.com) · [日本語](README.ja.md)
+**[Try the demo](https://vastgrid.yhay81.com/demo/)** · [Open a file in the browser](https://vastgrid.yhay81.com/open/) · [Documentation](https://vastgrid.yhay81.com) · [日本語](README.ja.md)
 
-[![A 100-million-row Parquet file filtered and sorted, with column statistics and a selection summary](docs/images/playground.jpg)](https://vastgrid.yhay81.com/demo/)
+[![A Parquet file of 100,000,000 rows sorted by price in vastgrid-cli, with a selection and its sum in the status bar](docs/images/grid.jpg)](https://vastgrid.yhay81.com/demo/)
 
-- **Any size.** Rows are read as you scroll, a block at a time. A 1.4 GB Parquet file with 100 million
-  rows opens in 20 ms; the first rows of a 735 MB CSV appear in 0.15 s while the rest loads.
-- **Fast.** Cells are drawn on a canvas: about 2 ms per frame for 1,000+ visible cells. Scrolling goes
-  past the browser's element-size limit, to billions of rows.
-- **A spreadsheet's way of working.** Range selection with the mouse and Excel's keyboard shortcuts,
-  copy as TSV / HTML / Markdown, multi-column sort, filters with a searchable value list or conditions,
-  AND / OR conditions across columns and nested groups, search across all columns, find (⌘F), column
-  statistics, a running count, sum, average, min and max of the selection, formula columns
-  (`qty * price`) computed by the engine, grouping by columns with counts, sums, averages, minimums and
-  maximums and a totals row (computed by the engine), and export of the current view to CSV, TSV,
-  Parquet, JSON or Excel.
-- **Bring your engine.** The grid talks to a `TableSource`. Use the DuckDB server engine for files on
-  disk, `vastgrid-browser` for files opened in the browser and Parquet URLs, `ArraySource` for data already
-  in memory, or implement your own.
-- **Safe by construction.** The DuckDB engine only reads files whose real location (links followed) is
-  inside the folders you allow, and that cannot be changed while it runs. All SQL is generated; values
-  are always parameters.
-- **Japanese and English** built in, light and dark themes through CSS variables, ARIA grid semantics
-  and full keyboard operation.
+- **Any size.** Rows are read a block at a time as you scroll, and Parquet files are read in place, also over HTTP
+  Range requests. A 100-million-row Parquet file sorts on DuckDB with its first rows ready in under a second.
+  Cells are drawn on a canvas, and scrolling renders no React.
+- **A spreadsheet's way of working.** Excel's keys and selections, sorting, filters, conditions, search and find,
+  groups, pivots and totals, formulas, formats, copy, paste and fill.
+- **Edits you can trust.** Typed input is checked against the column's type, writes are checked for conflicts and
+  can be undone, and saving a CSV or TSV file rewrites only the edited fields and keeps every other byte. A file
+  that changes on disk is followed, and is never saved over.
+- **One state, typed commands.** What the grid shows is a document (the view and its columns) and a session (where
+  the person is), controlled or not. Every change is a command that a toolbar, a host or an AI agent can dispatch.
+- **Engines you choose.** `vastgrid-js` in memory, in the page or a Web Worker; `vastgrid-duckdb` on Node.js; or
+  your own, through a small set of messages.
+- **English and Japanese** built in, light and dark themes through CSS variables, ARIA grid semantics and full
+  keyboard operation.
+
+## Where to use it
+
+| Where | How | Engine |
+| --- | --- | --- |
+| A React app | `npm install vastgrid vastgrid-js` ([quick start](#quick-start)) | in memory, a worker, or a server |
+| The browser | [vastgrid.yhay81.com/open/](https://vastgrid.yhay81.com/open/): drop a file; it stays in the browser | `vastgrid-js` in a Web Worker |
+| The command line | `npx vastgrid-cli sales.parquet` | DuckDB on this computer |
+| VS Code | the extension [vastgrid](packages/vscode) (`yhay81.vastgrid-vscode`) | DuckDB in the extension |
+| An AI chat | the MCP server `vastgrid-mcp` with its MCP App | DuckDB in the MCP server |
+| A Jupyter notebook | `pip install vastgrid`, then `vastgrid.show(df)` | DuckDB in the kernel |
+
+[docs/entries.md](docs/entries.md) compares them: formats, editing, saving and exporting.
+
+**Command line.** Opens files or folders in a grid in the browser, served on 127.0.0.1 only; `--save` lets ⌘S or
+Ctrl+S save edited CSV and TSV files ([docs/cli.md](docs/cli.md)).
+
+```sh
+npx vastgrid-cli sales.parquet
+npx vastgrid-cli --save data/
+```
+
+**VS Code.** Parquet and Excel files open in vastgrid; CSV, TSV and JSON Lines files open with "Open in vastgrid".
+Cells of CSV and TSV files are saved with VS Code's Save, and undone with its Undo ([docs/vscode.md](docs/vscode.md)).
+
+**MCP App.** An agent opens a file in a grid that the person sees in the chat, and both work on the same grid: the
+agent reads its state and rows and applies the same commands as the person's keys and menus
+([docs/mcp-app.md](docs/mcp-app.md)).
+
+```json
+{ "mcpServers": { "vastgrid": { "command": "npx", "args": ["-y", "vastgrid-mcp", "/path/to/data"] } } }
+```
+
+**Notebook.** A DataFrame, an Arrow table, a DuckDB relation or a file in JupyterLab 4 or Notebook 7; the notebook
+reads the edited table back ([docs/notebook.md](docs/notebook.md)).
+
+```python
+import vastgrid
+
+grid = vastgrid.show("sales.parquet")  # or a pandas or Polars DataFrame
+grid.to_pandas(view=True)              # the grid's view, with the edited cells
+```
+
+## Quick start
+
+```sh
+npm install vastgrid vastgrid-js
+```
+
+Until 2.0.0 is released, the packages are prereleases on npm's `next` tag, and `npm install vastgrid` still gives
+v1 (0.1.x): try this version with `npm install vastgrid@next vastgrid-js@next` (and `@next` for the other packages).
+
+```tsx
+import { DataGrid, localTransport } from "vastgrid";
+import "vastgrid/styles.css";
+import { memoryEngine } from "vastgrid-js";
+
+const transport = localTransport(
+  memoryEngine({
+    tables: {
+      orders: {
+        columns: [
+          { name: "id", type: "integer" },
+          { name: "customer", type: "string" },
+          { name: "price", type: "decimal", precision: 10, scale: 2 },
+          { name: "ordered", type: "date" },
+        ],
+        rows: [
+          [1, "Acme", "12.50", "2026-01-31"],
+          [2, "Globex", "8.00", "2026-02-01"],
+        ],
+        editable: true,
+      },
+    },
+  }),
+);
+
+export function Orders() {
+  return <DataGrid transport={transport} table="orders" style={{ height: 480 }} />;
+}
+```
+
+Rows are typed JSON: decimals as strings with their exact digits, dates as `YYYY-MM-DD`
+([v2-spec.md §2.2](docs/v2-spec.md#22-values-in-json)). The memory engine also takes Apache Arrow, and CSV, TSV,
+JSON Lines, Excel and Parquet files ([vastgrid-js](packages/js)). With `editable: true`, people write cells; the
+written values are kept apart from `rows`, and every view, total and export sees them.
+
+The grid works uncontrolled, or with `document` and `onDocumentChange` (the view: plan, column widths, formats,
+pins) and `session` and `onSessionChange` (selection, scroll, undo history), so that a host can save and restore
+them. Everything is a typed command, and your own controls dispatch the same ones:
+
+```tsx
+import { DataGrid, GridProvider, useCreateGridStore, useGridDispatch, useGridSelector } from "vastgrid";
+
+function Workbench() {
+  const store = useCreateGridStore({ transport, table: "orders" });
+  return (
+    <GridProvider store={store}>
+      <ClearSort />
+      <DataGrid store={store} style={{ height: 480 }} />
+    </GridProvider>
+  );
+}
+
+function ClearSort() {
+  const sort = useGridSelector((snapshot) => snapshot.document.plan?.sort);
+  const dispatch = useGridDispatch();
+  return (
+    <button type="button" disabled={!sort} onClick={() => dispatch({ command: "sort.clear" })}>
+      Clear sort
+    </button>
+  );
+}
+```
+
+The props, hooks and commands are in [docs/v2-react.md](docs/v2-react.md) and [docs/v2-spec.md](docs/v2-spec.md)
+§5–§6.
+
+## Large files
+
+**In a Web Worker.** The memory engine runs in a worker as it does in the page, so that sorting a million rows never
+blocks the page. Parquet is read by row groups as the grid needs them, from a `File` or a URL that answers HTTP
+Range requests:
+
+```ts
+// engine.worker.ts
+import { serveEngine, type WorkerLike } from "vastgrid/core";
+import { memoryEngine } from "vastgrid-js";
+
+const engine = memoryEngine({ tables: { trips: { parquet: "https://example.com/trips.parquet" } } });
+serveEngine(engine, self as unknown as WorkerLike);
+```
+
+```tsx
+import { DataGrid, workerTransport } from "vastgrid";
+
+const worker = new Worker(new URL("./engine.worker.ts", import.meta.url), { type: "module" });
+const transport = workerTransport(worker);
+
+export function Trips() {
+  return <DataGrid transport={transport} table="trips" style={{ height: 600 }} />;
+}
+```
+
+A file that the person drops or chooses is posted to the worker and given as `{ file }` (CSV, TSV, JSON Lines,
+Excel) or `{ parquet: file }`, as [the open page](site/src/components/open/engine-worker.ts) does. Columns read
+whole stay within `maxBytes` (1 GiB by default); beyond it, a text file is read by blocks.
+
+**On a server, with DuckDB.** `vastgrid-duckdb` opens files of any size on Node.js: Parquet in place, and CSV, TSV,
+JSON Lines and Excel loaded into DuckDB with their first rows readable at once. It reads only files inside the
+folders you allow, by their real location with links followed, loads no DuckDB extensions, and passes every value
+to SQL as a parameter.
+
+```ts
+// server.ts
+import { createServer } from "node:http";
+import { createHttpHandler, DuckDBEngine } from "vastgrid-duckdb";
+
+const engine = await DuckDBEngine.create({
+  allowedDirectories: ["/srv/data"],
+  tempDirectory: "/tmp/vastgrid",
+  saveFiles: true, // lets the grid save edited CSV and TSV files
+});
+createServer(createHttpHandler(engine, { path: "/api" })).listen(8080);
+```
+
+```tsx
+import { DataGrid, httpTransport } from "vastgrid";
+
+const transport = httpTransport("/api", { events: "/api/events" });
+
+export function Sales() {
+  return <DataGrid transport={transport} table="sales.csv" style={{ height: 600 }} />;
+}
+```
+
+The handler also works as middleware (Express, Connect, Vite). `serverFunctionTransport` carries the messages
+through a React Server Function instead, and `readInitialView` of `vastgrid/server` reads the first rows on the
+server, which the grid sends as HTML before the canvas takes over (v2-react.md §7).
+
+## Editing and saving
+
+What the engines guarantee ([v2-spec.md §7](docs/v2-spec.md#7-editing)):
+
+- **Typed checks.** Text that people type or paste is read as the column's type without losing digits (`1,234.5`
+  pasted into a number column is 1234.5); a value that does not fit keeps the editor open and says why.
+- **Atomic writes with conflict checks.** A write changes every cell or none. Each cell carries the value it was
+  edited from: when someone else changed it meanwhile, the write fails, and the grid offers Retry, Overwrite or
+  Discard.
+- **Undo and redo** of typed values, clears, pastes and fills (100 steps), also of an agent's writes in the MCP App.
+- **Kept apart until saved.** Written cells are not in the file until it is saved, and every view, filter, total,
+  find and export sees them.
+- **Saves that keep every other byte.** `save` writes only the edited fields of a CSV or TSV file, and keeps its byte
+  order mark, quoting, delimiters, line breaks and encoding (Shift_JIS and UTF-16 included). It writes a temporary
+  file and renames it over the original, so a failed save leaves the file as it was, and it refuses a file that
+  someone else changed since it was read.
+- **Files that change on disk** are read again. When the table has unsaved edits, it stays as it was read, the grid
+  says the file changed, and "Discard edits and reload" reads it anew.
+
+Other formats are not saved into: export them, with the edits, as CSV, TSV, Parquet, JSON or Excel.
+
+## Features
+
+- **Reading.** Sort by several columns (click a header, Shift to add a key); filter a column by a list of its values
+  with their counts, or by a condition; the Conditions menu combines conditions across columns with AND and OR in
+  nested groups; a search box across all columns; find (⌘F); column statistics.
+- **Shaping.** Group by columns with count, distinct count, sum, average, standard deviation, min, max and quantile;
+  pivot values into columns; a totals row; formulas as derived columns (`qty * price`), from the Formulas menu.
+- **Columns.** A menu on every header (the arrow, a right click or Alt+↓): sort, filter, statistics, total, group,
+  fit, pin to the left or the right, hide. Drag headers to move columns and their edges to resize them; the Columns
+  menu shows, hides and moves them; `columnGroups` adds header rows of groups.
+- **Formats.** Labels, alignment, wrapping, number, percent and currency formats, date patterns (`yyyy/MM/dd`), and
+  conditional colors, from the column's Format… item.
+- **Selecting and editing.** Ranges with the mouse and Excel's keys, several ranges at once; copy as TSV and HTML,
+  paste from spreadsheets, fill down and right, and the count, sum and average of the selection.
+- **Rows.** Check boxes that keep the same records checked through sorts and filters (`checkboxes`), and a detail
+  panel of the active row (Alt+Enter, or your own `detailPanel`).
+- **Exporting** the view or the whole table as CSV, TSV, JSON or Excel (with the columns' number and date formats),
+  and Parquet with the DuckDB engine, which writes the file on the server.
+- **Your own cells.** `cellText`, `cellStyle`, `drawCell` (draw on the canvas, with the grid's drawing at hand) and
+  `cellAction` (links and buttons, with `onCellAction`).
+- **Languages.** English and Japanese by `locale`, and any text replaced by `messages`.
+- **Theming.** Every color, font and size is a CSS custom property on `.vg-root`, which the canvas reads; colors are
+  `light-dark()` pairs that follow the page's light or dark scheme.
+
+  ```css
+  .my-app .vg-root {
+    --vg-font-family: "Inter", sans-serif;
+    --vg-accent: var(--brand);
+    --vg-selection-bg: color-mix(in srgb, var(--brand) 15%, transparent);
+  }
+  ```
+
+- **Accessibility.** The ARIA grid pattern, with the rows on screen as accessible rows under the canvas, the active
+  cell as `aria-activedescendant`, and results announced in a live region.
+- **Server rendering.** The first rows as an HTML table, streamed from a Server Component; Strict Mode and
+  concurrent rendering; every component compiled with React Compiler.
+
+### Keyboard
+
+| Keys | Action |
+| --- | --- |
+| Arrows · Page Up/Down · Home/End | Move the active cell; with ⌘/Ctrl, jump to the first or last row or column |
+| Shift + the above · Shift + click · ⌘/Ctrl + click | Extend the selection · add a range |
+| Tab · Enter (Shift: backwards) | Move within the selection |
+| ⌘/Ctrl + A | Select everything |
+| ⌘/Ctrl + C · ⌘/Ctrl + V | Copy · paste |
+| Typing · F2 · double click | Edit the active cell (Enter writes, Esc cancels) |
+| Delete · ⌘/Ctrl + D · ⌘/Ctrl + R | Clear the selected cells · fill down · fill right |
+| ⌘/Ctrl + Z · ⌘/Ctrl + Shift + Z or Ctrl + Y | Undo · redo |
+| ⌘/Ctrl + S | Save, when the engine saves the file |
+| ⌘/Ctrl + F | Find |
+| Alt + ↓ · Shift + F10 | The column menu · the cell menu |
+| Space · Alt + Enter | Check the active row (with `checkboxes`) · the detail panel |
 
 ## Packages
 
 | Package | Contents |
 | --- | --- |
-| [`vastgrid`](packages/react) | The `DataGrid` component (canvas renderer, interaction, menus, filters, statistics). |
-| [`vastgrid-core`](packages/core) | The table protocol, row cache, selection and scroll models, formatting, `ArraySource` and `RemoteSource`. Framework-free. |
-| [`vastgrid-duckdb`](packages/duckdb) | A Node.js table server backed by DuckDB, with a Fetch API request handler. |
-| [`vastgrid-browser`](packages/browser) | Reads local Parquet, CSV, TSV and JSON Lines files, and Parquet URLs with HTTP Range requests, in a Web Worker, with no server. |
-
-## Requirements
-
-- **`vastgrid`**: React 18 or later, and a browser with the CSS `light-dark()` function: Chrome and Edge 123,
-  Firefox 120, Safari 17.5 or later.
-- **`vastgrid-duckdb`**: Node.js 20 or later, on a platform DuckDB ships a binary for: Linux (x64 or arm64,
-  glibc or musl), macOS (x64 or arm64) or Windows (x64 or arm64).
-- **`vastgrid-browser`**: browsers with module workers (Chrome and Edge 80, Firefox 114, Safari 15 or later), and
-  a bundler that handles `new Worker(new URL(…, import.meta.url))`. No special headers (COOP/COEP) are needed.
-- **`vastgrid-core`** has no dependencies and runs in the same browsers and in Node.js 20 or later.
-
-## Quick start
-
-### Files on a server (Node.js + DuckDB)
-
-```sh
-npm install vastgrid vastgrid-duckdb
-```
-
-```ts
-// app/api/table/route.ts (Next.js) — any framework with Fetch API requests works the same way
-import path from "node:path";
-import { createTableHandler, TableEngine } from "vastgrid-duckdb";
-
-const root = "/srv/data";
-const engine = TableEngine.create({ allowedDirectories: [root], tempDirectory: "/tmp/vastgrid" });
-
-export const POST = createTableHandler({
-  engine: () => engine,
-  // Map the client's reference to a file, refusing anything outside your folder.
-  resolve: (ref) => {
-    const file = path.resolve(root, ref);
-    if (!file.startsWith(`${root}${path.sep}`)) throw new Error("Not allowed");
-    return file;
-  },
-});
-```
-
-```tsx
-"use client";
-import { DataGrid, RemoteSource } from "vastgrid";
-import "vastgrid/styles.css";
-import { useMemo } from "react";
-
-export function Table({ file }: { file: string }) {
-  const source = useMemo(() => new RemoteSource({ endpoint: "/api/table", ref: file }), [file]);
-  return (
-    <div style={{ height: 600 }}>
-      <DataGrid source={source} />
-    </div>
-  );
-}
-```
-
-`vastgrid-duckdb` uses `@duckdb/node-api`, a native module: keep it out of server bundles (for Next.js,
-`serverExternalPackages: ["@duckdb/node-api", "@duckdb/node-bindings"]`) and ship the platform package
-(`@duckdb/node-bindings-<platform>`, about 120 MB on macOS) with your server.
-
-### Files in the browser (no server)
-
-```sh
-npm install vastgrid vastgrid-browser
-```
-
-```tsx
-import { DataGrid } from "vastgrid";
-import { BrowserSource } from "vastgrid-browser";
-import { useEffect, useState } from "react";
-
-// A file the user picked (<input type="file">), or a Parquet file at a URL.
-export function Table({ file }: { file: File }) {
-  const [source, setSource] = useState<BrowserSource | null>(null);
-  useEffect(() => {
-    const next = new BrowserSource({ file }); // or { url: "https://example.com/data.parquet" }
-    setSource(next);
-    return () => next.close(); // ends the worker
-  }, [file]);
-  return <div style={{ height: 600 }}>{source && <DataGrid source={source} />}</div>;
-}
-```
-
-The file never leaves the browser: a Web Worker reads the parts the grid shows, and sorts, filters and
-summarizes local files. A Parquet URL is read with HTTP Range requests; operations that read the whole
-table are off for URLs unless `fullScan: true`. See [Files in the browser](https://vastgrid.yhay81.com/guides/browser/).
-
-### Data in memory
-
-```tsx
-import { ArraySource, DataGrid } from "vastgrid";
-
-const source = new ArraySource({
-  columns: ["name", "born", "field"],
-  rows: [
-    ["Ada Lovelace", 1815, "Mathematics"],
-    ["Grace Hopper", 1906, "Computer science"],
-  ],
-});
-
-<DataGrid source={source} />;
-```
-
-`ArraySource` sorts, filters and summarizes on the main thread; it suits up to a few hundred thousand
-rows.
-
-## `DataGrid` props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `source` | `TableSource` | (required) | The table to show. A new source starts a new grid. |
-| `locale` | `string` | the browser's language | Locale for numbers and the built-in texts: Japanese for `ja`, English otherwise. |
-| `messages` | `Partial<Messages>` | | Replaces some of the built-in texts (see `en` and `ja`). |
-| `rowHeight` | `number` | `--vg-row-height` or 24 | Row height in pixels. |
-| `headerHeight` | `number` | `--vg-header-height` or 32 | Height of the row of column names in pixels. Rows of `columnGroups` add to the header. |
-| `columnGroups` | `ColumnGroup[]` | | Groups of columns named in header rows above the column names; nested groups add rows. |
-| `groupHeaderHeight` | `number` | `--vg-group-header-height` or 24 | Height of each header row of groups in pixels. |
-| `maxLines` | `number` | `3` | Lines shown at most in cells of columns that wrap (`wrap` in `columnFormats`), 1 to 20. |
-| `nullText` | `string` | `""` | Text shown for null cells. |
-| `frozenColumns` | `number` | `0` | Columns frozen at the left when the table opens. |
-| `frozenRightColumns` | `number` | `0` | Columns frozen at the right when the table opens: the last ones, kept at the grid's right edge. |
-| `toolbar` | `boolean` | `true` | Shows the search box, active filters and row count. |
-| `statusBar` | `boolean` | `true` | Shows the active cell and the selection summary. |
-| `reloadKey` | `unknown` | | Changing it reads the table again, for example when the file changed on disk. Sources that report their changes are read again by themselves. |
-| `followTail` | `boolean` | `false` | After the table changed, show its end when the last row was shown (for appended rows, as `tail -f`). |
-| `copyLimit` | `number` | `1000000` | Cells that can be copied at once, over all selected ranges. |
-| `columnFormats` | `Record<string, ColumnFormat>` | | Display settings by schema column name: label, number and date formats, alignment, a format function, wrapping. |
-| `copyValues` | `"raw" \| "formatted"` | `"raw"` | Copy the values with the schema names, or the shown text with the labels. |
-| `exportOptions` | `GridExportOptions \| false` | `{}` | The export panel: where files go (`target`, `onExported`) and which formats to offer. `false` hides it. |
-| `drawCell` | `(args: DrawCellArgs) => void` | | Draws the visible loaded cells instead of the grid; `args.drawDefault()` draws the standard cell. |
-| `cellAction` | `(cell: GridCellContent) => CellAction \| null` | | Makes cells links or buttons: pointer, underline, screen reader role, `onCellClick` on click and Space. |
-| `formulas` | `FormulaColumn[]` | | Formula columns (`{ name, expression }`), applied on start and whenever a different value is passed. |
-| `onFormulasChange` | `(formulas: FormulaColumn[]) => void` | | Called when formula columns are added, edited or deleted. |
-| `onQueryChange` | `(query: ViewQuery) => void` | | Called when the sort, filters or search change. |
-| `onSelectionChange` | `(event: GridSelectionEvent) => void` | | Called when the selection or the active cell changes. |
-| `onColumnsChange` | `(event: GridColumnsEvent) => void` | | Called when the columns' width, order, visibility or freezing change. |
-| `onCellClick`, `onCellDoubleClick` | `(event: GridCellEvent) => void` | | Called for a click (or Space) and a double click (or F2) on a cell. `preventDefault()` on a double click keeps the cell inspector (or the cell editor) closed. |
-| `readOnly` | `boolean` | `false` | Offers no editing, also when the source can write cells. |
-| `validateCell` | `(cell: GridCellValidation) => string \| null \| undefined \| Promise<…>` | | Checks a value before it is written; return a message to refuse it. |
-| `onCellsChange` | `(event: GridCellsChangeEvent) => void` | | Called when edited cells were saved, or failed to save. |
-| `onHistoryChange` | `(state: GridHistoryState) => void` | | Called when what can be undone or redone changes. |
-| `initialState` | `GridState` | | Settings applied when a grid starts, once the table's columns are known. |
-| `onStateChange` | `(state: GridState) => void` | | Called with the settings when the query or the column settings change. |
-| `checkboxSelection` | `boolean` | `false` | Shows a checkbox for each row, and one for every row in the corner. |
-| `rowKey` | `string` | the row's position | Schema column whose values identify the rows (a primary key), for checked rows that survive new data. |
-| `rowSelection` | `RowSelection` | | Checked rows to apply on start and whenever a different value is passed. |
-| `onRowSelectionChange` | `(event: GridRowSelectionEvent) => void` | | Called when rows are checked or unchecked, by the user, the app or the grid. |
-| `detailOpen`, `defaultDetailOpen` | `boolean` | `false` | Shows the detail panel with every column of the active row (controlled, or initially). |
-| `onDetailOpenChange` | `(open: boolean) => void` | | Called when the detail panel is opened or closed by the user or the handle. |
-| `detailPanel` | `ComponentType<DetailPanelProps>` | `DetailFields` | Replaces the content of the detail panel. |
-| `className`, `style` | | | Added to the root element (`.vg-root`). |
-| `aria-label` | `string` | `messages.gridLabel` | The grid's name for screen readers. |
-
-A ref gives a `DataGridHandle`: `focus()`, `reload()`, `getQuery()`, `setQuery(query)`, `getState()`,
-`applyState(state)`, `goToRow(row)`, `undo()`, `redo()`, `history`, `save()`, `openDetail({ focus })`, `closeDetail()`, `detailOpen`, `openExport()`, `getFormulas()`, `setFormulas(formulas)`, `getRowSelection()`, `setRowSelection(selection)`, the `controller` with the grid's state, and the canvas `renderer` (for
-diagnostics such as `renderer.timings()`).
-
-Events give a cell's `row` in the view, its `rowId` in the original table, its visible column `col` and its
-`column` in the table schema, and are sent only for changes, never for scrolling or drawing. `GridState` is
-versioned JSON with the query and the columns' order, set widths, visibility and freezing, kept by column
-name; the app chooses where to save it. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#events).
-
-```tsx
-<DataGrid
-  source={source}
-  initialState={saved}
-  onStateChange={(state) => localStorage.setItem("grid", JSON.stringify(state))}
-  onSelectionChange={({ active }) => showDetail(active.rowId)}
-/>
-```
-
-```tsx
-const grid = useRef<DataGridHandle>(null);
-
-<DataGrid ref={grid} source={source} onQueryChange={(query) => saveQuery(query)} />;
-
-// Largest values of the third column first, only rows that contain "Tokyo".
-grid.current?.setQuery({ sort: [{ column: 2, direction: "desc" }], search: "Tokyo" });
-
-// (column 0 is Tokyo or column 1 is over 100,000) and column 2 is not "cancelled".
-grid.current?.setQuery({
-  filters: [{ type: "values", column: 2, values: ["cancelled"], exclude: true }],
-  where: {
-    type: "or",
-    filters: [
-      { type: "values", column: 0, values: ["Tokyo"] },
-      { type: "compare", column: 1, op: "gt", value: 100_000 },
-    ],
-  },
-});
-```
-
-`filters` all apply; `where` is a condition tree of `and` and `or` groups (nested up to 8 levels) that
-also applies. In the grid, "Conditions…" in the toolbar and "Add condition (AND / OR)" in a column's filter
-panel build one, and the toolbar shows it with a button to remove it. Sources run condition trees when
-they report `capabilities.conditions` (the DuckDB engine, `vastgrid-browser` and `ArraySource` do); the
-grid leaves them out otherwise.
-
-### Frozen columns
-
-`frozenColumns` keeps the first visible columns at the left and `frozenRightColumns` the last ones at the
-right (a total or an actions column), while the columns between them scroll. The column menu and the
-"Columns" panel freeze columns at either side, and `controller.setColumnPin(column, "left" | "right" |
-null)` does it from the app. Frozen columns take at most three quarters of the grid's width; beyond that,
-those at the right and then those at the left scroll until the grid is wide enough again. `GridState`
-and `onColumnsChange` include both sides (`frozenRightColumns`, `GridColumn.pin`), and states saved with
-only `frozenColumns` still apply. See the
-[DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#frozen-columns).
-
-```tsx
-<DataGrid source={source} frozenColumns={1} frozenRightColumns={2} />
-```
-
-### Column formats
-
-`columnFormats` sets how columns look, by their schema names. The settings change only what is shown:
-sorting, filters, search, statistics and exports work on the values themselves, and 64-bit integers
-and decimals keep all their digits.
-
-```tsx
-const formats: Record<string, ColumnFormat> = {
-  price: { label: "Price", number: { style: "currency", currency: "USD" } },
-  share: { number: { style: "percent", fractionDigits: 1 } },
-  ordered_at: { label: "Ordered", date: { pattern: "yyyy/MM/dd HH:mm" } },
-  status: { align: "center", format: (value, { text }) => (value === "ok" ? "✓" : text) },
-};
-
-<DataGrid source={source} columnFormats={formats} />;
-```
-
-Copies hold the values and the schema names unless `copyValues="formatted"` (or a column's `copy`
-setting) asks for the shown text and the labels.
-
-`wrap: true` shows a column's text on up to `maxLines` lines (3 by default), breaking at spaces and
-between Japanese, Chinese and Korean characters and at line breaks in the value; longer text ends with
-"…". All rows keep one height (`rowHeight` plus `--vg-line-height` per further line while a visible
-column wraps), so scrolling stays exact for any number of rows. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#column-formats).
-
-### Column groups
-
-`columnGroups` names groups of columns in header rows above the column names (multi-row headers).
-Members are schema column names or nested groups, which add a row each. Groups change only the header:
-sorting, filters, column menus, selection, events (`col` and `column`) and `GridState` work on the
-columns as before.
-
-```tsx
-const groups: ColumnGroup[] = [
-  { name: "Sales", children: [
-    { name: "Q1", children: ["jan", "feb", "mar"] },
-    { name: "Q2", children: ["apr", "may", "jun"] },
-  ] },
-];
-
-<DataGrid source={source} columnGroups={groups} groupHeaderHeight={24} />;
-```
-
-Groups follow their columns. When moving, hiding or freezing columns leaves a group's visible columns
-apart, or some frozen and some scrolling, its header is split and each part shows the name. Clicking a
-group header selects its columns (Shift extends, ⌘/Ctrl adds); dragging the header of a selected group
-moves its columns together. Copies and exports keep one header row, the column names. See the
-[DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#column-groups).
-
-### Detail panel
-
-The detail panel shows every column of the active row, with the columns' labels and formatted values,
-beside the grid, or below it when the grid is narrower than 640px. Rows keep their height. It follows the
-active cell (the `active` of `onSelectionChange`); text that the table cuts is read in full for that row,
-after a short pause, and moving on cancels the read. After sorting or filtering, it shows the new active
-row, the first one; reading a changed table again keeps the active row and reads its record anew. Alt+Enter or the cell menu opens it, Alt+Enter again
-moves the focus into it, and Esc closes it. Pass a component to show the record your own way:
-
-```tsx
-function Customer({ values, schema, status, rowId }: DetailPanelProps) {
-  if (status === "loading") return <p>Loading…</p>;
-  const field = (name: string) => values[schema.findIndex((column) => column.name === name)];
-  return <CustomerCard id={rowId} name={String(field("name"))} notes={String(field("notes"))} />;
-}
-
-<DataGrid source={source} defaultDetailOpen detailPanel={Customer} />;
-```
-
-`--vg-detail-width` and `--vg-detail-height` set its size. See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#detail-panel).
-
-### Files that change
-
-A grid reads its table again when the source reports that the table changed, and keeps the query, the
-column settings, the scroll position and the active cell. `RemoteSource` asks the server every 2 seconds
-while a grid shows the table; `vastgrid-duckdb` sees appended rows and rewrites by the file's size,
-modification time and a hash of its beginning. Changes reported close together are read once.
-
-```tsx
-const source = useMemo(
-  () => new RemoteSource({ endpoint: "/api/table", ref: "logs/app.csv", changes: pollChanges({ interval: 1000 }) }),
-  [],
-);
-
-<DataGrid source={source} followTail />; // stays at the end while rows are appended
-```
-
-Only the whole table is reported, never single rows: the grid reads it again, which for DuckDB means
-loading the file again. `changes: false` turns watching off, and another `ChangeTransport` (for example
-one that listens to server-sent events) can replace polling. `BrowserSource` watches files at a URL by
-their `ETag`, `Last-Modified` or size (`changeInterval`, 5 seconds by default); local files cannot be
-watched, since the browser refuses to read a `File` that changed on disk.
-
-### Cell colors and custom drawing
-
-A column's `style` colors cells by value and keeps the standard drawing. `drawCell` draws cells on the
-canvas itself, with the cell's rectangle, value, type, text, selection state and theme, and can call the
-standard drawing first. `cellAction` makes cells links or buttons: the pointer changes over them,
-links are underlined, the active cell gets the `link` or `button` role for screen readers, and a click
-or Space calls `onCellClick` (Enter and the arrows still move, as in spreadsheets). The hooks run only
-for the loaded cells on screen.
-
-```tsx
-const formats: Record<string, ColumnFormat> = {
-  balance: { style: (value) => (Number(value) < 0 ? { color: "#b42318", background: "#fdecea", description: "Overdrawn" } : null) },
-};
-const drawCell: DrawCell = (args) => {
-  args.drawDefault();
-  if (args.schema.name === "status" && args.value === "new") {
-    args.ctx.fillStyle = args.theme.accent;
-    args.ctx.fillRect(args.rect.x + 2, args.rect.y + 6, 3, args.rect.height - 12);
-  }
-};
-const cellAction: CellActionHook = (cell) => (cell.schema.name === "url" ? { kind: "link", label: `Open ${cell.text}` } : null);
-
-<DataGrid
-  source={source}
-  columnFormats={formats}
-  drawCell={drawCell}
-  cellAction={cellAction}
-  onCellClick={(event) => event.column === urlColumn && window.open(String(event.value))}
-/>;
-```
-
-See the [DataGrid reference](https://vastgrid.yhay81.com/reference/data-grid/#cell-colors-and-custom-drawing).
-
-### Checked rows
-
-`checkboxSelection` adds a checkbox to each row, separate from the cell selection. Checked rows are kept
-by key, so the same records stay checked when the view is sorted or filtered, and rows hidden by a filter
-stay checked. A key is the row's position in the file (`rowId`), valid for one `TableInfo.revision`: a new
-revision unchecks every row. With `rowKey`, keys are the values of that column and survive new data; keys
-of removed rows stay until the app or the user removes them.
-
-The corner checkbox checks every row without listing keys: `{ type: "exclude", keys: [] }` is every row of
-the table except `keys`, and with filters or a search it is every row matching them
-(`query: { filters, search }`). Views with those filters (and maybe more) show each row's state; in other
-views the grid lists the keys of up to 100,000 matching rows (reason `query`), and larger selections stay
-as they are, their rows shown as unknown. Checked rows are not part of `GridState`.
-
-```tsx
-const [checked, setChecked] = useState<RowSelection>({ type: "include", keys: [] });
-
-<DataGrid
-  source={source}
-  checkboxSelection
-  rowKey="order_id"
-  rowSelection={checked}
-  onRowSelectionChange={({ selection, count }) => {
-    setChecked(selection);
-    showCount(count); // null while the rows matching a filter are not counted
-  }}
-/>;
-```
-
-### Exporting
-
-The toolbar's "Export" button opens a panel to write the current view (filters, search and sort as shown)
-or the whole table, with the shown columns in display order or all of them, in the formats the source
-offers (`info().exports`). The DuckDB server writes CSV, TSV, Parquet, JSON and Excel files into the
-folders you allow (only with `resolveTarget`), so large results never pass through the browser;
-`ArraySource` returns CSV, TSV, JSON and Excel files that the browser downloads. Excel files are written
-without dependencies, as a stream, with the labels of `columnFormats` as headers and their number and
-date formats; text is never written as a formula, and more than 1,048,575 rows are refused.
-
-```tsx
-<DataGrid
-  source={source}
-  exportOptions={{
-    // The server resolves this in `resolveTarget`; then offer the file for download.
-    target: ({ request }) => `exports/${request.target}`,
-    onExported: (result) => window.location.assign(`/downloads/${encodeURIComponent(result.target)}`),
-  }}
-/>
-```
-
-See [Exporting](https://vastgrid.yhay81.com/guides/export/).
-
-### Editing cells
-
-The grid edits sources that can write cells (`capabilities.edit`): `ArraySource` with `editable: true`,
-and the DuckDB server when its engine is created with `editable: true`; other sources stay read-only.
-Typing replaces the active cell (IMEs work: the editor is a text field over the cell), F2 or a double
-click edits it, Enter or Tab saves and moves, Esc cancels, Delete clears the selected cells, and ⌘/Ctrl +
-V pastes ranges copied from Excel or Google Sheets (TSV or HTML tables), checking every value first. ⌘/Ctrl
-+ D and ⌘/Ctrl + R fill the first row or column of the selection down or right, and ⌘/Ctrl + Z and ⌘/Ctrl +
-Shift + Z undo and redo whole writes (a paste or a fill at once), keeping types and digits. Values
-are checked against the column's type without losing digits (64-bit integers and decimals stay text) and
-by `validateCell`, which may be asynchronous. Writes show while they save, and failures and conflicts with
-other users' changes offer Retry, Overwrite or Discard. The DuckDB server can save edited cells back into
-CSV and TSV files with `saveFiles` (⌘/Ctrl + S), rewriting only the edited fields and keeping every other
-byte — quoted line breaks, encodings such as Shift_JIS, the final line break — through a temporary file,
-and refusing files changed by someone else meanwhile. After a write the grid reads the rows again and,
-when the sort or filters use the written column, sorts and filters again; statistics, summaries and
-exports read the new values. The DuckDB engine keeps written values apart from the file until they are saved.
-
-```tsx
-<DataGrid source={new ArraySource({ columns, rows, editable: true })} onCellsChange={(event) => save(event)} />
-```
-
-See [Editing cells](https://vastgrid.yhay81.com/guides/editing/).
-
-### Formula columns
-
-"Add formula column…" in a column's menu adds a column computed per row by an expression, such as
-`qty * price` or `IF(due < '2024-07-01', 'late', '')`. The source evaluates it — the DuckDB engine in SQL,
-without moving the table to the browser — so it sorts, filters, shows statistics and selection summaries,
-and is exported like a column of the file. The editor checks the formula as it is typed and shows what is
-wrong. Formulas are a small language of their own (columns by name, arithmetic, `&` for text,
-comparisons, `AND` / `OR` / `NOT`, and functions for numbers, text, dates and blanks); they are never run
-as JavaScript or SQL, and the engine makes SQL from them with quoted names, parameters and a fixed list of
-functions.
-
-```tsx
-<DataGrid
-  source={source}
-  formulas={[
-    { name: "total", expression: "qty * price" },
-    { name: "with tax", expression: "ROUND(total * 1.1, 2)" },
-  ]}
-  onFormulasChange={(formulas) => save(formulas)}
-/>
-```
-
-Formula columns follow the table's columns (formula `i` is column `info.columns.length + i`), are kept in
-`GridState` and follow their columns by name. The DuckDB engine and `ArraySource` evaluate them
-(`capabilities.formulas`); `vastgrid-browser` does not yet. See [Formula columns](https://vastgrid.yhay81.com/guides/formulas/).
-### Grouping and totals
-
-"Group" in the toolbar groups the rows that the filters keep by one or more columns and shows the
-groups as a table: the keys, then counts, sums, averages, minimums and maximums. "Total in the bottom
-row…" in a column's menu shows an aggregate of the column in a row fixed below the rows. The source
-computes both (`group`, with `capabilities.group`): `ArraySource`, the DuckDB server (one generated SQL
-statement) and `vastgrid-browser` with `fullScan`. Results hold at most `limit` groups (1,000 by default);
-sums of integers and decimals are exact. A cross tabulation turns the values of chosen columns into
-columns (`Tokyo / sum(amount)`), and is refused with a notice when it would make more than 200 columns.
-All of it is part of `GridState`.
-
-```ts
-const result = await source.group({ view: null, keys: [0], aggregates: [{ fn: "count" }, { fn: "sum", column: 2 }] });
-// { columns: [region, count(*), sum(amount)], rows: [["Tokyo", 120, "53210.50"], …], groups: 47, truncated: false }
-```
-
-See [Grouping and totals](https://vastgrid.yhay81.com/guides/grouping/). The same bounded results feed
-charts drawn by the library of your choice, following the grid's filters and sort; vastgrid itself
-depends on no chart library. See [Charts](https://vastgrid.yhay81.com/guides/charts/) and the playground's
-"Chart" panel.
+| [`vastgrid`](packages/grid) | The React grid: `DataGrid`, `GridProvider` and the hooks; `vastgrid/core` (the store and the transports, without React), `vastgrid/server`, `vastgrid/styles.css`. |
+| [`vastgrid-js`](packages/js) | The memory engine, for the browser and Node.js: rows of typed JSON, Arrow, CSV, TSV, JSON Lines, Excel and Parquet (also over HTTP). |
+| [`vastgrid-duckdb`](packages/duckdb-engine) | The DuckDB engine for Node.js: files of any size, writing cells, saving CSV and TSV, following files, exports; an HTTP handler. |
+| [`vastgrid-spec`](packages/spec) | The specification as code: types, plan checking, commands, message schemas, the conformance corpus. |
+| [`vastgrid-sql`](packages/sql) | Plans as DuckDB SQL. |
+| [`vastgrid-cli`](packages/cli) | `npx vastgrid-cli <file>`: a file in a grid in the browser, read by DuckDB on this computer. |
+| [`vastgrid-mcp`](packages/mcp) | An MCP server with an MCP App. |
+| [`vastgrid-vscode`](packages/vscode) | The VS Code extension, on the Marketplace. |
+| [`vastgrid` (Python)](packages/notebook/python) | The Jupyter widget, on PyPI. |
+
+The npm packages are released together at one version. `vastgrid` needs React 19.3 or later (an optional peer
+dependency: servers use `vastgrid/core` without React) and a browser with CSS `light-dark()`: Chrome and Edge 123,
+Firefox 120, Safari 17.5 or later. The engines need Node.js 20 or later; DuckDB runs on Linux (x64, arm64; glibc
+and musl), macOS (x64, arm64) and Windows (x64, arm64).
 
 ## Performance
 
-`npm run bench -- --csv-rows=10000000 --parquet-rows=100000000` on an Apple M2 Pro (12 threads, 32 GB),
-Node.js 24, DuckDB 1.5. Times include DuckDB but not HTTP.
+On an Apple M2 Pro. In Chromium, the grid on a table of 1,000,000 rows and 8 columns in the memory engine
+([v2-react.md Appendix A](docs/v2-react.md#a2-in-the-browser), tested against budgets by `e2e/budgets.spec.ts`):
 
-| Operation | Time |
+| Measure | Time |
 | --- | ---: |
-| CSV 735 MB, 10M rows: first rows readable | 143 ms |
-| CSV: fully loaded (sort, filter and statistics available) | 5.3 s |
-| CSV: 256 rows × 8 columns at a random position (median) | 1.8 ms |
-| CSV: sort by a number / text column | 1.2 s / 1.1 s |
-| CSV: filter by values (2.5M rows) / search all columns | 293 ms / 544 ms |
-| CSV: column statistics (histogram, quartiles) | 117 ms |
-| CSV: sum, average, min, max of 1M rows × 2 columns | 7.8 ms |
-| Parquet 1.38 GB, 100M rows: open (read in place) | 20 ms |
-| Parquet: 256 rows × 8 columns at a random position (median) | 24 ms |
-| Parquet: sort by a number column | 1.9 s |
-| Parquet sorted: 256 rows at a random position (median / 95th percentile) | 147 ms / 208 ms |
+| From mount to the first rows on screen | 36–49 ms |
+| From a key press to the next frame (95th percentile) | 13.4–14.1 ms |
+| The gap between frames while scrolling (95th percentile) | 16.7–16.8 ms: no frame dropped at 60 Hz |
+| React commits while scrolling 100 frames | 0 |
+| Sorting by a float column until the rows are on screen: engine in the page · in a Web Worker | 85–98 ms · 112–113 ms |
+| The longest task of the page meanwhile: engine in the page · in a Web Worker | 81–93 ms · none |
 
-Rendering a 2280 × 1371 px viewport (56 rows × 20 columns) takes 2.0 ms per frame at the median and
-3.0 ms at the 99th percentile, measured with the canvas flushed after every frame. Column styles,
-`cellAction` and a `drawCell` that adds a mark to the standard drawing keep a frame of 1,349 cells
-within the variation of the measurement (2.5–2.8 ms against 2.7–2.8 ms without them).
+The DuckDB engine on Node.js 24 with DuckDB 1.5.6, 8 threads and 2 GB of memory
+([v2-views-benchmark.md](docs/v2-views-benchmark.md)); 256 rows of 8 columns at a time, without HTTP:
 
-## How it works
+| File and view | First rows | 256 rows anywhere in the view, median |
+| --- | ---: | ---: |
+| Parquet, 1.38 GB, 100M rows, sorted by a float | 778 ms | 676 ms |
+| Parquet, 100M rows, filtered | 191 ms | 21 ms |
+| CSV, 735 MB, 10M rows, sorted | 53 ms | 3.1 ms |
+| CSV, 10M rows, filtered | 179 ms | 2.7 ms |
 
-```mermaid
-flowchart LR
-  subgraph Browser
-    Grid["DataGrid<br/>canvas + DOM overlays"] --> Cache["RowCache<br/>256 × 48 blocks, prefetch,<br/>cancel, LRU"]
-    Cache --> Source["TableSource"]
-  end
-  Source -- "RemoteSource<br/>JSON protocol" --> Handler["createTableHandler"]
-  Source -. "ArraySource<br/>in memory" .-> Memory[(arrays)]
-  subgraph Server["Node.js"]
-    Handler --> Engine["TableEngine<br/>DuckDB"]
-    Engine --> Files[(CSV · TSV · Parquet · JSON Lines · xlsx)]
-  end
-```
+Saving two edited cells takes about 60 ms in a 6 MB CSV file and 0.3 s in a 65 MB one; a sorted view of a million
+rows exports in 0.3 s as CSV and 0.1 s as Parquet. The memory engine opens a million-row Parquet file in 26 ms and a
+CSV one in about a second ([v2-memory-engine-benchmark.md](docs/v2-memory-engine-benchmark.md)). What a page loads
+first of `DataGrid` and the memory engine is about 100 KB with gzip; menus and panels load when they open.
 
-- **Scrolling.** A transparent native scroller sits over the canvas, so wheel, trackpad and scrollbar
-  behave natively. Browsers cap element sizes (about 16.7M px in Chromium), so `ScrollAxis` maps the
-  native position to a virtual one: small movements move by the same amount, while large jumps and the
-  two ends map proportionally.
-- **Loading.** On every frame the grid declares the visible rows and columns. `RowCache` loads the
-  missing blocks (visible first, then one screen ahead and behind), cancels requests that scrolled far
-  away and drops the least recently used blocks.
-- **Engine.** Delimited and JSON files become DuckDB tables in a database file of the session; the first
-  1,000 rows are served from a preview while the file loads. Parquet files are read in place by row
-  position. Shift_JIS, EUC-JP and BOM-marked UTF-16 (both byte orders) are converted to UTF-8 first. Sorting and filtering
-  build a view: a sorted copy for tables up to 20M rows (2 ms windows), or only the order of the rows
-  for larger ones (seconds instead of minutes, and a fraction of the temporary space). Sorts of tables
-  with 1M rows or more show their first 1,000 rows in about a second, from a top-N query in the order of
-  the finished view, while the rest is built in the background.
-- **Protocol.** `RemoteSource` speaks a small JSON protocol (see [docs/protocol.md](docs/protocol.md)).
-  It reopens tables and recreates views when the server forgets them, for example after a restart.
+## Migrating from v1
 
-## Keyboard
+vastgrid 2.0 replaces 0.1.x. The grid reads through an engine and a transport instead of v1's sources, its state is
+a document and a session, and the separate core and browser packages are gone: their parts are in `vastgrid/core`
+and `vastgrid-js`. `vastgrid-duckdb` is now the DuckDB engine of this version (`DuckDBEngine`, `createHttpHandler`).
+`migrateGridState` of `vastgrid-spec` reads v1's saved grid state, and formulas keep v1's language.
+[docs/v2-from-v1.md](docs/v2-from-v1.md) maps every v1 feature to its place now.
 
-| Keys | Action |
-| --- | --- |
-| Arrows · Page Up/Down · Home/End | Move the active cell |
-| ⌘/Ctrl + arrows · ⌘/Ctrl + Home/End | Jump to the first or last row or column |
-| Shift + any of the above · Shift + click | Extend the selection |
-| ⌘/Ctrl + click | Add a range (ranges with the same rows or the same columns copy together) |
-| Tab / Enter (with Shift: backwards) | Move within the selection |
-| Shift + Space · Ctrl + Space · ⌘/Ctrl + A | Select the row · the column · everything |
-| Space · ⌘/Ctrl + Shift + Space (with `checkboxSelection`) | Check the active row · every row (shift-click checks a range) |
-| ⌘/Ctrl + C · ⌘/Ctrl + Shift + C | Copy · copy with headers |
-| ⌘/Ctrl + F | Find |
-| Alt + ↓ | Column menu (sort, filter, statistics, freeze at the left or the right, hide) |
-| F2 · double click | Show the full value of the cell (edit it, in a grid that edits) |
-| Typing · Delete · ⌘/Ctrl + V (in a grid that edits) | Replace the active cell's value · clear the selected cells · paste |
-| ⌘/Ctrl + D · ⌘/Ctrl + R (in a grid that edits) | Fill down · right from the selection's first row or column |
-| ⌘/Ctrl + Z · ⌘/Ctrl + Shift + Z or Ctrl + Y (in a grid that edits) | Undo · redo the last write |
-| ⌘/Ctrl + S (sources that save, such as the DuckDB server with `saveFiles`) | Save the edited cells into the file |
-| Alt + Enter (again: into the panel) · Esc | Open the detail panel of the active row · close it |
-| Shift + F10 · context menu key · right click | Cell menu (copy, filter to value, sort) |
+## Documentation
 
-## Theming
-
-Every color, font and size is a CSS custom property on `.vg-root`, and the canvas reads them, so a few
-lines of CSS restyle everything:
-
-```css
-.my-app .vg-root {
-  --vg-font-family: "Inter", sans-serif;
-  --vg-bg: var(--surface);
-  --vg-fg: var(--text);
-  --vg-accent: var(--brand);
-  --vg-selection-bg: color-mix(in srgb, var(--brand) 15%, transparent);
-}
-```
-
-See [`packages/react/src/styles.css`](packages/react/src/styles.css) for the full list. Colors use
-`light-dark()` and follow `color-scheme`; forced-colors mode is supported.
+- [vastgrid.yhay81.com](https://vastgrid.yhay81.com): guides, the demo and the open page.
+- [docs/entries.md](docs/entries.md): the React component, the browser page, the command line, VS Code, the MCP App
+  and the notebook compared. [cli.md](docs/cli.md), [vscode.md](docs/vscode.md), [mcp-app.md](docs/mcp-app.md) and
+  [notebook.md](docs/notebook.md) describe each.
+- [docs/v2-react.md](docs/v2-react.md): the React API (store, transports, `DataGrid`, hooks, rendering, server
+  rendering).
+- [docs/v2-spec.md](docs/v2-spec.md): values and types, plans, the document and session, commands, editing and
+  saving, and the messages between the grid and its engine.
+- [CHANGELOG.md](CHANGELOG.md), and plans in the [GitHub issues](https://github.com/yhay81/vastgrid/issues).
 
 ## Development
 
 ```sh
 npm install
-npm run dev        # playground at http://127.0.0.1:5174 (files in examples/playground/.data)
-npm run dev -w vastgrid-site   # documentation and demo at http://localhost:4321
-npm run generate -w vastgrid-playground   # sample files, add --large for 100M rows
-npm test
-npm run lint
-npm run bench
+npm run build      # every package, the CLI's page, the MCP App and the extension
+npm test           # the unit tests, on the sources
+npm run e2e        # Playwright on the build
+npm run dev        # examples/files: the grid on the DuckDB engine, at http://127.0.0.1:5182
+npm run dev -w vastgrid-site   # the site, the demo and /open/, at http://localhost:4321
 ```
 
-## Roadmap
-
-The unreleased v2 rebuild is tracked in [#33](https://github.com/yhay81/vastgrid/issues/33). Its typed-value contract rejects values that Arrow cannot preserve; float32 text input is rounded before writing, and numeric overflow is rejected. See the [v2 specification](docs/v2-spec.md#22-values-in-json). Its DuckDB engine writes cells of CSV, TSV, Parquet, JSON and Excel files, kept apart from the file until they are saved, with conflict checks and undo in the grid (§7.2), and a failed write can be retried, written over the other change, or discarded, and saves them into CSV and TSV files with every byte that was not edited kept as it is (§7.5). Files that change on disk are read again, and unsaved edits are kept until they are discarded (§7.6). Views are exported as CSV, TSV, Parquet, JSON and Excel on the server (§8.2). Derived columns are written as formulas in v1's language, which compiles to plan expressions, and v1's saved formulas migrate with what uses them (§4.11, §5.6); the toolbar's Formulas menu adds, changes, renames and removes them. Each column has a menu (the arrow in its header, a right click or Alt+↓) that sorts by it, filters it by a list of its values with their counts or by a condition, shows its statistics, sets its total in a totals row, groups by it, and fits, freezes and hides it; the toolbar's Group menu chooses the keys, measures and pivot columns of the groups, its Conditions menu combines conditions across columns with AND and OR in nested groups, and its Columns menu shows, hides and moves columns. A column's Format… sets its label, alignment, wrapping, number or date format and conditional colors. `checkboxes` adds a check box for each row (Space checks the active row), and the Details button shows every column of the active row beside the grid. `columnGroups` adds header rows of groups, and `cellText`, `cellStyle`, `drawCell` and `cellAction` change how cells look and act. ⌘F finds, a cell's menu filters to its value, and dragging a header moves its column. [v2-from-v1.md](docs/v2-from-v1.md) maps v1's features to v2. The JavaScript engine computes derived columns, conditions, the search, groups and pivots with every function and measure of §4.4 and §4.5 ([#43](https://github.com/yhay81/vastgrid/issues/43)).
-
-The items of the earlier roadmap (cell editing with byte-preserving CSV write-back, formula columns) are
-done; plans are tracked in the GitHub issues. See [docs/research.ja.md](docs/research.ja.md) (Japanese) for the survey of existing viewers and grids
-that shaped these choices.
+`npm run typecheck`, `npm run lint` and `npm run bench` check and measure the rest. See
+[CONTRIBUTING.md](CONTRIBUTING.md) before a change.
 
 ## License
 

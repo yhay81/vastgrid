@@ -24,7 +24,7 @@
 | --- | --- |
 | ゴール | 数 GB・数億行の CSV・TSV・Parquet・JSON Lines を開き、表計算ソフトのように扱える React の部品。データの置き場所（サーバー・ブラウザー）を選べること（[既存調査](research.ja.md)の観点）。用途の中心は「巨大ファイルを素早く調べる」こと（[機能差の調査](feature-comparison.ja.md)） |
 | 変えないコンセプト | キャンバスに描くグリッド、見えている所だけを読むこと、エンジンを差し替えられること、表計算ソフトの操作感 |
-| 対象にした資料 | 3 つのパッケージのソースコード、README、[表のプロトコル](protocol.md)、[CHANGELOG](../CHANGELOG.md)、2 つの調査 |
+| 対象にした資料 | 3 つのパッケージのソースコード、README、[表のプロトコル](https://github.com/yhay81/vastgrid/blob/v0.1.1/docs/protocol.md)、[CHANGELOG](../CHANGELOG.md)、2 つの調査 |
 
 ## 全体像
 
@@ -81,7 +81,7 @@ flowchart TB
 
 ### 1. クエリーのプランを中心にする
 
-今の [`TableSource`](../packages/core/src/source.ts) は、操作ごとのメソッドでできています。必須の `info`・`createView`・`readRows` と、任意の `columnStats`・`distinctValues`・`aggregate`・`find`・`exportView`（ほかに `close`）です。`ViewQuery` は「並べ替え・AND でつなぐ絞り込み・検索」の固定形です。列をまたぐ OR や計算列を足すには、型、`parseProtocolRequest` の検証、`ArraySource`、`sql.ts`、画面をすべて変える必要があり、[機能差の調査](feature-comparison.ja.md)もそう指摘しています。
+今の [`TableSource`](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/source.ts) は、操作ごとのメソッドでできています。必須の `info`・`createView`・`readRows` と、任意の `columnStats`・`distinctValues`・`aggregate`・`find`・`exportView`（ほかに `close`）です。`ViewQuery` は「並べ替え・AND でつなぐ絞り込み・検索」の固定形です。列をまたぐ OR や計算列を足すには、型、`parseProtocolRequest` の検証、`ArraySource`、`sql.ts`、画面をすべて変える必要があり、[機能差の調査](feature-comparison.ja.md)もそう指摘しています。
 
 作り直すなら、クエリーを次の操作を並べた木（プラン）で表します。
 
@@ -105,13 +105,13 @@ flowchart TB
 
 ### 2. 値を型を持つ列で運び、そのまま持つ
 
-今は値を `CellValue`（`string | number | boolean | null`）として JSON で運びます（[types.ts](../packages/core/src/types.ts)）。JavaScript の数で正確に表せない 64 ビットの整数・小数と、日時は文字列です。そのため、文字列から元の値を読み直す処理が層ごとにあります。
+今は値を `CellValue`（`string | number | boolean | null`）として JSON で運びます（[types.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/types.ts)）。JavaScript の数で正確に表せない 64 ビットの整数・小数と、日時は文字列です。そのため、文字列から元の値を読み直す処理が層ごとにあります。
 
-- `ArraySource` の `decimalOf`・`exactNumber`（[array-source.ts](../packages/core/src/array-source.ts)）
-- 絞り込みの画面の `comparable`（[filter-panel.tsx](../packages/react/src/components/filter-panel.tsx)）
-- DuckDB のエンジンの `decimalBound`（[sql.ts](../packages/duckdb/src/sql.ts)）
+- `ArraySource` の `decimalOf`・`exactNumber`（[array-source.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/array-source.ts)）
+- 絞り込みの画面の `comparable`（[filter-panel.tsx](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/react/src/components/filter-panel.tsx)）
+- DuckDB のエンジンの `decimalBound`（[sql.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/duckdb/src/sql.ts)）
 
-表示のために切った文字列も、値の末尾の「…」で表しています。`mayBeCut`（[controller.ts](../packages/react/src/controller.ts)）は、末尾が「…」かどうかで切られたかを推測します。キャッシュは既定で最大 600 個のまとまり（256 行 × 48 列）、つまり約 740 万セルを JavaScript の値として持つことがあり、その横に表示用の文字列も持ちます（[cache.ts](../packages/core/src/cache.ts)）。
+表示のために切った文字列も、値の末尾の「…」で表しています。`mayBeCut`（[controller.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/react/src/controller.ts)）は、末尾が「…」かどうかで切られたかを推測します。キャッシュは既定で最大 600 個のまとまり（256 行 × 48 列）、つまり約 740 万セルを JavaScript の値として持つことがあり、その横に表示用の文字列も持ちます（[cache.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/cache.ts)）。
 
 作り直すなら、行のまとまりを [Apache Arrow](https://arrow.apache.org/docs/format/Columnar.html) の列で運びます。
 
@@ -129,9 +129,9 @@ flowchart TB
 今の構成には、次の制約があります。
 
 - 大きなファイル向けに同梱しているエンジンは、Node.js の DuckDB だけです。`ArraySource` は画面のスレッドで全行をたどります（[性能](../site/src/content/docs/ja/about/performance.md)の測定では、30 万行の小数の列の並べ替えが 0.55 秒）。
-- プロトコルは、サーバーが払い出す表とビューのハンドルに頼っています。`RemoteSource` は、サーバーが忘れたビューを作り直すための対応表（`queries`・`aliases`・`recreating`）を持ちます（[remote-source.ts](../packages/core/src/remote-source.ts)）。
-- ビューは表ごとに 2 つまで（`maxViews`）で、表は同じファイルを開いた利用者の間で共有されます（[engine.ts](../packages/duckdb/src/engine.ts)）。別々の並べ替えが 3 つ重なると、互いのビューを消し合い、作り直しになります。
-- 応答は `POST` と `Cache-Control: no-store` で（[handler.ts](../packages/duckdb/src/handler.ts)）、ブラウザーや CDN のキャッシュが使えません。
+- プロトコルは、サーバーが払い出す表とビューのハンドルに頼っています。`RemoteSource` は、サーバーが忘れたビューを作り直すための対応表（`queries`・`aliases`・`recreating`）を持ちます（[remote-source.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/remote-source.ts)）。
+- ビューは表ごとに 2 つまで（`maxViews`）で、表は同じファイルを開いた利用者の間で共有されます（[engine.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/duckdb/src/engine.ts)）。別々の並べ替えが 3 つ重なると、互いのビューを消し合い、作り直しになります。
+- 応答は `POST` と `Cache-Control: no-store` で（[handler.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/duckdb/src/handler.ts)）、ブラウザーや CDN のキャッシュが使えません。
 - 読み込みの進み具合は、`info` をポーリングして知ります。
 
 作り直すなら、次のようにします。
@@ -157,9 +157,9 @@ flowchart TB
 
 ### 5. 状態を画面から切り離す
 
-今は [`GridController`](../packages/react/src/controller.ts)（945 行）が、読み込み・列・選択・スクロール・コピー・検索・集計を 1 つの書き換え可能なオブジェクトに持ち、[`DataGrid`](../packages/react/src/data-grid.tsx)（1,035 行）が入力・メニュー・パネルを持ちます。外から変えられるのはクエリーだけです（`setQuery`・`onQueryChange`）。
+今は [`GridController`](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/react/src/controller.ts)（945 行）が、読み込み・列・選択・スクロール・コピー・検索・集計を 1 つの書き換え可能なオブジェクトに持ち、[`DataGrid`](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/react/src/data-grid.tsx)（1,035 行）が入力・メニュー・パネルを持ちます。外から変えられるのはクエリーだけです（`setQuery`・`onQueryChange`）。
 
-- 選択は表示の位置で持つので（[selection.ts](../packages/core/src/selection.ts)）、列を隠すと別の列を指します。
+- 選択は表示の位置で持つので（[selection.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/selection.ts)）、列を隠すと別の列を指します。
 - 列の幅や表示の設定はスキーマの番号で持ち、ファイルを読み直したときに名前で付け直しています（`applyInfo`）。
 
 作り直すなら、次のように分けます。
@@ -266,15 +266,15 @@ flowchart TB
 
 | 確認対象 | 根拠 |
 | --- | --- |
-| エンジンとの口、値と絞り込みの型 | [source.ts](../packages/core/src/source.ts) の `TableSource`、[types.ts](../packages/core/src/types.ts) の `CellValue`・`ViewQuery`・`Filter` |
-| キャッシュの既定値（256 行 × 48 列、600 個） | [cache.ts](../packages/core/src/cache.ts) の `RowCache` |
-| ハンドルとビューの作り直し | [remote-source.ts](../packages/core/src/remote-source.ts) の `RemoteSource` |
-| 選択を表示の位置で持つこと | [selection.ts](../packages/core/src/selection.ts) の `SelectionModel` |
-| 状態・ポーリング・列の付け直し・切った文字列の推測 | [controller.ts](../packages/react/src/controller.ts) の `GridController`（`poll`・`applyInfo`）と `mayBeCut` |
-| 入力・メニュー・外から使える API | [data-grid.tsx](../packages/react/src/data-grid.tsx) の `DataGridProps`・`DataGridHandle` |
-| ビューの数と作り方、読み込み中にできること | [engine.ts](../packages/duckdb/src/engine.ts) の `TableEngine.create`・`OpenTable.info`・`buildView` |
-| 文字列からの読み直し | [array-source.ts](../packages/core/src/array-source.ts) の `decimalOf`・`exactNumber`、[filter-panel.tsx](../packages/react/src/components/filter-panel.tsx) の `comparable`、[sql.ts](../packages/duckdb/src/sql.ts) の `decimalBound` |
-| 応答のキャッシュの指定 | [handler.ts](../packages/duckdb/src/handler.ts) の `json` |
+| エンジンとの口、値と絞り込みの型 | [source.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/source.ts) の `TableSource`、[types.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/types.ts) の `CellValue`・`ViewQuery`・`Filter` |
+| キャッシュの既定値（256 行 × 48 列、600 個） | [cache.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/cache.ts) の `RowCache` |
+| ハンドルとビューの作り直し | [remote-source.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/remote-source.ts) の `RemoteSource` |
+| 選択を表示の位置で持つこと | [selection.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/selection.ts) の `SelectionModel` |
+| 状態・ポーリング・列の付け直し・切った文字列の推測 | [controller.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/react/src/controller.ts) の `GridController`（`poll`・`applyInfo`）と `mayBeCut` |
+| 入力・メニュー・外から使える API | [data-grid.tsx](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/react/src/data-grid.tsx) の `DataGridProps`・`DataGridHandle` |
+| ビューの数と作り方、読み込み中にできること | [engine.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/duckdb/src/engine.ts) の `TableEngine.create`・`OpenTable.info`・`buildView` |
+| 文字列からの読み直し | [array-source.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/core/src/array-source.ts) の `decimalOf`・`exactNumber`、[filter-panel.tsx](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/react/src/components/filter-panel.tsx) の `comparable`、[sql.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/duckdb/src/sql.ts) の `decimalBound` |
+| 応答のキャッシュの指定 | [handler.ts](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/duckdb/src/handler.ts) の `json` |
 | Arrow で書き出す口の有無 | `@duckdb/node-api` 1.5.6 の型定義（`DuckDBResult.fetchChunk`・`DuckDBDataChunk.getColumnVector`） |
 
 ## 出典

@@ -3,7 +3,7 @@
 [English](entries.md)
 
 vastgrid v2 は巨大な CSV・Parquet・Excel ファイルや DataFrame を六つの場所で開きます。どこでも同じグリッド
-（`vastgrid-grid` の `DataGrid`、docs/v2-react.md）が、同じドキュメント・セッション・コマンド（docs/v2-spec.md §5、§6）で
+（`vastgrid` の `DataGrid`、docs/v2-react.md）が、同じドキュメント・セッション・コマンド（docs/v2-spec.md §5、§6）で
 表を示し、同じ電文（§8）でエンジンと話します。違うのはエンジンと電文の運び方、そして書き込んだセルをホストがどう
 扱うかです。エンジンはそれぞれホストの能力に合わせた capabilities を返し（§8.2）、保存の方式をほかの入口に揃えることは
 しません。
@@ -13,10 +13,10 @@ vastgrid v2 は巨大な CSV・Parquet・Excel ファイルや DataFrame を六�
 | 入口 | データを読む場所 | エンジン | 電文の運び方 | 詳細 |
 | --- | --- | --- | --- | --- |
 | ブラウザーのページ | ブラウザーの Web Worker | `vastgrid-js` | `workerTransport` | サイトの `/ja/open/` |
-| React コンポーネント | アプリがエンジンを置く場所 | `vastgrid-js`、`vastgrid-duckdb-engine`、独自のもの | §4.4 のトランスポート | [vastgrid-grid](../packages/grid/README.md) |
-| コマンドライン | コマンドの中の DuckDB（Node.js） | `vastgrid-duckdb-engine` | `httpTransport` | [cli.md](cli.md) |
-| VS Code | 拡張機能の中の DuckDB（Node.js） | `vastgrid-duckdb-engine` | Webview のメッセージの上の `workerTransport` | [vscode.md](vscode.md) |
-| MCP App | MCP サーバーの中の DuckDB（Node.js） | `vastgrid-duckdb-engine` | App のツール呼び出し | [mcp-app.md](mcp-app.md) |
+| React コンポーネント | アプリがエンジンを置く場所 | `vastgrid-js`、`vastgrid-duckdb`、独自のもの | §4.4 のトランスポート | [vastgrid](../packages/grid/README.md) |
+| コマンドライン | コマンドの中の DuckDB（Node.js） | `vastgrid-duckdb` | `httpTransport` | [cli.md](cli.md) |
+| VS Code | 拡張機能の中の DuckDB（Node.js） | `vastgrid-duckdb` | Webview のメッセージの上の `workerTransport` | [vscode.md](vscode.md) |
+| MCP App | MCP サーバーの中の DuckDB（Node.js） | `vastgrid-duckdb` | App のツール呼び出し | [mcp-app.md](mcp-app.md) |
 | ノートブック | カーネルの中の DuckDB（Python） | `vastgrid`（Python） | ウィジェットのメッセージの上の `workerTransport` | [notebook.md](notebook.md) |
 
 ## 形式
@@ -49,26 +49,25 @@ vastgrid v2 は巨大な CSV・Parquet・Excel ファイルや DataFrame を六�
 
 ## 導入
 
-どのパッケージもまだ公開していません。公開は v1 から v2 への切り替え（[#45](https://github.com/yhay81/vastgrid/issues/45)）で
-行います。リポジトリーを複製して：
-
-```sh
-npm install
-npm run build
-```
-
-| 入口 | 続けて |
+| 入口 | 方法 |
 | --- | --- |
-| ブラウザーのページ | `npm run dev -w vastgrid-site` で `/ja/open/`（英語は `/open/`）を開く |
-| React コンポーネント | ワークスペースの `vastgrid-grid` とエンジンに依存する（React 19.3 以降） |
-| コマンドライン | `npx vastgrid <ファイルまたはフォルダー>…`（CSV と TSV を保存するには `--save`） |
-| VS Code | `code --extensionDevelopmentPath="$PWD/packages/vscode" <フォルダー>`、または `npm run package -w vastgrid-vscode` が作るパッケージを入れる（VS Code 1.100 以降） |
-| MCP App | `node packages/mcp/dist/cli.js <フォルダー>` をホストの MCP サーバーに加える |
-| ノートブック | `pip install ./packages/notebook/python`（Python 3.11 以降。JupyterLab 4 または Notebook 7） |
+| ブラウザーのページ | https://vastgrid.yhay81.com/ja/open/ を開く（英語は `/open/`）。入れるものはありません |
+| React コンポーネント | `npm install vastgrid vastgrid-js`。サーバーのエンジンには `vastgrid-duckdb`（React 19.3 以降） |
+| コマンドライン | `npx vastgrid-cli <ファイルまたはフォルダー>…`（CSV と TSV を保存するには `--save`） |
+| VS Code | Marketplace の拡張機能 `yhay81.vastgrid-vscode`、または GitHub のリリースの `.vsix`（VS Code 1.100 以降） |
+| MCP App | `npx -y vastgrid-mcp <フォルダー>` をホストの MCP サーバーに加える |
+| ノートブック | `pip install vastgrid`（Python 3.11 以降。JupyterLab 4 または Notebook 7） |
+
+2.0.0 を出すまでは、プレリリースを `vastgrid@next`（ほかの npm パッケージも `@next`）、`pip install --pre
+vastgrid`、GitHub のリリースの `.vsix` で入れます。リポジトリーを複製したときは、`npm install` と `npm run build` の
+あと、ページは `npm run dev -w vastgrid-site`、コマンドは `node packages/cli/dist/cli.js` と
+`node packages/mcp/dist/cli.js`、VS Code は `code --extensionDevelopmentPath="$PWD/packages/vscode" <フォルダー>`
+または `npm run package -w vastgrid-vscode` が作るパッケージ、ノートブックは `pip install ./packages/notebook/python`
+です。
 
 ## どの入口も同じグリッド
 
-どの入口も、トランスポートの上に `createGridStore`（`vastgrid-grid/core`）でストアを作り、`<DataGrid store={store}>` で
+どの入口も、トランスポートの上に `createGridStore`（`vastgrid/core`）でストアを作り、`<DataGrid store={store}>` で
 示します。グリッドは自分がどの入口にいるかを知りません。入口が React の API に求めたこと、確かめたこと：
 
 - **トランスポート**　`workerTransport` は Web Worker に限らず、`postMessage` とメッセージのイベントを持つもの

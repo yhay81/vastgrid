@@ -87,7 +87,7 @@ JavaScript の配列に全行を持つグリッドは、数百万セルを超え
 
 ### 4. エンジンの選び方（この調査での実測）
 
-DuckDB 1.5（`@duckdb/node-api` 1.5.6）で、生成したデータを使って測りました（[計測スクリプト](../packages/duckdb/bench/run.ts)）。
+DuckDB 1.5（`@duckdb/node-api` 1.5.6）で、生成したデータを使って測りました（[計測スクリプト](https://github.com/yhay81/vastgrid/blob/d392313fc0a2d3662b0306b0278119c8b731bc10/packages/duckdb/bench/run.ts)）。
 
 | 処理 | 実測 |
 | --- | --- |

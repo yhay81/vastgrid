@@ -1,21 +1,61 @@
-# vastgrid-duckdb-engine
+# vastgrid-duckdb
 
-The DuckDB engine of vastgrid v2 for Node.js: it opens huge CSV, TSV, Parquet and JSON Lines files and Excel
-workbooks, and answers the messages of the [v2 specification](../../docs/v2-spec.md) (§8) with Arrow blocks. It is
-a draft and is not published yet; when v1 is removed, it becomes `vastgrid-duckdb`.
+The DuckDB engine of [vastgrid](https://www.npmjs.com/package/vastgrid) for Node.js. It opens huge CSV, TSV, Parquet
+and JSON Lines files and Excel workbooks, writes their cells, saves CSV and TSV files with every byte that was not
+edited kept as it is, follows files that change on disk, and exports views. It answers the grid's messages
+([§8 of the specification](https://github.com/yhay81/vastgrid/blob/main/docs/v2-spec.md#8-messages)) with Arrow
+blocks, over HTTP or in the same process.
+
+```sh
+npm install vastgrid-duckdb
+```
+
+It needs Node.js 20 or later on a platform that DuckDB ships a binary for: Linux (x64, arm64; glibc and musl), macOS
+(x64, arm64) or Windows (x64, arm64).
 
 ```ts
+// server.ts
 import { createServer } from "node:http";
-import { createHttpHandler, DuckDBEngine } from "vastgrid-duckdb-engine";
+import { createHttpHandler, DuckDBEngine } from "vastgrid-duckdb";
 
-const engine = await DuckDBEngine.create({ allowedDirectories: ["/data"], tempDirectory: "/tmp/vastgrid" });
+const engine = await DuckDBEngine.create({
+  allowedDirectories: ["/srv/data"],
+  tempDirectory: "/tmp/vastgrid",
+  saveFiles: true, // lets the grid save edited CSV and TSV files
+});
 
-// In the same process, as `localTransport(engine)` of vastgrid-grid does:
-const answer = await engine.handle({ v: 2, id: 1, op: "open", ref: "sales.parquet" });
-
-// Over HTTP: requests are POSTs at /api, events are Server-Sent Events at /api/events (§8.8).
+// Requests are POSTs at /api, events are Server-Sent Events at /api/events, exports are downloaded at /api/exports/.
 createServer(createHttpHandler(engine, { path: "/api" })).listen(8080);
 ```
+
+```tsx
+// In the browser
+import { DataGrid, httpTransport } from "vastgrid";
+import "vastgrid/styles.css";
+
+const transport = httpTransport("/api", { events: "/api/events" });
+
+export function Sales() {
+  return <DataGrid transport={transport} table="sales.parquet" style={{ height: 600 }} />;
+}
+```
+
+The handler is also middleware for servers that pass `next` (Express, Connect, Vite). In the same process,
+`localTransport(engine)` of `vastgrid/core` calls `engine.handle` directly.
+`findTableFiles(folders, limit)` lists the table files of folders, and `dispose()` stops DuckDB and removes its
+temporary folder.
+
+| Option | What it is |
+| --- | --- |
+| `allowedDirectories` | the folders whose files may be opened; DuckDB reads no other files, for good |
+| `tempDirectory` | where the engine keeps its database, spilled data and converted files, removed by `dispose` |
+| `resolve(ref)` | the file that a table's name means, where a host checks that it may be opened; relative names are inside the first allowed folder by default |
+| `saveFiles` | lets `save` write written cells into CSV and TSV files (off by default: the engine then never changes a file) |
+| `watchFiles` | follows the files of open tables (on by default) |
+| `resolveTarget(target)` | where an export may be written on the server; without it, the engine keeps each export for the host to serve |
+| `memoryLimit`, `threads`, `maxTempDirectorySize` | DuckDB's resources (see below) |
+
+## What it does
 
 - **Opening.** Parquet files are read in place, by their row numbers, so that any block of a 100-million-row file
   reads in tens of milliseconds. Delimited and JSON files and the sheets of workbooks are loaded into a database
@@ -23,8 +63,8 @@ createServer(createHttpHandler(engine, { path: "/api" })).listen(8080);
   `view` events tell when the table has loaded. Text encodings (UTF-16, Shift_JIS, EUC-JP and others) are found
   and converted, and files whose types change late fall back to wider types.
 - **Reading.** `rows`, `locate`, `summarize` and `find` read the views of plans that
-  [`vastgrid-sql`](../sql) compiles. Every column is read as its logical type (§2.1), and a view without
-  `where`, `aggregate` and `sort` is read by row IDs. Other views save their total order once and read ranges of
+  [`vastgrid-sql`](https://www.npmjs.com/package/vastgrid-sql) compiles. Every column is read as its logical type
+  (§2.1), and a view without `where`, `aggregate` and `sort` is read by row IDs. Other views save their total order once and read ranges of
   positions, including for selection summaries, finding and locating rows. Small inputs keep all output columns;
   inputs above 20 million rows keep only source row IDs in view order (aggregates always keep their output).
 - **Isolation.** DuckDB reads only files inside the allowed folders, by their real location, and loads no
@@ -75,7 +115,8 @@ createServer(createHttpHandler(engine, { path: "/api" })).listen(8080);
 | Excel (`.xlsx`) | 1,048,575 rows and 16,384 columns (`export_too_large`), 32,767 characters a cell, 4 GB; text is never written as a formula |
 
 `node --conditions=vastgrid-source --import tsx packages/duckdb-engine/bench/open.ts` measures opening and
-reading the files of the benches; [`examples/files`](../../examples/files) shows them in v2's grid.
+reading the files of the benches; [`examples/files`](https://github.com/yhay81/vastgrid/tree/main/examples/files)
+shows them in the grid.
 
 ## Limits and cleanup
 
@@ -94,5 +135,7 @@ engine removes its entire session folder, and the next start removes folders lef
 database blocks can be reused; the database file does not necessarily shrink. The view count and spill limits
 are not a byte quota on the whole session folder; hosts that require one should provision a filesystem quota.
 
-The repeatable sort/filter benchmark is [`bench/views.ts`](bench/views.ts); its before/after results and resource
-measurements are in [v2-views-benchmark.md](../../docs/v2-views-benchmark.md).
+The repeatable sort/filter benchmark is
+[`bench/views.ts`](https://github.com/yhay81/vastgrid/blob/main/packages/duckdb-engine/bench/views.ts); its
+results and resource measurements are in
+[v2-views-benchmark.md](https://github.com/yhay81/vastgrid/blob/main/docs/v2-views-benchmark.md).
