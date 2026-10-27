@@ -115,11 +115,14 @@ There is no package for the web (vscode.dev) nor for 32-bit Arm Linux: DuckDB's 
 the packages of macOS, Linux and Windows and tests each in VS Code (below); they are kept as the workflow's
 artifacts.
 
-A release (CONTRIBUTING.md, "Releasing") makes the package of every target of the table and attaches them to the
-GitHub release; for a version that is not a pre-release, it publishes them to the Marketplace with `vsce publish
+A release (CONTRIBUTING.md, "Releasing") makes packages for its configured targets and attaches them to the
+GitHub release; for a version that is not a pre-release with Marketplace publishing enabled, it publishes them with `vsce publish
 --packagePath`, and the Marketplace serves each platform its package. To try a package of a release by hand:
 `code --install-extension vastgrid-vscode-<version>-<target>.vsix`, and `VASTGRID_VSIX=<package>.vsix npm run
 test:vscode -w vastgrid-vscode` runs the suite on it.
+
+Version 0.2.0 ships seven VSIX files on [GitHub](https://github.com/yhay81/vastgrid/releases/tag/v0.2.0): Linux
+x64/arm64, Alpine x64, macOS x64/arm64 and Windows x64/arm64. Its Marketplace listing is deferred.
 
 ## Testing
 

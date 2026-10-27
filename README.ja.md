@@ -90,7 +90,7 @@ export function Orders() {
 | [`vastgrid-sql`](packages/sql) | プランを DuckDB の SQL に |
 | [`vastgrid-cli`](packages/cli) | `npx vastgrid-cli <ファイル>`: このコンピューターの DuckDB で読んだファイルをブラウザーのグリッドで |
 | [`vastgrid-mcp`](packages/mcp) | MCP App つきの MCP サーバー |
-| [`vastgrid-vscode`](packages/vscode) | VS Code の拡張機能（Marketplace） |
+| [`vastgrid-vscode`](packages/vscode) | VS Code の拡張機能。0.2.0 は [GitHub Release](https://github.com/yhay81/vastgrid/releases/tag/v0.2.0) の VSIX から導入 |
 | [`vastgrid`（Python）](packages/notebook/python) | Jupyter のウィジェット（PyPI） |
 
 npm のパッケージは同じ版でそろえて公開します。`vastgrid` には React 19.3 以降（省略できる peer 依存で、サーバーは React なしで

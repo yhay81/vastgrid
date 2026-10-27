@@ -54,6 +54,8 @@ that was not edited kept. [From 0.1 to 0.2](docs/migrating-from-0.1.md) is the m
 
 ### Fixes
 
+- `vastgrid`: loading-completion events received before the table's open response are retained, so sorting and
+  filtering do not wait indefinitely when an HTTP event overtakes its response.
 - `vastgrid`: grids sharing a worker transport keep their requests and tables separate; reading, editing and
   cancelling in one grid no longer reaches another grid's request. Clients of one engine use distinct request IDs.
 - `vastgrid-duckdb`: malformed export URLs return 400, and a connection closed during a request body no longer
@@ -64,8 +66,11 @@ that was not edited kept. [From 0.1 to 0.2](docs/migrating-from-0.1.md) is the m
 
 ### Release
 
-- One tag releases every package: the npm packages with provenance from GitHub Actions, the Python package on
-  PyPI and the VS Code extension on the Marketplace (its packages for each platform are on the GitHub release).
+- One tag builds every package: the npm packages, the Python package on PyPI and the VS Code extension's VSIX
+  files for each platform on the GitHub release. Version 0.2.0's Marketplace listing is deferred; install its
+  platform-specific VSIX from GitHub. The release workflow supports explicitly disabling Marketplace publication.
+  Existing npm packages use trusted publishing with provenance; new package names require an initial manual
+  publication before their trusted publisher can be configured (CONTRIBUTING.md).
   Pre-releases are `0.2.0-next.N` on npm's `next` tag and `0.2.0rcN` on PyPI (CONTRIBUTING.md).
   `npm run pack-check` tries the packed packages as their READMEs show them before each release.
 

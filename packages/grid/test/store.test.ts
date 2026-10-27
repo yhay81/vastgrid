@@ -352,6 +352,47 @@ test("a plan chosen while the table loads waits until ready when partialViews is
   disconnect();
 });
 
+for (const initialPlan of [false, true]) {
+  test(`a loading table's ready event before its open response unblocks ${initialPlan ? "the initial plan" : "later sorting"}`, async (t) => {
+    const engine = fakeEngine(numbers(100));
+    const original = engine.handle.bind(engine);
+    engine.handle = async (message, options) => {
+      const answer = (await original(message, options)) as { result: Record<string, unknown> };
+      if ((message as { op: string }).op === "open") {
+        // HTTP events and responses travel independently. The event can reach the store before the response
+        // names its table, even when the event stream connected before the open request.
+        engine.send({
+          v: 2,
+          event: "progress",
+          table: answer.result.table,
+          status: "ready",
+          progress: 1,
+          readableRows: 100,
+          rowCount: 100,
+        });
+        answer.result = { ...answer.result, status: "loading", rowCount: null };
+      }
+      return answer;
+    };
+    const keys = [{ column: "id", direction: "desc" as const }];
+    const store = createGridStore({
+      transport: localTransport(engine),
+      table: "numbers",
+      ...(initialPlan ? { document: { plan: { sort: keys } } } : {}),
+    });
+    t.after(store.connect());
+    store.setViewport({ top: 0, rows: 20, columns: ["id"] });
+    if (!initialPlan) {
+      await until(store, (snapshot) => snapshot.view !== null);
+      assert.deepEqual(await store.dispatch({ command: "sort.set", keys }), { ok: true });
+    }
+    await until(store, () => store.cell(0, "id") === 99);
+    assert.equal(store.getSnapshot().table?.status, "ready");
+    assert.equal(store.getSnapshot().pending, null);
+    assert.equal(store.getSnapshot().error, null);
+  });
+}
+
 test("a view that fails to read keeps the one on screen with the failure, until a view comes", async () => {
   const engine = fakeEngine(numbers(100));
   const failing = {

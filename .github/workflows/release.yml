@@ -127,8 +127,8 @@ jobs:
   vscode:
     name: Publish to the VS Code Marketplace
     needs: build
-    # The Marketplace takes only major.minor.patch: pre-releases are on the GitHub release only.
-    if: ${{ !contains(github.ref_name, '-') }}
+    # The Marketplace takes only major.minor.patch. Explicitly disabling it still ships the VSIX files on GitHub.
+    if: ${{ !contains(github.ref_name, '-') && vars.VSCODE_MARKETPLACE_ENABLED != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: vscode
@@ -154,7 +154,7 @@ jobs:
   release:
     name: Create the GitHub release
     needs: [npm, pypi, vscode]
-    # Stable releases are complete only after all three registries accept their packages. Pre-releases skip VS Code.
+    # Require each enabled registry. Pre-releases and explicitly disabled Marketplace publishing use GitHub VSIX files.
     if: ${{ always() && needs.npm.result == 'success' && needs.pypi.result == 'success' && (needs.vscode.result == 'success' || needs.vscode.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10

@@ -325,10 +325,17 @@ export class GridStore {
     const client = new GridClient(this.options.transport);
     this.client = client;
     this.opened = false;
-    const stopEvents = client.subscribe((event) => this.onEvent(event, connection));
+    let connected = true;
+    // Events can arrive before the open response names the table (HTTP's streams are independent). Replay
+    // them against that response, so an early ready event cannot leave plans waiting for loading forever.
+    let openingEvents: Record<string, unknown>[] | null = [];
+    const stopEvents = client.subscribe((event) => {
+      if (!connected || connection !== this.connection) return;
+      if (openingEvents) openingEvents.push(event);
+      else this.onEvent(event, connection);
+    });
     if (this.snapshot.status === "idle" || this.snapshot.status === "error") this.publish({ status: "opening" });
     let tableId: string | null = null;
-    let connected = true;
     const close = (id: string) => void client.request("close", { table: id }).catch(() => {});
     void (async () => {
       try {
@@ -344,7 +351,11 @@ export class GridStore {
         tableId = info.table;
         this.opened = true;
         this.opening(info);
+        const events = openingEvents;
+        openingEvents = null;
+        for (const event of events ?? []) this.onEvent(event, connection);
       } catch (error) {
+        openingEvents = null;
         if (connected && !isCancelled(error)) {
           this.publish({ status: "error" });
           this.fail(asGridError(error));
@@ -354,6 +365,7 @@ export class GridStore {
     return () => {
       if (!connected) return;
       connected = false;
+      openingEvents = null;
       stopEvents();
       if (tableId !== null) close(tableId);
       if (connection !== this.connection) return;

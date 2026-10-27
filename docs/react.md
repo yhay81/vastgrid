@@ -169,6 +169,8 @@ tells the person why. Failures that belong to no command (a read that fails, a r
 - `connect()` opens the table (`open`, §8.2), follows its events and starts reading; the function it returns
   undoes all of it and closes the table. A store MUST be able to connect again after it disconnects, since
   Strict Mode runs effects twice in development, on mount and, since React 19.3, during hydration.
+- Events that arrive before the `open` response MUST be retained until that response identifies the table, then
+  applied to it in order. A loading-completion event can arrive first over HTTP's independent streams.
 - A disconnected store keeps its last snapshot and reads nothing.
 
 ### 4.4 Engines and transports

@@ -133,6 +133,11 @@ pre-release, the extension to the Marketplace; and creates the GitHub release wi
 notes and the `.vsix` and Python files attached, marked as a pre-release for `-next` versions. If a run fails
 half-way, run it again: versions already published are skipped.
 
+When Marketplace publishing is unavailable, set the repository variable `VSCODE_MARKETPLACE_ENABLED` to `false`
+before tagging. The workflow then publishes npm, PyPI and the GitHub release with its VSIX files, and skips the
+Marketplace job. Document this in the release notes and installation instructions. This is the mode used for
+0.2.0; remove the variable or set it to `true` once the publisher and `VSCE_PAT` are configured.
+
 ### From pre-releases to 0.2.0
 
 1. Publish `0.2.0-next.1` as above, and try it as users will: `npm install vastgrid@next vastgrid-js@next`, `npx
