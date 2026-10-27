@@ -63,6 +63,15 @@ async function call(name: string, args: Json) {
   return { error: answer.isError === true, content: (answer.structuredContent ?? {}) as Json };
 }
 
+/** Waits up to 4 s for `done`, which a store's reads make true; a slow machine takes longer than a fixed pause. */
+async function until(done: () => boolean, what: string) {
+  for (let attempt = 0; attempt < 400; attempt++) {
+    if (done()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail(`Waited in vain for ${what}.`);
+}
+
 async function open(document?: Json) {
   const opened = await call("open_grid", { file: "orders.csv", ...(document ? { document } : {}) });
   assert.equal(opened.error, false, JSON.stringify(opened.content));
@@ -154,12 +163,12 @@ test("the agent's commands reach the App, and the person's changes reach the age
     const answer = await grid.take();
     assert.deepEqual(answer.document?.plan?.sort, [{ column: "price", direction: "desc" }]);
     await grid.ready();
-    grid.store.ensure(0, 4, ["id"]);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    assert.deepEqual(
-      [0, 1, 2, 3].map((row) => grid.store.cell(row, "id")),
-      [2, 3, 1, 4],
-    );
+    const ids = () => [0, 1, 2, 3].map((row) => grid.store.cell(row, "id"));
+    await until(() => {
+      grid.store.ensure(0, 4, ["id"]);
+      return ids().every((id) => id !== undefined);
+    }, "the sorted rows");
+    assert.deepEqual(ids(), [2, 3, 1, 4]);
     const rows = await call("grid_rows", { grid: opened.grid, columns: ["id", "price"] });
     assert.deepEqual((rows.content as { rows: unknown[] }).rows, [
       [2, 30],
@@ -278,10 +287,10 @@ test("the agent writes cells with the commands of the grid, and the App reads wh
     const answer = await grid.take();
     assert.ok(answer.events.some((event) => (event as Json).event === "changed"));
     assert.ok(answer.session?.history?.undo.length);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    grid.store.ensure(0, 1, ["price"]);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    assert.equal(grid.store.cell(0, "price"), 99.5);
+    await until(() => {
+      grid.store.ensure(0, 1, ["price"]);
+      return grid.store.cell(0, "price") === 99.5;
+    }, "the written value in the App's grid");
     // Undo goes through the same path.
     assert.equal(
       (await call("grid_command", { grid: opened.grid, command: { command: "history.undo" } })).error,
