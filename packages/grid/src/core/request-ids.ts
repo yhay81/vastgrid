@@ -1,6 +1,6 @@
 /**
- * Ids of requests (§8.1 of the specification) for several clients of one engine, such as the grids of a server or
- * the webviews of an editor. Each client chooses ids of its own, which the engine would mix up (a `cancel` of one
+ * Ids of requests (§8.1 of the specification) for several clients of one engine, such as the Apps and the grids of
+ * an MCP server or the webviews of an editor. Each client chooses ids of its own, which the engine would mix up (a `cancel` of one
  * client's request would stop another's): the requests of each client get ids that are unique in the engine, and
  * the answers get the client's ids back.
  */

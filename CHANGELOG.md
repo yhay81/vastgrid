@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `vastgrid-mcp` (unreleased v2): each App of a grid and each `grid_rows` keep their request ids apart. The Apps of
+  a grid and the agent's reads shared one client of the engine, so that an App's `cancel` of its request 1 could
+  stop another App's request 1, and an App could not cancel a request while the agent read rows. `Grid` takes the
+  server's `RequestIds` and gives each of them a client of its own.
 - `vastgrid-cli` (unreleased v2): one command opens files in v2's grid in the browser. `vastgrid [--save]
   [<file or folder>…]` starts DuckDB in Node.js and a page of one HTML file, on 127.0.0.1, and opens it in the
   browser; the page lists the files named and the table files of the folders named, and opens no others. The

@@ -78,9 +78,9 @@ An App that loads again (the person reloads the conversation, or scrolls back to
 gets the whole state of the grid. An App whose server lost the grid (it started again) opens the file again with
 the document it shows.
 
-The engine's requests are numbered by each client (§8.1). The server gives the requests of every client, the
-App's and the grid's own, ids that are unique in the engine and gives the answers the client's ids back, so that a
-`cancel` of one client never stops another's request.
+The engine's requests are numbered by each client (§8.1). The server gives the requests of every client (each App,
+each `grid_rows` and the grid's own store) ids that are unique in the engine and gives the answers the client's ids
+back, so that a `cancel` of one client never stops another's request.
 
 ## The page
 

@@ -69,8 +69,12 @@ function eventKey(event: Json) {
   return `${String(event.event)}\u0000${String(event.table)}\u0000${String(event.hash ?? "")}`;
 }
 
-/** An App that shows a grid: the tables it opened through the engine, and the events of those tables. */
+/**
+ * An App that shows a grid: the engine under the App's own request ids, the tables it opened through the engine,
+ * and the events of those tables.
+ */
 interface Client {
+  readonly engine: Handler;
   readonly tables: Set<string>;
   readonly events: Map<string, Json>;
   lastSeen: number;
@@ -116,7 +120,7 @@ export class Grid {
     readonly id: string,
     readonly file: string,
     readonly store: GridStore,
-    private readonly appEngine: Handler,
+    private readonly ids: RequestIds,
     private readonly wait: number,
   ) {
     this.disconnect = store.connect();
@@ -141,7 +145,7 @@ export class Grid {
   private client(id: string): Client {
     let client = this.clients.get(id);
     if (!client) {
-      client = { tables: new Set(), events: new Map(), lastSeen: Date.now(), wake: null };
+      client = { engine: this.ids.client(), tables: new Set(), events: new Map(), lastSeen: Date.now(), wake: null };
       this.clients.set(id, client);
     }
     client.lastSeen = Date.now();
@@ -257,7 +261,7 @@ export class Grid {
     const start = options.start ?? 0;
     const count = Math.min(options.count ?? 50, ROWS_LIMIT);
     const columns = options.columns ?? snapshot.displayed.map(({ column }) => column.name);
-    const client = new GridClient(localTransport(this.appEngine));
+    const client = new GridClient(localTransport(this.ids.client()));
     const answer = await client.request<{
       start: number;
       end: number;
@@ -294,7 +298,7 @@ export class Grid {
   /** Answers a request message of an App (§8), and keeps the tables it opens for their events. */
   async message(clientId: string, message: unknown, signal?: AbortSignal): Promise<unknown> {
     const client = this.client(clientId);
-    const answer = (await this.appEngine.handle(message, { signal })) as Json;
+    const answer = (await client.engine.handle(message, { signal })) as Json;
     const op = (message as Json | null)?.op;
     const result = answer?.result as Json | undefined;
     if ((op === "open" || op === "reload") && typeof result?.table === "string") client.tables.add(result.table);
@@ -383,7 +387,7 @@ export class Grids {
       ...(options.sheet === undefined ? {} : { open: { sheet: options.sheet } }),
       ...(document ? { document } : {}),
     });
-    const grid = new Grid(id, file, store, this.ids.client(), this.options.wait ?? 20_000);
+    const grid = new Grid(id, file, store, this.ids, this.options.wait ?? 20_000);
     try {
       await grid.settled(signal);
     } catch (error) {
