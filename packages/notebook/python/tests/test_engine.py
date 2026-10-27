@@ -161,6 +161,42 @@ def test_files_of_every_format(engine: Engine, tmp_path: Path) -> None:
         assert info["capabilities"]["export"]["delivery"] == "data"
 
 
+def test_csv_files_with_line_breaks_in_quotes_keep_every_record(engine: Engine, tmp_path: Path) -> None:
+    client = Client(engine)
+
+    # Records with a line break in quotes now and then, beyond the rows that DuckDB's sniffer samples.
+    def records(count: int) -> str:
+        return "\n".join(
+            f'{i},"a{i}",{chr(34) + "x" + chr(10) + "y" + chr(34) if i % 100 == 0 else "z"}' for i in range(count)
+        )
+
+    files = [
+        # The same fields in every record: read without padding.
+        ("even.csv", f"id,name,note\n{records(30_000)}", 30_000, [29_999, "a29999", "z"]),
+        # A short record late in the file: read again with padding.
+        ("short-late.csv", f"id,name,note\n{records(30_000)}\n7,b", 30_001, [7, "b", None]),
+        # Lines before the header and a short first record, which only padding reads as records.
+        ("preamble.csv", f"Sales report\nmade 2026\n\nid,name,note\n{records(3_000)}", 3_002, ["2999", "a2999", "z"]),
+        ("short-early.csv", f"id,name,note\n1,a\n{records(3_000)}", 3_001, [2_999, "a2999", "z"]),
+    ]
+    for name, text, row_count, last in files:
+        (tmp_path / name).write_text(text, "utf-8")
+        engine.add(name, Source(path=str(tmp_path / name), format="csv"))
+        info = client.result("open", ref=name)
+        assert info["status"] == "ready" and info["rowCount"] == row_count, name
+        result = client.result(
+            "rows",
+            table=info["table"],
+            revision=info["revision"],
+            plan={},
+            start=row_count - 1,
+            end=row_count,
+            columns=[column["name"] for column in info["columns"]],
+        )
+        block = pa.ipc.open_stream(result["block"]["bytes"]).read_all()
+        assert [column[0].as_py() for column in block.columns] == last, name
+
+
 def test_sheets_of_a_workbook(engine: Engine, tmp_path: Path) -> None:
     client = Client(engine)
     path = tmp_path / "book.xlsx"

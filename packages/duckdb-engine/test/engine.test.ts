@@ -85,6 +85,28 @@ test("loads a CSV with types, quotes and line breaks (§2.1)", async () => {
   assert.equal(rows.view.rowCountExact, true);
 });
 
+test("CSV files with line breaks in quotes keep every record, padded or not (§2.1)", async () => {
+  // Records with a line break in quotes now and then, beyond the rows that DuckDB's sniffer samples.
+  const records = (count: number) =>
+    Array.from({ length: count }, (_, i) => `${i},"a${i}",${i % 100 === 0 ? '"x\ny"' : "z"}`).join("\n");
+  const files: [string, string, number, unknown[]][] = [
+    // The same fields in every record: read without padding.
+    ["even.csv", `id,name,note\n${records(30_000)}`, 30_000, [29_999, "a29999", "z"]],
+    // A short record late in the file: read again with padding.
+    ["short-late.csv", `id,name,note\n${records(30_000)}\n7,b`, 30_001, [7, "b", null]],
+    // Lines before the header and a short first record, which only padding reads as records.
+    ["preamble.csv", `Sales report\nmade 2026\n\nid,name,note\n${records(3_000)}`, 3_002, ["2999", "a2999", "z"]],
+    ["short-early.csv", `id,name,note\n1,a\n${records(3_000)}`, 3_001, [2_999, "a2999", "z"]],
+  ];
+  for (const [name, text, rowCount, last] of files) {
+    await writeFile(path.join(workspace, name), text);
+    const info = await client.open(name);
+    assert.equal(info.status, "ready", info.error);
+    assert.equal(info.rowCount, rowCount, name);
+    assert.deepEqual((await client.rows(info, { start: rowCount - 1, end: rowCount })).rows, [last], name);
+  }
+});
+
 test("reads BOM-marked UTF-16 CSV in either byte order", async () => {
   const text = "﻿名前,数\n東京,1\n大阪,2\n";
   for (const encoding of ["utf-16le", "utf-16be"] as const) {

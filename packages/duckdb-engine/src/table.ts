@@ -130,8 +130,12 @@ export class LoadedTable {
   loadedSource: string;
   /** The reader that loaded the table (`readerFunction`): 2 for delimited files read as text. */
   attempt = 0;
-  /** Delimited files: whether DuckDB reads them in one thread, which it needs for quoted line breaks. */
-  sequential = false;
+  /**
+   * Delimited files: how DuckDB reads them. `padded` fills short records with nulls, in parallel. DuckDB 2.0 does
+   * that only in one thread for files with line breaks in quotes (`sequential`), so such files whose records all
+   * have the same fields are read without padding, in parallel (`plain`).
+   */
+  reading: DelimitedReading = "padded";
   /** The quoted name of the session's table that holds the loaded rows; null for a Parquet file read in place. */
   base: string | null = null;
   private readonly objects: string[] = [];
@@ -260,7 +264,7 @@ export class LoadedTable {
     }
   }
 
-  private readerFunction(attempt: number, workbook: string) {
+  private readerFunction(attempt: number, workbook: string, reading = this.reading) {
     switch (this.format) {
       case "xlsx":
         return workbook;
@@ -273,17 +277,19 @@ export class LoadedTable {
           ? "read_json_auto($1, format='newline_delimited')"
           : "read_json_auto($1, format='newline_delimited', sample_size=-1)";
       default:
-        return `read_csv($1${this.delimitedOptions(attempt)})`;
+        return `read_csv($1${this.delimitedOptions(attempt, reading)})`;
     }
   }
 
   /** The options of `read_csv` for an attempt, which `sniff_csv` also takes to tell how the file was read. */
-  delimitedOptions(attempt = this.attempt): string {
+  delimitedOptions(attempt = this.attempt, reading = this.reading): string {
+    // Text without strict quotes is read with padding: unpadded, such a record would fail the read.
+    if (reading === "plain" && attempt === 2) reading = "sequential";
+    let options = this.format === "tsv" ? ", delim='\\t'" : "";
     // Without null_padding, DuckDB's sniffer may settle on the last consistent part of a file whose rows have
-    // different numbers of fields and silently skip the rest.
-    let options = `${this.format === "tsv" ? ", delim='\\t'" : ""}, null_padding=true`;
-    // DuckDB 2.0 reads with null_padding in parallel only files without line breaks in quotes (`refusesParallel`).
-    if (this.sequential) options += ", parallel=false";
+    // different numbers of fields and silently skip the rest (`readsPlain` rules that out).
+    if (reading !== "plain") options += ", null_padding=true";
+    if (reading === "sequential") options += ", parallel=false";
     if (attempt === 0) return options;
     // Types sniffed from the beginning did not hold for the whole file: sniff all rows.
     if (attempt === 1) return `${options}, sample_size=-1`;
@@ -311,7 +317,7 @@ export class LoadedTable {
         this.format === "csv" || this.format === "tsv" ? 3 : this.format === "json" || this.format === "ndjson" ? 2 : 1;
       for (let attempt = 0; attempt < attempts; attempt++) {
         try {
-          await this.sequentialOnRefusal(() => this.loadTable(source, attempt, workbook));
+          await this.readDelimited(source, () => this.loadTable(source, attempt, workbook));
           if (attempt === 2) this.notes.push("all_varchar");
           return;
         } catch (error) {
@@ -401,29 +407,55 @@ export class LoadedTable {
 
   private async loadPreview(source: string, workbook: string) {
     try {
-      await this.sequentialOnRefusal(() => this.readPreview(source, workbook));
+      await this.readPreview(source, workbook);
     } catch (error) {
       // The full load reports the error; the preview is only a head start.
       this.options.log?.(`The preview of ${this.path} failed`, error);
     }
   }
 
-  /** Runs a read of a delimited file again in one thread when DuckDB refuses to read it in parallel. */
-  private async sequentialOnRefusal(read: () => Promise<void>) {
+  /**
+   * Runs a read of a delimited file again when DuckDB refuses to pad it in parallel: without padding when that reads
+   * the same records (`readsPlain`), and in one thread when it does not or a record has other fields.
+   */
+  private async readDelimited(source: string, read: () => Promise<void>): Promise<void> {
     try {
       await read();
     } catch (error) {
-      if (this.sequential || !refusesParallel(error)) throw error;
-      this.sequential = true;
+      if (this.reading === "padded" && refusesParallel(error)) {
+        this.reading = (await this.readsPlain(source)) ? "plain" : "sequential";
+        return this.readDelimited(source, read);
+      }
+      if (this.reading !== "plain" || !unevenRecords(error)) throw error;
+      this.reading = "sequential";
       await read();
     }
   }
 
+  /**
+   * Whether DuckDB reads a file without padding as it does with: its sniffer finds the same dialect, skipped lines,
+   * header and columns both ways. A record with other fields later in the file then fails the read.
+   */
+  private async readsPlain(source: string): Promise<boolean> {
+    return this.session.withConnection(undefined, async (connection) => {
+      const sniff = async (reading: DelimitedReading) => {
+        const reader = await connection.runAndReadAll(
+          `SELECT Delimiter, Quote, Escape, NewLineDelimiter, Comment, SkipRows, HasHeader, Columns FROM sniff_csv($1${this.delimitedOptions(0, reading)})`,
+          [source],
+        );
+        return JSON.stringify(reader.getRowsJS(), (_, value) => (typeof value === "bigint" ? String(value) : value));
+      };
+      return (await sniff("sequential")) === (await sniff("plain"));
+    });
+  }
+
   private async readPreview(source: string, workbook: string) {
     await this.session.withConnection(undefined, async (connection) => {
+      // In one thread: DuckDB 2.0 refuses to pad files with line breaks in quotes in parallel, and the preview's
+      // rows are few.
       const preview = await this.createTable(
         connection,
-        this.readerFunction(0, workbook),
+        this.readerFunction(0, workbook, "sequential"),
         source,
         this.options.previewRows,
       );
@@ -495,7 +527,15 @@ export class LoadedTable {
   }
 }
 
+/** How DuckDB reads a delimited file (`LoadedTable.reading`). */
+type DelimitedReading = "padded" | "plain" | "sequential";
+
 /** Whether DuckDB refused to read a delimited file in parallel, with null_padding, because it has line breaks in quotes. */
 function refusesParallel(error: unknown) {
   return /parallel scanner does not support null_padding/i.test(errorMessage(error));
+}
+
+/** Whether a read without padding failed on a record with fewer or more fields than the header. */
+function unevenRecords(error: unknown) {
+  return /expected number of columns/i.test(errorMessage(error));
 }

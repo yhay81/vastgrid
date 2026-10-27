@@ -1556,7 +1556,8 @@ DuckDB 2.0 through `@duckdb/node-api` 2.0.0-r.1, on 2026-10-27 (first checked wi
 | `COPY (…) TO … (FORMAT csv)` of `0.5::DECIMAL(1,1)`; `(FORMAT json, ARRAY true)` of a column of `'NaN'::DOUBLE`, of `0.1::FLOAT`, of `12.50::DECIMAL(10,2)` | `.5`; `NaN` (not JSON), `0.10000000149011612`, `12.5`: `vastgrid-duckdb` selects such decimals with `textSql` for CSV and TSV, and writes JSON from the rows itself (`writeJson` of `vastgrid-spec/export`), as `vastgrid-js` does (§8.2) |
 | `greatest(NULL, 0)`, `left('abc', NULL)` | 0, NULL: `greatest` leaves nulls out, so the counts of `left`, `right` and `substr` are not bounded with it (§3.6) |
 | `INTERVAL '1 month -1 day' = INTERVAL '29 days'`, `INTERVAL '1 month' = INTERVAL '30 days'` | true, true: intervals compare by their length (DuckDB 1.5: false, true, §3.1) |
-| `read_csv` with `null_padding=true` of a file with a line break in quotes | an error unless `parallel=false` (DuckDB 1.5 read it): `vastgrid-duckdb` reads such files again in one thread |
+| `read_csv` with `null_padding=true` of a file with a line break in quotes | an error unless `parallel=false` (DuckDB 1.5 read it), and in one thread a load of 735 MB takes 3.4 s against 0.9 s in parallel without `null_padding`. The engines read such a file without `null_padding` when `sniff_csv` finds the same dialect, skipped lines, header and columns with and without it, and in one thread otherwise, or when a record has other fields than the header (`Expected Number of Columns`) |
+| Preparing a read of 256 rows through the engine's views and its text cuts, then running it | about 2.6 ms (DuckDB 1.5: 1.2 ms); parsing alone takes 0.45 ms (0.04 ms). Run again as a prepared statement, it takes 1.2 ms: `vastgrid-duckdb` keeps the statements of its block reads prepared on each connection |
 
 Two behaviors of `@duckdb/node-api` 2.0.0-r.1 (and 1.5.6-r.1) matter to engines built on it:
 

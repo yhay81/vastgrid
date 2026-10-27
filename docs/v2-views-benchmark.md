@@ -50,23 +50,31 @@ Hosts requiring a total disk quota must provision one for `tempDirectory`. See t
 
 ## DuckDB 2.0
 
-2026-10-27, main `56a8aef`, the same machine and files, with `@duckdb/node-api` 2.0.0-r.1 against the same
-checkout on 1.5.6-r.1. The two ran in turn, three times each, on a busy machine (load average about 16), so both
-are slower than on 2026-10-25. Each number is the median of the three runs, in milliseconds; the READMEs and the
-site show the 2.0 column.
+2026-10-27, the same machine and files. The checkout of main `ae3feb0` on `@duckdb/node-api` 1.5.6-r.1 ran in
+turn with the changes accompanying this section on 2.0.0-r.1, three times each; each number is the median of the
+three runs, in milliseconds. The READMEs and the site show the 2.0 column.
 
 | File / plan | First rows 1.5.6 | First rows 2.0 | Deep reads p50 1.5.6 | Deep reads p50 2.0 | Built 1.5.6 | Built 2.0 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 100M Parquet / sort | 1,202 | 834 | 1,108 | 957 | 3,116 | 3,345 |
-| 100M Parquet / filter | 266 | 207 | 26 | 31 | | |
-| 735 MB CSV / sort | 57 | 63 | 4.4 | 6.3 | 1,699 | 1,445 |
-| 735 MB CSV / filter | 248 | 144 | 3.1 | 4.9 | | |
+| 100M Parquet / sort | 817 | 953 | 707 | 700 | 2,632 | 3,046 |
+| 100M Parquet / filter | 218 | 192 | 23 | 21 | | |
+| 735 MB CSV / sort | 54 | 55 | 3.5 | 4.0 | 1,145 | 869 |
+| 735 MB CSV / filter | 192 | 124 | 3.0 | 3.0 | | |
 
-The Parquet file's differences stay within what the runs spread over. The CSV file is slower on 2.0 in every run:
-`npm run bench` (`bench/open.ts`) gave 127 ms against 66 ms for its first rows, 5.6 s against 4.7 s for the whole
-load, and 4.8 ms against 3.4 ms for a block at a random place. Its notes have line breaks in quotes, which DuckDB 2.0
-reads with `null_padding` only in one thread. Peaks were 2.44 GB of RSS and 0.85 GB in the session folder on 2.0,
-2.37 GB and 0.83 GB on 1.5.6.
+`npm run bench` (`bench/open.ts`) gave, for the CSV file on 1.5.6 and 2.0: its first rows in 68 and 52 ms, the whole
+load in 3.7 and 1.8 s, and a block at a random place in 3.3 and 2.8 ms (Parquet: 23 and 19 ms). Peaks were 2.62 GB
+of RSS and 0.83 GB in the session folder on 1.5.6, 2.74 GB and 0.84 GB on 2.0.
+
+Before these changes, DuckDB 2.0 read the CSV file more slowly in every run (its first rows in 127 ms, the load in
+5.6 s, a block in 4.8 ms), for two reasons:
+
+- DuckDB 2.0 refuses `null_padding` in parallel for a file with line breaks in quotes, which the file's notes have,
+  so the engine read it in one thread after a refused attempt. It now reads such a file in parallel without
+  `null_padding` when `sniff_csv` finds the same dialect, skipped lines, header and columns with and without it,
+  and the preview in one thread from the start.
+- DuckDB 2.0 parses and plans a query longer: preparing a block's read took 2.6 ms against 1.2 ms on 1.5.6
+  (parsing alone 0.45 ms against 0.04 ms). The engine now keeps the statements of its block reads prepared on each
+  connection, and runs them again with the new start and end.
 
 ## Reproduce
 

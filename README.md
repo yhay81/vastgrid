@@ -319,10 +319,10 @@ The DuckDB engine on Node.js 24 with DuckDB 2.0, 8 threads and 2 GB of memory, t
 
 | File and view | First rows | 256 rows anywhere in the view, median |
 | --- | ---: | ---: |
-| Parquet, 1.38 GB, 100M rows, sorted by a float | 834 ms | 957 ms |
-| Parquet, 100M rows, filtered | 207 ms | 31 ms |
-| CSV, 735 MB, 10M rows, sorted | 63 ms | 6.3 ms |
-| CSV, 10M rows, filtered | 144 ms | 4.9 ms |
+| Parquet, 1.38 GB, 100M rows, sorted by a float | 953 ms | 700 ms |
+| Parquet, 100M rows, filtered | 192 ms | 21 ms |
+| CSV, 735 MB, 10M rows, sorted | 55 ms | 4.0 ms |
+| CSV, 10M rows, filtered | 124 ms | 3.0 ms |
 
 Saving two edited cells takes about 60 ms in a 6 MB CSV file and 0.3 s in a 65 MB one; a sorted view of a million
 rows exports in 0.3 s as CSV and 0.1 s as Parquet. The memory engine opens a million-row Parquet file in 26 ms and a

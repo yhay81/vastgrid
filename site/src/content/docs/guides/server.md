@@ -178,12 +178,12 @@ DuckDB 2.0, 8 threads and a 2 GB memory limit, the median of three runs
 
 | File and plan | First rows | Later reads anywhere in the view (median) |
 | --- | ---: | ---: |
-| 100M-row Parquet (1.38 GB), sort | 834 ms | 957 ms |
-| 100M-row Parquet, filter | 207 ms | 31 ms |
-| 10M-row CSV (735 MB), sort | 63 ms | 6.3 ms |
-| 10M-row CSV, filter | 144 ms | 4.9 ms |
+| 100M-row Parquet (1.38 GB), sort | 953 ms | 700 ms |
+| 100M-row Parquet, filter | 192 ms | 21 ms |
+| 10M-row CSV (735 MB), sort | 55 ms | 4.0 ms |
+| 10M-row CSV, filter | 124 ms | 3.0 ms |
 
-The complete sorted view took another 3.3 s for the Parquet file and 1.4 s for the CSV file.
+The complete sorted view took another 3.0 s for the Parquet file and 0.9 s for the CSV file.
 
 ## Saving and following files
 

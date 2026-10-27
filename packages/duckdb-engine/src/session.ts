@@ -6,11 +6,13 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readdir, realpath, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
+import { type DuckDBConnection, DuckDBInstance, type DuckDBPreparedStatement } from "@duckdb/node-api";
 import { cancelled, errorMessage, isInterrupt } from "./errors.js";
 
 /** Connections that short queries share. */
 const POOL_SIZE = 6;
+/** Statements that each pooled connection keeps prepared (`Session.prepared`). */
+const PREPARED_PER_CONNECTION = 16;
 
 export function quoteLiteral(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
@@ -73,6 +75,8 @@ export class Session {
   private readonly pool: DuckDBConnection[] = [];
   private connections = 0;
   private readonly waiters: ((connection: DuckDBConnection) => void)[] = [];
+  /** The statements prepared on each pooled connection, by their SQL, the least recently used first. */
+  private readonly statements = new WeakMap<DuckDBConnection, Map<string, DuckDBPreparedStatement>>();
   private nextId = 1;
   /** Loading files. */
   readonly loads = new Gate(1);
@@ -179,6 +183,30 @@ export class Session {
     }
   }
 
+  /**
+   * A statement of a pooled connection prepared for `sql`, kept for the next run of the same SQL: DuckDB 2.0 takes
+   * longer to parse and plan a query than to run a short read, such as a block of rows, again.
+   */
+  async prepared(connection: DuckDBConnection, sql: string): Promise<DuckDBPreparedStatement> {
+    let statements = this.statements.get(connection);
+    if (!statements) {
+      statements = new Map();
+      this.statements.set(connection, statements);
+    }
+    let statement = statements.get(sql);
+    if (statement) statements.delete(sql);
+    else {
+      statement = await connection.prepare(sql);
+      for (const [oldest, old] of statements) {
+        if (statements.size < PREPARED_PER_CONNECTION) break;
+        statements.delete(oldest);
+        old.destroySync();
+      }
+    }
+    statements.set(sql, statement);
+    return statement;
+  }
+
   /** A connection of its own, for loading a file; the caller closes it. */
   async connect(): Promise<DuckDBConnection> {
     const connection = await this.instance.connect();
@@ -202,7 +230,10 @@ export class Session {
 
   /** Closes the connections and the database, and deletes the session's folder. */
   async dispose(): Promise<void> {
-    for (const connection of this.pool) connection.closeSync();
+    for (const connection of this.pool) {
+      for (const statement of this.statements.get(connection)?.values() ?? []) statement.destroySync();
+      connection.closeSync();
+    }
     this.pool.length = 0;
     this.instance.closeSync();
     await rm(this.folder, { recursive: true, force: true });

@@ -298,8 +298,10 @@ class Table:
         self.byte_size: int | None = None
         self.handles = 0
         self.objects: list[str] = []
-        # Delimited files: whether DuckDB reads them in one thread, which it needs for quoted line breaks.
-        self.sequential = False
+        # Delimited files: how DuckDB reads them. "padded" fills short records with nulls, in parallel. DuckDB 2.0
+        # does that only in one thread for files with line breaks in quotes ("sequential"), so such files whose
+        # records all have the same fields are read without padding, in parallel ("plain").
+        self.reading = "padded"
         self.edits = Edits(session, self)
 
     # ----- loading -----
@@ -341,14 +343,33 @@ class Table:
         raise EngineError("load_failed", message)
 
     def _create_file(self, cursor: duckdb.DuckDBPyConnection, attempt: int, path: str) -> None:
-        """Loads the file with the reader of an attempt, in one thread when DuckDB refuses to read it in parallel."""
+        """Loads the file with the reader of an attempt. When DuckDB refuses to pad it in parallel, reads it again
+        without padding when that reads the same records (`_reads_plain`), and in one thread when it does not or a
+        record has other fields."""
         try:
             self._create(cursor, self._reader(attempt), [path])
         except duckdb.Error as failure:
-            if self.sequential or not _refuses_parallel(failure):
+            if self.reading == "padded" and _refuses_parallel(failure):
+                self.reading = "plain" if self._reads_plain(cursor, path) else "sequential"
+                self._create_file(cursor, attempt, path)
+                return
+            if self.reading != "plain" or not _uneven_records(failure):
                 raise
-            self.sequential = True
+            self.reading = "sequential"
             self._create(cursor, self._reader(attempt), [path])
+
+    def _reads_plain(self, cursor: duckdb.DuckDBPyConnection, path: str) -> bool:
+        """Whether DuckDB reads a file without padding as it does with: its sniffer finds the same dialect, skipped
+        lines, header and columns both ways. A record with other fields later in the file then fails the read."""
+
+        def sniff(reading: str) -> list[tuple[Any, ...]]:
+            query = (
+                "SELECT Delimiter, Quote, Escape, NewLineDelimiter, Comment, SkipRows, HasHeader, Columns "
+                f"FROM sniff_csv($1{self._delimited_options(0, reading)})"
+            )
+            return cursor.execute(query, [path]).fetchall()
+
+        return sniff("sequential") == sniff("plain")
 
     def _reader(self, attempt: int) -> str:
         fmt = self.source.format
@@ -362,12 +383,18 @@ class Table:
         if fmt == "xlsx":
             sheet = "" if self.sheet is None else f", sheet='{self.sheet.replace(chr(39), chr(39) * 2)}'"
             return f"read_xlsx($1{sheet}, ignore_errors=true)"
+        return f"read_csv($1{self._delimited_options(attempt, self.reading)})"
+
+    def _delimited_options(self, attempt: int, reading: str) -> str:
+        if reading == "plain" and attempt == 2:
+            # Text without strict quotes is read with padding: unpadded, such a record would fail the read.
+            reading = "sequential"
+        options = ", delim='\\t'" if self.source.format == "tsv" else ""
         # Without null_padding, DuckDB's sniffer may settle on the last consistent part of a file whose rows have
-        # different numbers of fields and silently skip the rest.
-        options = ", delim='\\t'" if fmt == "tsv" else ""
-        options += ", null_padding=true"
-        if self.sequential:
-            # DuckDB 2.0 reads such files in parallel only without quoted line breaks (`_refuses_parallel`).
+        # different numbers of fields and silently skip the rest (`_reads_plain` rules that out).
+        if reading != "plain":
+            options += ", null_padding=true"
+        if reading == "sequential":
             options += ", parallel=false"
         if attempt == 1:
             # Types sniffed from the beginning did not hold for the whole file: sniff all rows.
@@ -375,7 +402,7 @@ class Table:
         elif attempt == 2:
             # Irregular files: read every column as text and tolerate quotes and long lines.
             options += ", all_varchar=true, strict_mode=false, max_line_size=67108864"
-        return f"read_csv($1{options})"
+        return options
 
     def _describe(self, cursor: duckdb.DuckDBPyConnection, sql: str, params: list[Any]) -> list[tuple[str, str]]:
         return [(str(row[0]), str(row[1])) for row in cursor.execute(f"DESCRIBE {sql}", params).fetchall()]
@@ -448,6 +475,11 @@ class Table:
 def _refuses_parallel(error: Exception) -> bool:
     """Whether DuckDB refused to read a delimited file in parallel because it has quoted line breaks."""
     return "parallel scanner does not support null_padding" in str(error).lower()
+
+
+def _uneven_records(error: Exception) -> bool:
+    """Whether a read without padding failed on a record with fewer or more fields than the header."""
+    return "expected number of columns" in str(error).lower()
 
 
 class Edits:

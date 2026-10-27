@@ -355,7 +355,10 @@ export class Views {
       sql: `${view.sql.with} SELECT ${outputs.join(", ")} FROM vg_view WHERE ${view.position} >= $${params.length - 1} AND ${view.position} < $${params.length} ORDER BY ${view.position}`,
       params,
     };
-    const data = (await connection.runAndReadAll(query.sql, query.params as never)).getColumnsJS();
+    // Scrolling reads blocks of the same view one after another: only start and end change.
+    const statement = await this.session.prepared(connection, query.sql);
+    statement.bind(query.params as never);
+    const data = (await statement.runAndReadAll()).getColumnsJS();
     const count = data[0]?.length ?? 0;
     const truncated: Record<string, number[]> = {};
     const rows: JsonValue[][] = Array.from({ length: count }, () => new Array<JsonValue>(columns.length));
