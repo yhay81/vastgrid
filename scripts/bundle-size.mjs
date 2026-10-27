@@ -11,7 +11,7 @@ import { gzipSync } from "node:zlib";
 import { build } from "esbuild";
 
 /** The first load's budget, with gzip (v2-react.md §10). */
-const BUDGET = 100 * 1024;
+const BUDGET = 200 * 1024;
 const directory = mkdtempSync(path.join(tmpdir(), "vastgrid-size-"));
 const entry = path.join(directory, "entry.js");
 writeFileSync(

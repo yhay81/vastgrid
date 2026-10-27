@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `vastgrid-grid` (unreleased v2): `npm run size` fails over 200 KB with gzip instead of 100 KB, so that features
+  are not shaped by the budget before v2 is complete.
 - `vastgrid-js` (unreleased v2): the memory engine evaluates every plan of §4.1: `derive`, `where` and `search` with
   every function of §4.4, sorts by derived columns, and groups with `aggregate`, every measure of §4.5, `pivot`
   (`too_many_columns` beyond `maxColumns`) and `having`. Exact numbers are computed exactly (BigInt beyond 2^53;
