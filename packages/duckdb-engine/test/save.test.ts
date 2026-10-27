@@ -255,6 +255,15 @@ test("only CSV and TSV files of engines that save are saved", async () => {
   assert.equal(await readFile(path.join(workspace, "rows.jsonl"), "utf8"), '{"a":1}\n');
 });
 
+test("a file read loosely is not saved, since its records may not be its rows", async () => {
+  const content = "id,name\r\n1,Apple\r\n2,Banana\n";
+  const info = await opened("mixed-lines.csv", content);
+  assert.deepEqual(await column(info, "name"), ["Apple", "Banana"]);
+  await write(info, [[0, "name", "Apricot"]]);
+  assert.equal((await client.error("save", { table: info.table })).code, "save_unsupported");
+  assert.equal((await bytes("mixed-lines.csv")).toString(), content);
+});
+
 test("dates and timestamps are saved in the format the file uses", async () => {
   const dates = await opened("dates.csv", "id,d\n1,25/12/2024\n2,13/01/2023\n");
   assert.equal(dates.columns[1].type, "date");

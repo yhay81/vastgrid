@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- `vastgrid-duckdb`: a CSV or TSV file whose records DuckDB's strict parser refuses, such as one with line breaks
+  of both kinds (a row appended with LF to a file of CRLF lines), keeps its column types: it is read without
+  strict records (`strict_mode=false`) before being read as text. Only DuckDB's error of invalid UTF-8 converts a
+  file with replacement characters (`invalid_utf8_replaced`); the error of a failed sniff no longer does. Such a
+  file is not saved (`save_unsupported`), as a file read as text was not.
+
 ## 0.2.0 — 2026-10-28
 
 vastgrid 0.2.0 replaces 0.1.x with a new design, specified by [spec.md](docs/spec.md) and

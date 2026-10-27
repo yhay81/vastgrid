@@ -438,6 +438,25 @@ test("falls back when types change late or rows are irregular, and tells clients
   assert.equal(ragged.status, "ready", ragged.error);
   assert.equal(ragged.rowCount, 3, "short and long rows are kept");
   assert.deepEqual(names(ragged), ["a", "b", "c", "column3"]);
+
+  // A row appended with LF to a file of CRLF lines: DuckDB's strict parser refuses it, and its error names the
+  // encoding it tried. The file is read loosely with its types, not converted as if it were not UTF-8.
+  const crlf = ["gene,score,note", ...Array.from({ length: 3_000 }, (_, i) => `G${i},${i / 10},注記${i}`)];
+  await writeFile(path.join(workspace, "mixed-lines.csv"), `${crlf.join("\r\n")}\r\nG9999,0.5,追加\n`);
+  const mixed = await client.open("mixed-lines.csv");
+  await context.engine.whenLoaded(mixed.table);
+  const loose = await client.result<TableInfo>("info", { table: mixed.table });
+  assert.equal(loose.status, "ready", loose.error);
+  assert.equal(loose.rowCount, 3_001);
+  assert.deepEqual(
+    loose.columns.map((column) => column.type),
+    ["string", "float", "string"],
+  );
+  assert.equal(loose.notes, undefined);
+  assert.deepEqual((await client.rows(loose, { start: 2_999, end: 3_001 })).rows, [
+    ["G2999", 299.9, "注記2999"],
+    ["G9999", 0.5, "追加"],
+  ]);
 });
 
 test("serves the first rows while a file loads, and tells clients when it has (§9)", async () => {

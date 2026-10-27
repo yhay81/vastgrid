@@ -11,7 +11,7 @@ import type { Column } from "vastgrid-spec";
 import { type CsvDialect, type CsvEdits, CsvSaveError, rewriteCsv } from "./csv-save.js";
 import { cancelled, EngineError } from "./errors.js";
 import { quoteLiteral, type Session } from "./session.js";
-import { fileRevision, type LoadedTable } from "./table.js";
+import { fileRevision, LOOSE_ATTEMPT, type LoadedTable } from "./table.js";
 
 /** Whether `save` writes a table's file: a CSV or TSV file that is not compressed. */
 export function isSavable(table: LoadedTable): boolean {
@@ -113,9 +113,9 @@ export async function saveTable(
     // Writes wait for the file to load (§7.2): a table with written cells has loaded.
     if (table.edits.state.cells === 0) return { records: 0, edits: table.edits.state };
     if (table.fileChanged) throw fileChanged();
-    if (table.attempt === 2) {
-      // Irregular files are read loosely as text: their records may not be the rows.
-      throw new EngineError("save_unsupported", "The file was read as text, since its records are irregular.");
+    if (table.attempt >= LOOSE_ATTEMPT) {
+      // Irregular files are read loosely (and the most irregular as text): their records may not be the rows.
+      throw new EngineError("save_unsupported", "The file was read loosely, since its records are irregular.");
     }
     // The file must still be the one the table read, at its real location inside the allowed folders.
     const real = await realpath(table.path).catch(() => null);

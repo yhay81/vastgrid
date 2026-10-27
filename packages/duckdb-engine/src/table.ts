@@ -128,7 +128,10 @@ export class LoadedTable {
   encoding: TextEncoding = "utf-8";
   /** The file that DuckDB loaded: the file, or a copy of it converted to UTF-8. */
   loadedSource: string;
-  /** The reader that loaded the table (`readerFunction`): 2 for delimited files read as text. */
+  /**
+   * The reader that loaded the table (`readerFunction`): `LOOSE_ATTEMPT` for delimited files read without strict
+   * records, `TEXT_ATTEMPT` for those read as text.
+   */
   attempt = 0;
   /**
    * Delimited files: how DuckDB reads them. `padded` fills short records with nulls, in parallel. DuckDB 2.0 does
@@ -284,7 +287,7 @@ export class LoadedTable {
   /** The options of `read_csv` for an attempt, which `sniff_csv` also takes to tell how the file was read. */
   delimitedOptions(attempt = this.attempt, reading = this.reading): string {
     // Text without strict quotes is read with padding: unpadded, such a record would fail the read.
-    if (reading === "plain" && attempt === 2) reading = "sequential";
+    if (reading === "plain" && attempt >= LOOSE_ATTEMPT) reading = "sequential";
     let options = this.format === "tsv" ? ", delim='\\t'" : "";
     // Without null_padding, DuckDB's sniffer may settle on the last consistent part of a file whose rows have
     // different numbers of fields and silently skip the rest (`readsPlain` rules that out).
@@ -293,6 +296,8 @@ export class LoadedTable {
     if (attempt === 0) return options;
     // Types sniffed from the beginning did not hold for the whole file: sniff all rows.
     if (attempt === 1) return `${options}, sample_size=-1`;
+    // Records that the strict parser refuses (line breaks of both kinds, stray quotes): tolerate them, with types.
+    if (attempt === LOOSE_ATTEMPT) return `${options}, sample_size=-1, strict_mode=false, max_line_size=67108864`;
     // Irregular files: read every column as text and tolerate quotes and long lines.
     return `${options}, all_varchar=true, strict_mode=false, max_line_size=67108864`;
   }
@@ -314,17 +319,22 @@ export class LoadedTable {
       let lastError: unknown = null;
       // A converted sheet and a Parquet file have one type per column already: nothing to retry.
       const attempts =
-        this.format === "csv" || this.format === "tsv" ? 3 : this.format === "json" || this.format === "ndjson" ? 2 : 1;
+        this.format === "csv" || this.format === "tsv"
+          ? TEXT_ATTEMPT + 1
+          : this.format === "json" || this.format === "ndjson"
+            ? 2
+            : 1;
       for (let attempt = 0; attempt < attempts; attempt++) {
         try {
           await this.readDelimited(source, () => this.loadTable(source, attempt, workbook));
-          if (attempt === 2) this.notes.push("all_varchar");
+          if (attempt === TEXT_ATTEMPT) this.notes.push("all_varchar");
           return;
         } catch (error) {
           if (this.disposed) return;
           lastError = error;
           this.options.log?.(`Loading ${this.path} failed (attempt ${attempt + 1})`, error);
-          if (/unicode|utf-?8/i.test(errorMessage(error)) && source === this.path) {
+          // Only DuckDB's error of invalid UTF-8: its other errors list `Encoding: utf-8` among what was tried.
+          if (/invalid unicode/i.test(errorMessage(error)) && source === this.path) {
             // The sample was valid UTF-8 but a later part is not: convert with replacement characters.
             source = await this.convert("utf-8");
             this.notes.push("invalid_utf8_replaced");
@@ -526,6 +536,11 @@ export class LoadedTable {
     for (const file of this.tempFiles) await rm(file, { force: true });
   }
 }
+
+/** The attempt that reads a delimited file without strict records (`strict_mode=false`), keeping its types. */
+export const LOOSE_ATTEMPT = 2;
+/** The attempt that reads a delimited file as text, the last one. */
+export const TEXT_ATTEMPT = 3;
 
 /** How DuckDB reads a delimited file (`LoadedTable.reading`). */
 type DelimitedReading = "padded" | "plain" | "sequential";
