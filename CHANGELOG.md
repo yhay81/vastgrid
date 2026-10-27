@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `vastgrid-cli` (unreleased v2): one command opens files in v2's grid in the browser. `vastgrid [--save]
+  [<file or folder>…]` starts DuckDB in Node.js and a page of one HTML file, on 127.0.0.1, and opens it in the
+  browser; the page lists the files named and the table files of the folders named, and opens no others. The
+  printed address holds a random token that the page keeps in an `HttpOnly`, `SameSite=Strict` cookie of the port,
+  and other names of the host are refused, so that other sites, other people on the computer and DNS rebinding
+  reach nothing. The address keeps the file and the sheet shown. With `--save`, ⌘S or Ctrl+S saves edited cells
+  into CSV and TSV files; exports are downloaded. Ctrl+C stops DuckDB, which deletes its temporary files.
+- `vastgrid-duckdb-engine` (unreleased v2): `findTableFiles` lists the table files of folders, two folders deep, as
+  the MCP server's `list_files` does.
 - `vastgrid-js` (unreleased v2): the memory engine opens text files. A table `{ file }` with a `Blob` or a `File`
   of CSV, TSV or JSON Lines in UTF-8 (the format from `format` or the file's name), in a Web Worker or the page, is
   read in slices when it is first opened into typed columns, without rows of JSON. Each column has the first of

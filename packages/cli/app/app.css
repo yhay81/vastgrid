@@ -1,0 +1,67 @@
+/* The page of `vastgrid` (docs/cli.md): the grid fills the window, under a bar of files and sheets. */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  color-scheme: light dark;
+  background: light-dark(#ffffff, #16161a);
+  color: light-dark(#1f2328, #e6e6eb);
+  font:
+    13px / 1.4 system-ui,
+    sans-serif;
+}
+
+.vastgrid-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.vastgrid-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid light-dark(#d0d7de, #33333b);
+}
+
+.vastgrid-bar select {
+  max-width: 100%;
+  font: inherit;
+}
+
+.vastgrid-sheets {
+  display: flex;
+  gap: 2px;
+}
+
+.vastgrid-sheets button {
+  padding: 2px 10px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.vastgrid-sheets button:hover {
+  background: light-dark(#f3f4f6, #26262e);
+}
+
+.vastgrid-sheets button[aria-pressed="true"] {
+  background: light-dark(#ddf4ff, #1f3a5f);
+}
+
+.vastgrid-grid {
+  flex: 1;
+  min-height: 0;
+}
+
+.vastgrid-message {
+  margin: 0;
+  padding: 16px;
+}

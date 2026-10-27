@@ -3,11 +3,10 @@
  * person sees, reads their state and rows, and applies the commands of the specification (§6); the App shows
  * each grid with `DataGrid`, carries its requests (§8.8) and follows the grid's state.
  */
-import { readdir, readFile } from "node:fs/promises";
-import path from "node:path";
+import { readFile } from "node:fs/promises";
 import { RESOURCE_MIME_TYPE, registerAppResource, registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { CallToolResult, McpServer } from "@modelcontextprotocol/server";
-import { tableFormatOf } from "vastgrid-duckdb-engine";
+import { findTableFiles } from "vastgrid-duckdb-engine";
 import { COMMANDS, toTextEncoding } from "vastgrid-spec";
 import { z } from "zod";
 import { type Grid, type GridEngine, Grids, ROWS_LIMIT, ToolError } from "./grids.js";
@@ -63,22 +62,6 @@ async function builtHtml() {
   return readFile(new URL("../dist/app.html", import.meta.url), "utf8");
 }
 
-/** Files of the folders that the engine reads, up to two folders deep, at most `limit`. */
-async function tableFiles(folders: string[], limit: number) {
-  const found: { file: string; folder: string }[] = [];
-  const visit = async (folder: string, directory: string, depth: number) => {
-    const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
-    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-      if (found.length >= limit || entry.name.startsWith(".")) continue;
-      const full = path.join(directory, entry.name);
-      if (entry.isDirectory() && depth < 2) await visit(folder, full, depth + 1);
-      else if (entry.isFile() && tableFormatOf(entry.name)) found.push({ file: full, folder });
-    }
-  };
-  for (const folder of folders) await visit(folder, folder, 0);
-  return found;
-}
-
 const documentSchema = z
   .record(z.string(), z.unknown())
   .describe("A document of the specification (§5.1): { kind: 'vastgrid/document', version: 2, plan?, columns? }.");
@@ -129,8 +112,7 @@ export function registerVastgrid(server: McpServer, options: VastgridToolsOption
     },
     async () =>
       guarded(async () => {
-        const files = await tableFiles(options.folders, 500);
-        return result({ files: files.map((item) => item.file) });
+        return result({ files: await findTableFiles(options.folders, 500) });
       }),
   );
 

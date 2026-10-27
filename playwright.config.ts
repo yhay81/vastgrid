@@ -1,4 +1,8 @@
+import { mkdirSync } from "node:fs";
 import { defineConfig } from "@playwright/test";
+
+// e2e/cli.spec.ts writes its files into the folder that `vastgrid` lists, which is there before it starts.
+mkdirSync(".data/cli-e2e", { recursive: true });
 
 // The end-to-end tests and the performance budgets of v2-react.md §10, on the bench page built from the packages'
 // builds: `npm run build`, then `npm run e2e`, which builds the page before it runs the tests (a server already
@@ -30,6 +34,15 @@ export default defineConfig({
       // e2e/mcp.spec.ts: the MCP App in a host's sandboxed frame, with the built server over stdio.
       command: "npm run build -w vastgrid-mcp && node --import tsx packages/mcp/host/serve.ts .data/mcp-e2e 5184",
       url: "http://127.0.0.1:5184",
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+    {
+      // e2e/cli.spec.ts: `vastgrid` on a folder, with saving on, at the address that its token opens.
+      command:
+        "npm run build -w vastgrid-cli && node packages/cli/dist/cli.js --no-open --save --port 5186 .data/cli-e2e",
+      env: { VASTGRID_TOKEN: "e2e-token-0123456789" },
+      url: "http://127.0.0.1:5186",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },

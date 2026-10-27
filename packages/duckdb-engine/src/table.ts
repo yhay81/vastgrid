@@ -6,7 +6,7 @@
  * loaded, while the rest loads (§9).
  */
 import { createHash } from "node:crypto";
-import { open as openFile, rm } from "node:fs/promises";
+import { open as openFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import type { DuckDBConnection } from "@duckdb/node-api";
 import type { Column } from "vastgrid-spec";
@@ -32,6 +32,25 @@ const EXTENSIONS: [RegExp, TableFormat][] = [
 /** The format of a file judged by its name, or null when it is not a table file. */
 export function tableFormatOf(file: string): TableFormat | null {
   return EXTENSIONS.find(([pattern]) => pattern.test(file))?.[1] ?? null;
+}
+
+/**
+ * The table files of folders, as full paths, up to two folders deep and at most `limit`: each folder's in the order
+ * of their names, without hidden files and folders.
+ */
+export async function findTableFiles(folders: readonly string[], limit: number): Promise<string[]> {
+  const found: string[] = [];
+  const visit = async (directory: string, depth: number) => {
+    const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (found.length >= limit || entry.name.startsWith(".")) continue;
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory() && depth < 2) await visit(full, depth + 1);
+      else if (entry.isFile() && tableFormatOf(entry.name)) found.push(full);
+    }
+  };
+  for (const folder of folders) await visit(folder, 0);
+  return found;
 }
 
 /** Bytes at the start of a file that its revision covers. */
