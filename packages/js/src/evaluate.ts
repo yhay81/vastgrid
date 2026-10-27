@@ -118,7 +118,7 @@ function floorOrCeil(value: bigint, digits: number, up: boolean): bigint {
 }
 
 /** Compares two strings by their code points (§3.1), which for Unicode text is the order of their UTF-8 bytes. */
-export function compareText(a: string, b: string): number {
+function compareText(a: string, b: string): number {
   const length = Math.min(a.length, b.length);
   for (let at = 0; at < length; at++) {
     let x = a.charCodeAt(at);

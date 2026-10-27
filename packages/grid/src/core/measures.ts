@@ -16,7 +16,7 @@ import {
 import type { TableInfo } from "./types.js";
 
 /** The rows of a plan before grouping: its derived columns and `where`. Null when the plan groups rows. */
-export function rowsPlan(plan: Plan): Plan | null {
+function rowsPlan(plan: Plan): Plan | null {
   if (plan.aggregate) return null;
   return { ...(plan.derive ? { derive: plan.derive } : {}), ...(plan.where ? { where: plan.where } : {}) };
 }

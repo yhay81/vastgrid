@@ -11,7 +11,8 @@ import {
   StateError,
   sameKey,
 } from "../state.js";
-import { checked, fail, isObject, stringArgument, takes } from "./command.js";
+import { isObject } from "../values.js";
+import { checked, fail, stringArgument, takes } from "./command.js";
 import type { Handlers } from "./run.js";
 
 export const CORE_HANDLERS = {

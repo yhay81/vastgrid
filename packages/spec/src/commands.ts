@@ -5,14 +5,7 @@
  * each section of §6 are in `commands/`, and the command being applied in `commands/run.ts`.
  */
 import { COLUMN_HANDLERS } from "./commands/columns.js";
-import {
-  type Command,
-  type CommandContext,
-  type CommandName,
-  type CommandResult,
-  fail,
-  isObject,
-} from "./commands/command.js";
+import { type Command, type CommandContext, type CommandName, type CommandResult, fail } from "./commands/command.js";
 import { COPYING_HANDLERS } from "./commands/copying.js";
 import { CORE_HANDLERS } from "./commands/core.js";
 import { EDITING_HANDLERS } from "./commands/editing.js";
@@ -20,6 +13,7 @@ import { PLAN_HANDLERS } from "./commands/plan.js";
 import { type Handler, Run } from "./commands/run.js";
 import { SELECTION_HANDLERS } from "./commands/selection.js";
 import type { GridState } from "./state.js";
+import { isObject } from "./values.js";
 
 export {
   COMMAND_ERRORS,

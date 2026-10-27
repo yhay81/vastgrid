@@ -11,6 +11,7 @@ import {
   type LiteralExpr,
   SpecError,
   type TypedExpr,
+  uniqueName,
   type ValueType,
   valueOfText,
   valueType,
@@ -518,14 +519,6 @@ export function pivotQuery(plan: CheckedPlan, source: SqlSource): SqlQuery {
   const limit = Math.floor(pivot.maxColumns / plan.aggregate.measures.length) + 1;
   const sql = `WITH ${entries.join(", ")} SELECT ${texts.join(", ")} FROM (SELECT DISTINCT ${names.join(", ")} FROM vg_rows) ORDER BY ${pivot.columns.flatMap(keyTerms).join(", ")} LIMIT ${limit}`;
   return { sql, params: compiler.params.values };
-}
-
-/** A name that no earlier column has: `name`, then `name (2)`, `name (3)`, … (§4.6). */
-function uniqueName(name: string, taken: Set<string>) {
-  let unique = name;
-  for (let index = 2; taken.has(unique); index++) unique = `${name} (${index})`;
-  taken.add(unique);
-  return unique;
 }
 
 /**

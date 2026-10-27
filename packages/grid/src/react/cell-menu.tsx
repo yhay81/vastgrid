@@ -1,6 +1,6 @@
 import { type KeyboardEvent, type ToggleEvent, use, useLayoutEffect, useRef, useState } from "react";
-import { type GridCommand, type JsonValue, joinParts, textOf } from "vastgrid-spec";
-import { filterParts, isBlank } from "../core/filters.js";
+import { type GridCommand, isBlank, type JsonValue, joinParts, textOf } from "vastgrid-spec";
+import { filterParts } from "../core/filters.js";
 import { LocaleContext } from "./context.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 

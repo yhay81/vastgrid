@@ -49,16 +49,29 @@ CI runs these on every pull request; run them before you push:
 npm run lint        # Biome; npm run format fixes what it can
 npm run typecheck
 npm test
+npm run test:performance  # isolated, sequential performance budgets; no other tests or benchmarks running
 npm run build
 npm run size        # after the build: what a page loads first of the grid, within 200 KB with gzip
 npm run pack-check  # after the build: the packages installed from their tarballs run the READMEs' examples
-npm run e2e         # Playwright and the performance budgets, when the grid or an entry point changed
+npm run e2e         # functional Playwright suites, when the grid or an entry point changed
+npm run e2e:performance  # browser performance budgets, run on their own
+npm run e2e:large    # 100-million-row Parquet and 10-million-row CSV checks
 npm run build -w vastgrid-site   # when you changed the site, docs/ or the grid
 ```
 
-Tests use `node:test` and live in `packages/*/test/*.test.ts`. A bug fix comes with a test that fails
+Tests use `node:test` and live in `packages/*/test/*.test.ts` and `scripts/test/*.test.ts`. A bug fix comes with a test that fails
 without it, where the bug can be reproduced outside a browser. For changes to the DuckDB engine that may
 affect speed, run `npm run bench` before and after and put both results in the pull request.
+
+Functional tests have no wall-clock performance assertions. `packages/*/perf/*.test.ts` holds those budgets,
+run sequentially by `npm run test:performance` on a dedicated CI runner. Shared JS workloads check correctness
+on smaller tables in `npm test` and on a million rows in the performance suite.
+
+E2E suites start just their own server. After `npm run build`, use `npm run e2e -- grid grid.spec.ts` for one file,
+or `npm run e2e -- cli` for the CLI. The functional suites are `grid`, `files` (menus and panels), `mcp`, `cli` and
+`open`; without a suite name, they all run in turn. Further arguments go to Playwright, for example
+`npm run e2e -- files --grep "column menu"`. Direct `npx playwright test` defaults to `grid`. Browser performance
+(`performance`) and large files (`large`) have separate commands and CI jobs; both keep their full-size fixtures.
 
 `packages/duckdb-engine/test/memory-engine.test.ts` sends 300 generated plans to the memory engine and the DuckDB
 engine and compares their answers. After a change to either engine or to `vastgrid-sql`, run more of them:

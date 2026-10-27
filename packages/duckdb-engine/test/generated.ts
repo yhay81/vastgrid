@@ -23,7 +23,33 @@ export const SUBNORMAL = 2.2250738585072014e-308;
 /** Whether two values of a column are the same, floats within the tolerance and subnormal floats alike. */
 export function same(a: JsonValue, b: JsonValue, column: Column): boolean {
   if (sameValue(a, b, column, TOLERANCE)) return true;
-  return column.type === "float" && Math.abs(Number(a)) < SUBNORMAL && Math.abs(Number(b)) < SUBNORMAL;
+  return (
+    column.type === "float" &&
+    typeof a === "number" &&
+    typeof b === "number" &&
+    Math.abs(a) < SUBNORMAL &&
+    Math.abs(b) < SUBNORMAL
+  );
+}
+
+/**
+ * A summary's counts exactly, its least and greatest within the tolerance, and its sum and average within the error
+ * that additions of floats in another order may make: the tolerance of the largest number, once for each number.
+ */
+export function sameSummary(a: Json, b: Json): boolean {
+  const float: Column = { name: "", type: "float" };
+  const count = a.numericCount as number;
+  const largest = Math.max(Math.abs(Number(a.min)), Math.abs(Number(a.max)));
+  const near = (x: JsonValue, y: JsonValue, error: number) =>
+    same(x, y, float) || (typeof x === "number" && typeof y === "number" && Math.abs(x - y) <= error * 1e-9);
+  return (
+    a.count === b.count &&
+    count === b.numericCount &&
+    same(a.min as JsonValue, b.min as JsonValue, float) &&
+    same(a.max as JsonValue, b.max as JsonValue, float) &&
+    near(a.sum as JsonValue, b.sum as JsonValue, largest * count) &&
+    near(a.average as JsonValue, b.average as JsonValue, largest)
+  );
 }
 
 /** A pseudo-random generator with a seed (mulberry32). */
@@ -477,11 +503,26 @@ export function differences(memory: Answer, duckdb: Answer): string[] {
     problems.push(`rowIds ${JSON.stringify(memory.rowIds)}; duckdb ${JSON.stringify(duckdb.rowIds)}`);
   }
   const rows = memory.rows as JsonValue[][];
+  const otherRows = duckdb.rows as JsonValue[][];
+  if (rows.length !== otherRows.length) problems.push(`rows read ${rows.length}; duckdb ${otherRows.length}`);
+  for (const [engine, values] of [
+    ["memory", rows],
+    ["duckdb", otherRows],
+  ] as const) {
+    values.forEach((row, index) => {
+      if (row.length !== columns.length) {
+        problems.push(`${engine} row ${index}: ${row.length} cells, expected ${columns.length}`);
+      }
+    });
+  }
   rows.forEach((row, index) => {
+    const other = otherRows[index];
+    if (!other || row.length !== columns.length || other.length !== columns.length) return;
     row.forEach((value, at) => {
-      const other = duckdb.rows?.[index]?.[at] ?? null;
-      if (problems.length < 8 && !same(value, other, columns[at])) {
-        problems.push(`row ${index}, ${columns[at].name}: ${JSON.stringify(value)}; duckdb ${JSON.stringify(other)}`);
+      if (problems.length < 8 && !same(value, other[at], columns[at])) {
+        problems.push(
+          `row ${index}, ${columns[at].name}: ${JSON.stringify(value)}; duckdb ${JSON.stringify(other[at])}`,
+        );
       }
     });
   });

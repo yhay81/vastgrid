@@ -5,23 +5,14 @@
  */
 import type { Column } from "vastgrid-spec";
 import { blobSource, convertSheet, type ReadOptions, WorkbookError } from "vastgrid-spec/workbook";
+
+export { readOptionsOf } from "vastgrid-spec/workbook";
+
 import { type CheckedTable, type FileTable, TableProblem, type TextFile } from "./table.js";
 import { readFile } from "./text.js";
 
 /** The platform's `Blob`, which keeps the sheet's lines out of the heap where it can (in a page, on disk). */
 declare const Blob: new (parts: (string | TextFile)[]) => TextFile;
-
-/** The options of `open` that change how a workbook is read (§8.2), with only those given, in one order. */
-export function readOptionsOf(read: unknown): ReadOptions {
-  const options: ReadOptions = {};
-  if (read === null || typeof read !== "object") return options;
-  const { sheet, headerRow, keepEmptyRows, keepEmptyColumns } = read as ReadOptions;
-  if (sheet !== undefined) options.sheet = sheet;
-  if (headerRow !== undefined) options.headerRow = headerRow;
-  if (keepEmptyRows) options.keepEmptyRows = true;
-  if (keepEmptyColumns) options.keepEmptyColumns = true;
-  return options;
-}
 
 /** Reads the sheet of a workbook that `read` chooses, the first visible one by default. */
 export async function readSheet(table: FileTable, read: ReadOptions): Promise<CheckedTable> {

@@ -69,7 +69,7 @@ jobs:
         working-directory: packages/notebook/python
       - run: node --conditions=vastgrid-source --import tsx --test packages/notebook/test/*.test.ts
   e2e:
-    name: End-to-end tests and performance budgets
+    name: Functional end-to-end tests
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -82,6 +82,36 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run build
       - run: npm run e2e
+  performance:
+    name: Isolated performance budgets
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # One file at a time, before any build or browser runs on this runner.
+      - run: npm run test:performance
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run e2e:performance
+  e2e-large:
+    name: Large-file end-to-end tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run e2e:large
   vscode:
     name: VS Code extension (${{ matrix.target }})
     runs-on: ${{ matrix.os }}

@@ -14,6 +14,7 @@ import {
   SpecError,
   type TypedExpr,
   textOf,
+  uniqueName,
   type ValueType,
   valueType,
 } from "vastgrid-spec";
@@ -272,14 +273,6 @@ function exactSum(measure: CheckedMeasure, column: ValueType, values: Vector, ce
       return exactJson(total, measure.type);
     },
   };
-}
-
-/** The name, or the name with ` (2)`, ` (3)` and so on when an earlier column has it (§4.6). */
-function uniqueName(name: string, taken: Set<string>): string {
-  let unique = name;
-  for (let index = 2; taken.has(unique); index++) unique = `${name} (${index})`;
-  taken.add(unique);
-  return unique;
 }
 
 /**

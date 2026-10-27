@@ -565,7 +565,9 @@ where a bundler turns `light-dark()` into variables for older browsers (Lightnin
 
 The bench ([`examples/bench`](../examples/bench)) mounts the grid on a generated table, with the memory engine in
 the page or in a Web Worker, built for production with React's profiling build, and the end-to-end tests ([`e2e`](../e2e)) measure it in Chromium with
-Playwright. The tests fail when 0.2 exceeds a budget:
+Playwright (`npm run e2e:performance`, after `npm run build`, with no other tests or benchmarks running).
+CI runs these in the dedicated performance job, separately from functional and large-file E2E. The tests fail
+when 0.2 exceeds a budget:
 
 | Measure | Budget |
 | --- | --- |

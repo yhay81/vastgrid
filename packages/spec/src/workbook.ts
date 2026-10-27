@@ -22,6 +22,18 @@ export interface ReadOptions {
   keepEmptyColumns?: boolean;
 }
 
+/** The options of `open` that change how a workbook is read (§8.2), with only those given, in one order. */
+export function readOptionsOf(read: unknown): ReadOptions {
+  const options: ReadOptions = {};
+  if (read === null || typeof read !== "object") return options;
+  const { sheet, headerRow, keepEmptyRows, keepEmptyColumns } = read as ReadOptions;
+  if (sheet !== undefined) options.sheet = sheet;
+  if (headerRow !== undefined) options.headerRow = headerRow;
+  if (keepEmptyRows) options.keepEmptyRows = true;
+  if (keepEmptyColumns) options.keepEmptyColumns = true;
+  return options;
+}
+
 /** A sheet of a workbook, as `TableInfo.sheets` lists it (§8.2). */
 export interface SheetInfo {
   name: string;

@@ -8,6 +8,7 @@
 
 - [ ] `npm run lint`, `npm run typecheck`, `npm test` and `npm run build` pass, and `npm run e2e` when the grid
       or an entry point changed
+- [ ] `npm run test:performance`, `npm run e2e:performance` and `npm run e2e:large` pass when affected, run separately
 - [ ] Tests for the change, or a note on why there are none
 - [ ] A line under "Unreleased" in CHANGELOG.md, for changes that users notice
 - [ ] README.md, README.ja.md and the site updated if the API changed; docs/spec.md or docs/react.md if a

@@ -38,6 +38,7 @@ import {
   type FileTable,
   isArrowTable,
   isFileTable,
+  isObject,
   isParquetTable,
   isWorkbook,
   type MemoryTable,
@@ -294,10 +295,6 @@ function revisionOf(table: HostTable): string {
     revisions.set(table, revision);
   }
   return revision;
-}
-
-function isObject(value: unknown): value is Json {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 /**

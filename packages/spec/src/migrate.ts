@@ -3,7 +3,7 @@
  * document is then repaired for the table (§5.5), which removes what does not validate.
  */
 import { checkPlan, valueType } from "./check.js";
-import { compileFormula, FormulaError, formulaColumns } from "./formula.js";
+import { call, compileFormula, FormulaError, formulaColumns } from "./formula.js";
 import {
   type Aggregate,
   type Derived,
@@ -13,13 +13,11 @@ import {
   type Plan,
   PlanError,
   type SortKey,
+  uniqueName,
 } from "./plan.js";
 import { type ColumnSetting, emptyDocument, type GridDocument, StateError } from "./state.js";
 import type { Column, JsonValue, LogicalType } from "./types.js";
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
+import { isObject } from "./values.js";
 
 const V1_MEASURES = ["count", "sum", "avg", "min", "max"] as const;
 type V1Measure = (typeof V1_MEASURES)[number];
@@ -51,10 +49,6 @@ function literal(value: unknown, column: Column | undefined): Expr {
   return { lit: String(value) };
 }
 
-function call(fn: FunctionName, ...args: Expr[]): Expr {
-  return { fn, args };
-}
-
 function notMatching(expr: Expr): Expr {
   return call("not", call("coalesce", expr, { lit: false }));
 }
@@ -74,12 +68,7 @@ const COMPARISONS = ["eq", "ne", "lt", "le", "gt", "ge"] as const;
 /** The names of 0.1's aggregate columns: `count(*)`, `sum(amount)`, and ` (2)`, ` (3)`, … for repeated names. */
 function uniqueNames(names: readonly string[]): string[] {
   const used = new Set<string>();
-  return names.map((name) => {
-    let unique = name;
-    for (let n = 2; used.has(unique); n++) unique = `${name} (${n})`;
-    used.add(unique);
-    return unique;
-  });
+  return names.map((name) => uniqueName(name, used));
 }
 
 const NOT_MIGRATED = "The column is not in the table, or it is a formula that was not migrated.";

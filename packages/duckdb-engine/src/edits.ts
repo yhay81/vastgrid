@@ -24,7 +24,7 @@ export interface Update {
 const MESSAGE_TEXT = 1_000_000;
 
 /** Whether a column's cells are written (§7.1). */
-export function isWritable(column: Column) {
+function isWritable(column: Column) {
   return !column.readOnly && column.type !== "interval" && column.type !== "binary";
 }
 

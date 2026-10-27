@@ -17,7 +17,7 @@ const MAX_AUTO_WIDTH = 360;
 /** Lines of a row while a displayed column wraps its text (§5.1 of the specification). */
 const DEFAULT_WRAP_LINES = 2;
 /** How long scrolling must pause before the accessibility rows and the session follow (§6.1 of react.md). */
-export const SETTLE_MS = 150;
+const SETTLE_MS = 150;
 
 /** The rows on screen once scrolling pauses, for the accessibility rows. */
 export interface Settled {

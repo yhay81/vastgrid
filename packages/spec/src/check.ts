@@ -16,7 +16,7 @@ import {
   type SortDirection,
 } from "./plan.js";
 import { type Column, type JsonValue, LOGICAL_TYPES, type LogicalType, type ValueType } from "./types.js";
-import { decimalTextType, isValueOf, sameType, trimSpaces, typeName } from "./values.js";
+import { decimalTextType, isObject, isValueOf, sameType, trimSpaces, typeName } from "./values.js";
 
 /** The type of an untyped null literal until its place gives it one (§2.5). */
 export interface NullType {
@@ -226,10 +226,6 @@ export function valueType(column: ValueType): ValueType {
   if (column.bits !== undefined && column.bits !== 64) type.bits = column.bits;
   if (column.unit !== undefined && column.unit !== "us") type.unit = column.unit;
   return type;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 /** The JSON Pointer of a member. */

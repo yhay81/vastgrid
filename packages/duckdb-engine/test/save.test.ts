@@ -285,26 +285,6 @@ test("handles of a file share its saves, and one opened after a save reads the s
   assert.equal((await bytes("shared.csv")).toString(), "a,b\n1,x\n2,y\n");
 });
 
-test("a large file with a few edits keeps every other byte", async () => {
-  const lines = ["id,name,amount"];
-  for (let row = 0; row < 200_000; row++) lines.push(`${row},"name ${row}",${(row * 1.25).toFixed(2)}`);
-  const content = `${lines.join("\n")}\n`;
-  const info = await opened("large.csv", content);
-  assert.equal(info.rowCount, 200_000);
-  await write(info, [
-    [5, "name", "five"],
-    [150_000, "amount", 1],
-  ]);
-  const started = performance.now();
-  assert.equal((await save(info)).records, 2);
-  const elapsed = performance.now() - started;
-  const expected = content
-    .replace('\n5,"name 5",6.25\n', "\n5,five,6.25\n")
-    .replace('\n150000,"name 150000",187500.00\n', '\n150000,"name 150000",1.0\n');
-  assert.ok((await bytes("large.csv")).equals(Buffer.from(expected)), "only the two fields differ");
-  assert.ok(elapsed < 10_000, `saving took ${Math.round(elapsed)} ms`);
-});
-
 async function until(done: () => boolean) {
   for (let attempt = 0; attempt < 500 && !done(); attempt++) await new Promise((resolve) => setTimeout(resolve, 5));
   assert.ok(done());

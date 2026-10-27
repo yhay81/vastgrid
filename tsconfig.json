@@ -7,5 +7,13 @@
     "declaration": false,
     "declarationMap": false
   },
-  "include": ["packages/*/src", "packages/*/test", "packages/*/bench"]
+  "include": [
+    "packages/*/src",
+    "packages/*/test",
+    "packages/*/perf",
+    "packages/*/bench",
+    "scripts/test",
+    "e2e",
+    "playwright.config.ts"
+  ]
 }

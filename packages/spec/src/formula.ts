@@ -477,7 +477,7 @@ interface Part {
   range: Range;
 }
 
-function call(fn: FunctionName, ...args: Expr[]): Expr {
+export function call(fn: FunctionName, ...args: Expr[]): Expr {
   return { fn, args };
 }
 

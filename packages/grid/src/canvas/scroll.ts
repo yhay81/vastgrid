@@ -11,7 +11,7 @@
  *
  * Content smaller than `maxNative` is never scaled.
  */
-export const MAX_NATIVE_SCROLL = 8_000_000;
+const MAX_NATIVE_SCROLL = 8_000_000;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);

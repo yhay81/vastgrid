@@ -26,6 +26,7 @@ import {
   records,
   type Send,
   same,
+  sameSummary,
   sender,
   tablePool,
   unzip,
@@ -98,26 +99,6 @@ test(`${PLANS} generated plans give the same answers in both engines (seed ${SEE
   assert.equal(failures.length, 0, `${failures.length} plans differ:\n${failures.slice(0, 10).join("\n")}`);
   assert.ok(outcomes.rows > PLANS * 0.8, `${outcomes.rows} of ${PLANS} plans ran`);
 });
-
-/**
- * A summary's counts exactly, its least and greatest within the tolerance, and its sum and average within the error
- * that additions of floats in another order may make: the tolerance of the largest number, once for each number.
- */
-function sameSummary(a: Json, b: Json): boolean {
-  const float: Column = { name: "", type: "float" };
-  const count = a.numericCount as number;
-  const largest = Math.max(Math.abs(Number(a.min)), Math.abs(Number(a.max)));
-  const near = (x: JsonValue, y: JsonValue, error: number) =>
-    same(x, y, float) || Math.abs(Number(x) - Number(y)) <= error * 1e-9;
-  return (
-    a.count === b.count &&
-    count === b.numericCount &&
-    same(a.min as JsonValue, b.min as JsonValue, float) &&
-    same(a.max as JsonValue, b.max as JsonValue, float) &&
-    near(a.sum as JsonValue, b.sum as JsonValue, largest * count) &&
-    near(a.average as JsonValue, b.average as JsonValue, largest)
-  );
-}
 
 /** An export's bytes, or the error that it failed with. */
 async function exported(send: Send, members: Json): Promise<Uint8Array> {

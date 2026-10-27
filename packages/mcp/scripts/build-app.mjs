@@ -1,32 +1,8 @@
 // Builds the App's page (docs/mcp-app.md): one HTML file with its script and styles inside, as hosts take a UI
-// resource. It bundles the packages' builds (`npm run build` at the root first), React Compiler's output included.
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
+// resource.
+import { readFileSync } from "node:fs";
+import { buildHtmlPage } from "../../../scripts/build-page.mjs";
 
 const root = new URL("..", import.meta.url);
 const { version } = JSON.parse(readFileSync(new URL("package.json", root), "utf8"));
-const result = await build({
-  entryPoints: [fileURLToPath(new URL("app/main.tsx", root))],
-  bundle: true,
-  write: false,
-  format: "esm",
-  target: "es2022",
-  minify: true,
-  // The menus and panels that the grid loads when they open are in the same file: a page of a host loads nothing.
-  splitting: false,
-  outdir: "out",
-  define: { "process.env.NODE_ENV": '"production"', VASTGRID_VERSION: JSON.stringify(version) },
-  legalComments: "none",
-  logLevel: "warning",
-});
-const output = (extension) => result.outputFiles.find((file) => file.path.endsWith(extension))?.text ?? "";
-// Neither may end the element that holds it.
-const script = output(".js").replaceAll("</script", "<\\/script");
-const styles = output(".css").replaceAll("</style", "<\\/style");
-const page = readFileSync(new URL("app/index.html", root), "utf8")
-  .replace("<!--styles-->", () => `<style>${styles}</style>`)
-  .replace("<!--script-->", () => `<script type="module">${script}</script>`);
-mkdirSync(new URL("dist/", root), { recursive: true });
-writeFileSync(new URL("dist/app.html", root), page);
-console.log(`dist/app.html: ${(page.length / 1024).toFixed(1)} KB`);
+await buildHtmlPage(root, { VASTGRID_VERSION: JSON.stringify(version) });

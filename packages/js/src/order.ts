@@ -147,7 +147,7 @@ function secondsAt(text: string, start: number): number {
  * The digits of a decimal's unscaled integer at a scale, with its sign: `"-12.5"` at scale 2 is `"-1250"`.
  * Null when the text is not a decimal, or has digits other than 0 beyond the scale.
  */
-export function unscaledDigits(text: string, scale: number): string | null {
+function unscaledDigits(text: string, scale: number): string | null {
   const match = /^(-?)([0-9]+)(?:\.([0-9]+))?$/.exec(text);
   if (!match) return null;
   const fraction = match[3] ?? "";

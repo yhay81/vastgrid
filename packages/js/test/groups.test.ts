@@ -1,12 +1,13 @@
 /**
  * Views of groups (docs/spec.md §3.8, §3.9, §4.5, §4.6) beyond the conformance corpus: reading, locating and
- * summarizing groups, the names of a pivot's columns, sums beyond their type, writes, and a million rows.
+ * summarizing groups, the names of a pivot's columns, sums beyond their type, writes, and generated rows.
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { JsonValue } from "vastgrid-spec";
 import type { MemoryTable } from "../src/index.ts";
-import { Client, random } from "./client.ts";
+import { Client } from "./client.ts";
+import { groupRows } from "./workloads.ts";
 
 const ORDERS: MemoryTable = {
   columns: [
@@ -131,45 +132,6 @@ test("groups see the values that writes have written", async () => {
   assert.deepEqual((await client.rows(info, plan, { columns: ["q"] })).rows, [["118"]]);
 });
 
-test("1,000,000 rows group by 1,000 keys with their measures within 3 seconds", async (t) => {
-  const next = random(44);
-  const rows: JsonValue[][] = Array.from({ length: 1_000_000 }, () => [
-    Math.floor(next() * 1_000),
-    (next() * 100).toFixed(2),
-  ]);
-  const client = new Client({
-    big: {
-      columns: [
-        { name: "key", type: "integer" },
-        { name: "price", type: "decimal", precision: 6, scale: 2 },
-      ],
-      rows,
-    },
-  });
-  const info = await client.open("big");
-  const plan = {
-    aggregate: {
-      keys: ["key"],
-      measures: [
-        { name: "n", fn: "count" },
-        { name: "s", fn: "sum", column: "price" },
-        { name: "a", fn: "avg", column: "price" },
-        { name: "d", fn: "count_distinct", column: "price" },
-      ],
-    },
-    sort: [{ column: "s", direction: "desc" }],
-  };
-  const start = performance.now();
-  const read = await client.rows(info, plan, { start: 0, end: 1, columns: ["key", "n", "s"] });
-  const time = performance.now() - start;
-  t.diagnostic(`group and sort ${time.toFixed(0)} ms`);
-  assert.ok(time < 3000, `${time.toFixed(0)} ms`);
-  assert.equal(read.view.rowCount, 1_000);
-  const sums = new Map<number, number>();
-  for (const [key, price] of rows) {
-    sums.set(key as number, (sums.get(key as number) ?? 0) + Math.round(Number(price) * 100));
-  }
-  const [key, cents] = [...sums].sort((a, b) => b[1] - a[1])[0];
-  assert.deepEqual(read.rows[0][0], key);
-  assert.equal(read.rows[0][2], (cents / 100).toFixed(2));
+test("generated rows group by 1,000 keys with exact counts and sums", async () => {
+  await groupRows(10_000);
 });

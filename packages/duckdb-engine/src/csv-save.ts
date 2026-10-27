@@ -277,7 +277,7 @@ function fieldText(value: string | null, dialect: CsvDialect) {
 }
 
 /** Checks that the dialect can be scanned byte by byte in the file's encoding. */
-export function checkDialect(dialect: CsvDialect, encoding: TextEncoding) {
+function checkDialect(dialect: CsvDialect, encoding: TextEncoding) {
   for (const [name, char] of [
     ["delimiter", dialect.delimiter],
     ["quote", dialect.quote],

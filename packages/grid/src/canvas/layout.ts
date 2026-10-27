@@ -55,7 +55,7 @@ export type ColumnPin = "left" | "right" | null;
  * frozen beyond it scroll with the others until the grid is wide enough again, so that the scrolling
  * columns always keep some room.
  */
-export const MAX_FROZEN_SHARE = 0.75;
+const MAX_FROZEN_SHARE = 0.75;
 
 /**
  * The columns drawn frozen at each side: the first `left` and the last `right` columns of `layout`, fewer

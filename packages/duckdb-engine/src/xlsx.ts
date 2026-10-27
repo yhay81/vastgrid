@@ -18,13 +18,10 @@ import {
   type WorkbookSource,
 } from "vastgrid-spec/workbook";
 import { quoteIdentifier } from "vastgrid-sql";
+import { quoteLiteral } from "./session.js";
 
-export { sheetList, WorkbookError } from "vastgrid-spec/workbook";
+export { readOptionsOf, sheetList, WorkbookError } from "vastgrid-spec/workbook";
 export type { ReadOptions, SheetInfo, Workbook };
-
-function quoteLiteral(value: string) {
-  return `'${value.replaceAll("'", "''")}'`;
-}
 
 /** The DuckDB types of the logical types that a sheet's columns have. */
 const SQL_TYPES: Record<string, string> = {

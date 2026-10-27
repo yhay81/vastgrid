@@ -2,13 +2,12 @@
 import { checkPlan } from "../check.js";
 import type { Expr, Plan, Search, SortKey } from "../plan.js";
 import { columnsOf, joinParts, partsOf } from "../state.js";
-import { trimSpaces } from "../values.js";
+import { isObject, trimSpaces } from "../values.js";
 import {
   booleanArgument,
   type Command,
   expressionArgument,
   fail,
-  isObject,
   optionalString,
   stringArgument,
   takes,

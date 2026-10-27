@@ -217,3 +217,11 @@ export class SpecError extends Error {
     this.code = code;
   }
 }
+
+/** A name that no earlier column has: `name`, then `name (2)`, `name (3)`, … (§4.6). Adds it to `taken`. */
+export function uniqueName(name: string, taken: Set<string>): string {
+  let unique = name;
+  for (let index = 2; taken.has(unique); index++) unique = `${name} (${index})`;
+  taken.add(unique);
+  return unique;
+}

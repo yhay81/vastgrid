@@ -7,6 +7,7 @@
  * beyond the largest float.
  */
 import { type Column, floatJson, floatOf, type JsonValue } from "vastgrid-spec";
+import { decimalText } from "./evaluate.js";
 import type { Vector } from "./table.js";
 
 /** What `summarize` answers (§8.2). */
@@ -62,14 +63,6 @@ class ExactSum {
   total(): bigint {
     return this.big + BigInt(this.small);
   }
-}
-
-/** The decimal text of an unscaled integer at a scale, which `Number` reads with one rounding. */
-function decimalText(unscaled: bigint, scale: number): string {
-  const negative = unscaled < 0n;
-  const digits = (negative ? -unscaled : unscaled).toString().padStart(scale + 1, "0");
-  const text = scale === 0 ? digits : `${digits.slice(0, -scale)}.${digits.slice(-scale)}`;
-  return negative ? `-${text}` : text;
 }
 
 /** Counts and sums the values of cells (§8.2). */

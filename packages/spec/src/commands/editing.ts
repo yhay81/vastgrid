@@ -2,19 +2,13 @@
 import { parseHtmlTable, parseTsv } from "../clipboard.js";
 import { editText, readCellText } from "../input.js";
 import type { HistoryUpdate } from "../state.js";
-import type { JsonValue, ValueType } from "../types.js";
-import { sameType, textOf } from "../values.js";
+import { isBlank, sameType, textOf } from "../values.js";
 import { type CommandRequest, choice, fail, optionalString, stringArgument, takes } from "./command.js";
 import { type Handlers, type Run, span, type Target } from "./run.js";
 import { DIRECTIONS } from "./selection.js";
 
 /** Cells that one command writes at most (§7.2). */
 export const WRITE_LIMIT = 100_000;
-
-/** Whether a value is blank (§3.2). */
-function isBlank(value: JsonValue, type: ValueType) {
-  return value === null || (type.type === "string" && value === "");
-}
 
 /** The write of a step's values before (undo) or after (redo), each with the other as `previous` (§7.4). */
 function historyWrite(run: Run, updates: readonly HistoryUpdate[], values: "before" | "after"): CommandRequest {

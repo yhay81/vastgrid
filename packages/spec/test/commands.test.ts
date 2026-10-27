@@ -11,6 +11,7 @@ import {
   checkSession,
   type GridState,
 } from "../src/index.ts";
+import { bigState, COLUMNS, rowsContext } from "./command-fixture.ts";
 import { schemaProblems } from "./schemas.ts";
 
 const files = readCommandCorpus();
@@ -173,51 +174,6 @@ for (const file of files) {
   });
 }
 
-const COLUMNS = [
-  { name: "id", type: "bigint" as const },
-  { name: "name", type: "string" as const },
-];
-
-function bigState(updates: number): GridState {
-  return {
-    document: { kind: "vastgrid/document", version: 2, columns: [{ name: "id", width: 80 }] },
-    session: {
-      kind: "vastgrid/session",
-      version: 2,
-      active: { row: 5, column: "name", key: { rowId: 5 } },
-      checked: { mode: "include", keys: [{ rowId: 1 }] },
-      detail: { open: true },
-      history: {
-        undo: [
-          {
-            updates: Array.from({ length: updates }, (_, row) => ({
-              key: { rowId: row },
-              column: "name",
-              before: `a${row}`,
-              after: `b${row}`,
-            })),
-          },
-        ],
-        redo: [],
-      },
-    },
-  };
-}
-
-function rowsContext(blocks: number): CommandContext {
-  return {
-    table: COLUMNS,
-    revision: "r1",
-    view: { columns: COLUMNS, rowCount: blocks * 256, rowIds: true },
-    page: 20,
-    rows: Array.from({ length: blocks }, (_, block) => ({
-      start: block * 256,
-      keys: Array.from({ length: 256 }, (_, offset) => ({ rowId: block * 256 + offset })),
-      values: Array.from({ length: 256 }, (_, offset) => [block * 256 + offset, `n${offset}`]),
-    })),
-  };
-}
-
 test("a command keeps the objects of what it does not change", () => {
   const state = bigState(3);
   const context = rowsContext(1);
@@ -235,24 +191,6 @@ test("a command keeps the objects of what it does not change", () => {
   assert.equal(resized.session, moved.session);
   assert.notEqual(resized.document.columns, moved.document.columns);
   assert.equal(resized.document.plan, moved.document.plan);
-});
-
-test("moving the active cell costs the same with a large history and many loaded rows", () => {
-  const context = rowsContext(1_000);
-  const time = (state: GridState) => {
-    let current = state;
-    const started = performance.now();
-    for (let index = 0; index < 200; index++) {
-      current = applyCommand(current, { command: "move", direction: index % 2 ? "up" : "down" }, context);
-    }
-    return (performance.now() - started) / 200;
-  };
-  time(bigState(1));
-  // Copying a history of 100,000 updates took about 74 ms per move; a move now copies nothing of it. The best of
-  // three runs, so that a pause of the garbage collector or a busy machine does not count.
-  const large = bigState(100_000);
-  const best = Math.min(time(large), time(large), time(large));
-  assert.ok(best < 1, `a move takes less than 1 ms, not ${best.toFixed(2)} ms`);
 });
 
 test("commands read rows through lookup when the core gives it", () => {

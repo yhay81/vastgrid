@@ -7,7 +7,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { JsonValue } from "vastgrid-spec";
 import type { MemoryTable } from "../src/index.ts";
-import { Client, random, single } from "./client.ts";
+import { Client, single } from "./client.ts";
+import { deriveRows } from "./workloads.ts";
 
 const ORDERS: MemoryTable = {
   columns: [
@@ -153,40 +154,6 @@ test("values of every comparable type compare as §3.1 says", async () => {
   ]);
 });
 
-test("1,000,000 rows derive, filter and sort within 3 seconds", async (t) => {
-  const next = random(43);
-  const rows: JsonValue[][] = Array.from({ length: 1_000_000 }, (_, row) => [
-    row % 1_000 === 0 ? null : Math.floor(next() * 1_000),
-    (next() * 100).toFixed(2),
-  ]);
-  const client = new Client({
-    big: {
-      columns: [
-        { name: "qty", type: "integer" },
-        { name: "price", type: "decimal", precision: 6, scale: 2 },
-      ],
-      rows,
-    },
-  });
-  const info = await client.open("big");
-  const plan = {
-    derive: [TOTAL],
-    where: { fn: "gt", args: [{ col: "total" }, { lit: "50000", type: "decimal" }] },
-    sort: [{ column: "total", direction: "desc" }],
-  };
-  const start = performance.now();
-  const read = await client.rows(info, plan, { start: 0, end: 3, columns: ["total"] });
-  const time = performance.now() - start;
-  t.diagnostic(`derive, filter and sort ${time.toFixed(0)} ms, ${read.view.rowCount} rows kept`);
-  assert.ok(time < 3000, `${time.toFixed(0)} ms`);
-  const totals = rows
-    .filter(([qty]) => qty !== null)
-    .map(([qty, price]) => (qty as number) * Number(price))
-    .filter((total) => total > 50_000)
-    .sort((a, b) => b - a);
-  assert.equal(read.view.rowCount, totals.length);
-  assert.deepEqual(
-    read.rows.map(([total]) => Number(total)),
-    totals.slice(0, 3),
-  );
+test("derived values of generated rows filter and sort correctly", async () => {
+  await deriveRows(10_000);
 });

@@ -15,6 +15,7 @@ import {
   type SortKey,
 } from "./plan.js";
 import type { Column, JsonValue, ValueType } from "./types.js";
+import { isObject } from "./values.js";
 
 /** How a column shows numbers: 0.1's `NumberFormat`. */
 export interface NumberFormat {
@@ -193,10 +194,6 @@ export function emptyDocument(): GridDocument {
 
 export function emptySession(): GridSession {
   return { kind: "vastgrid/session", version: 2 };
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function fail(path: string, reason: StateErrorReason, message: string): never {

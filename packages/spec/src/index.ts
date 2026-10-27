@@ -114,6 +114,7 @@ export {
   type SortDirection,
   type SortKey,
   SpecError,
+  uniqueName,
 } from "./plan.js";
 export {
   type ActiveCell,
@@ -172,6 +173,7 @@ export {
   floatOf,
   floatText,
   fromBase64,
+  isBlank,
   isDateText,
   isTimestampText,
   isTimeText,

@@ -24,7 +24,7 @@ import { Session } from "./session.js";
 import { fileRevision, LoadedTable, type TableFormat, tableFormatOf } from "./table.js";
 import { CAPABILITIES, type ViewOptions, Views } from "./view.js";
 import { FileWatcher } from "./watch.js";
-import type { ReadOptions } from "./xlsx.js";
+import { type ReadOptions, readOptionsOf } from "./xlsx.js";
 
 export interface DuckDBEngineOptions extends ViewOptions {
   /** Folders whose files may be opened. DuckDB may read no other files, for good. */
@@ -90,18 +90,6 @@ function fileSize(file: string): Promise<number | null> {
 /** The key of the tables of a file read with some options. */
 function tableKey(file: string, options: ReadOptions) {
   return `${file}\u0000${JSON.stringify(options)}`;
-}
-
-/** The options of `open` that change how a file of a format is read (only workbooks have any). */
-function readOptionsOf(format: string, read: unknown): ReadOptions {
-  if (format !== "xlsx" || read === undefined) return {};
-  const { sheet, headerRow, keepEmptyRows, keepEmptyColumns } = read as ReadOptions;
-  const options: ReadOptions = {};
-  if (sheet !== undefined) options.sheet = sheet;
-  if (headerRow !== undefined) options.headerRow = headerRow;
-  if (keepEmptyRows) options.keepEmptyRows = true;
-  if (keepEmptyColumns) options.keepEmptyColumns = true;
-  return options;
 }
 
 /** The DuckDB engine: open files, their handles, and the views read from them. */
@@ -458,7 +446,7 @@ export class DuckDBEngine {
     const info = await stat(file);
     if (!info.isFile()) throw new EngineError("load_failed", "Only files are opened as tables.");
     const revision = await fileRevision(file);
-    const options = readOptionsOf(format, read);
+    const options: ReadOptions = format === "xlsx" ? readOptionsOf(read) : {};
     const key = tableKey(file, options);
     const loaded = this.tables.get(key);
     // The handles of a table whose file changed follow it first (§7.6), so that all of them read the same table.

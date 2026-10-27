@@ -13,6 +13,7 @@ import {
   type Total,
 } from "../state.js";
 import type { Column, JsonValue } from "../types.js";
+import { isObject } from "../values.js";
 
 /** Rows of the view that the core has read (§6.1). */
 export interface LoadedRows {
@@ -187,10 +188,6 @@ export function fail(
   details?: Record<string, unknown>,
 ): never {
   throw new CommandError(path, reason, message, details);
-}
-
-export function isObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 export function takes(command: Command, allowed: readonly string[]) {

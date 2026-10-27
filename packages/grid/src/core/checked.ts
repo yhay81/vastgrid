@@ -7,7 +7,7 @@ import { type Checked, canonicalJson, keyText, type Plan, partsOf, type RowKey }
 export type CheckState = "checked" | "unchecked" | "unknown";
 
 /** Whether the view's `where` implies the `where` of checked rows, so that every row of it is known (§5.2.1). */
-export function coversView(checked: Checked | undefined, plan: Plan | undefined): boolean {
+function coversView(checked: Checked | undefined, plan: Plan | undefined): boolean {
   if (!checked || checked.mode === "include" || checked.where === undefined) return true;
   const view = partsOf(plan?.where).map((part) => ({ part, json: canonicalJson(part) }));
   return partsOf(checked.where).every((part) => {

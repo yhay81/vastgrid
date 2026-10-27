@@ -23,6 +23,16 @@ const spaceSeparators = /^[\p{Zs}]+|[\p{Zs}]+$/gu;
 const unitDigits: Record<TimestampUnit, number> = { s: 0, ms: 3, us: 6, ns: 9 };
 
 /** The string without its leading and trailing space separators (Unicode category Zs), as `trim` (§4.4). */
+/** Whether a value is a JSON object: not null and not an array. */
+export function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Whether a value is blank (§3.2): null, or an empty string of a string column. */
+export function isBlank(value: JsonValue, type: ValueType): boolean {
+  return value === null || (type.type === "string" && value === "");
+}
+
 export function trimSpaces(text: string): string {
   return text.replace(spaceSeparators, "");
 }

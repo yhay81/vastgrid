@@ -54,7 +54,7 @@ export function takesNoValue(operator: FilterOperator) {
 }
 
 /** A literal of a value of a column (§2.5): values that JSON writes as strings carry the column's type. */
-export function literalOf(value: JsonValue, column: Column): Literal {
+function literalOf(value: JsonValue, column: Column): Literal {
   if (typeof value === "string" && column.type !== "string") return { lit: value, type: column.type };
   return { lit: value };
 }
@@ -227,11 +227,6 @@ export function readFilter(parts: readonly Expr[], name: string): ColumnFilter |
     }
   }
   return "other";
-}
-
-/** Whether a value is blank (§3.2). */
-export function isBlank(value: JsonValue, column: Column) {
-  return value === null || (column.type === "string" && value === "");
 }
 
 /** The conditions of a column (§6.2.1): the parts of `where` that are not the search and refer to it and no other. */

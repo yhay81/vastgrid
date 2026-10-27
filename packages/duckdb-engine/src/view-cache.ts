@@ -20,7 +20,7 @@ interface Entry<T> extends Build<T> {
 }
 
 /** A request can stop waiting without cancelling other requests for the same result. */
-export function untilCancelled<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+function untilCancelled<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (signal?.aborted) return Promise.reject(cancelled());
   return new Promise((resolve, reject) => {
     const abort = () => reject(cancelled());

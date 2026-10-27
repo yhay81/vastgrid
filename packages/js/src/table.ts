@@ -142,7 +142,7 @@ export class TableProblem extends Error {
 const COLUMN_MEMBERS = ["name", "type", "precision", "scale", "bits", "unit", "sourceType", "readOnly"];
 const UNITS = ["s", "ms", "us", "ns"];
 
-function isObject(value: unknown): value is Record<string, unknown> {
+export function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
