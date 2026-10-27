@@ -64,7 +64,15 @@ export default defineConfig({
         {
           label: "Start here",
           translations: { ja: "はじめに" },
-          items: ["getting-started", { label: "Live demo", translations: { ja: "デモ" }, link: "/demo/" }],
+          items: [
+            "getting-started",
+            { label: "Live demo", translations: { ja: "デモ" }, link: "/demo/" },
+            {
+              label: "Open a file (v2 preview)",
+              translations: { ja: "ファイルを開く（v2 プレビュー）" },
+              link: "/open/",
+            },
+          ],
         },
         {
           label: "Guides",

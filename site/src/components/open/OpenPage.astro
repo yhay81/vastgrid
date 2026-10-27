@@ -1,0 +1,53 @@
+---
+import "../../styles/demo.css";
+import "../../styles/open.css";
+import OpenApp from "./OpenApp.tsx";
+
+interface Props {
+  language: "en" | "ja";
+}
+
+const { language } = Astro.props;
+const texts = {
+  en: {
+    title: "Open a file — vastgrid",
+    description:
+      "Open a CSV, TSV, JSON Lines, Parquet or Excel file in your browser with vastgrid v2: sort, filter, group, edit and export it, without uploading it.",
+    noscript: "This page needs JavaScript.",
+  },
+  ja: {
+    title: "ファイルを開く — vastgrid",
+    description:
+      "CSV・TSV・JSON Lines・Parquet・Excel のファイルを vastgrid v2 でブラウザーの中で開き、アップロードせずに並べ替え・絞り込み・グループ化・編集・書き出しができます。",
+    noscript: "このページには JavaScript が必要です。",
+  },
+}[language];
+---
+
+<!doctype html>
+<html lang={language}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{texts.title}</title>
+    <meta name="description" content={texts.description} />
+    <meta property="og:title" content={texts.title} />
+    <meta property="og:description" content={texts.description} />
+    <meta property="og:image" content="https://vastgrid.yhay81.com/og.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="alternate" hreflang="en" href="https://vastgrid.yhay81.com/open/" />
+    <link rel="alternate" hreflang="ja" href="https://vastgrid.yhay81.com/ja/open/" />
+    <script is:inline>
+      // Apply the stored theme before the first paint, as the documentation does.
+      try {
+        const theme = localStorage.getItem("starlight-theme");
+        if (theme === "light" || theme === "dark") document.documentElement.style.colorScheme = theme;
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <OpenApp client:only="react" language={language} />
+    <noscript>{texts.noscript}</noscript>
+  </body>
+</html>

@@ -1,0 +1,85 @@
+.open__badge {
+  padding: 1px 6px;
+  border: 1px solid var(--demo-accent);
+  border-radius: 999px;
+  color: var(--demo-accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.open__file {
+  overflow: hidden;
+  color: var(--demo-muted);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.open__main {
+  position: relative;
+}
+
+.open__empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  margin: 0 16px;
+  font-size: 15px;
+  text-align: center;
+}
+
+.open__empty p {
+  margin: 0;
+}
+
+.open__or {
+  color: var(--demo-muted);
+}
+
+.open__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.open__button,
+.open__sheet select {
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--demo-border);
+  border-radius: 6px;
+  background: var(--demo-control);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.open__button--primary {
+  border-color: var(--demo-accent);
+  background: var(--demo-accent-bg);
+  font-weight: 600;
+}
+
+.open__reading,
+.open__drop {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--demo-bg) 85%, transparent);
+  font-size: 15px;
+  text-align: center;
+}
+
+.open__drop {
+  margin: 12px;
+  border: 2px dashed var(--demo-accent);
+  border-radius: 12px;
+  pointer-events: none;
+}

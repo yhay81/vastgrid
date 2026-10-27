@@ -46,5 +46,14 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
+    {
+      // e2e/open.spec.ts: the site's page that opens a file in the browser, with v2's memory engine in a worker.
+      // Vite serves the built site: `astro preview` goes to the background when an agent runs it.
+      command:
+        "npm run build -w vastgrid-site && npx vite preview site --outDir dist --host 127.0.0.1 --port 5187 --strictPort",
+      url: "http://127.0.0.1:5187/open/",
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
   ],
 });

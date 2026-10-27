@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `vastgrid-site`: the page `/open/` (`/ja/open/`) opens a CSV, TSV, JSON Lines, Parquet or Excel file that is
+  dropped or chosen, or a sample of 1,000,000 rows, with v2's grid and memory engine in a Web Worker: the file
+  stays in the browser, is sorted, filtered, edited and exported as CSV, TSV, JSON or Excel, and a workbook's sheet
+  is chosen. `e2e/open.spec.ts` tests it on the built site.
 - `vastgrid-js` (unreleased v2): the memory engine opens sheets of Excel workbooks (`.xlsx`, `.xlsm`) given as a
   `Blob` or a `File`, with `open`'s `read` (`sheet`, `headerRow`, `keepEmptyRows`, `keepEmptyColumns`) and the
   workbook's `sheets`, `sheet` and `notes` in `TableInfo`, and with the columns, types and values that the DuckDB
