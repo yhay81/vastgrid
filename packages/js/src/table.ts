@@ -43,6 +43,43 @@ export interface ArrowTable {
   editable?: boolean;
 }
 
+/** What a text file is read from: a `Blob` or a `File`, or anything that gives its bytes in slices as they do. */
+export interface TextFile {
+  readonly size: number;
+  /** The file's name, whose extension tells its format when the table does not. */
+  readonly name?: string;
+  slice(start?: number, end?: number): { arrayBuffer(): Promise<ArrayBuffer> };
+}
+
+/** The formats of text files: CSV, TSV and JSON Lines. */
+export type TextFormat = "csv" | "tsv" | "jsonl";
+
+/**
+ * A table as a text file: CSV, TSV or JSON Lines in UTF-8, read whole into typed columns when it is first opened.
+ * Each column has the first of the types boolean, integer, bigint, float, time, date, timestamp and timestamptz
+ * that every value of it fits, and otherwise is a string.
+ */
+export interface FileTable {
+  /** The file, a `Blob` or a `File`: in a Web Worker or the page, read in slices without a copy of it whole. */
+  file: TextFile;
+  /** `csv`, `tsv` or `jsonl`; by default from the file's name (`.csv`, `.tsv` or `.tab`, `.jsonl` or `.ndjson`). */
+  format?: TextFormat;
+  /**
+   * The field separator of a CSV file, one character; by default the one of `,`, tab, `;` and `|` that splits its
+   * first line into the most fields.
+   */
+  delimiter?: string;
+  /** Whether the first line of a CSV or TSV file names the columns (default true). */
+  header?: boolean;
+  /**
+   * The most memory, in bytes, that the table's columns may take (default 1 GiB). A file whose columns would take
+   * more fails to open, before any of them is kept.
+   */
+  maxBytes?: number;
+  /** Whether `write` writes the table's cells (§7), as for a `MemoryTable`. */
+  editable?: boolean;
+}
+
 /** A table that does not follow §2, which the engine answers with `load_failed` (§8.7). */
 export class TableProblem extends Error {
   constructor(
@@ -131,6 +168,11 @@ export function isArrowTable(table: unknown): table is ArrowTable {
   return isObject(table) && "arrow" in table;
 }
 
+/** Whether a host's table is given as a text file (`FileTable`), which `readFile` of text.ts reads. */
+export function isFileTable(table: unknown): table is FileTable {
+  return isObject(table) && "file" in table;
+}
+
 /**
  * Checks the form of a table given as rows against §2: its columns, with unique names, and rows of one value per
  * column. Gives copies of the columns. Throws a `TableProblem` with the JSON Pointer of the first member at fault.
@@ -138,7 +180,7 @@ export function isArrowTable(table: unknown): table is ArrowTable {
  * nothing per value.
  */
 export function checkTable(table: unknown): CheckedTable {
-  if (!isObject(table)) throw new TableProblem("", "A table is an object: { columns, rows } or { arrow }.");
+  if (!isObject(table)) throw new TableProblem("", "A table is an object: { columns, rows }, { arrow } or { file }.");
   if (!Array.isArray(table.columns)) throw new TableProblem("/columns", "columns is a list of columns (§2.1).");
   const columns = table.columns.map((column, index) => checkColumn(column, `/columns/${index}`));
   checkNames(columns, (index) => `/columns/${index}/name`);

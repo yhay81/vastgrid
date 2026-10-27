@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { type Column, checkResponse, decodeBlock, type JsonValue, type Operation } from "vastgrid-spec";
-import { type ArrowTable, type MemoryEngine, type MemoryTable, memoryEngine } from "../src/index.ts";
+import { type ArrowTable, type FileTable, type MemoryEngine, type MemoryTable, memoryEngine } from "../src/index.ts";
 
 export type Json = Record<string, unknown>;
 
@@ -38,7 +38,7 @@ export class Client {
   readonly engine: MemoryEngine;
   private id = 0;
 
-  constructor(tables: Record<string, MemoryTable | ArrowTable>) {
+  constructor(tables: Record<string, MemoryTable | ArrowTable | FileTable>) {
     this.engine = memoryEngine({ tables });
   }
 

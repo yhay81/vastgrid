@@ -1,6 +1,7 @@
 /**
  * An engine over tables in memory (docs/v2-spec.md §8): it answers the requests of §8.2 about tables that
- * its host gives it as arrays of typed JSON values (§2.2), with views in the order of §3.3.
+ * its host gives it as arrays of typed JSON values (§2.2), as Arrow or as text files, with views in the order of
+ * §3.3.
  */
 import {
   answerId,
@@ -33,7 +34,9 @@ import {
   type ArrowTable,
   type CheckedTable,
   checkTable,
+  type FileTable,
   isArrowTable,
+  isFileTable,
   type MemoryTable,
   shown,
   TableProblem,
@@ -43,9 +46,12 @@ import {
   vectorValue,
 } from "./table.js";
 
+/** A table that a host gives the engine: rows of typed JSON, Arrow, or a text file. */
+type HostTable = MemoryTable | ArrowTable | FileTable;
+
 export interface MemoryEngineOptions {
-  /** The tables that `open` opens, by the `ref` that names them: rows of typed JSON, or Arrow. */
-  tables: Record<string, MemoryTable | ArrowTable>;
+  /** The tables that `open` opens, by the `ref` that names them: rows of typed JSON, Arrow, or text files. */
+  tables: Record<string, HostTable>;
 }
 
 export interface MemoryEngine {
@@ -122,12 +128,12 @@ interface Table {
   columns: Column[];
   /** The index of each column by name. */
   index: Map<string, number>;
-  /** The host's rows, of a table given as rows; null for a table given as Arrow. */
+  /** The host's rows, of a table given as rows; null for a table given as Arrow or as a file. */
   rows: readonly (readonly JsonValue[])[] | null;
-  /** The columns of a table given as Arrow; null for a table given as rows. */
+  /** The typed columns of a table given as Arrow or as a file; null for a table given as rows. */
   vectors: Vector[] | null;
-  /** The module that reads tables given as Arrow, for a table given as Arrow. */
-  arrow: typeof import("./arrow.js") | null;
+  /** The module that reads the numbers of typed columns, for a table given as Arrow or as a file. */
+  typed: typeof import("./numbers.js") | null;
   rowCount: number;
   revision: string;
   editable: boolean;
@@ -143,7 +149,7 @@ interface Table {
   checkers: ((value: unknown, row: number) => void)[];
   /**
    * Each checked column's values by row ID, which ranks, summaries and expressions read: an array of the
-   * engine's own, or the column of an Arrow table until a write makes a copy of it.
+   * engine's own, or the typed column of an Arrow table or a file until a write makes a copy of it.
    */
   values: (Vector | undefined)[];
   /** The columns whose values are arrays of the engine's own, which writes change. */
@@ -194,7 +200,7 @@ interface Running {
 const revisions = new WeakMap<object, string>();
 let revisionCount = 0;
 
-function revisionOf(table: MemoryTable | ArrowTable): string {
+function revisionOf(table: HostTable): string {
   let revision = revisions.get(table);
   if (revision === undefined) {
     revision = `memory-${++revisionCount}`;
@@ -236,9 +242,11 @@ function mergeRanges(ranges: readonly (readonly [number, number])[], count: numb
 }
 
 class Engine implements MemoryEngine {
-  private readonly sources: Map<string, MemoryTable | ArrowTable>;
+  private readonly sources: Map<string, HostTable>;
   /** Tables by ref, while a table ID is open on them. */
   private readonly prepared = new Map<string, Table>();
+  /** Files being read by ref, which every open of the file waits for. */
+  private readonly reading = new Map<string, Promise<CheckedTable>>();
   /** Tables by table ID. */
   private readonly tables = new Map<string, Table>();
   private readonly running = new Map<number, Running>();
@@ -345,47 +353,70 @@ class Engine implements MemoryEngine {
 
   private async open(ref: string) {
     if (!this.sources.has(ref)) throw new Failure("not_allowed", `The host does not open ${shown(ref)}.`);
-    const source = this.sources.get(ref) as MemoryTable | ArrowTable;
-    // Arrow tables are read by a module of their own, loaded before the table is looked up so that two opens of
-    // one table do not both make it.
+    const source = this.sources.get(ref) as HostTable;
+    // Arrow tables and files are read by modules of their own, loaded before the table is looked up so that two
+    // opens of one table do not both make it.
     const arrow = isArrowTable(source) ? await import("./arrow.js") : null;
+    const file = isFileTable(source);
+    const typed = arrow || file ? await import("./numbers.js") : null;
     let table = this.prepared.get(ref);
     if (!table) {
       let checked: CheckedTable;
       try {
-        checked = arrow ? arrow.checkArrow((source as ArrowTable).arrow) : checkTable(source);
+        checked = arrow
+          ? arrow.checkArrow((source as ArrowTable).arrow)
+          : file
+            ? await this.readFile(ref, source as FileTable)
+            : checkTable(source);
       } catch (error) {
         if (!(error instanceof TableProblem)) throw error;
         const at = error.path === "" ? "" : `at ${error.path}, `;
         throw new Failure("load_failed", `The table ${shown(ref)} cannot be read: ${at}${error.message}`);
       }
-      const { columns } = checked;
-      table = {
-        ref,
-        columns,
-        index: new Map(columns.map((column, index) => [column.name, index])),
-        rows: checked.rows,
-        vectors: checked.vectors,
-        arrow,
-        rowCount: checked.rowCount,
-        revision: revisionOf(source),
-        editable: source.editable === true,
-        edits: { version: 0, cells: 0 },
-        written: new Set(),
-        keys: new Map(),
-        ranks: columns.map(() => undefined),
-        checkers: columns.map((column, index) => valueChecker(column, index)),
-        values: columns.map(() => undefined),
-        owned: columns.map(() => false),
-        views: new Map(),
-        open: 0,
-      };
-      this.prepared.set(ref, table);
+      // Another open of the file may have made the table while the file was read.
+      table = this.prepared.get(ref) ?? this.prepare(ref, source, checked, typed);
     }
     const id = `t${this.nextTable++}`;
     this.tables.set(id, table);
     table.open++;
     return this.info(id, table);
+  }
+
+  /** Reads a table given as a file, once for every open that waits for it (text.ts). */
+  private readFile(ref: string, source: FileTable): Promise<CheckedTable> {
+    let reading = this.reading.get(ref);
+    if (!reading) {
+      reading = import("./text.js").then((text) => text.readFile(source)).finally(() => this.reading.delete(ref));
+      this.reading.set(ref, reading);
+    }
+    return reading;
+  }
+
+  /** A table that is opened from its host's table, checked or read. */
+  private prepare(ref: string, source: HostTable, checked: CheckedTable, typed: Table["typed"]): Table {
+    const { columns } = checked;
+    const table: Table = {
+      ref,
+      columns,
+      index: new Map(columns.map((column, index) => [column.name, index])),
+      rows: checked.rows,
+      vectors: checked.vectors,
+      typed,
+      rowCount: checked.rowCount,
+      revision: revisionOf(source),
+      editable: source.editable === true,
+      edits: { version: 0, cells: 0 },
+      written: new Set(),
+      keys: new Map(),
+      ranks: columns.map(() => undefined),
+      checkers: columns.map((column, index) => valueChecker(column, index)),
+      values: columns.map(() => undefined),
+      owned: columns.map(() => false),
+      views: new Map(),
+      open: 0,
+    };
+    this.prepared.set(ref, table);
+    return table;
   }
 
   /** TableInfo (§8.2). */
@@ -423,7 +454,7 @@ class Engine implements MemoryEngine {
 
   /**
    * Checks every value of a column, once, before something reads all of it, and gives its values by row ID: of a
-   * table given as rows, an array of the engine's own; of one given as Arrow, its column.
+   * table given as rows, an array of the engine's own; of one given as Arrow or as a file, its column.
    */
   private valuesOf(table: Table, index: number): Vector {
     const made = table.values[index];
@@ -435,8 +466,8 @@ class Engine implements MemoryEngine {
         values = table.vectors[index];
         const column = table.columns[index];
         // Numbers are checked as numbers; a value found wrong is then read, which fails as its JSON would.
-        if (values.numbers && table.arrow) {
-          const row = table.arrow.firstInvalid(column, values.numbers, values.validity ?? null);
+        if (values.numbers && table.typed) {
+          const row = table.typed.firstInvalid(column, values.numbers, values.validity ?? null);
           if (row >= 0) check(vectorValue(values, column, index, row), row);
         } else {
           for (let row = 0; row < table.rowCount; row++) check(vectorValue(values, column, index, row), row);
@@ -491,8 +522,8 @@ class Engine implements MemoryEngine {
     if (!ranks) {
       const column = table.columns[index];
       const values = this.valuesOf(table, index);
-      // An Arrow table's column is ranked from its numbers, until a write makes it an array.
-      const write = values.numbers && table.arrow ? table.arrow.numberWriter(column, values.numbers) : null;
+      // A typed column is ranked from its numbers, until a write makes it an array.
+      const write = values.numbers && table.typed ? table.typed.numberWriter(column, values.numbers) : null;
       ranks = rankColumn(column, values, write);
       table.ranks[index] = ranks;
     }

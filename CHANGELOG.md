@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `vastgrid-js` (unreleased v2): the memory engine opens text files. A table `{ file }` with a `Blob` or a `File`
+  of CSV, TSV or JSON Lines in UTF-8 (the format from `format` or the file's name), in a Web Worker or the page, is
+  read in slices when it is first opened into typed columns, without rows of JSON. Each column has the first of
+  boolean, integer, bigint, float, time, date, timestamp and timestamptz that every value of it fits, and is a
+  string otherwise; objects and lists of JSON are their JSON text. Quoting, CRLF and byte order marks are read as
+  v1 read them, and empty fields are null; text that is not UTF-8 fails to load at its row and column, and
+  `maxBytes` (default 1 GiB) limits the memory a file's columns may take. A CSV file of a million rows and six
+  columns (55 MB) opens in about 0.9 seconds into 32 MB, where the same rows as JSON take 248 MB. The code that
+  reads files loads with the first such table.
 - `vastgrid-js` (unreleased v2): the memory engine takes tables as Arrow, `{ arrow }` with the bytes of an IPC
   stream or file of any number of record batches, and keeps their columns as Arrow holds them: values of fixed
   width in typed arrays, checked and sorted as numbers, and the others read when they are asked for. A million

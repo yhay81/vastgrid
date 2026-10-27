@@ -40,6 +40,35 @@ const info = await engine.handle({ v: 2, id: 1, op: "open", ref: "orders" });
   Arrow, Arrow types that have no logical type (lists, structs, …) and names that two columns share fail with
   `load_failed` at `/arrow`; values that have no typed JSON (text that is not UTF-8, dates after 9999-12-31)
   fail when they are read, at `/rows/{row}/{column}`. The code that reads Arrow loads with the first such table.
+- A table may also be a text file: `{ file, format }`, with `file` a `Blob` or a `File` of CSV, TSV or JSON Lines
+  in UTF-8, in a Web Worker or the page, and `format` `csv`, `tsv` or `jsonl`, by default from the file's name
+  (`.csv`, `.tsv` or `.tab`, `.jsonl` or `.ndjson`); `editable` as for rows. It is read when it is first opened, in
+  slices of 4 MiB and twice: once to find its columns, the types that all their values fit and the memory they
+  take, then into typed columns, numbers in typed arrays (sorted as an Arrow table's are) and text as UTF-8,
+  without making rows of JSON. The open waits for both; opens of a file share one reading, and a table that every
+  ID has closed is read again. A CSV file of a million rows of six columns (55 MB) opens in about 0.9 seconds into
+  32 MB, where the same rows as JSON take 248 MB. The code that reads files loads with the first such table.
+- A file's column has the first of these types that every value of it fits, and is a `string` otherwise:
+  `boolean` (`true` and `false` in any case), `integer` and `bigint` by their range, `float` (with `nan`, `inf`
+  and `infinity`), `time` (`HH:MM:SS` with up to 6 fraction digits), `date` (`YYYY-MM-DD` of the years 0001 to
+  9999), `timestamp` (a date, a space or `T` and a time; dates fit too) and `timestamptz` (a timestamp with `Z`,
+  `+HH`, `+HH:MM` or `+HHMM`, kept in UTC). Text that is almost a value (`24:00:00`, ` 1`, `2023-02-29`) makes a
+  string column, which keeps every value as it is written.
+- CSV and TSV: the first line names the columns unless `header: false` (empty names are `column0`, `column1`, …,
+  and a repeated name gets `_1`, `_2`, …). CSV's separator is `delimiter`, or the one of `,`, tab, `;` and `|` that
+  splits the first line into the most fields. A quote switches quoting on and off wherever it is, so that quotes
+  hold separators and line breaks and `""` within them is a quote; lines end with LF or CRLF, and empty lines are
+  no rows. An empty field is null, and so are the fields that a row shorter than the others lacks; a quoted empty
+  field (`""`) is an empty string, and null in a column of another type.
+- JSON Lines: an object per line, and a column per key in the order the keys first come, null where a line lacks
+  it. Numbers are what `JSON.parse` reads (integers beyond 2^53 are floats), strings are strings unless they are
+  times, dates or timestamps, and a column of objects and lists only is their JSON text (`sourceType: "JSON"`,
+  `readOnly: true`); a column of other values mixed is strings, with numbers and booleans as their JSON.
+- A UTF-8 byte order mark is left out. A file in UTF-16, text that is not UTF-8 (at `/rows/{row}/{column}`; §2.2
+  does not allow replacing it), a line of JSON Lines that is not an object (at `/rows/{row}`) and a file that cannot
+  be read fail with `load_failed`. `maxBytes` (default 1 GiB) is the most memory that the table's columns may take:
+  a file whose columns would take more fails before any of them is kept. Parquet files read by HTTP range requests,
+  and answering the first rows while a file loads (§9), are later steps.
 - Float32 table values and writes must already be binary32 numbers (`Math.fround(0.1)`, not `0.1`);
   `readCellText` converts typed input to them. Invalid timestamps, intervals and lone Unicode surrogates
   are rejected by the same specification checks used to write Arrow blocks. An invalid write changes
@@ -82,6 +111,7 @@ const info = await engine.handle({ v: 2, id: 1, op: "open", ref: "orders" });
 
 The tests run every case of the conformance corpus of [`vastgrid-spec`](../spec), with its tables as rows and as
 Arrow, check the order of both against a comparison of values one pair at a time on generated tables, and check
-every response with `checkResponse`. The
+every response with `checkResponse`. Files are read in slices of every size from 1 byte, and a generated CSV file
+answers sorts, filters, groups and summaries as the same rows given as typed JSON. The
 DuckDB engine's tests compare this engine's answers with its own on a generated table and generated plans
 (`packages/duckdb-engine/test/memory-engine.test.ts`).
