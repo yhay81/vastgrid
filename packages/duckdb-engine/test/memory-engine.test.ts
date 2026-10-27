@@ -9,8 +9,10 @@
  * default) and `VASTGRID_SEED` the seed; a difference names the plan's seed and shows the plan.
  */
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { after, before, test } from "node:test";
+import { inflateRawSync } from "node:zlib";
 import { memoryEngine } from "vastgrid-js";
 import { type Column, checkResponse, decodeBlock, type JsonValue, type Operation } from "vastgrid-spec";
 import { sameValue } from "vastgrid-spec/conformance";
@@ -556,4 +558,202 @@ test(`${PLANS} generated plans give the same answers in both engines (seed ${SEE
   assert.equal(failures.length, 0, `${failures.length} plans differ:\n${failures.slice(0, 10).join("\n")}`);
   // The generator makes plans that run, not only plans that fail.
   if (!only) assert.ok(outcomes.rows > PLANS * 0.8, `${outcomes.rows} of ${PLANS} plans ran`);
+});
+
+// ----- find and export -----
+
+/** The texts that finds look for: parts of words in any case, digits, and the text forms of floats and dates. */
+const NEEDLES = [
+  "tokyo",
+  "TOKYO",
+  "o",
+  "ß",
+  "SS",
+  "i̇",
+  "σ",
+  "😀",
+  "1",
+  "0.",
+  "-",
+  "nan",
+  "inf",
+  "2024-0",
+  ":0",
+  "e+",
+  ",",
+];
+
+/** The records of CSV or TSV as DuckDB writes them: fields quoted with `"`, records ending with LF. */
+function records(text: string, delimiter: string): string[][] {
+  const result: string[][] = [];
+  let record: string[] = [];
+  let field = "";
+  let quoted = false;
+  for (let at = 0; at < text.length; at++) {
+    const char = text[at];
+    if (quoted && char === '"' && text[at + 1] === '"') {
+      field += '"';
+      at++;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (quoted || (char !== delimiter && char !== "\n")) {
+      field += char;
+    } else {
+      record.push(field);
+      field = "";
+      if (char === "\n") {
+        result.push(record);
+        record = [];
+      }
+    }
+  }
+  return result;
+}
+
+/** A field of CSV as typed JSON of its column, so that floats compare within the tolerance. */
+function fieldValue(text: string, column: Column): JsonValue {
+  if (column.type !== "float") return text;
+  return { nan: "NaN", inf: "Infinity", "-inf": "-Infinity" }[text] ?? Number(text);
+}
+
+/** A JSON export's rows, with each number as its text in the file. */
+function jsonRows(bytes: Uint8Array): Record<string, JsonValue>[] {
+  const reviver = (_key: string, value: unknown, context?: { source?: string }) =>
+    typeof value === "number" ? (context?.source ?? value) : value;
+  return JSON.parse(new TextDecoder().decode(bytes), reviver as never);
+}
+
+/** A value of a JSON export as typed JSON of its column: numbers as their digits, floats as numbers. */
+function jsonValue(value: JsonValue, column: Column): JsonValue {
+  if (value === null) return null;
+  if (column.type === "float") return fieldValue(String(value), column);
+  // Decimals of up to 18 digits come from DuckDB without the zeros at their end (12.5 for 12.50).
+  if (column.type === "decimal")
+    return String(value)
+      .replace(/(\.\d*?)0+$/, "$1")
+      .replace(/\.$/, "");
+  return String(value);
+}
+
+/** The entries of a ZIP archive by name, read by its central directory. */
+function unzip(bytes: Uint8Array): Map<string, string> {
+  const data = Buffer.from(bytes);
+  const end = data.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  let at = data.readUInt32LE(end + 16);
+  const entries = new Map<string, string>();
+  for (let index = data.readUInt16LE(end + 10); index > 0; index--) {
+    const method = data.readUInt16LE(at + 10);
+    const compressed = data.readUInt32LE(at + 20);
+    const nameLength = data.readUInt16LE(at + 28);
+    const offset = data.readUInt32LE(at + 42);
+    const name = data.toString("utf8", at + 46, at + 46 + nameLength);
+    at += 46 + nameLength + data.readUInt16LE(at + 30) + data.readUInt16LE(at + 32);
+    const start = offset + 30 + data.readUInt16LE(offset + 26) + data.readUInt16LE(offset + 28);
+    const raw = data.subarray(start, start + compressed);
+    entries.set(name, (method === 8 ? inflateRawSync(raw) : raw).toString("utf8"));
+  }
+  return entries;
+}
+
+/** The file of an export of this engine, which it keeps for the host to serve. */
+async function keptFile(response: Json): Promise<Buffer> {
+  assert.ok(response.result, JSON.stringify(response.error));
+  const kept = context.engine.exportFile((response.result as { target: string }).target);
+  assert.ok(kept);
+  return readFile(kept.path);
+}
+
+test("generated plans find the same cells and export the same files in both engines", async () => {
+  const duckdbSend: Send = (op, members) => context.client.send(op, members);
+  const ours = { table: memoryTable.table, revision: memoryTable.revision };
+  const theirs = { table: duckdbTable.table, revision: duckdbTable.revision };
+  const table = new Set(COLUMNS.map((column) => column.name));
+  const failures: string[] = [];
+  let compared = 0;
+  for (let index = 0; index < 60 && failures.length < 5; index++) {
+    const seed = SEED * 1_000 + index;
+    const random = generator(seed);
+    const plan = new Plans(generator(seed), tablePool()).plan();
+    const memory = await answer(memorySend, memoryTable, plan);
+    if (memory.error || differences(memory, await answer(duckdbSend, duckdbTable, plan)).length > 0) continue;
+    compared++;
+    const columns = memory.columns as Column[];
+    const count = memory.rowCount as number;
+    // Finds in the table's own columns, whose text forms are the same in both engines; derived floats may differ
+    // in their last digits.
+    const own = columns.filter((column) => table.has(column.name)).map((column) => column.name);
+    for (let find = 0; find < 6 && own.length > 0 && count > 0; find++) {
+      const names = Array.from({ length: random.int(1, 4) }, () => random.pick(own));
+      const members = {
+        plan,
+        text: random.pick(NEEDLES),
+        columns: names,
+        from: { row: random.int(0, count - 1), column: random.int(0, names.length - 1) },
+        direction: random.chance(0.5) ? 1 : -1,
+        ...(random.chance(0.3) ? { caseSensitive: true } : {}),
+      };
+      const found = await memorySend("find", { ...ours, ...members });
+      const other = await duckdbSend("find", { ...theirs, ...members });
+      if (JSON.stringify(found.result ?? found.error) !== JSON.stringify(other.result ?? other.error)) {
+        failures.push(
+          `plan ${seed}: find ${JSON.stringify(members)}\n  memory ${JSON.stringify(found.result ?? found.error)}; duckdb ${JSON.stringify(other.result ?? other.error)}`,
+        );
+      }
+    }
+    // Exports of every column of the view, which hold the same rows: CSV and TSV field by field, JSON value by value.
+    for (const format of ["csv", "tsv", "json"] as const) {
+      const exported = await memorySend("export", { ...ours, plan, format });
+      const other = await duckdbSend("export", { ...theirs, plan, format });
+      if (exported.error || other.error) {
+        failures.push(`plan ${seed}: ${format}: ${JSON.stringify(exported.error ?? other.error)}`);
+        continue;
+      }
+      const bytes = ((exported.result as Json).data as { bytes: Uint8Array }).bytes;
+      const file = await keptFile(other);
+      assert.equal((exported.result as Json).rows, count);
+      if (format === "json") {
+        const mine = jsonRows(bytes);
+        const other = jsonRows(file);
+        assert.equal(mine.length, other.length);
+        mine.forEach((row, at) => {
+          for (const column of columns) {
+            const a = jsonValue(row[column.name], column);
+            const b = jsonValue(other[at][column.name], column);
+            if (failures.length < 5 && !same(a, b, column) && a !== b) {
+              failures.push(
+                `plan ${seed}: json row ${at}, ${column.name}: ${JSON.stringify(a)}; duckdb ${JSON.stringify(b)}`,
+              );
+            }
+          }
+        });
+        continue;
+      }
+      const delimiter = format === "tsv" ? "\t" : ",";
+      const mine = records(new TextDecoder().decode(bytes), delimiter);
+      const lines = records(file.toString("utf8"), delimiter);
+      assert.equal(mine.length, count + 1);
+      assert.deepEqual(mine[0], lines[0]);
+      for (let at = 1; at < mine.length && failures.length < 5; at++) {
+        mine[at].forEach((text, field) => {
+          const other = lines[at]?.[field];
+          const column = columns[field];
+          if (text !== other && !same(fieldValue(text, column), fieldValue(other ?? "", column), column)) {
+            failures.push(
+              `plan ${seed}: ${format} line ${at}, ${column.name}: ${JSON.stringify(text)}; duckdb ${JSON.stringify(other)}`,
+            );
+          }
+        });
+      }
+    }
+  }
+  // Workbooks of the table: the same sheet, compressed by either engine's deflate.
+  const workbook = await memorySend("export", { ...ours, plan: {}, format: "xlsx" });
+  assert.ok(workbook.result, JSON.stringify(workbook.error));
+  const written = await duckdbSend("export", { ...theirs, plan: {}, format: "xlsx" });
+  const mine = unzip(((workbook.result as Json).data as { bytes: Uint8Array }).bytes);
+  const other = unzip(await keptFile(written));
+  assert.deepEqual([...mine.keys()], [...other.keys()]);
+  for (const [name, text] of mine) assert.equal(text, other.get(name), name);
+  assert.equal(failures.length, 0, failures.join("\n"));
+  assert.ok(compared > 40, `${compared} plans compared`);
 });

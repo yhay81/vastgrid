@@ -5,8 +5,8 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import { inflateRawSync } from "node:zlib";
 import { createGridStore, localTransport } from "vastgrid-grid/core";
+import { XLSX_MAX_ROWS } from "vastgrid-spec/xlsx";
 import { createHttpHandler } from "../src/index.ts";
-import { XLSX_MAX_ROWS } from "../src/xlsx-writer.ts";
 import { type Client, type Json, setUp, type TableInfo, writeParquet } from "./client.ts";
 
 let context: Awaited<ReturnType<typeof setUp>>;
@@ -116,6 +116,40 @@ test("exports a filtered, sorted view to xlsx that the workbook reader reads bac
   assert.deepEqual(
     (await readdir(path.join(workspace, "out"))).filter((name) => name.includes(".tmp")),
     [],
+  );
+});
+
+test("writes numbers as their text forms: floats not finite, float32, and decimals with all their digits", async () => {
+  const file = path.join(workspace, "numbers.parquet");
+  await writeParquet(file, {
+    columns: [
+      { name: "f", type: "float" },
+      { name: "f32", type: "float", bits: 32 },
+      { name: "d", type: "decimal", precision: 10, scale: 2 },
+      { name: "p", type: "decimal", precision: 2, scale: 2 },
+      { name: "big", type: "decimal", precision: 38, scale: 4 },
+    ],
+    rows: [
+      ["Infinity", 0.10000000149011612, "12.50", "-0.10", "1234567890123456789012345678901234.5670"],
+      ["NaN", null, "-0.01", "0.05", null],
+      [30, -2.5, "7.00", null, "-0.0001"],
+    ],
+  });
+  const info = await client.open("numbers.parquet");
+  await exported(info, { format: "json", target: "numbers.json" });
+  // JSON has neither NaN nor Infinity, and every digit stays (DuckDB's own JSON writes NaN, 0.10000000149011612,
+  // 12.5 and .05).
+  assert.equal(
+    await readFile(out("numbers.json"), "utf8"),
+    '[\n\t{"f":"inf","f32":0.1,"d":12.50,"p":-0.10,"big":1234567890123456789012345678901234.5670},\n' +
+      '\t{"f":"nan","f32":null,"d":-0.01,"p":0.05,"big":null},\n' +
+      '\t{"f":30.0,"f32":-2.5,"d":7.00,"p":null,"big":-0.0001}\n]\n',
+  );
+  JSON.parse(await readFile(out("numbers.json"), "utf8"));
+  await exported(info, { format: "csv", target: "numbers.csv" });
+  assert.equal(
+    await readFile(out("numbers.csv"), "utf8"),
+    "f,f32,d,p,big\ninf,0.1,12.50,-0.10,1234567890123456789012345678901234.5670\nnan,,-0.01,0.05,\n30.0,-2.5,7.00,,-0.0001\n",
   );
 });
 

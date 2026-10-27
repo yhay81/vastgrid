@@ -1029,6 +1029,13 @@ export class GridStore {
     return this.options.transport.exportUrl?.(target) ?? null;
   }
 
+  /** A name for the file of an export that an engine answers as data: the table's name with the format's extension. */
+  exportName(format: string): string {
+    const name = this.options.table.split(/[\\/]/).pop() ?? "";
+    const base = name.replace(/(\.(gz|zst))?$/i, "").replace(/\.[^.]*$/, "") || "export";
+    return `${base}.${format}`;
+  }
+
   /**
    * Reads the table's file as it is now (`reload`, §7.6), without the cells written into the table as it was read:
    * for a file that changed on disk while the table had written cells (`fileChanged` of the table).

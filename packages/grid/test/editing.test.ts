@@ -106,3 +106,21 @@ test("a write that fails shows the cell's value again and reports why", async ()
   assert.equal(store.getSnapshot().session.history, undefined);
   disconnect();
 });
+
+test("export over an engine that answers data gives the file's bytes, with written cells and a name (§6.6)", async () => {
+  const { store, disconnect } = await editable();
+  await store.dispatch({ command: "select", row: 1, column: "city" });
+  store.dispatchSync({ command: "edit.begin", text: "Nara" });
+  await store.dispatch({ command: "edit.commit" });
+  await until(() => store.getSnapshot().table?.edits.version === 1 && store.getSnapshot().pending === null);
+  await store.dispatch({ command: "sort.set", keys: [{ column: "qty", direction: "desc" }] });
+  const outcome = await store.dispatch({ command: "export", format: "csv" });
+  assert.ok(outcome.ok);
+  const output = outcome.output as { target: null; rows: number; data: { bytes: Uint8Array } };
+  assert.deepEqual([output.target, output.rows], [null, 3]);
+  assert.equal(new TextDecoder().decode(output.data.bytes), "id,city,qty\n2,Nara,5\n1,Tokyo,3\n3,Kobe,1\n");
+  assert.equal(store.exportName("csv"), "cities.csv");
+  const parquet = await store.dispatch({ command: "export", format: "parquet" });
+  assert.equal(parquet.ok, false);
+  disconnect();
+});

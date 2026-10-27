@@ -25,6 +25,10 @@ The [vastgrid v2 specification](../../docs/v2-spec.md) as code. It is a draft an
 - `vastgrid-spec/columns` reads Arrow tables of any number of record batches as columns (§2.3): `decodeColumns`
   gives each column's typed JSON by row, read when it is asked for, and the typed arrays that hold values of
   fixed width. It is a module of its own so that bundles that read only blocks do not load it.
+- `vastgrid-spec/export` and `vastgrid-spec/xlsx` write the files of `export` (§8.2) from batches of rows of
+  typed JSON, as streams of bytes: `writeDelimited` CSV and TSV and `writeJson` JSON as DuckDB's `COPY` writes them,
+  and `writeXlsx` a workbook of one sheet (compressed by `webDeflate`, the platform's `CompressionStream`, or a
+  deflate of the host's). Both engines write their files with them.
 - `vastgrid-spec/conformance` reads the corpus in [`conformance/`](conformance) and runs or compares its cases
   (§10). It uses Node.js. The corpus has three parts: [`plans`](conformance/plans) for engines,
   [`commands`](conformance/commands) for cores and [`messages`](conformance/messages) for both.

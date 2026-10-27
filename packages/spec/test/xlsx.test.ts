@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { inflateRawSync } from "node:zlib";
-import type { JsonValue } from "vastgrid-spec";
-import { EngineError } from "../src/errors.ts";
-import { checkXlsxSize, type ExportColumn, excelSerial, writeXlsx, XLSX_MAX_ROWS } from "../src/xlsx-writer.ts";
+import { SpecError } from "../src/plan.ts";
+import type { JsonValue } from "../src/types.ts";
+import { checkXlsxSize, type ExportColumn, excelSerial, webDeflate, writeXlsx, XLSX_MAX_ROWS } from "../src/xlsx.ts";
 
 /**
  * Reads a ZIP archive by its central directory, independently of the writer: checks each entry's
@@ -134,6 +134,22 @@ test("writes values by the documented rules", async () => {
   assert.match(sheet, /<pane ySplit="1" topLeftCell="A2"[^>]*state="frozen"\/>/);
 });
 
+test("compresses the entries with the web's CompressionStream", async () => {
+  const deflate = webDeflate();
+  assert.ok(deflate, "Node.js has CompressionStream");
+  const many = Array.from({ length: 2_000 }, (_, index): JsonValue[] => [`row ${index}`, index]);
+  const two: ExportColumn[] = [
+    { name: "name", type: "string" },
+    { name: "n", type: "integer" },
+  ];
+  const stored = await collect(writeXlsx(two, [many]));
+  const bytes = await collect(writeXlsx(two, [many], { deflate }));
+  assert.ok(bytes.length < stored.length / 4, `${bytes.length} of ${stored.length} bytes`);
+  const sheet = unzip(bytes).get("xl/worksheets/sheet1.xml") ?? "";
+  assert.equal(sheet, unzip(stored).get("xl/worksheets/sheet1.xml"));
+  assert.match(sheet, /<c r="A2001"[^>]*><is><t xml:space="preserve">row 1999<\/t>/);
+});
+
 test("cuts text to Excel's limit without splitting a character", async () => {
   const long = `${"a".repeat(32_766)}😀tail`;
   const sheet =
@@ -150,7 +166,7 @@ test("refuses rows and columns beyond an Excel sheet", async () => {
   ]) {
     assert.throws(
       () => checkXlsxSize(rowCount, columnCount),
-      (error: unknown) => error instanceof EngineError && error.code === "export_too_large",
+      (error: unknown) => error instanceof SpecError && error.code === "export_too_large",
     );
   }
   // Rows that arrive past the limit stop the file.

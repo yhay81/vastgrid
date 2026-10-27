@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `vastgrid-js` (unreleased v2): the memory engine offers `find` and `export` (§8.2). Exports of CSV, TSV, JSON and
+  xlsx are answered as the file's bytes (`capabilities.export.delivery` `data`), written as the DuckDB engine writes
+  them. `find` and `export` let a `cancel` in while they go through the rows, and stop with `cancelled`.
+- `vastgrid-spec` (unreleased v2): `vastgrid-spec/xlsx` writes workbooks (moved from `vastgrid-duckdb-engine`, with
+  `webDeflate` for `CompressionStream`), and `vastgrid-spec/export` writes CSV, TSV and JSON from rows of typed
+  JSON, so that every engine writes the same files.
+- `vastgrid-duckdb-engine` (unreleased v2): JSON exports are JSON: floats that are not finite are `"nan"` and
+  `"inf"` instead of `NaN` and `Infinity`, float32 values are not widened (`0.1`, not `0.10000000149011612`), and
+  decimals keep all their digits (`12.50`, not `12.5`). CSV and TSV write decimals without whole digits with their
+  0 (`0.5`, not `.5`), floats at the view's width, and a header line for a view without columns.
+- `vastgrid-grid` (unreleased v2): the export menu downloads exports that the engine answers as data, named after
+  the table.
 - `vastgrid-vscode` (unreleased v2): VS Code's Undo and Redo (the Edit menu and the keys) undo and redo the grid's
   writes, each a step on VS Code's stack, and the editor is clean again when they are undone back to the saved file.
   Cells not saved are kept in VS Code's backups (hot exit) and written again when the window opens, unless the file

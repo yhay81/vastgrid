@@ -78,12 +78,22 @@ const info = await engine.handle({ v: 2, id: 1, op: "open", ref: "orders" });
   to the events of §8.5: `changed` after every write.
 - The engine offers what `MEMORY_CAPABILITIES` reports (§4.10): every plan of §4.1 (derive, `where`, search,
   `aggregate` with `pivot`, `having` and sort), with every function of §4.4 and every measure of §4.5,
-  `summarize` and `locate`, and `write` for tables given with `editable: true` (§7.2: by row ID or by `rowKey`, every update or none, with
-  `previous` checked, and a `changed` event). Written values are kept apart from the host's rows or bytes, which
-  stay as they were: a write changes the engine's own copy of a column. A table that holds them keeps them when it
-  is closed. Other plans fail with `invalid_plan`
-  (`unsupported`) only when they name functions or members that a later version adds, `write` on other tables with `read_only`, `save` with `save_unsupported`, and `find` and
-  `export` with `invalid_request` (`unknown_op`).
+  `summarize`, `find`, `locate`, `export` of CSV, TSV, JSON and xlsx, and `write` for tables given with
+  `editable: true` (§7.2: by row ID or by `rowKey`, every update or none, with `previous` checked, and a `changed`
+  event). Written values are kept apart from the host's rows or bytes, which stay as they were: a write changes the
+  engine's own copy of a column. A table that holds them keeps them when it is closed. Other plans fail with
+  `invalid_plan` (`unsupported`) only when they name functions or members that a later version adds, `write` on
+  other tables with `read_only`, `save` with `save_unsupported`, and an `export` of Parquet with `invalid_request`
+  at `/format`.
+- `find` goes through the view's cells row by row from the cell after `from` and compares their text forms (§2.4)
+  by `lower`, as the DuckDB engine does. `export` answers the file's bytes as `data` (`delivery` `data`, §8.2) and
+  takes no `target`: CSV, TSV and JSON as DuckDB's `COPY` writes them (`vastgrid-spec/export`) and workbooks with
+  `vastgrid-spec/xlsx`, compressed with the platform's `CompressionStream`. The file is made in memory, a batch of
+  rows at a time, so it takes about its size besides the table; a grid downloads it as a file
+  (`URL.createObjectURL`).
+- A request that goes through many rows (`find`, `export`) lets other messages in every 40 ms or so, so that a
+  `cancel` of it is read: it then stops with `cancelled` (§8.6). Sorting, grouping and deriving a view run to their
+  end, and a cancel of them answers `cancelled` after.
 - Expressions are compiled once per view to functions of a row ID (§3.6, §3.7, §4.4): exact numbers are
   computed as integers at their scale, with BigInt where a number would not be exact, so a result that does not
   fit its type is null rather than rounded; floats are 64-bit, and results that are not finite are null.

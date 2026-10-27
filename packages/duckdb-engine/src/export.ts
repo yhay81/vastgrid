@@ -1,6 +1,6 @@
 /**
- * Exporting views (docs/v2-spec.md §8.2): the rows of a view, in its order, written by DuckDB (`COPY`) as CSV, TSV,
- * Parquet or JSON, or streamed into a workbook (`xlsx-writer.ts`), into a temporary file that is renamed once it is
+ * Exporting views (docs/v2-spec.md §8.2): the rows of a view, in its order, written by DuckDB (`COPY`) as CSV, TSV or
+ * Parquet, or streamed into JSON (`vastgrid-spec/export`) or a workbook (`vastgrid-spec/xlsx`), into a temporary file that is renamed once it is
  * complete. Nothing goes through the client: an export without a `target` is kept by the engine, for the host to
  * serve (`DuckDBEngine.exportFile`, and `<path>/exports/<name>` of the HTTP handler).
  */
@@ -12,11 +12,12 @@ import { pipeline } from "node:stream/promises";
 import zlib, { createDeflateRaw } from "node:zlib";
 import type { DuckDBConnection } from "@duckdb/node-api";
 import type { Column, JsonValue } from "vastgrid-spec";
-import { quoteIdentifier } from "vastgrid-sql";
+import { writeJson } from "vastgrid-spec/export";
+import { checkXlsxSize, writeXlsx, XLSX_MAX_TEXT } from "vastgrid-spec/xlsx";
+import { quoteIdentifier, textSql } from "vastgrid-sql";
 import { readExpression, readValue } from "./columns.js";
 import { quoteLiteral } from "./session.js";
 import type { View } from "./view.js";
-import { checkXlsxSize, writeXlsx, XLSX_MAX_TEXT } from "./xlsx-writer.js";
 
 export type ExportFormat = "csv" | "tsv" | "parquet" | "json" | "xlsx";
 
@@ -58,16 +59,30 @@ export async function writeExport(connection: DuckDBConnection, job: ExportJob, 
     await writeWorkbook(connection, job, file);
     return;
   }
-  // DuckDB renames repeated names in a header ("x", "x_1"): a CSV or TSV file with repeated headers, or headers
-  // that DuckDB would change, gets its header line written here instead.
+  if (format === "json") {
+    // DuckDB 1.5's JSON has NaN and Infinity, which JSON does not, float32 as the double it widens to, and
+    // decimals of up to 18 digits as doubles (12.5 for 12.50): the rows are written here instead.
+    await pipeline(
+      Readable.from(writeJson(columns, rowsOf(connection, job))),
+      createWriteStream(file, { flags: "wx" }),
+    );
+    return;
+  }
+  // DuckDB renames repeated names in a header ("x", "x_1"): a CSV or TSV file with repeated headers, or without
+  // columns (whose rows DuckDB writes as a column NULL), gets its header line written here instead.
   const delimited = format === "csv" || format === "tsv";
   const delimiter = format === "tsv" ? "\t" : ",";
-  const ownHeader = delimited && new Set(headers).size !== headers.length;
+  const ownHeader = delimited && (columns.length === 0 || new Set(headers).size !== headers.length);
   const selected = columns.map((column, index) => {
     const name = quoteIdentifier(column.name);
-    return delimited && !ownHeader && headers[index] !== column.name
-      ? `${name} AS ${quoteIdentifier(headers[index])}`
-      : name;
+    // DuckDB writes decimals without whole digits without their 0 (`.5`), unlike their text form (§2.4), and a
+    // float of the view whose SQL keeps a FLOAT (`abs` of a float32) as a FLOAT: as the view's type.
+    let value = name;
+    if (delimited && column.type === "decimal" && column.scale === column.precision) value = textSql(name, column);
+    if (column.type === "float") value = `CAST(${name} AS ${column.bits === 32 ? "FLOAT" : "DOUBLE"})`;
+    if (delimited && !ownHeader && headers[index] !== column.name)
+      return `${value} AS ${quoteIdentifier(headers[index])}`;
+    return value === name ? name : `${value} AS ${name}`;
   });
   const header = ownHeader ? "false" : "true";
   const options = {
@@ -79,7 +94,6 @@ export async function writeExport(connection: DuckDBConnection, job: ExportJob, 
     parquet: columns.some((column) => column.type === "interval")
       ? "FORMAT parquet, COMPRESSION zstd, DICTIONARY_SIZE_LIMIT 1"
       : "FORMAT parquet, COMPRESSION zstd",
-    json: "FORMAT json, ARRAY true",
   }[format];
   const body = ownHeader ? `${file}.body` : file;
   try {
@@ -101,27 +115,31 @@ export async function writeExport(connection: DuckDBConnection, job: ExportJob, 
   }
 }
 
-/** Streams the rows into a workbook: one chunk of rows from DuckDB at a time. */
-async function writeWorkbook(connection: DuckDBConnection, job: ExportJob, file: string) {
-  const { view, columns, headers, numberFormats, signal } = job;
-  // Text is cut to Excel's limit in DuckDB already.
-  const outputs = columns.map((column) => readExpression(column, quoteIdentifier(column.name), XLSX_MAX_TEXT));
+/** The view's rows as typed JSON, one chunk of rows from DuckDB at a time; text cut at `textLimit`. */
+async function* rowsOf(connection: DuckDBConnection, job: ExportJob, textLimit = Number.MAX_SAFE_INTEGER) {
+  const { view, columns, signal } = job;
+  const outputs = columns.map((column) => readExpression(column, quoteIdentifier(column.name), textLimit));
   const result = await connection.stream(
     `${view.sql.with} SELECT ${outputs.length > 0 ? outputs.join(", ") : "NULL"} FROM vg_view ORDER BY ${view.position}`,
     view.sql.params as never,
   );
-  async function* batches(): AsyncGenerator<JsonValue[][]> {
-    for await (const rows of result.yieldRowsJs()) {
-      yield rows.map((row) => columns.map((column, index) => readValue(column, row[index]).value));
-    }
+  for await (const rows of result.yieldRowsJs()) {
+    if (signal?.aborted) throw signal.reason ?? new Error("The export was cancelled.");
+    yield rows.map((row): JsonValue[] => columns.map((column, index) => readValue(column, row[index]).value));
   }
+}
+
+/** Streams the rows into a workbook: one chunk of rows from DuckDB at a time. */
+async function writeWorkbook(connection: DuckDBConnection, job: ExportJob, file: string) {
+  const { columns, headers, numberFormats, signal } = job;
   const workbook = writeXlsx(
     columns.map((column, index) => ({
       name: headers[index],
       type: column.type,
       numberFormat: numberFormats?.[index] ?? null,
     })),
-    batches(),
+    // Text is cut to Excel's limit in DuckDB already.
+    rowsOf(connection, job, XLSX_MAX_TEXT),
     {
       // The callback form of `pipeline` gives the last stream, and passes an error of the rows on to it.
       deflate: (chunks) => streamPipeline(Readable.from(chunks), createDeflateRaw({ level: DEFLATE_LEVEL }), () => {}),

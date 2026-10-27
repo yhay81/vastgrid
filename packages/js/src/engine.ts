@@ -26,6 +26,7 @@ import {
   type RowKey,
   SpecError,
   sameCellValue,
+  textOf,
 } from "vastgrid-spec";
 import { type ColumnRanks, type RankedKey, rankColumn, sortRows } from "./order.js";
 import type { ViewColumn, ViewShape } from "./plan.js";
@@ -65,9 +66,12 @@ export interface MemoryEngine {
   subscribe(listener: (event: Record<string, unknown>) => void): () => void;
 }
 
+/** The formats that `export` writes (§8.2), answered as the file's bytes. */
+const EXPORT_FORMATS = Object.freeze(["csv", "tsv", "json", "xlsx"]) as unknown as string[];
+
 /**
  * What the engine evaluates (§4.10): every plan of §4.1, with every function of §4.4 and every measure of §4.5;
- * `summarize` and `locate`.
+ * `summarize`, `find`, `locate` and `export` of CSV, TSV, JSON and xlsx as data.
  */
 export const MEMORY_CAPABILITIES: Readonly<Capabilities> = Object.freeze({
   plan: Object.freeze({
@@ -82,10 +86,11 @@ export const MEMORY_CAPABILITIES: Readonly<Capabilities> = Object.freeze({
   functions: Object.freeze([...FUNCTIONS]) as unknown as string[],
   measures: Object.freeze([...MEASURES]) as unknown as string[],
   summarize: true,
-  find: false,
+  find: true,
   locate: true,
   write: false,
   save: false,
+  export: Object.freeze({ formats: EXPORT_FORMATS, delivery: "data" as const }),
   preview: false,
   partialViews: false,
   changes: "poll",
@@ -96,6 +101,7 @@ function capabilities(write = false): Capabilities {
   return {
     ...MEMORY_CAPABILITIES,
     plan: { ...MEMORY_CAPABILITIES.plan },
+    export: { formats: [...EXPORT_FORMATS], delivery: "data" },
     functions: [...FUNCTIONS],
     measures: [...MEASURES],
     write,
@@ -194,6 +200,26 @@ const NO_POSITION = 0xffff_ffff;
 /** A request being answered, which `cancel` marks. */
 interface Running {
   cancelled: boolean;
+  /** When the request last let other messages in (`performance.now()`). */
+  yielded: number;
+}
+
+// The page, Web Workers and Node.js all have these; the package is typed without the DOM or Node.js.
+declare const performance: { now(): number };
+declare function setTimeout(callback: (value?: unknown) => void, delay: number): unknown;
+
+/** The work that a request does before it lets other messages in, such as a `cancel` of it (§8.6), in ms. */
+const SLICE = 40;
+
+/**
+ * Lets other messages in when the request has worked for a slice since it last did, and stops it there when it
+ * was cancelled (§8.6). Requests that go through many rows call it between batches of them.
+ */
+async function pause(running: Running): Promise<void> {
+  if (performance.now() - running.yielded < SLICE) return;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  running.yielded = performance.now();
+  if (running.cancelled) throw new Failure("cancelled", "The request was cancelled (§8.6).");
 }
 
 // The revision of each table that hosts give: its data never changes, so neither does its revision.
@@ -285,7 +311,7 @@ class Engine implements MemoryEngine {
       if (running) running.cancelled = true;
       return undefined;
     }
-    const running: Running = { cancelled: false };
+    const running: Running = { cancelled: false, yielded: performance.now() };
     this.running.set(request.id, running);
     try {
       return { v: 2, id: request.id, result: await this.answer(request, running) };
@@ -331,8 +357,12 @@ class Engine implements MemoryEngine {
         return this.rows(request, running);
       case "summarize":
         return this.summarize(request, running);
+      case "find":
+        return this.find(request, running);
       case "locate":
         return this.locate(request, running);
+      case "export":
+        return this.export(request, running);
       case "write":
         return this.write(request);
       case "save":
@@ -343,7 +373,6 @@ class Engine implements MemoryEngine {
           "This engine keeps tables in memory and does not save them (capabilities.save is false).",
         );
       default:
-        // find and export: operations that this engine does not offer (§4.10).
         throw new Failure("invalid_request", `This engine does not offer ${request.op} (§4.10).`, {
           path: "/op",
           reason: "unknown_op",
@@ -667,6 +696,94 @@ class Engine implements MemoryEngine {
       summary.add(column, values ?? this.valuesOf(table, index), rows);
     }
     return summary.result();
+  }
+
+  /**
+   * The next cell of the view whose text form contains `text` (§8.2): row by row, in a row in the order of
+   * `columns`, from the cell after `from` (before it, with −1), wrapping around and ending with `from` itself.
+   */
+  private async find(request: Json, running: Running) {
+    const table = this.table(request);
+    const view = await this.view(table, request.plan, running);
+    const sources = this.columnsOf(table, view, request.columns as string[]);
+    const text = request.text as string;
+    if (text === "" || view.rowCount === 0 || sources.length === 0) return null;
+    const sensitive = request.caseSensitive === true;
+    const { mapCase } = await import("./evaluate.js");
+    const needle = sensitive ? text : mapCase(text, false);
+    const values = sources.map((source) => source.values ?? this.valuesOf(table, source.index));
+    const matches = (position: number, at: number) => {
+      const value = values[at].at(view.order ? view.order[position] : position);
+      if (value === null) return false;
+      const column = sources[at].column;
+      const form = column.type === "string" ? (value as string) : (textOf(value, column) as string);
+      return (sensitive ? form : mapCase(form, false)).includes(needle);
+    };
+    const count = view.rowCount;
+    const width = sources.length;
+    const forward = request.direction === 1;
+    const from = request.from as { row: number; column: number };
+    const row = Math.min(from.row, count - 1);
+    const column = Math.min(from.column, width);
+    // The cells of the row of `from` after it (before it, with −1).
+    if (forward) {
+      for (let at = column + 1; at < width; at++) if (matches(row, at)) return { row, column: at };
+    } else {
+      for (let at = column - 1; at >= 0; at--) if (matches(row, at)) return { row, column: at };
+    }
+    // Then the other rows, in order, wrapping around at the end.
+    for (let step = 1; step < count; step++) {
+      if (step % 1_024 === 0) await pause(running);
+      const position = forward ? (row + step) % count : (row - step + count) % count;
+      if (forward) {
+        for (let at = 0; at < width; at++) if (matches(position, at)) return { row: position, column: at };
+      } else {
+        for (let at = width - 1; at >= 0; at--) if (matches(position, at)) return { row: position, column: at };
+      }
+    }
+    // Last, the cells of the row of `from` up to `from` itself.
+    if (forward) {
+      for (let at = 0; at <= Math.min(column, width - 1); at++) if (matches(row, at)) return { row, column: at };
+    } else {
+      for (let at = width - 1; at >= column; at--) if (matches(row, at)) return { row, column: at };
+    }
+    return null;
+  }
+
+  /**
+   * The view's rows as a file (§8.2), answered as its bytes (`delivery` `data`): CSV, TSV and JSON as the DuckDB
+   * engine writes them, and xlsx. The engine has no files, so a `target` is not allowed.
+   */
+  private async export(request: Json, running: Running) {
+    const table = this.table(request);
+    const format = request.format as string;
+    if (!EXPORT_FORMATS.includes(format)) {
+      throw new Failure("invalid_request", `This engine does not export ${format} (§4.10).`, {
+        path: "/format",
+        reason: "syntax",
+      });
+    }
+    if (request.target !== undefined) {
+      throw new Failure("not_allowed", "This engine answers exports as data and writes no files: leave out target.");
+    }
+    const view = await this.view(table, request.plan, running);
+    const names = (request.columns as string[] | undefined) ?? view.columns.map((column) => column.name);
+    const sources = this.columnsOf(table, view, names);
+    const values = sources.map((source) => source.values ?? this.valuesOf(table, source.index));
+    const { writeExport } = await import("./export.js");
+    const bytes = await writeExport({
+      format: format as "csv" | "tsv" | "json" | "xlsx",
+      columns: sources.map((source) => source.column),
+      headers: (request.headers as string[] | undefined) ?? names,
+      numberFormats: (request.numberFormats as (string | null)[] | undefined) ?? null,
+      rowCount: view.rowCount,
+      row: (position) => {
+        const row = view.order ? view.order[position] : position;
+        return values.map((vector) => vector.at(row));
+      },
+      pause: () => pause(running),
+    });
+    return { target: null, rows: view.rowCount, data: { bytes } };
   }
 
   private async locate(request: Json, running: Running) {

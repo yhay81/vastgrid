@@ -1260,7 +1260,7 @@ an `internal` error.
   | --- | --- | --- |
   | `csv`, `tsv` | a header line of `headers`, then the rows; values as their text, quoted when they need it | none |
   | `parquet` | the columns under their names, with their types | none |
-  | `json` | an array of objects by column name; numbers as JSON numbers, with all their digits | none |
+  | `json` | an array of objects by column name; numbers as JSON numbers, with all their digits (floats as their text forms, §2.4, and those that are not finite as text: `"nan"`, `"inf"`); other values but booleans as text | none |
   | `xlsx` | one sheet: a bold, frozen header row of `headers`; numbers, booleans and dates as such cells, with `numberFormats` or a date format; text always as text, never a formula; numbers that a double cannot hold exactly as text | 1,048,575 rows and 16,384 columns (`export_too_large`), 32,767 characters a cell (cut), 4 GB |
 
 ### 8.3 Identity
@@ -1464,8 +1464,10 @@ Found while writing the memory engine of [`vastgrid-js`](../packages/js), which 
 - The order of intervals (§3.1). Sort keys on interval columns validate, but §3.1 does not order intervals.
   DuckDB moves whole days of the nanoseconds into the days and whole 30-day months of the days into the months,
   truncating toward zero, then compares months, days and nanoseconds; `vastgrid-js` does the same.
-- An operation that the capabilities do not offer (`find`, `export`) has no error code in §8.7; `vastgrid-js`
-  answers `invalid_request` with the reason `unknown_op`.
+- An operation that the capabilities do not offer has no error code in §8.7; `vastgrid-js` answers
+  `invalid_request` with the reason `unknown_op`, and an `export` of a format that `capabilities.export` does not
+  list (`parquet`) `invalid_request` at `/format` with the reason `syntax`. It answers exports as data (§8.2) and
+  writes no files: an `export` with a `target` is `not_allowed`.
 - `summarize`: whether exact sums are exact before they become floats (`0.10 + 0.20` is `0.3`), and the average
   when the sum is beyond the largest float.
 - `locate` by a value that rows repeat: `vastgrid-js` gives its first position in the view. And whether a key
@@ -1546,6 +1548,7 @@ DuckDB 1.5 through `@duckdb/node-api` 1.5.6-r.1, on 2026-10-24:
 | `round(9223372036854775807::BIGINT, -1)`, `round(2147483647::INTEGER, -1)` | `-9223372036854775800`, `-2147483646`: the result wraps around instead of failing, so `vastgrid-sql` rounds integers through `DECIMAL(19,0)`, where overflow fails (and gives null, §3.6) |
 | `TRY(sum(x))` | refused (`aggregates are not allowed inside the TRY expression`), so measures use `TRY_CAST` |
 | `CAST(0.5::DECIMAL(1,1) AS VARCHAR)`, `CAST(-0.10::DECIMAL(2,2) AS VARCHAR)` | `.5`, `-.10`: decimals without whole digits lose the 0 of §2.4, which `vastgrid-sql` puts back (`textSql`) |
+| `COPY (…) TO … (FORMAT csv)` of `0.5::DECIMAL(1,1)`; `(FORMAT json, ARRAY true)` of a column of `'NaN'::DOUBLE`, of `0.1::FLOAT`, of `12.50::DECIMAL(10,2)` | `.5`; `NaN` (not JSON), `0.10000000149011612`, `12.5`: `vastgrid-duckdb-engine` selects such decimals with `textSql` for CSV and TSV, and writes JSON from the rows itself (`writeJson` of `vastgrid-spec/export`), as `vastgrid-js` does (§8.2) |
 | `greatest(NULL, 0)`, `left('abc', NULL)` | 0, NULL: `greatest` leaves nulls out, so the counts of `left`, `right` and `substr` are not bounded with it (§3.6) |
 
 Two behaviors of `@duckdb/node-api` 1.5.6-r.1 matter to engines built on it:

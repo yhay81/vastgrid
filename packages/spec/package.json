@@ -30,6 +30,16 @@
       "types": "./dist/conformance.d.ts",
       "default": "./dist/conformance.js"
     },
+    "./export": {
+      "vastgrid-source": "./src/export.ts",
+      "types": "./dist/export.d.ts",
+      "default": "./dist/export.js"
+    },
+    "./xlsx": {
+      "vastgrid-source": "./src/xlsx.ts",
+      "types": "./dist/xlsx.d.ts",
+      "default": "./dist/xlsx.js"
+    },
     "./schema/*": "./schema/*"
   },
   "files": [

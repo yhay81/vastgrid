@@ -8,10 +8,10 @@
  * cells. Dates, times and timestamps are date serial numbers with a date format; values Excel cannot show as dates
  * (before 1900-03-01, after 9999) stay text, and timestamps with an offset are written in UTC. Text is always a text
  * cell, never a formula, also when it starts with `=`, `+`, `-` or `@`. Text longer than 32,767 characters is cut.
- * `null` leaves the cell empty. Ported from v1's `xlsx-writer.ts`.
+ * `null` leaves the cell empty. Ported from v1's `xlsx-writer.ts`; both engines write workbooks with it.
  */
-import type { JsonValue, LogicalType } from "vastgrid-spec";
-import { EngineError } from "./errors.js";
+import { SpecError } from "./plan.js";
+import type { JsonValue, LogicalType } from "./types.js";
 
 /** Rows of an Excel sheet, the header row included. */
 export const XLSX_MAX_ROWS = 1_048_576;
@@ -31,7 +31,10 @@ export interface ExportColumn {
 export interface XlsxOptions {
   /** Defaults to `Sheet1`. Characters Excel does not allow are replaced and the name is cut to 31. */
   sheetName?: string;
-  /** Compresses the data of a ZIP entry (raw deflate, RFC 1951). Without it, entries are stored uncompressed. */
+  /**
+   * Compresses the data of a ZIP entry (raw deflate, RFC 1951). Without it, entries are stored uncompressed.
+   * `webDeflate` uses `CompressionStream` where it exists.
+   */
   deflate?: ((chunks: AsyncIterable<Uint8Array>) => AsyncIterable<Uint8Array>) | null;
   /** Updates a CRC-32 with more data, for a faster native one (`zlib.crc32`). */
   crc32?: (data: Uint8Array, crc: number) => number;
@@ -41,11 +44,51 @@ export interface XlsxOptions {
 /** Refuses a table that does not fit in one Excel sheet (`export_too_large`, §8.7). */
 export function checkXlsxSize(rows: number, columns: number) {
   if (rows + 1 > XLSX_MAX_ROWS || columns > XLSX_MAX_COLUMNS) {
-    throw new EngineError(
+    throw new SpecError(
       "export_too_large",
       `An Excel sheet holds at most ${XLSX_MAX_ROWS - 1} rows and ${XLSX_MAX_COLUMNS} columns; filter the rows or choose another format.`,
     );
   }
+}
+
+/** Raw deflate with the web `CompressionStream`, or `null` where it is not available. */
+export function webDeflate(): ((chunks: AsyncIterable<Uint8Array>) => AsyncIterable<Uint8Array>) | null {
+  const Stream = (globalThis as { CompressionStream?: new (format: string) => TransformStream }).CompressionStream;
+  if (!Stream) return null;
+  try {
+    new Stream("deflate-raw");
+  } catch {
+    return null;
+  }
+  return (chunks) => ({
+    async *[Symbol.asyncIterator]() {
+      const stream = new Stream("deflate-raw");
+      const writer = stream.writable.getWriter();
+      const pump = (async () => {
+        try {
+          for await (const chunk of chunks) {
+            await writer.ready;
+            await writer.write(chunk);
+          }
+          await writer.close();
+        } catch (error) {
+          await writer.abort(error).catch(() => {});
+          throw error;
+        }
+      })();
+      const reader = (stream.readable as ReadableStream<Uint8Array>).getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          yield value;
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      await pump;
+    },
+  });
 }
 
 // ----- values -----
@@ -202,7 +245,7 @@ interface EntryRecord {
 const MAX_32 = 0xffffffff;
 
 function tooLargeArchive() {
-  return new EngineError(
+  return new SpecError(
     "export_too_large",
     "The workbook would be larger than 4 GB; filter the rows or choose another format.",
   );
@@ -332,7 +375,7 @@ function columnWidth(column: ExportColumn) {
 /**
  * Writes a workbook with one sheet: a header row with the column names, then `rows`, which come in
  * batches (arrays of rows, each an array of values in column order). Returns the bytes of the file as
- * they are made. Throws `EngineError` (`export_too_large`) when the rows do not fit in a sheet.
+ * they are made. Throws `SpecError` (`export_too_large`) when the rows do not fit in a sheet.
  */
 export async function* writeXlsx(
   columns: ExportColumn[],

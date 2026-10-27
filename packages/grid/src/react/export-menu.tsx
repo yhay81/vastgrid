@@ -3,11 +3,20 @@ import { CommandError } from "vastgrid-spec";
 import { LocaleContext } from "./context.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 
-/** Downloads a file at a URL, as a link with `download` does. */
-function download(url: string) {
+/** The media types of the formats of §8.2, for files that an engine answers as data. */
+const MEDIA_TYPES: Record<string, string> = {
+  csv: "text/csv;charset=utf-8",
+  tsv: "text/tab-separated-values;charset=utf-8",
+  json: "application/json;charset=utf-8",
+  parquet: "application/vnd.apache.parquet",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
+
+/** Downloads a file at a URL, as a link with `download` does: under `name`, or the name the server gives. */
+function download(url: string, name = "") {
   const link = document.createElement("a");
   link.href = url;
-  link.download = "";
+  link.download = name;
   link.rel = "noopener";
   document.body.append(link);
   link.click();
@@ -18,7 +27,8 @@ function download(url: string) {
  * The toolbar's export menu (§6.6 of the specification): the rows of the view or the whole table, with the hidden
  * columns or not, in one of the formats the engine exports. It runs as an Action: the button shows that it runs, and
  * the outcome is announced. An export without a target is downloaded from where the transport gives it
- * (`Transport.exportUrl`).
+ * (`Transport.exportUrl`), or, from an engine that answers the file's bytes (`delivery` `data`), as a file made of
+ * them.
  */
 export function ExportMenu({ announce }: { announce: (text: string) => void }) {
   const store = useGridStore();
@@ -55,9 +65,18 @@ export function ExportMenu({ announce }: { announce: (text: string) => void }) {
         announce(messages.failed(reason === "not_loaded" ? messages.loading : outcome.error.message));
         return;
       }
-      const result = outcome.output as { target: string | null; rows: number };
-      const url = result.target === null ? null : store.exportUrl(result.target);
-      if (url) download(url);
+      const result = outcome.output as { target: string | null; rows: number; data?: { bytes: Uint8Array } };
+      if (result.data) {
+        const url = URL.createObjectURL(
+          new Blob([result.data.bytes as Uint8Array<ArrayBuffer>], { type: MEDIA_TYPES[format] ?? "" }),
+        );
+        download(url, store.exportName(format));
+        // The link has started the download; the browser keeps the file's bytes until it is done.
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } else {
+        const url = result.target === null ? null : store.exportUrl(result.target);
+        if (url) download(url);
+      }
       announce(messages.exported(number.format(result.rows)));
     });
   };

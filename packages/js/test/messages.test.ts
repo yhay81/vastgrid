@@ -47,10 +47,11 @@ test("open gives TableInfo with the capabilities of the engine; info and changes
       functions: [...FUNCTIONS],
       measures: [...MEASURES],
       summarize: true,
-      find: false,
+      find: true,
       locate: true,
       write: false,
       save: false,
+      export: { formats: ["csv", "tsv", "json", "xlsx"], delivery: "data" },
       preview: false,
       partialViews: false,
       changes: "poll",
@@ -644,19 +645,135 @@ test("a table without rows has views without rows, and open ignores the options 
   });
 });
 
-test("operations the engine does not offer get the error that says so", async () => {
+test("find goes row by row from the cell after from, wraps around and ends with from (§8.2)", async () => {
   const { client, info } = await opened();
-  const at = { table: info.table, revision: info.revision, plan: {} };
-  const find = await client.error("find", {
+  const at = { table: info.table, revision: info.revision, plan: { sort: [{ column: "qty", direction: "asc" }] } };
+  // The view by qty, null last: positions 0–5 are rows 1, 4, 0, 3, 5, 2.
+  const find = (text: string, from: { row: number; column: number }, direction = 1, more: Json = {}) =>
+    client.result("find", { ...at, text, columns: ["region", "rate", "price"], from, direction, ...more });
+  // "osaka" in any case: Osaka at positions 0 and 4.
+  assert.deepEqual(await find("osaka", { row: 0, column: 0 }), { row: 4, column: 0 });
+  assert.deepEqual(await find("osaka", { row: 4, column: 0 }), { row: 0, column: 0 });
+  assert.deepEqual(await find("osaka", { row: 4, column: 0 }, -1), { row: 0, column: 0 });
+  // Only from itself matches: it is found last.
+  assert.deepEqual(await find("nagoya", { row: 1, column: 0 }), { row: 1, column: 0 });
+  // Floats and decimals by their text form (§2.4): nan, inf, 12.50.
+  assert.deepEqual(await find("NAN", { row: 2, column: 2 }), { row: 0, column: 1 });
+  assert.deepEqual(await find("inf", { row: 0, column: 0 }), { row: 3, column: 1 });
+  assert.deepEqual(await find("12.5", { row: 0, column: 0 }), { row: 2, column: 2 });
+  // Before from in its row, with −1, then the rows before it.
+  assert.deepEqual(await find(".", { row: 2, column: 2 }, -1), { row: 2, column: 1 });
+  assert.deepEqual(await find("0", { row: 0, column: 0 }, -1), { row: 4, column: 2 });
+  // Case-sensitive; an empty text and a text that is nowhere find nothing; null matches nothing.
+  assert.equal(await find("osaka", { row: 0, column: 0 }, 1, { caseSensitive: true }), null);
+  assert.deepEqual(await find("Osaka", { row: 0, column: 0 }, 1, { caseSensitive: true }), { row: 4, column: 0 });
+  assert.equal(await find("", { row: 0, column: 0 }), null);
+  assert.equal(await find("null", { row: 0, column: 0 }), null);
+  // A column that the view does not have.
+  const missing = await client.error("find", {
     ...at,
     text: "a",
-    columns: ["region"],
+    columns: ["nope"],
     from: { row: 0, column: 0 },
     direction: 1,
   });
-  assert.deepEqual([find.code, find.reason, find.path], ["invalid_request", "unknown_op", "/op"]);
-  const exported = await client.error("export", { ...at, format: "csv" });
-  assert.deepEqual([exported.code, exported.reason, exported.path], ["invalid_request", "unknown_op", "/op"]);
+  assert.deepEqual([missing.code, missing.path], ["invalid_request", "/columns/0"]);
+});
+
+test("export answers the view's rows as the bytes of a file, as the DuckDB engine writes them (§8.2)", async () => {
+  const { client, info } = await opened();
+  const at = {
+    table: info.table,
+    revision: info.revision,
+    plan: {
+      where: {
+        fn: "and",
+        args: [
+          { fn: "gt", args: [{ col: "id" }, { lit: 3 }] },
+          { fn: "lt", args: [{ col: "id" }, { lit: 100 }] },
+        ],
+      },
+    },
+  };
+  const text = async (members: Json) => {
+    const result = (await client.result("export", { ...at, ...members })) as {
+      target: null;
+      rows: number;
+      data: { bytes: Uint8Array };
+    };
+    assert.equal(result.target, null);
+    return { rows: result.rows, text: new TextDecoder().decode(result.data.bytes) };
+  };
+  assert.deepEqual(await text({ format: "csv" }), {
+    rows: 3,
+    text: 'id,region,qty,price,rate\n4,"",5,100.00,inf\n5,Nagoya,2,3.25,-1.25\n6,Osaka,7,0.10,2.0\n',
+  });
+  assert.deepEqual(await text({ format: "tsv", columns: ["region", "region"], headers: ["a\tb", "c"] }), {
+    rows: 3,
+    text: '"a\tb"\tc\n""\t""\nNagoya\tNagoya\nOsaka\tOsaka\n',
+  });
+  assert.deepEqual(await text({ format: "json", columns: ["id", "price", "rate", "region"] }), {
+    rows: 3,
+    text: '[\n\t{"id":4,"price":100.00,"rate":"inf","region":""},\n\t{"id":5,"price":3.25,"rate":-1.25,"region":"Nagoya"},\n\t{"id":6,"price":0.10,"rate":2.0,"region":"Osaka"}\n]\n',
+  });
+  // All rows: a bigint beyond 2^53 keeps its digits, and null is an empty field or null.
+  const all = { ...at, plan: {} };
+  const json = (await client.result("export", { ...all, format: "json", columns: ["id", "qty"] })) as {
+    data: { bytes: Uint8Array };
+  };
+  assert.match(
+    new TextDecoder().decode(json.data.bytes),
+    /^\[\n\t\{"id":9223372036854775807,"qty":3\},\n.*\{"id":3,"qty":null\}/s,
+  );
+  const xlsx = (await client.result("export", {
+    ...all,
+    format: "xlsx",
+    numberFormats: [null, null, null, "#,##0.00", null],
+  })) as {
+    rows: number;
+    data: { bytes: Uint8Array };
+  };
+  assert.equal(xlsx.rows, 6);
+  assert.deepEqual([...xlsx.data.bytes.subarray(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
+  // Parquet is not written here, and a target is not allowed: the engine answers data.
+  const parquet = await client.error("export", { ...all, format: "parquet" });
+  assert.deepEqual([parquet.code, parquet.path], ["invalid_request", "/format"]);
+  assert.equal((await client.error("export", { ...all, format: "csv", target: "out.csv" })).code, "not_allowed");
+});
+
+test("a find or export of many rows lets a cancel in, and answers cancelled (§8.6)", async () => {
+  const count = 2_000_000;
+  const rows = Array.from({ length: count }, (_, index) => [index % 1_000 === 999 ? "a" : "b"]);
+  rows[count - 1] = ["needle"];
+  const { client, info } = await opened({ big: { columns: [{ name: "x", type: "string" }], rows } });
+  const engine = client.engine;
+  const at = { table: info.table, revision: info.revision, plan: {} };
+  const pending = engine.handle({
+    v: 2,
+    id: 900,
+    op: "find",
+    ...at,
+    text: "needle",
+    columns: ["x", "x", "x"],
+    from: { row: 0, column: 0 },
+    direction: 1,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await engine.handle({ v: 2, id: 901, op: "cancel", request: 900 });
+  assert.equal(((await pending) as { error: Json }).error.code, "cancelled");
+  const exporting = engine.handle({ v: 2, id: 902, op: "export", ...at, format: "csv" });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await engine.handle({ v: 2, id: 903, op: "cancel", request: 902 });
+  assert.equal(((await exporting) as { error: Json }).error.code, "cancelled");
+  // Not cancelled, the find finds it.
+  assert.deepEqual(
+    await client.result("find", { ...at, text: "needle", columns: ["x"], from: { row: 0, column: 0 }, direction: 1 }),
+    { row: count - 1, column: 0 },
+  );
+});
+
+test("operations the engine does not offer get the error that says so", async () => {
+  const { client, info } = await opened();
   const update = { key: { rowId: 0 }, column: "qty", value: 1 };
   assert.equal(
     (await client.error("write", { table: info.table, revision: info.revision, updates: [update] })).code,
