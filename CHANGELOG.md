@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- `vastgrid-js` (unreleased v2): the memory engine opens Parquet files, `{ parquet }` with a `Blob`, a `File` or the
+  URL of a file whose server answers range requests (`headers`, `fetch`), read with hyparquet: opening reads the
+  footer, `rows` the row groups of its rows (a cache of 4 million cells), and sorts, filters, groups, summaries,
+  `find`, `export` and the rows of a sorted view the columns they need whole, within `maxBytes` (default 1 GiB,
+  else `load_failed` at `/maxBytes`). Columns have the types and `sourceType` that DuckDB gives them; a URL whose
+  `ETag` or `Last-Modified` changes fails with `file_changed`. Written values are kept by cell over the columns of
+  every table rather than in a copy of the column. A text file whose columns would take more than `maxBytes` opens
+  instead of failing: as v1's browser engine did, its rows are read by blocks of 1,024 rows from where its first
+  reading found them, and its columns whole as requests need them, within `maxBytes`. Columns read whole that no
+  request reads are forgotten, the least recently used first, when a request needs their room. Reading columns
+  whole and ranking text can be cancelled between row groups, slices or steps, and a cancel is read as soon as a
+  view is made. The ranks of a sorted column keep 4 bytes a row and its distinct values, where those of text kept
+  every row's string and those of numbers the column. A million rows of eight columns open from Parquet in 30 ms and
+  from CSV in about a second
+  ([measurements](docs/v2-memory-engine-benchmark.md)).
+- `vastgrid-spec` (unreleased v2): `integerJson` and `decimalJson` are exported.
+- `vastgrid-duckdb-engine` (unreleased v2): the test of the memory engine against DuckDB opens the generated table as
+  a Parquet file too, and a test reads a Parquet file over HTTP and counts its bytes;
+  `bench/memory-engine.ts` measures the memory engine on CSV and Parquet files.
 - `vastgrid-js` (unreleased v2): the memory engine offers `find` and `export` (§8.2). Exports of CSV, TSV, JSON and
   xlsx are answered as the file's bytes (`capabilities.export.delivery` `data`), written as the DuckDB engine writes
   them. `find` and `export` let a `cancel` in while they go through the rows, and stop with `cancelled`.

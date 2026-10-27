@@ -8,7 +8,7 @@
  * next key, and rows equal for every key stay in row ID order.
  *
  * Values of fixed width are ranked through 32-bit words compared as unsigned integers, most significant
- * first, with a radix sort; strings and bytes are ranked with a comparison sort.
+ * first, with a radix sort; strings and bytes are ranked with a comparison sort of runs, which are then merged.
  */
 import {
   type Column,
@@ -321,13 +321,11 @@ function rankWords(column: Column, values: Values, write: NumberWriter | null): 
   const words = Array.from({ length: codec.width }, () => new Uint32Array(count));
   const filled = new Uint32Array(count);
   let present = 0;
+  // No closure here reads `values`, which `rankOf` would keep with the scope it shares.
   const validity = values.validity ?? null;
-  const isNull = write
-    ? (row: number) => validity !== null && ((validity[row >> 3] >> (row & 7)) & 1) === 0
-    : (row: number) => values.at(row) === null;
   if (write) {
     for (let row = 0; row < count; row++) {
-      if (isNull(row)) continue;
+      if (validity !== null && ((validity[row >> 3] >> (row & 7)) & 1) === 0) continue;
       write(row, words, row);
       filled[present++] = row;
     }
@@ -353,7 +351,14 @@ function rankWords(column: Column, values: Values, write: NumberWriter | null): 
     }
     ranks[row] = distinct - 1;
   }
-  if (present < count) for (let row = 0; row < count; row++) if (isNull(row)) ranks[row] = distinct + 1;
+  if (present < count) {
+    for (let row = 0; row < count; row++) {
+      const blank = write
+        ? validity !== null && ((validity[row >> 3] >> (row & 7)) & 1) === 0
+        : values.at(row) === null;
+      if (blank) ranks[row] = distinct + 1;
+    }
+  }
   const key = words.map(() => new Uint32Array(1));
   return {
     ranks,
@@ -403,8 +408,51 @@ function byteString(bytes: Uint8Array): string {
   return text;
 }
 
-/** Ranks a column of strings by their code points, or of binary values by their bytes. */
-function rankTexts(column: Column, values: Values): ColumnRanks {
+/** Text is ranked in steps of this many rows (a power of two), between which `rankColumnPausing` pauses. */
+const STEP_ROWS = 32_768;
+
+/**
+ * Rows sorted by their keys. A function of its own, so that the comparison's closure does not keep the keys of every
+ * row with `rankOf`, which shares the scope of the function that ranks.
+ */
+function sortRun(rows: Uint32Array, keys: string[]): void {
+  rows.sort((a, b) => {
+    const x = keys[a];
+    const y = keys[b];
+    return x < y ? -1 : x > y ? 1 : 0;
+  });
+}
+
+/** Rows sorted by their keys in steps: runs of `STEP_ROWS` rows sorted, then merged. */
+function* sortByText(rows: Uint32Array, keys: string[]): Generator<void, Uint32Array> {
+  const count = rows.length;
+  for (let start = 0; start < count; start += STEP_ROWS) {
+    sortRun(rows.subarray(start, start + STEP_ROWS), keys);
+    yield;
+  }
+  let from: Uint32Array = rows;
+  let to: Uint32Array = new Uint32Array(count);
+  for (let width = STEP_ROWS; width < count; width *= 2) {
+    for (let start = 0; start < count; start += 2 * width) {
+      const middle = Math.min(start + width, count);
+      const end = Math.min(middle + width, count);
+      let left = start;
+      let right = middle;
+      let at = start;
+      while (left < middle && right < end) {
+        to[at++] = keys[from[right]] < keys[from[left]] ? from[right++] : from[left++];
+        if ((at & (STEP_ROWS - 1)) === 0) yield;
+      }
+      to.set(from.subarray(left, middle), at);
+      to.set(from.subarray(right, end), at + middle - left);
+    }
+    [from, to] = [to, from];
+  }
+  return from;
+}
+
+/** Ranks a column of strings by their code points, or of binary values by their bytes, in steps. */
+function* rankTexts(column: Column, values: Values): Generator<void, ColumnRanks> {
   const strings = column.type === "string";
   const count = values.length;
   // Each value is read once: the rows that have no key are null, or empty strings marked in `blank`.
@@ -415,6 +463,7 @@ function rankTexts(column: Column, values: Values): ColumnRanks {
   let empty = false;
   let surrogates = false;
   for (let row = 0; row < count; row++) {
+    if ((row & (STEP_ROWS - 1)) === STEP_ROWS - 1) yield;
     const value = values.at(row);
     if (value === null) continue;
     if (strings && value === "") {
@@ -431,14 +480,11 @@ function rankTexts(column: Column, values: Values): ColumnRanks {
   if (surrogates) {
     for (let at = 0; at < present; at++) keys[filled[at]] = codePointKey(keys[filled[at]]);
   }
-  const order = filled.subarray(0, present).sort((a, b) => {
-    const x = keys[a];
-    const y = keys[b];
-    return x < y ? -1 : x > y ? 1 : 0;
-  });
+  const order = yield* sortByText(filled.subarray(0, present), keys);
   const ranks = new Uint32Array(count);
   const distinctKeys: string[] = [];
   for (let at = 0; at < present; at++) {
+    if ((at & (STEP_ROWS - 1)) === STEP_ROWS - 1) yield;
     const key = keys[order[at]];
     if (at === 0 || key !== distinctKeys[distinctKeys.length - 1]) distinctKeys.push(key);
     ranks[order[at]] = distinctKeys.length - 1;
@@ -475,9 +521,31 @@ function rankTexts(column: Column, values: Values): ColumnRanks {
  * of fixed width that has numbers (`Vector.numbers`) is ranked from them by `write`, when it is given.
  */
 export function rankColumn(column: Column, values: Values, write: NumberWriter | null = null): ColumnRanks {
-  return column.type === "string" || column.type === "binary"
-    ? rankTexts(column, values)
-    : rankWords(column, values, write);
+  if (column.type !== "string" && column.type !== "binary") return rankWords(column, values, write);
+  const steps = rankTexts(column, values);
+  for (;;) {
+    const step = steps.next();
+    if (step.done) return step.value;
+  }
+}
+
+/**
+ * `rankColumn`, which calls `pause` between the steps of ranking text, where a million rows take about half a
+ * second: a request that ranks lets other messages in, and stops where `pause` throws.
+ */
+export async function rankColumnPausing(
+  column: Column,
+  values: Values,
+  write: NumberWriter | null,
+  pause: () => Promise<void>,
+): Promise<ColumnRanks> {
+  if (column.type !== "string" && column.type !== "binary") return rankWords(column, values, write);
+  const steps = rankTexts(column, values);
+  for (;;) {
+    const step = steps.next();
+    if (step.done) return step.value;
+    await pause();
+  }
 }
 
 /** A sort key of a view: the ranks of its column and its direction. */

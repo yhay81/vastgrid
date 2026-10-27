@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { memoryEngine } from "vastgrid-js";
 import { encodeBlock, frameAttached, type GridCommand } from "vastgrid-spec";
 import { keyCommand } from "../src/canvas/keys.ts";
 import { BLOCK_ROWS, ViewCache } from "../src/core/cache.ts";
@@ -161,6 +162,38 @@ test("a worker serves an engine through a MessagePort, events included", async (
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(events.length, 1);
   unsubscribe();
+  stop();
+  transport.close();
+  channel.port1.close();
+  channel.port2.close();
+});
+
+test("the memory engine behind a MessagePort stops a find that is cancelled, and forgets the table it closes", async () => {
+  // 300,000 rows of four columns of text, which a find goes through for longer than the 40 ms of a slice.
+  const rows = Array.from({ length: 300_000 }, (_, index) => [`a${index}`, `b${index}`, `c${index}`, `d${index}`]);
+  const columns = ["a", "b", "c", "d"].map((name) => ({ name, type: "string" as const }));
+  const channel = new MessageChannel();
+  const stop = serveEngine(memoryEngine({ tables: { big: { columns, rows } } }), channel.port2 as never);
+  const transport = workerTransport(channel.port1 as never);
+  type Answer = { result?: { table: string; revision: string }; error?: { code: string } };
+  const opened = (await transport.send({ v: 2, id: 1, op: "open", ref: "big" })) as Answer;
+  const at = { table: opened.result?.table, revision: opened.result?.revision };
+  const finding = transport.send({
+    v: 2,
+    id: 2,
+    op: "find",
+    ...at,
+    plan: {},
+    text: "nowhere",
+    columns: ["a", "b", "c", "d"],
+    from: { row: 0, column: 0 },
+    direction: 1,
+  }) as Promise<Answer>;
+  await transport.send({ v: 2, id: 3, op: "cancel", request: 2 });
+  assert.equal((await finding).error?.code, "cancelled");
+  assert.deepEqual(await transport.send({ v: 2, id: 4, op: "close", table: at.table }), { v: 2, id: 4, result: null });
+  const after = (await transport.send({ v: 2, id: 5, op: "info", table: at.table })) as Answer;
+  assert.equal(after.error?.code, "table_not_found");
   stop();
   transport.close();
   channel.port1.close();

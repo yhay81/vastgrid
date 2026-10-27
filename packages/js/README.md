@@ -66,9 +66,41 @@ const info = await engine.handle({ v: 2, id: 1, op: "open", ref: "orders" });
   `readOnly: true`); a column of other values mixed is strings, with numbers and booleans as their JSON.
 - A UTF-8 byte order mark is left out. A file in UTF-16, text that is not UTF-8 (at `/rows/{row}/{column}`; §2.2
   does not allow replacing it), a line of JSON Lines that is not an object (at `/rows/{row}`) and a file that cannot
-  be read fail with `load_failed`. `maxBytes` (default 1 GiB) is the most memory that the table's columns may take:
-  a file whose columns would take more fails before any of them is kept. Parquet files read by HTTP range requests,
-  and answering the first rows while a file loads (§9), are later steps.
+  be read fail with `load_failed`. Answering the first rows while a file loads (§9) is a later step.
+- `maxBytes` (default 1 GiB) is the most memory that a file's columns may take. A file whose columns would take
+  more is not kept, as v1's browser engine kept none: its first reading notes where every 1,024th row starts, and
+  the open answers then. Rows are read by those blocks, wherever they lie in a view, and the last 32 MiB of blocks
+  read are kept; a sort, a filter, a group, a summary, `find`, `export` and `locate` by value read the columns they
+  go through whole, in a reading of the file, while they fit `maxBytes`. A column read whole stays so until a
+  request needs its room while no request reads it: the least recently used are forgotten first, and read again
+  when a request needs them. A request that would read more at once fails with `load_failed` at `/maxBytes`, and
+  the table stays open. The 10-million-row CSV file of the benchmarks (701 MB)
+  opens so in 5 to 6 seconds into no memory with a `maxBytes` of 256 MiB, where kept it opens in 10 seconds into
+  590 MB.
+- A table may also be a Parquet file: `{ parquet }`, a `Blob` or a `File`, or the URL of a file whose server answers
+  HTTP range requests (`headers` such as `Authorization` go with every request, and `fetch` replaces the global
+  one); `editable` as for rows. Opening it reads its footer only. `rows` reads the row groups that hold its rows,
+  column by column (hyparquet, with the codecs of hyparquet-compressors), and keeps them in a cache of 4 million
+  cells; a sort, a filter, a group or a summary reads the columns it names whole into typed arrays, a row group at
+  a time, and `find`, `export` and `locate` by value the columns they go through. The rows of a view that lie in
+  more than two row groups, as a sorted or filtered view's do, read their columns whole too, so that scrolling
+  the view reads memory rather than every row group again. `maxBytes` (default 1 GiB) is about the most memory
+  that the columns read whole may take (numbers in typed arrays, booleans in a byte, text as strings, which the rows
+  of a dictionary's value share), and columns read whole are forgotten as a text file's are: a request that would
+  read more at once fails with `load_failed` at `/maxBytes`, the table stays open, and its rows are read by row
+  groups. A million rows of eight columns (13 MB of Parquet) open in
+  30 ms into 2 MB, show their first rows in 0.2 seconds, and take 130 MB once every column is read
+  ([measurements](../../docs/v2-memory-engine-benchmark.md)).
+- A Parquet file's columns have the types that DuckDB reads them as, with DuckDB's names as `sourceType`: integers
+  by their width and sign (UINTEGER as `bigint`, UBIGINT as `decimal(38, 0)`), FLOAT and DOUBLE, decimals,
+  BOOLEAN, DATE, TIME, timestamps of their unit (`timestamptz` when adjusted to UTC), INTERVAL, UUID, VARCHAR and
+  enums as strings, BLOB as `binary`, and JSON as `readOnly` strings. Lists, structs and maps are `readOnly`
+  strings of their JSON text, named as DuckDB names them (`INTEGER[]`, `STRUCT(a INTEGER)`). A URL's first answer
+  gives its size and its `ETag` or `Last-Modified`, which every later answer must match: a file that changed fails
+  with `file_changed`. Ranges read are kept in a cache of 32 MiB; a server that ignores `Range` sends the file
+  whole, which is kept when it is at most 16 MiB and fails with `load_failed` otherwise. A server of another
+  origin must expose `Content-Length`, `Content-Range` and `ETag` by CORS. The code that reads Parquet loads with
+  the first such table.
 - Float32 table values and writes must already be binary32 numbers (`Math.fround(0.1)`, not `0.1`);
   `readCellText` converts typed input to them. Invalid timestamps, intervals and lone Unicode surrogates
   are rejected by the same specification checks used to write Arrow blocks. An invalid write changes
@@ -80,8 +112,9 @@ const info = await engine.handle({ v: 2, id: 1, op: "open", ref: "orders" });
   `aggregate` with `pivot`, `having` and sort), with every function of §4.4 and every measure of §4.5,
   `summarize`, `find`, `locate`, `export` of CSV, TSV, JSON and xlsx, and `write` for tables given with
   `editable: true` (§7.2: by row ID or by `rowKey`, every update or none, with `previous` checked, and a `changed`
-  event). Written values are kept apart from the host's rows or bytes, which stay as they were: a write changes the
-  engine's own copy of a column. A table that holds them keeps them when it is closed. Other plans fail with
+  event). Written values are kept apart from the host's rows, bytes or file, which stay as they were: the engine keeps
+  them by row and column over the column, without a copy of it, so that a write takes the memory of the values
+  written. A table that holds them keeps them when it is closed. Other plans fail with
   `invalid_plan` (`unsupported`) only when they name functions or members that a later version adds, `write` on
   other tables with `read_only`, `save` with `save_unsupported`, and an `export` of Parquet with `invalid_request`
   at `/format`.
@@ -90,10 +123,12 @@ const info = await engine.handle({ v: 2, id: 1, op: "open", ref: "orders" });
   takes no `target`: CSV, TSV and JSON as DuckDB's `COPY` writes them (`vastgrid-spec/export`) and workbooks with
   `vastgrid-spec/xlsx`, compressed with the platform's `CompressionStream`. The file is made in memory, a batch of
   rows at a time, so it takes about its size besides the table; a grid downloads it as a file
-  (`URL.createObjectURL`).
-- A request that goes through many rows (`find`, `export`) lets other messages in every 40 ms or so, so that a
-  `cancel` of it is read: it then stops with `cancelled` (§8.6). Sorting, grouping and deriving a view run to their
-  end, and a cancel of them answers `cancelled` after.
+  (`URL.createObjectURL`). That is how a page saves: the engine writes no file, and the `File` that a table was
+  opened from stays as it was.
+- A request that goes through many rows (`find`, `export`), reads a file's columns whole or ranks the text of the
+  columns that a view sorts or groups by lets other messages in every 40 ms or so, so that a `cancel` of it is read:
+  it then stops with `cancelled` (§8.6) within a few milliseconds. The rest of a view (ranking numbers, sorting,
+  filtering, grouping and deriving) runs to its end, and the view is kept; a cancel of it answers `cancelled` after.
 - Expressions are compiled once per view to functions of a row ID (§3.6, §3.7, §4.4): exact numbers are
   computed as integers at their scale, with BigInt where a number would not be exact, so a result that does not
   fit its type is null rather than rounded; floats are 64-bit, and results that are not finite are null.
@@ -124,4 +159,7 @@ Arrow, check the order of both against a comparison of values one pair at a time
 every response with `checkResponse`. Files are read in slices of every size from 1 byte, and a generated CSV file
 answers sorts, filters, groups and summaries as the same rows given as typed JSON. The
 DuckDB engine's tests compare this engine's answers with its own on a generated table and generated plans
-(`packages/duckdb-engine/test/memory-engine.test.ts`).
+(`packages/duckdb-engine/test/memory-engine.test.ts`), with the table as a Parquet file that DuckDB wrote too: the
+same columns, and the same answers. Another test serves a Parquet file over HTTP and counts the bytes that opening,
+reading rows and sorting read. `packages/duckdb-engine/bench/memory-engine.ts` measures a million rows as CSV and as
+Parquet ([results](../../docs/v2-memory-engine-benchmark.md)).

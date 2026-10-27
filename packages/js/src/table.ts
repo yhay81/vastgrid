@@ -73,18 +73,61 @@ export interface FileTable {
   header?: boolean;
   /**
    * The most memory, in bytes, that the table's columns may take (default 1 GiB). A file whose columns would take
-   * more fails to open, before any of them is kept.
+   * more is not kept: its rows are read by blocks, and its columns whole as requests need them, within this.
    */
   maxBytes?: number;
   /** Whether `write` writes the table's cells (§7), as for a `MemoryTable`. */
   editable?: boolean;
 }
 
-/** A table that does not follow §2, which the engine answers with `load_failed` (§8.7). */
+/** An answer of `fetch`, as the page, Web Workers and Node.js give it. */
+export interface HttpResponse {
+  readonly status: number;
+  readonly ok: boolean;
+  readonly headers: { get(name: string): string | null };
+  arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+/** `fetch`, or a function that answers as it does. */
+export type HttpFetch = (
+  url: string,
+  init: { method?: string; headers: Record<string, string> },
+) => Promise<HttpResponse>;
+
+/**
+ * A table as a Parquet file, read by byte ranges: its footer when it is opened, then the row groups of the rows that
+ * requests read, and whole only the columns that a view sorts, filters or groups by. Columns have the types that
+ * DuckDB reads them as.
+ */
+export interface ParquetTable {
+  /**
+   * The file: a `Blob` or a `File`, or the URL of a file whose server answers range requests (HTTP `Range`), with
+   * CORS that exposes `Content-Length`, `Content-Range` and `ETag` on another origin.
+   */
+  parquet: TextFile | string;
+  /** Headers of every request for a URL, such as `Authorization`. */
+  headers?: Record<string, string>;
+  /** A `fetch` to use instead of the global one. */
+  fetch?: HttpFetch;
+  /**
+   * About the most memory, in bytes, that the columns read whole may take (default 1 GiB). Those that no request
+   * reads are forgotten when another needs their room; a request that would read more at once fails with
+   * `load_failed`.
+   */
+  maxBytes?: number;
+  /** Whether `write` writes the table's cells (§7), as for a `MemoryTable`. */
+  editable?: boolean;
+}
+
+/**
+ * A table that does not follow §2, or a file that cannot be read, which the engine answers with `load_failed`
+ * (§8.7); a file that changed while it was open with `file_changed`.
+ */
 export class TableProblem extends Error {
   constructor(
     readonly path: string,
     message: string,
+    readonly code: "load_failed" | "file_changed" = "load_failed",
   ) {
     super(message);
     this.name = "TableProblem";
@@ -152,6 +195,8 @@ export interface CheckedTable {
   rows: readonly (readonly JsonValue[])[] | null;
   vectors: Vector[] | null;
   rowCount: number;
+  /** The file of a table whose columns are read when requests need them: a Parquet file, or a large text file. */
+  reader?: import("./lazy.js").FileColumns;
 }
 
 /** Throws a `TableProblem` at `path(index)` for the first column whose name an earlier column has. */
@@ -168,6 +213,11 @@ export function isArrowTable(table: unknown): table is ArrowTable {
   return isObject(table) && "arrow" in table;
 }
 
+/** Whether a host's table is given as a Parquet file (`ParquetTable`), which parquet.ts reads. */
+export function isParquetTable(table: unknown): table is ParquetTable {
+  return isObject(table) && "parquet" in table;
+}
+
 /** Whether a host's table is given as a text file (`FileTable`), which `readFile` of text.ts reads. */
 export function isFileTable(table: unknown): table is FileTable {
   return isObject(table) && "file" in table;
@@ -180,7 +230,8 @@ export function isFileTable(table: unknown): table is FileTable {
  * nothing per value.
  */
 export function checkTable(table: unknown): CheckedTable {
-  if (!isObject(table)) throw new TableProblem("", "A table is an object: { columns, rows }, { arrow } or { file }.");
+  if (!isObject(table))
+    throw new TableProblem("", "A table is an object: { columns, rows }, { arrow }, { file } or { parquet }.");
   if (!Array.isArray(table.columns)) throw new TableProblem("/columns", "columns is a list of columns (§2.1).");
   const columns = table.columns.map((column, index) => checkColumn(column, `/columns/${index}`));
   checkNames(columns, (index) => `/columns/${index}/name`);

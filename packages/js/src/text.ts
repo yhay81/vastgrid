@@ -1,8 +1,10 @@
 /**
  * Tables given as text files (CSV, TSV and JSON Lines in UTF-8), read by a module of their own that the engine
- * loads with the first such table, so that pages whose tables are rows do not load it. A file is read twice, in
- * slices: first to find its columns, the types that all their values fit and the memory they take, then to keep
- * its values in typed columns, numbers in typed arrays and text as UTF-8, without making rows of JSON.
+ * loads with the first such table, so that pages whose tables are rows do not load it. A file is read in slices,
+ * first to find its columns, the types that all their values fit, the memory they take and where every 1,024th row
+ * starts. When its columns fit `maxBytes`, it is read again to keep its values in typed columns, numbers in typed
+ * arrays and text as UTF-8, without making rows of JSON; otherwise its rows are read by blocks of 1,024 rows as
+ * requests need them, and columns whole only when a request goes through every row of them (lazy.ts).
  */
 import {
   type Column,
@@ -14,6 +16,7 @@ import {
   timeText,
 } from "vastgrid-spec";
 import type { ColumnNumbers } from "vastgrid-spec/columns";
+import { FileColumns } from "./lazy.js";
 import { HIGH, LOW, TWO_32 } from "./order.js";
 import {
   type CheckedTable,
@@ -27,6 +30,10 @@ import {
 
 /** Bytes read at a time. */
 const CHUNK_BYTES = 4 * 1024 * 1024;
+/** Rows of a block, the part of a file that rows are read by when its columns are not kept. */
+const BLOCK_ROWS = 1024;
+/** The bytes of the blocks read for rows that are kept, the most recently used. */
+const CACHE_BYTES = 32 * 1024 * 1024;
 /** The memory that a table's columns may take by default (`FileTable.maxBytes`). */
 const MAX_BYTES = 2 ** 30;
 
@@ -165,19 +172,10 @@ export async function readFile(table: FileTable, chunkBytes = CHUNK_BYTES): Prom
   const survey = csv ? await surveyCsv(file, csv, chunkBytes) : await surveyJson(file, chunkBytes);
   const { rows } = survey;
   const columns = survey.found.map(columnOf);
-  let total = 0;
-  survey.found.forEach((column, index) => {
-    const bytes = memoryOf(columns[index], column, rows);
-    if (columns[index].type === "string" && column.bytes > 0xffff_ffff) {
-      throw new TableProblem("/file", `The text of column ${shown(column.name)} is more than 4 GiB.`);
-    }
-    total += bytes;
-  });
+  const total = columns.reduce((sum, column, index) => sum + sizeOf(column, survey.found[index], rows), 0);
   if (total > maxBytes) {
-    throw new TableProblem(
-      "/maxBytes",
-      `The file's ${rows} rows would take ${megabytes(total)} in memory, more than maxBytes (${megabytes(maxBytes)}).`,
-    );
+    const text: TextOf = csv ? { separator: survey.separator, header: csv.header } : null;
+    return new TextColumns(file, text, columns, survey, maxBytes, chunkBytes).checked();
   }
   const built = columns.map((column, index) => build(column, survey.found[index], rows));
   const read = csv
@@ -187,12 +185,134 @@ export async function readFile(table: FileTable, chunkBytes = CHUNK_BYTES): Prom
   return { columns, rows: null, vectors: built.map((column) => vectorOf(column, rows)), rowCount: rows };
 }
 
-function megabytes(bytes: number) {
-  return `${(bytes / 2 ** 20).toFixed(1)} MiB`;
-}
-
 function changed() {
   return new TableProblem("/file", "The file changed while it was read.");
+}
+
+/** What the first reading of a file found: its columns and rows, CSV's separator, and where its blocks start. */
+interface Survey {
+  separator: number;
+  found: Found[];
+  rows: number;
+  /** Where each block of `BLOCK_ROWS` rows starts in the file. */
+  starts: number[];
+}
+
+/** How a text file is read: as CSV or TSV, with its separator and whether its first line names the columns, or as JSON Lines (null). */
+type TextOf = { separator: number; header: boolean } | null;
+
+/**
+ * A text file whose columns would take more than `maxBytes`: its rows are read by blocks of `BLOCK_ROWS` rows, from
+ * where the first reading found that each starts, and its columns whole when a request goes through every row of
+ * them, within `maxBytes`.
+ */
+class TextColumns extends FileColumns {
+  private readonly found: Found[];
+  private readonly starts: number[];
+  /** Blocks of rows read, the most recently used last, and the bytes of the file that they hold. */
+  private readonly cache = new Map<number, Promise<Vector[]>>();
+  private cached = 0;
+
+  constructor(
+    private readonly file: TextFile,
+    private readonly text: TextOf,
+    columns: Column[],
+    survey: Survey,
+    maxBytes: number,
+    private readonly chunkBytes: number,
+  ) {
+    super(columns, survey.rows, maxBytes);
+    this.found = survey.found;
+    this.starts = survey.starts;
+  }
+
+  protected partOf(row: number): number {
+    return Math.floor(row / BLOCK_ROWS);
+  }
+
+  /** The rows of a view are read by blocks wherever they lie: a block is small, and reading a column whole reads the file. */
+  protected override get spread(): number {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  protected sizeOf(index: number): number {
+    return sizeOf(this.columns[index], this.found[index], this.rowCount);
+  }
+
+  /** The bytes of the file that a block's rows lie in. */
+  private spanOf(block: number): { start: number; end: number } {
+    return { start: this.starts[block], end: this.starts[block + 1] ?? this.file.size };
+  }
+
+  /** A block's columns, read once and kept while they fit the cache. */
+  private block(block: number): Promise<Vector[]> {
+    const span = this.spanOf(block);
+    const size = span.end - span.start;
+    let entry = this.cache.get(block);
+    if (entry) {
+      this.cache.delete(block);
+    } else {
+      const rows = Math.min(BLOCK_ROWS, this.rowCount - block * BLOCK_ROWS);
+      // A column's text takes the block's bytes at most, and is cut to its length once read.
+      const built = this.columns.map((column, index) =>
+        build(column, { ...this.found[index], values: 0, empty: 0, bytes: size }, rows),
+      );
+      entry = this.keep(built, rows, span).then(() =>
+        built.map((column) => {
+          if (column.text) column.text = column.text.slice(0, column.cursor);
+          return vectorOf(column, rows);
+        }),
+      );
+      this.cached += size;
+      // A failed read is not kept.
+      entry.catch(() => {
+        if (this.cache.get(block) === entry) {
+          this.cache.delete(block);
+          this.cached -= size;
+        }
+      });
+    }
+    this.cache.set(block, entry);
+    for (const [old] of this.cache) {
+      if (this.cached <= CACHE_BYTES || old === block) break;
+      const { start, end } = this.spanOf(old);
+      this.cache.delete(old);
+      this.cached -= end - start;
+    }
+    return entry;
+  }
+
+  /** Reads rows of the file into the columns that are not null, and fails when they are not the rows it had. */
+  private async keep(built: (Built | null)[], rows: number, span: Span): Promise<void> {
+    const { file, text, chunkBytes } = this;
+    const read = text
+      ? await keepCsv(file, text.separator, text.header && span.start === undefined, built, rows, chunkBytes, span)
+      : await keepJson(file, built, rows, chunkBytes, span);
+    if (read !== rows) throw changed();
+  }
+
+  protected async readCells(index: number, rows: ArrayLike<number>): Promise<JsonValue[]> {
+    const blocks = new Map<number, Promise<Vector[]>>();
+    for (let at = 0; at < rows.length; at++) {
+      const block = this.partOf(rows[at]);
+      if (!blocks.has(block)) blocks.set(block, this.block(block));
+    }
+    const read = new Map<number, Vector>();
+    for (const [block, columns] of blocks) read.set(block, (await columns)[index]);
+    return Array.from(rows, (row) => (read.get(this.partOf(row)) as Vector).at(row % BLOCK_ROWS));
+  }
+
+  protected async readWhole(indexes: number[], pause: () => Promise<void>): Promise<Vector[]> {
+    const built: (Built | null)[] = this.columns.map(() => null);
+    for (const index of indexes) built[index] = build(this.columns[index], this.found[index], this.rowCount);
+    await this.keep(built, this.rowCount, { pause });
+    return indexes.map((index) => vectorOf(built[index] as Built, this.rowCount));
+  }
+
+  close(): void {
+    this.cache.clear();
+    this.cached = 0;
+  }
 }
 
 /** A column of the values that the first reading found. */
@@ -209,6 +329,11 @@ function columnOf(column: Found): Column {
 /** The values of a column that are not null. */
 function present(column: Column, found: Found) {
   return column.type === "string" ? found.values + found.empty : found.values;
+}
+
+/** The bytes that a column's values take in memory, `Infinity` for text of more than 4 GiB, which is not kept. */
+function sizeOf(column: Column, found: Found, rows: number): number {
+  return column.type === "string" && found.bytes > 0xffff_ffff ? Infinity : memoryOf(column, found, rows);
 }
 
 /** The bytes that a column's values take in memory. */
@@ -335,13 +460,26 @@ function mark(built: Built, row: number) {
   if (built.validity) built.validity[row >> 3] |= 1 << (row & 7);
 }
 
+/** Where a reading of a file starts and ends, and what it calls between slices (a request's `pause`). */
+interface Span {
+  /** The first byte read; by default the one after the file's byte order mark. */
+  start?: number;
+  end?: number;
+  pause?: () => Promise<void>;
+}
+
 /**
  * Reads a file in slices from after its byte order mark, giving each to `read` after the bytes that the last one
- * left: `read` gives how many of them it used. A row longer than a slice makes the next slice as long, so that its
- * bytes are not read again and again.
+ * left, with where they start in the file: `read` gives how many of them it used. A row longer than a slice makes
+ * the next slice as long, so that its bytes are not read again and again.
  */
-async function eachSlice(file: TextFile, chunkBytes: number, read: (bytes: Uint8Array, last: boolean) => number) {
-  const size = file.size;
+async function eachSlice(
+  file: TextFile,
+  chunkBytes: number,
+  read: (bytes: Uint8Array, last: boolean, base: number) => number,
+  span: Span = {},
+) {
+  const size = span.end ?? file.size;
   const bytesOf = async (start: number, end: number) => {
     try {
       return new Uint8Array(await file.slice(start, end).arrayBuffer());
@@ -349,14 +487,17 @@ async function eachSlice(file: TextFile, chunkBytes: number, read: (bytes: Uint8
       throw new TableProblem("/file", `The file cannot be read: ${(error as Error).message}`);
     }
   };
-  const head = await bytesOf(0, Math.min(size, 3));
-  let offset = 0;
-  if (head[0] === 0xef && head[1] === 0xbb && head[2] === 0xbf) offset = 3;
-  else if ((head[0] === 0xff && head[1] === 0xfe) || (head[0] === 0xfe && head[1] === 0xff)) {
-    throw new TableProblem("/file", "The file is UTF-16 text; save it as UTF-8.");
+  let offset = span.start ?? 0;
+  if (span.start === undefined) {
+    const head = await bytesOf(0, Math.min(size, 3));
+    if (head[0] === 0xef && head[1] === 0xbb && head[2] === 0xbf) offset = 3;
+    else if ((head[0] === 0xff && head[1] === 0xfe) || (head[0] === 0xfe && head[1] === 0xff)) {
+      throw new TableProblem("/file", "The file is UTF-16 text; save it as UTF-8.");
+    }
   }
   let rest: Uint8Array | null = null;
-  for (;;) {
+  for (let first = true; ; first = false) {
+    if (!first) await span.pause?.();
     const end = Math.min(size, offset + Math.max(chunkBytes, rest?.length ?? 0));
     let bytes = await bytesOf(offset, end);
     if (rest) {
@@ -366,7 +507,7 @@ async function eachSlice(file: TextFile, chunkBytes: number, read: (bytes: Uint8
       bytes = joined;
     }
     const last = end >= size;
-    const used = read(bytes, last);
+    const used = read(bytes, last, end - bytes.length);
     if (last) return;
     rest = used < bytes.length ? bytes.subarray(used) : null;
     offset = end;
@@ -757,13 +898,15 @@ async function surveyCsv(
   file: TextFile,
   options: { separator: number | null; header: boolean },
   chunkBytes: number,
-): Promise<{ separator: number; found: Found[]; rows: number }> {
+): Promise<Survey> {
   const fields = new Fields();
   const columns: Found[] = [];
+  const starts: number[] = [];
   let header: string[] | null = options.header ? null : [];
   let separator = options.separator;
   let rows = 0;
   let bytes: Uint8Array = new Uint8Array(0);
+  let base = 0;
   const row = () => {
     if (header === null) {
       header = [];
@@ -778,6 +921,8 @@ async function surveyCsv(
       }
       return;
     }
+    // A row's first field starts where the row does.
+    if (rows % BLOCK_ROWS === 0) starts.push(base + fields.starts[0]);
     for (let index = 0; index < fields.count; index++) {
       columns[index] ??= found("");
       const column = columns[index];
@@ -799,8 +944,9 @@ async function surveyCsv(
     }
     rows++;
   };
-  await eachSlice(file, chunkBytes, (slice, last) => {
+  await eachSlice(file, chunkBytes, (slice, last, at) => {
     bytes = slice;
+    base = at;
     separator ??= detectSeparator(slice);
     try {
       return scanCsv(slice, separator, last, fields, row);
@@ -822,7 +968,7 @@ async function surveyCsv(
     columns[index] = columns[index] ?? found("");
     columns[index].name = name;
   }
-  return { separator: separator ?? 0x2c, found: columns, rows };
+  return { separator: separator ?? 0x2c, found: columns, rows, starts };
 }
 
 /** Writes the text of a field into a column as its type, from the first reading's finding that it fits. */
@@ -872,17 +1018,21 @@ function putInt64(built: Built, row: number, value: number) {
   halves[row * 2 + LOW] = value - high * TWO_32;
 }
 
-/** Reads a CSV or TSV file the second time, keeping its values in the columns; gives the rows read. */
+/**
+ * Reads a CSV or TSV file the second time, or a span of it, keeping its values in the columns that are not null;
+ * gives the rows read.
+ */
 async function keepCsv(
   file: TextFile,
   separator: number,
   header: boolean,
-  built: Built[],
+  built: (Built | null)[],
   rowCount: number,
   chunkBytes: number,
+  span?: Span,
 ): Promise<number> {
   const fields = new Fields();
-  const strings = built.filter((column) => column.offsets);
+  const strings = built.filter((column) => column?.offsets) as Built[];
   let skip = header;
   let rows = 0;
   let bytes: Uint8Array = new Uint8Array(0);
@@ -895,6 +1045,7 @@ async function keepCsv(
     const count = Math.min(fields.count, built.length);
     for (let index = 0; index < count; index++) {
       const column = built[index];
+      if (!column) continue;
       let source = bytes;
       let start = fields.starts[index];
       let end = fields.ends[index];
@@ -910,10 +1061,15 @@ async function keepCsv(
     for (const column of strings) (column.offsets as Uint32Array)[rows + 1] = column.cursor;
     rows++;
   };
-  await eachSlice(file, chunkBytes, (slice, last) => {
-    bytes = slice;
-    return scanCsv(slice, separator, last, fields, row);
-  });
+  await eachSlice(
+    file,
+    chunkBytes,
+    (slice, last) => {
+      bytes = slice;
+      return scanCsv(slice, separator, last, fields, row);
+    },
+    span,
+  );
   return rows;
 }
 
@@ -983,18 +1139,18 @@ function jsonText(value: unknown): string {
 }
 
 /** Reads a file of JSON Lines the first time: its columns by first appearance, with what their values fit, and its rows. */
-async function surveyJson(
-  file: TextFile,
-  chunkBytes: number,
-): Promise<{ separator: number; found: Found[]; rows: number }> {
+async function surveyJson(file: TextFile, chunkBytes: number): Promise<Survey> {
   const columns: Found[] = [];
   const index = new Map<string, number>();
+  const starts: number[] = [];
   let rows = 0;
   let bytes: Uint8Array = new Uint8Array(0);
+  let base = 0;
   const line = (start: number, end: number) => {
     if (start === end) return;
     const object = parseLine(bytes, start, end, rows);
     if (!object) return;
+    if (rows % BLOCK_ROWS === 0) starts.push(base + start);
     for (const key in object) {
       let at = index.get(key);
       if (at === undefined) {
@@ -1030,17 +1186,27 @@ async function surveyJson(
     }
     rows++;
   };
-  await eachSlice(file, chunkBytes, (slice, last) => {
+  await eachSlice(file, chunkBytes, (slice, last, at) => {
     bytes = slice;
+    base = at;
     return eachLine(slice, last, line);
   });
-  return { separator: 0, found: columns, rows };
+  return { separator: 0, found: columns, rows, starts };
 }
 
-/** Reads a file of JSON Lines the second time, keeping its values in the columns; gives the rows read. */
-async function keepJson(file: TextFile, built: Built[], rowCount: number, chunkBytes: number): Promise<number> {
-  const index = new Map(built.map((column, at) => [column.column.name, at]));
-  const strings = built.filter((column) => column.offsets);
+/**
+ * Reads a file of JSON Lines the second time, or a span of it, keeping its values in the columns that are not null;
+ * gives the rows read.
+ */
+async function keepJson(
+  file: TextFile,
+  built: (Built | null)[],
+  rowCount: number,
+  chunkBytes: number,
+  span?: Span,
+): Promise<number> {
+  const index = new Map(built.flatMap((column, at) => (column ? [[column.column.name, at] as const] : [])));
+  const strings = built.filter((column) => column?.offsets) as Built[];
   let rows = 0;
   let bytes: Uint8Array = new Uint8Array(0);
   const line = (start: number, end: number) => {
@@ -1052,7 +1218,7 @@ async function keepJson(file: TextFile, built: Built[], rowCount: number, chunkB
       const value = object[key];
       const at = index.get(key);
       if (value === null || at === undefined) continue;
-      const column = built[at];
+      const column = built[at] as Built;
       switch (column.column.type) {
         case "boolean":
           (column.flags as Uint8Array)[rows] = value ? 1 : 0;
@@ -1078,9 +1244,14 @@ async function keepJson(file: TextFile, built: Built[], rowCount: number, chunkB
     for (const column of strings) (column.offsets as Uint32Array)[rows + 1] = column.cursor;
     rows++;
   };
-  await eachSlice(file, chunkBytes, (slice, last) => {
-    bytes = slice;
-    return eachLine(slice, last, line);
-  });
+  await eachSlice(
+    file,
+    chunkBytes,
+    (slice, last) => {
+      bytes = slice;
+      return eachLine(slice, last, line);
+    },
+    span,
+  );
   return rows;
 }

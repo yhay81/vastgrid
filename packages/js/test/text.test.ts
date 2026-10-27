@@ -374,13 +374,89 @@ test("JSON Lines: a column per key in the order they come, with the type of its 
   }
 });
 
-test("a file whose columns would take more memory than maxBytes fails before any is kept", async () => {
-  const csv = `n\n${Array.from({ length: 1000 }, (_, index) => index).join("\n")}\n`;
-  const error = await failure(csv, { format: "csv", maxBytes: 3999 });
+test("a file whose columns would take more memory than maxBytes is read by blocks of rows, and columns whole within it", async () => {
+  const csv = `n,s\n${Array.from({ length: 3000 }, (_, index) => `${index},x${index % 7}`).join("\n")}\n`;
+  // 3,000 integers take 12,000 bytes, and their text 3,000 × 2 bytes and 3,001 offsets.
+  const whole = await readFile({ file: new Blob([csv]), format: "csv", maxBytes: 30_004 });
+  assert.equal(whole.reader, undefined);
+  const lazy = await readFile({ file: new Blob([csv]), format: "csv", maxBytes: 30_003 });
+  assert.ok(lazy.reader);
+  assert.deepEqual(lazy.columns, whole.columns);
+  // Rows of three blocks, in any order.
+  const rows = [2999, 0, 1024, 1023, 2048, 5];
+  assert.deepEqual(await lazy.reader.cells(0, rows), rows);
+  assert.deepEqual(
+    await lazy.reader.cells(1, rows),
+    rows.map((row) => `x${row % 7}`),
+  );
+  // A request reads columns whole while they fit: the integers (12,000 bytes) or the text (18,004), not both. A
+  // column that no request reads is forgotten when another request needs its room.
+  const client = new Client({ t: { file: new Blob([csv]), format: "csv", maxBytes: 20_000 } });
+  const info = await client.open("t");
+  const sorted = await client.rows(info, { sort: [{ column: "n", direction: "desc" }] }, { end: 3 });
+  assert.deepEqual(sorted.rows, [
+    [2999, "x3"],
+    [2998, "x2"],
+    [2997, "x1"],
+  ]);
+  const byText = await client.rows(info, { sort: [{ column: "s", direction: "desc" }] }, { end: 3 });
+  assert.deepEqual(byText.rows, [
+    [6, "x6"],
+    [13, "x6"],
+    [20, "x6"],
+  ]);
+  const filtered = await client.rows(info, { where: { fn: "gt", args: [{ col: "n" }, { lit: 2997 }] } });
+  assert.deepEqual(filtered.rows, [
+    [2998, "x2"],
+    [2999, "x3"],
+  ]);
+  const error = await client.error("rows", {
+    table: info.table,
+    revision: info.revision,
+    plan: {
+      sort: [
+        { column: "s", direction: "asc" },
+        { column: "n", direction: "asc" },
+      ],
+    },
+    start: 0,
+    end: 3,
+    columns: ["n"],
+  });
   assert.equal(error.code, "load_failed");
-  assert.match(error.message, /at \/maxBytes, .*1000 rows.*maxBytes/);
-  assert.equal((await read(csv, { format: "csv", maxBytes: 4000 })).rows.length, 1000);
+  assert.match(error.message, /at \/maxBytes, Reading "s" whole would take 1 MiB in memory, more than maxBytes/);
+  // The table is still read by blocks.
+  assert.deepEqual((await client.rows(info, {}, { start: 1500, end: 1502 })).rows, [
+    [1500, "x2"],
+    [1501, "x3"],
+  ]);
   assert.match((await failure(csv, { format: "csv", maxBytes: 0 })).message, /at \/maxBytes, /);
+  // Blocks read as the whole file is: after a byte order mark, quoted line breaks, empty lines and short rows of CSV,
+  // and lines of white space and objects of JSON Lines.
+  const quoted = `\ufeffn,s,t\n${Array.from({ length: 2500 }, (_, index) =>
+    index % 300 === 0 ? `${index},"a\n""b""",\n` : index % 7 === 0 ? `${index}\n\n` : `${index},x,${index / 2}`,
+  ).join("\n")}`;
+  const json = Array.from({ length: 2500 }, (_, index) =>
+    index % 400 === 0 ? " \n" : JSON.stringify({ n: index, o: index % 3 ? { a: [index] } : null, s: `é${index}` }),
+  ).join("\n");
+  for (const [text, format] of [
+    [quoted, "csv"],
+    [json, "jsonl"],
+  ] as const) {
+    const kept = await readFile({ file: new Blob([text]), format });
+    const blocks = await readFile({ file: new Blob([text]), format, maxBytes: 1 });
+    assert.ok(blocks.reader);
+    assert.deepEqual(blocks.columns, kept.columns);
+    const all = Array.from({ length: kept.rowCount }, (_, row) => row).reverse();
+    for (const index of kept.columns.keys()) {
+      const vector = (kept.vectors as NonNullable<typeof kept.vectors>)[index];
+      assert.deepEqual(
+        await blocks.reader.cells(index, all),
+        all.map((row) => vector.at(row)),
+        `${format} ${index}`,
+      );
+    }
+  }
 });
 
 test("opens of a file share one reading, and an editable file is written like any table (§7.2)", async () => {
@@ -560,4 +636,28 @@ test("a large generated file answers sorts, filters, groups and summaries as the
     answers.push(answer);
   }
   assert.deepEqual(answers[1], answers[0]);
+  // With a byte less than its columns take, the file is read by blocks: each plan opens it again, so that it reads
+  // whole only the columns that it names, and answers the same; a search, which names every column, fails.
+  let lazyBytes = 0;
+  for (let high = 2 ** 30; high - lazyBytes > 1; ) {
+    const middle = Math.floor((lazyBytes + high) / 2);
+    if ((await readFile({ file, format: "csv", maxBytes: middle })).reader) lazyBytes = middle;
+    else high = middle;
+  }
+  for (const [at, plan] of plans.entries()) {
+    const client = new Client({ t: { file, format: "csv", maxBytes: lazyBytes } });
+    const info = await client.open("t");
+    assert.deepEqual([info.rowCount, info.columns], answers[0].slice(0, 2));
+    if ("where" in plan && "search" in plan.where) {
+      const { table, revision } = info;
+      const error = await client.error("rows", { table, revision, plan, start: 0, end: 1, columns: [] });
+      assert.match(error.message, /at \/maxBytes, /);
+      continue;
+    }
+    const { view } = await client.rows(info, plan, { columns: [], end: 0 });
+    const names = view.columns.map((column) => column.name);
+    const head = await client.rows(info, plan, { columns: names, end: 200 });
+    const order = await client.rows(info, plan, { columns: [names[0]], end: view.rowCount });
+    assert.deepEqual([view.rowCount, head.rows, order.rowIds, order.rows], answers[0][2 + at], JSON.stringify(plan));
+  }
 });

@@ -205,6 +205,18 @@ test("random strings over the BMP and beyond sort as the reference does, with ti
   await checkOrder(single({ type: "string" }, values));
 });
 
+test("text of more rows than a run is sorted in runs that are merged, as the reference sorts it", async () => {
+  const next = random(12);
+  const pool = Array.from({ length: 5_000 }, () =>
+    Array.from({ length: 1 + Math.floor(next() * 6) }, () => String.fromCodePoint(0x61 + Math.floor(next() * 4))).join(
+      "",
+    ),
+  );
+  pool.push("😀", "｡");
+  const values = Array.from({ length: 100_000 }, () => (next() < 0.02 ? null : pool[Math.floor(next() * pool.length)]));
+  await checkOrder(single({ type: "string" }, values));
+});
+
 test("floats: NaN is the greatest number, −0.0 equals 0.0, and null comes last both ways", async () => {
   const values: JsonValue[] = [
     0,

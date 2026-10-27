@@ -5,14 +5,19 @@
  * sort. Both engines answer each plan, and their views, rows, row IDs and errors must be the same; floats may
  * differ within a relative tolerance, as conformance allows for sums (§3.8).
  *
+ * The memory engine answers them twice: from the table as rows, and from the Parquet file that this engine reads.
+ *
  * The plans come from a seeded generator, so that a run is repeatable. `VASTGRID_PLANS` sets how many (300 by
  * default) and `VASTGRID_SEED` the seed; a difference names the plan's seed and shows the plan.
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { inflateRawSync } from "node:zlib";
+import { DuckDBInstance } from "@duckdb/node-api";
 import { memoryEngine } from "vastgrid-js";
 import { type Column, checkResponse, decodeBlock, type JsonValue, type Operation } from "vastgrid-spec";
 import { sameValue } from "vastgrid-spec/conformance";
@@ -502,6 +507,18 @@ let context: Awaited<ReturnType<typeof setUp>>;
 let duckdbTable: TableInfo;
 let memorySend: Send;
 let memoryTable: { table: string; revision: string };
+let parquetSend: Send;
+let parquetTable: { table: string; revision: string; columns: Column[] };
+
+/** Sends requests to a memory engine, checking every response against §8. */
+function sender(engine: ReturnType<typeof memoryEngine>): Send {
+  let id = 0;
+  return async (op, members) => {
+    const response = (await engine.handle({ v: 2, id: ++id, op, ...members })) as Json;
+    checkResponse(response, op);
+    return response;
+  };
+}
 
 before(async () => {
   context = await setUp();
@@ -510,14 +527,12 @@ before(async () => {
   await writeParquet(file, table);
   duckdbTable = await context.client.open(file);
   assert.equal(duckdbTable.status, "ready");
-  const engine = memoryEngine({ tables: { generated: table } });
-  let id = 0;
-  memorySend = async (op, members) => {
-    const response = (await engine.handle({ v: 2, id: ++id, op, ...members })) as Json;
-    checkResponse(response, op);
-    return response;
-  };
+  memorySend = sender(memoryEngine({ tables: { generated: table } }));
   memoryTable = (await memorySend("open", { ref: "generated" })).result as { table: string; revision: string };
+  parquetSend = sender(memoryEngine({ tables: { generated: { parquet: new Blob([await readFile(file)]) } } }));
+  const opened = await parquetSend("open", { ref: "generated" });
+  assert.ok(opened.result, JSON.stringify(opened.error));
+  parquetTable = opened.result as typeof parquetTable;
 });
 
 after(async () => {
@@ -530,6 +545,9 @@ test("the generated table reads with the same columns and values in both engines
   const memory = await answer(memorySend, memoryTable, {});
   const duckdb = await answer((op, members) => context.client.send(op, members), duckdbTable, {});
   assert.deepEqual(differences(memory, duckdb), []);
+  // The memory engine reads the Parquet file with the columns, source types included, that this engine reads.
+  assert.deepEqual(parquetTable.columns, duckdbTable.columns);
+  assert.deepEqual(differences(await answer(parquetSend, parquetTable, {}), duckdb), []);
 });
 
 test(`${PLANS} generated plans give the same answers in both engines (seed ${SEED})`, async (t) => {
@@ -546,6 +564,8 @@ test(`${PLANS} generated plans give the same answers in both engines (seed ${SEE
       if (process.env.VASTGRID_DEBUG) console.log(JSON.stringify(plan), JSON.stringify(memory.error));
     } else outcomes.rows++;
     const problems = differences(memory, duckdb);
+    const parquet = differences(await answer(parquetSend, parquetTable, plan), duckdb);
+    if (parquet.length > 0 && parquet[0] !== "known") problems.push(...parquet.map((problem) => `parquet: ${problem}`));
     if (only) t.diagnostic(JSON.stringify({ plan, memory, duckdb }));
     if (problems[0] === "known") outcomes.known++;
     else if (problems.length > 0) {
@@ -756,4 +776,166 @@ test("generated plans find the same cells and export the same files in both engi
   for (const [name, text] of mine) assert.equal(text, other.get(name), name);
   assert.equal(failures.length, 0, failures.join("\n"));
   assert.ok(compared > 40, `${compared} plans compared`);
+});
+
+// ----- Parquet files by byte ranges -----
+
+/** Rows `start` to `end` of a view: their row IDs and values. */
+async function page(
+  send: Send,
+  table: { table: string; revision: string },
+  plan: Json,
+  start: number,
+  end: number,
+  columns: string[],
+) {
+  const response = await send("rows", { table: table.table, revision: table.revision, plan, start, end, columns });
+  assert.ok(response.result, JSON.stringify(response.error));
+  const result = response.result as { rowIds: number[] | null; block: { bytes: Uint8Array } };
+  return { rowIds: result.rowIds, rows: decodeBlock(result.block.bytes).rows };
+}
+
+test("reads a Parquet file over HTTP by range requests, the row groups of the rows it shows", async (t) => {
+  const file = path.join(context.workspace, "groups.parquet");
+  const instance = await DuckDBInstance.create(":memory:");
+  const connection = await instance.connect();
+  // 20,000 rows in row groups of 2,048, with a column of text that does not compress.
+  await connection.run(
+    `COPY (SELECT i, 'w' || (i * 7919 % 1000) AS word, CAST(i % 97 AS DECIMAL(6, 2)) / 4 AS amount,
+       DATE '2020-01-01' + CAST(i % 1500 AS INTEGER) AS day, CASE WHEN i % 11 = 0 THEN NULL ELSE i * 0.5 END AS half,
+       md5(CAST(i AS VARCHAR)) AS padding FROM range(20000) AS t(i))
+     TO '${file}' (FORMAT parquet, ROW_GROUP_SIZE 2048)`,
+  );
+  connection.closeSync();
+  instance.closeSync();
+  const bytes = await readFile(file);
+  // A server of the file that answers range requests and counts the bytes it sends.
+  let sent = 0;
+  let etag = '"one"';
+  const server = http.createServer((request, response) => {
+    response.setHeader("etag", etag);
+    if (request.method === "HEAD") {
+      response.setHeader("content-length", bytes.length);
+      response.end();
+      return;
+    }
+    const range = /^bytes=(\d+)-(\d+)$/.exec(request.headers.range ?? "");
+    const start = range ? Number(range[1]) : 0;
+    const end = range ? Math.min(Number(range[2]) + 1, bytes.length) : bytes.length;
+    if (range) {
+      response.statusCode = 206;
+      response.setHeader("content-range", `bytes ${start}-${end - 1}/${bytes.length}`);
+    }
+    sent += end - start;
+    response.end(bytes.subarray(start, end));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/groups.parquet`;
+  const send = sender(memoryEngine({ tables: { groups: { parquet: url, editable: true } } }));
+  const opened = await send("open", { ref: "groups" });
+  assert.ok(opened.result, JSON.stringify(opened.error));
+  const memory = opened.result as { table: string; revision: string; columns: Column[]; rowCount: number };
+  // Opening reads the footer only.
+  assert.ok(sent < bytes.length / 8, `${sent} of ${bytes.length} bytes to open`);
+  const duckdb = await context.client.open(file);
+  assert.deepEqual(memory.columns, duckdb.columns);
+  assert.equal(memory.rowCount, 20_000);
+  const duckdbSend: Send = (op, members) => context.client.send(op, members);
+  const shown = ["i", "word", "amount", "day", "half"];
+  // Rows in the middle read the row group that holds them, of the columns they show.
+  let before = sent;
+  const middle = await page(send, memory, {}, 10_000, 10_100, shown);
+  assert.deepEqual(middle, await page(duckdbSend, duckdb, {}, 10_000, 10_100, shown));
+  assert.ok(sent - before < bytes.length / 8, `${sent - before} of ${bytes.length} bytes for 100 rows`);
+  // A sort reads whole the columns it sorts by, and the rows it shows by their row groups.
+  before = sent;
+  const plan = {
+    sort: [
+      { column: "word", direction: "desc" },
+      { column: "half", direction: "asc" },
+    ],
+  };
+  for (const [start, end] of [
+    [0, 100],
+    [19_950, 20_000],
+  ]) {
+    assert.deepEqual(
+      await page(send, memory, plan, start, end, shown),
+      await page(duckdbSend, duckdb, plan, start, end, shown),
+    );
+  }
+  assert.ok(sent - before < bytes.length / 2, `${sent - before} of ${bytes.length} bytes to sort`);
+  const filter = {
+    where: { fn: "gt", args: [{ col: "amount" }, { lit: 20 }] },
+    sort: [{ column: "day", direction: "asc" }],
+  };
+  assert.deepEqual(
+    await page(send, memory, filter, 0, 300, shown),
+    await page(duckdbSend, duckdb, filter, 0, 300, shown),
+  );
+  // A write is kept over the file, which is not read whole for it.
+  before = sent;
+  const written = await send("write", {
+    table: memory.table,
+    revision: memory.revision,
+    updates: [{ key: { rowId: 15_000 }, column: "word", value: "written", previous: "w0" }],
+  });
+  assert.ok(written.result, JSON.stringify(written.error));
+  const after = await page(send, memory, plan, 0, 1, ["i", "word"]);
+  assert.deepEqual(after.rows, [[15_000, "written"]]);
+  assert.deepEqual((await page(send, memory, {}, 15_000, 15_001, ["word"])).rows, [["written"]]);
+  // Columns read whole are limited by maxBytes; rows read by their row groups are not.
+  const small = sender(memoryEngine({ tables: { groups: { parquet: url, maxBytes: 100_000 } } }));
+  const limited = (await small("open", { ref: "groups" })).result as typeof memory;
+  assert.equal((await page(small, limited, {}, 0, 3, ["padding"])).rows.length, 3);
+  const refused = await small("rows", {
+    table: limited.table,
+    revision: limited.revision,
+    plan: { sort: [{ column: "padding", direction: "asc" }] },
+    start: 0,
+    end: 1,
+    columns: ["i"],
+  });
+  assert.equal((refused.error as { code: string } | undefined)?.code, "load_failed");
+  assert.match((refused.error as { message: string }).message, /maxBytes/);
+  // Room for the integers (162,500 bytes) or the dates (82,500), not both: a column that no request reads is
+  // forgotten when another request needs its room, and a request that reads both at once fails.
+  const one = sender(memoryEngine({ tables: { groups: { parquet: url, maxBytes: 170_000 } } }));
+  const single = (await one("open", { ref: "groups" })).result as typeof memory;
+  for (const column of ["i", "day", "i"]) {
+    const sort = { sort: [{ column, direction: "desc" }] };
+    assert.deepEqual(
+      await page(one, single, sort, 0, 5, ["i", "day"]),
+      await page(duckdbSend, duckdb, sort, 0, 5, ["i", "day"]),
+    );
+  }
+  const both = await one("rows", {
+    table: single.table,
+    revision: single.revision,
+    plan: { sort: [{ column: "day", direction: "asc" }] },
+    start: 0,
+    end: 1,
+    columns: ["i"],
+  });
+  assert.ok(both.result, JSON.stringify(both.error));
+  const together = await one("summarize", {
+    table: single.table,
+    revision: single.revision,
+    plan: {},
+    ranges: [[0, 20_000]],
+    columns: ["i", "day"],
+  });
+  assert.equal((together.error as { code: string } | undefined)?.code, "load_failed");
+  // A file that changes while it is open fails the reads of what was not read yet.
+  etag = '"two"';
+  const changed = await send("rows", {
+    table: memory.table,
+    revision: memory.revision,
+    plan: {},
+    start: 0,
+    end: 10,
+    columns: ["padding"],
+  });
+  assert.equal((changed.error as { code: string } | undefined)?.code, "file_changed");
 });

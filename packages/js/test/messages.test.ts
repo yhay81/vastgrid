@@ -153,7 +153,7 @@ test("a table that does not follow §2 fails to load, with the place at fault", 
   const none = await new Client({ none: null as never }).error("open", { ref: "none" });
   assert.equal(
     none.message,
-    'The table "none" cannot be read: A table is an object: { columns, rows }, { arrow } or { file }.',
+    'The table "none" cannot be read: A table is an object: { columns, rows }, { arrow }, { file } or { parquet }.',
   );
   assert.throws(() => memoryEngine({} as never), TypeError);
 });
@@ -765,6 +765,28 @@ test("a find or export of many rows lets a cancel in, and answers cancelled (§8
   await new Promise((resolve) => setTimeout(resolve, 5));
   await engine.handle({ v: 2, id: 903, op: "cancel", request: 902 });
   assert.equal(((await exporting) as { error: Json }).error.code, "cancelled");
+  // A sort by text ranks it in steps, between which a cancel is read; the ranks are made again by the next sort.
+  const sorting = engine.handle({
+    v: 2,
+    id: 904,
+    op: "rows",
+    ...at,
+    plan: { sort: [{ column: "x", direction: "desc" }] },
+    start: 0,
+    end: 1,
+    columns: ["x"],
+  });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await engine.handle({ v: 2, id: 905, op: "cancel", request: 904 });
+  assert.equal(((await sorting) as { error: Json }).error.code, "cancelled");
+  const sorted = (await client.result("rows", {
+    ...at,
+    plan: { sort: [{ column: "x", direction: "desc" }] },
+    start: 0,
+    end: 1,
+    columns: ["x"],
+  })) as { rowIds: number[] };
+  assert.deepEqual(sorted.rowIds, [count - 1]);
   // Not cancelled, the find finds it.
   assert.deepEqual(
     await client.result("find", { ...at, text: "needle", columns: ["x"], from: { row: 0, column: 0 }, direction: 1 }),

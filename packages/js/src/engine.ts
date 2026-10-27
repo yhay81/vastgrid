@@ -1,7 +1,7 @@
 /**
  * An engine over tables in memory (docs/v2-spec.md §8): it answers the requests of §8.2 about tables that
- * its host gives it as arrays of typed JSON values (§2.2), as Arrow or as text files, with views in the order of
- * §3.3.
+ * its host gives it as arrays of typed JSON values (§2.2), as Arrow, as text files or as Parquet files, with views in
+ * the order of §3.3.
  */
 import {
   answerId,
@@ -28,7 +28,7 @@ import {
   sameCellValue,
   textOf,
 } from "vastgrid-spec";
-import { type ColumnRanks, type RankedKey, rankColumn, sortRows } from "./order.js";
+import { type ColumnRanks, type RankedKey, rankColumn, rankColumnPausing, sortRows } from "./order.js";
 import type { ViewColumn, ViewShape } from "./plan.js";
 import { Summary } from "./summary.js";
 import {
@@ -38,7 +38,9 @@ import {
   type FileTable,
   isArrowTable,
   isFileTable,
+  isParquetTable,
   type MemoryTable,
+  type ParquetTable,
   shown,
   TableProblem,
   type Vector,
@@ -47,11 +49,14 @@ import {
   vectorValue,
 } from "./table.js";
 
-/** A table that a host gives the engine: rows of typed JSON, Arrow, or a text file. */
-type HostTable = MemoryTable | ArrowTable | FileTable;
+/** A table that a host gives the engine: rows of typed JSON, Arrow, a text file or a Parquet file. */
+type HostTable = MemoryTable | ArrowTable | FileTable | ParquetTable;
 
 export interface MemoryEngineOptions {
-  /** The tables that `open` opens, by the `ref` that names them: rows of typed JSON, Arrow, or text files. */
+  /**
+   * The tables that `open` opens, by the `ref` that names them: rows of typed JSON, Arrow, text files or Parquet
+   * files.
+   */
   tables: Record<string, HostTable>;
 }
 
@@ -138,6 +143,8 @@ interface Table {
   rows: readonly (readonly JsonValue[])[] | null;
   /** The typed columns of a table given as Arrow or as a file; null for a table given as rows. */
   vectors: Vector[] | null;
+  /** The file of a table given as Parquet, whose columns are read when requests need them. */
+  reader: import("./lazy.js").FileColumns | null;
   /** The module that reads the numbers of typed columns, for a table given as Arrow or as a file. */
   typed: typeof import("./numbers.js") | null;
   rowCount: number;
@@ -154,12 +161,13 @@ interface Table {
   /** Checks of each column's values (§2.2); a column is checked whole before anything reads all of it. */
   checkers: ((value: unknown, row: number) => void)[];
   /**
-   * Each checked column's values by row ID, which ranks, summaries and expressions read: an array of the
-   * engine's own, or the typed column of an Arrow table or a file until a write makes a copy of it.
+   * Each checked column's values by row ID, which ranks, summaries and expressions read: of a table given as rows,
+   * an array of the engine's own, which writes change; of one given as Arrow or as a file, its typed column, with
+   * the values written over it (`writtenVector`).
    */
   values: (Vector | undefined)[];
-  /** The columns whose values are arrays of the engine's own, which writes change. */
-  owned: boolean[];
+  /** The values written to each typed column by row ID, kept apart from the column, which is not copied. */
+  overlays: (Map<number, JsonValue> | undefined)[];
   /** Views by plan hash, the most recently used last. */
   views: Map<string, View>;
   /** The table IDs open on it. */
@@ -194,6 +202,34 @@ interface Source {
   values: Vector | null;
 }
 
+/** A typed column with the values written to it (§7.2) over it; it reads as JSON, as the host's rows do. */
+function writtenVector(base: Vector, written: Map<number, JsonValue>): Vector {
+  return {
+    length: base.length,
+    at: (row) => {
+      const value = written.get(row);
+      return value === undefined ? base.at(row) : value;
+    },
+  };
+}
+
+/**
+ * Adds the names of columns that a plan names (§4.1) to `names`: in expressions, keys, measures, pivots and sorts.
+ * True when it searches (§3.5), which reads every column.
+ */
+function planNames(value: unknown, names: Set<string>): boolean {
+  if (Array.isArray(value)) return value.reduce<boolean>((search, item) => planNames(item, names) || search, false);
+  if (!isObject(value)) return false;
+  let search = typeof value.search === "string";
+  for (const [key, item] of Object.entries(value)) {
+    if ((key === "col" || key === "column") && typeof item === "string") names.add(item);
+    else if ((key === "keys" || key === "columns") && Array.isArray(item)) {
+      for (const name of item) if (typeof name === "string") names.add(name);
+    } else if (planNames(item, names)) search = true;
+  }
+  return search;
+}
+
 /** The position of a row that a view leaves out, in `View.positions`. */
 const NO_POSITION = 0xffff_ffff;
 
@@ -202,6 +238,8 @@ interface Running {
   cancelled: boolean;
   /** When the request last let other messages in (`performance.now()`). */
   yielded: number;
+  /** Lets go of the columns that the request read whole (lazy.ts), when it ends. */
+  releases: (() => void)[];
 }
 
 // The page, Web Workers and Node.js all have these; the package is typed without the DOM or Node.js.
@@ -212,14 +250,32 @@ declare function setTimeout(callback: (value?: unknown) => void, delay: number):
 const SLICE = 40;
 
 /**
- * Lets other messages in when the request has worked for a slice since it last did, and stops it there when it
- * was cancelled (§8.6). Requests that go through many rows call it between batches of them.
+ * Lets other messages in when the request has worked for a slice since it last did, and stops it when it was
+ * cancelled (§8.6): a cancel that came in while the request waited for a file is seen at once. Requests that go
+ * through many rows call it between batches of them.
  */
 async function pause(running: Running): Promise<void> {
+  if (running.cancelled) throw new Failure("cancelled", "The request was cancelled (§8.6).");
   if (performance.now() - running.yielded < SLICE) return;
   await new Promise((resolve) => setTimeout(resolve, 0));
   running.yielded = performance.now();
   if (running.cancelled) throw new Failure("cancelled", "The request was cancelled (§8.6).");
+}
+
+/** The names that a plan sorts or groups by, or counts the distinct values of; derived columns are left out. */
+function rankedNames(plan: CheckedPlan["plan"]): string[] {
+  const { aggregate } = plan;
+  const names = aggregate
+    ? [
+        ...aggregate.keys,
+        ...(aggregate.pivot?.columns ?? []),
+        ...aggregate.measures.flatMap((measure) =>
+          measure.fn === "count_distinct" && measure.column ? [measure.column] : [],
+        ),
+      ]
+    : (plan.sort ?? []).map((key) => key.column);
+  const derived = new Set((plan.derive ?? []).map((item) => item.name));
+  return names.filter((name) => !derived.has(name));
 }
 
 // The revision of each table that hosts give: its data never changes, so neither does its revision.
@@ -311,7 +367,7 @@ class Engine implements MemoryEngine {
       if (running) running.cancelled = true;
       return undefined;
     }
-    const running: Running = { cancelled: false, yielded: performance.now() };
+    const running: Running = { cancelled: false, yielded: performance.now(), releases: [] };
     this.running.set(request.id, running);
     try {
       return { v: 2, id: request.id, result: await this.answer(request, running) };
@@ -327,6 +383,7 @@ class Engine implements MemoryEngine {
       return errorResponse(request.id, "internal", error instanceof Error ? error.message : String(error));
     } finally {
       if (this.running.get(request.id) === running) this.running.delete(request.id);
+      for (const release of running.releases) release();
     }
   }
 
@@ -350,7 +407,10 @@ class Engine implements MemoryEngine {
         this.tables.delete(request.table as string);
         // A table that no ID names any more forgets its ranks and views, unless it holds written values, which
         // every later request sees (§7.2); opening it again checks it again.
-        if (--table.open === 0 && table.written.size === 0) this.prepared.delete(table.ref);
+        if (--table.open === 0 && table.written.size === 0) {
+          this.prepared.delete(table.ref);
+          table.reader?.close();
+        }
         return null;
       }
       case "rows":
@@ -364,7 +424,7 @@ class Engine implements MemoryEngine {
       case "export":
         return this.export(request, running);
       case "write":
-        return this.write(request);
+        return this.write(request, running);
       case "save":
         // A table in memory has no file to write back (§7.5).
         this.table(request);
@@ -387,7 +447,8 @@ class Engine implements MemoryEngine {
     // opens of one table do not both make it.
     const arrow = isArrowTable(source) ? await import("./arrow.js") : null;
     const file = isFileTable(source);
-    const typed = arrow || file ? await import("./numbers.js") : null;
+    const parquet = isParquetTable(source);
+    const typed = arrow || file || parquet ? await import("./numbers.js") : null;
     let table = this.prepared.get(ref);
     if (!table) {
       let checked: CheckedTable;
@@ -396,11 +457,13 @@ class Engine implements MemoryEngine {
           ? arrow.checkArrow((source as ArrowTable).arrow)
           : file
             ? await this.readFile(ref, source as FileTable)
-            : checkTable(source);
+            : parquet
+              ? await this.openParquet(ref, source as ParquetTable)
+              : checkTable(source);
       } catch (error) {
         if (!(error instanceof TableProblem)) throw error;
         const at = error.path === "" ? "" : `at ${error.path}, `;
-        throw new Failure("load_failed", `The table ${shown(ref)} cannot be read: ${at}${error.message}`);
+        throw new Failure(error.code, `The table ${shown(ref)} cannot be read: ${at}${error.message}`);
       }
       // Another open of the file may have made the table while the file was read.
       table = this.prepared.get(ref) ?? this.prepare(ref, source, checked, typed);
@@ -421,6 +484,18 @@ class Engine implements MemoryEngine {
     return reading;
   }
 
+  /** Opens a table given as a Parquet file, once for every open that waits for it: reads its footer (parquet.ts). */
+  private openParquet(ref: string, source: ParquetTable): Promise<CheckedTable> {
+    let reading = this.reading.get(ref);
+    if (!reading) {
+      reading = import("./parquet.js")
+        .then(async ({ ParquetFile }) => (await ParquetFile.open(source)).checked())
+        .finally(() => this.reading.delete(ref));
+      this.reading.set(ref, reading);
+    }
+    return reading;
+  }
+
   /** A table that is opened from its host's table, checked or read. */
   private prepare(ref: string, source: HostTable, checked: CheckedTable, typed: Table["typed"]): Table {
     const { columns } = checked;
@@ -430,6 +505,7 @@ class Engine implements MemoryEngine {
       index: new Map(columns.map((column, index) => [column.name, index])),
       rows: checked.rows,
       vectors: checked.vectors,
+      reader: checked.reader ?? null,
       typed,
       rowCount: checked.rowCount,
       revision: revisionOf(source),
@@ -440,10 +516,16 @@ class Engine implements MemoryEngine {
       ranks: columns.map(() => undefined),
       checkers: columns.map((column, index) => valueChecker(column, index)),
       values: columns.map(() => undefined),
-      owned: columns.map(() => false),
+      overlays: columns.map(() => undefined),
       views: new Map(),
       open: 0,
     };
+    // What the engine made of a column of a file that is forgotten, it makes again when a request reads it whole.
+    if (table.reader) {
+      table.reader.forgotten = (index) => {
+        table.values[index] = undefined;
+      };
+    }
     this.prepared.set(ref, table);
     return table;
   }
@@ -475,10 +557,7 @@ class Engine implements MemoryEngine {
 
   /** Answers `load_failed` for a value that does not follow §2.2, at its JSON Pointer in the table. */
   private loadFailed(table: Table, error: TableProblem): never {
-    throw new Failure(
-      "load_failed",
-      `The table ${shown(table.ref)} cannot be read: at ${error.path}, ${error.message}`,
-    );
+    throw new Failure(error.code, `The table ${shown(table.ref)} cannot be read: at ${error.path}, ${error.message}`);
   }
 
   /**
@@ -510,20 +589,60 @@ class Engine implements MemoryEngine {
           array[row] = value;
         }
         values = vectorOf(array);
-        table.owned[index] = true;
       }
     } catch (error) {
       if (error instanceof TableProblem) this.loadFailed(table, error);
       throw error;
     }
+    const written = table.overlays[index];
+    if (written) values = writtenVector(values, written);
     table.values[index] = values;
     return values;
+  }
+
+  /**
+   * Reads whole the columns that a request reads whole, before it reads them, of a table whose file is read as
+   * requests need it (lazy.ts); the other tables hold all their columns.
+   */
+  private async readColumns(table: Table, indexes: Iterable<number>, running: Running): Promise<void> {
+    if (!table.reader) return;
+    try {
+      running.releases.push(await table.reader.read(indexes, () => pause(running)));
+    } catch (error) {
+      if (error instanceof TableProblem) this.loadFailed(table, error);
+      throw error;
+    }
+  }
+
+  /**
+   * The values of a table's column at rows, in their order, checked when its column is not (§2.2): of a table whose
+   * file is read as requests need it, read by the parts of the file that hold them unless the column was read whole.
+   */
+  private async cellsOf(table: Table, index: number, rows: ArrayLike<number>): Promise<JsonValue[]> {
+    if (table.values[index] || !table.reader) return Array.from(rows, (row) => this.cell(table, row, index));
+    let read: JsonValue[];
+    try {
+      read = await table.reader.cells(index, rows);
+      const written = table.overlays[index];
+      const check = table.checkers[index];
+      return Array.from(rows, (row, at) => {
+        const value = written?.get(row);
+        if (value !== undefined) return value;
+        check(read[at], row);
+        return read[at];
+      });
+    } catch (error) {
+      if (error instanceof TableProblem) this.loadFailed(table, error);
+      throw error;
+    }
   }
 
   /** The value of a table's column at a row as the table holds it, checked when its column is not (§2.2). */
   private cell(table: Table, row: number, index: number): JsonValue {
     const values = table.values[index];
     if (values) return values.at(row);
+    const written = table.overlays[index]?.get(row);
+    if (written !== undefined) return written;
     try {
       const value = table.vectors
         ? vectorValue(table.vectors[index], table.columns[index], index, row)
@@ -536,14 +655,23 @@ class Engine implements MemoryEngine {
     }
   }
 
-  /** The values of a table's column in an array of the engine's own, which a write changes. */
-  private ownValues(table: Table, index: number): JsonValue[] {
-    const values = this.valuesOf(table, index);
-    if (table.owned[index]) return values as unknown as JsonValue[];
-    const array = Array.from({ length: values.length }, (_, row) => values.at(row));
-    table.values[index] = vectorOf(array);
-    table.owned[index] = true;
-    return array;
+  /**
+   * Writes a cell: into the engine's own array of a column of a table given as rows, or over a typed column, which
+   * stays as it was and is not copied.
+   */
+  private setCell(table: Table, row: number, index: number, value: JsonValue) {
+    if (!table.vectors) {
+      (this.valuesOf(table, index) as unknown as JsonValue[])[row] = value;
+      return;
+    }
+    let written = table.overlays[index];
+    if (!written) {
+      written = new Map();
+      table.overlays[index] = written;
+      const made = table.values[index];
+      if (made) table.values[index] = writtenVector(made, written);
+    }
+    written.set(row, value);
   }
 
   private ranksOf(table: Table, index: number): ColumnRanks {
@@ -559,6 +687,20 @@ class Engine implements MemoryEngine {
     return ranks;
   }
 
+  /**
+   * Ranks a column as `ranksOf` does, with pauses while text is ranked: the ranks of a write's column made while the
+   * write came are not kept.
+   */
+  private async rankPausing(table: Table, index: number, running: Running): Promise<void> {
+    if (table.ranks[index]) return;
+    const { version } = table.edits;
+    const column = table.columns[index];
+    const values = this.valuesOf(table, index);
+    const write = values.numbers && table.typed ? table.typed.numberWriter(column, values.numbers) : null;
+    const ranks = await rankColumnPausing(column, values, write, () => pause(running));
+    if (table.edits.version === version) table.ranks[index] ??= ranks;
+  }
+
   /** The view of a request's plan (§4.7, §8.3): checked against the table, kept by its hash. */
   private async view(table: Table, plan: unknown, running: Running): Promise<View> {
     const checked: CheckedPlan = checkPlan(plan, table.columns, PLAN_OPTIONS);
@@ -569,6 +711,21 @@ class Engine implements MemoryEngine {
       table.views.delete(hash);
       table.views.set(hash, kept);
       return kept;
+    }
+    if (table.reader) {
+      const names = new Set<string>();
+      const every = planNames(checked.plan, names);
+      const named = [...names].filter((name) => table.index.has(name));
+      await this.readColumns(
+        table,
+        every ? table.columns.keys() : named.map((name) => table.index.get(name) as number),
+        running,
+      );
+    }
+    // The columns that the view sorts or groups by are ranked first, which a cancel stops.
+    for (const name of rankedNames(checked.plan)) {
+      const index = table.index.get(name);
+      if (index !== undefined) await this.rankPausing(table, index, running);
     }
     const count = table.rowCount;
     const ranks = (name: string) => this.ranksOf(table, table.index.get(name) as number);
@@ -596,6 +753,8 @@ class Engine implements MemoryEngine {
     const view: View = { hash, ...shape, firsts: new Map() };
     table.views.set(hash, view);
     if (table.views.size > KEPT_VIEWS) table.views.delete(table.views.keys().next().value as string);
+    // A view is made to its end, and kept; a cancel that came while it was made stops the request after it.
+    await pause(running);
     return view;
   }
 
@@ -641,17 +800,31 @@ class Engine implements MemoryEngine {
     const limit = (request.textLimit as number | undefined) ?? MESSAGE_LIMITS.textLimitDefault;
     const columns = sources.map((source) => source.column);
     const rowIds: number[] = [];
+    for (let position = start; position < end; position++) rowIds.push(view.order ? view.order[position] : position);
+    if (table.reader) {
+      try {
+        await table.reader.prepare(
+          sources.flatMap((source) => (source.values ? [] : [source.index])),
+          rowIds,
+          () => pause(running),
+        );
+      } catch (error) {
+        if (error instanceof TableProblem) this.loadFailed(table, error);
+        throw error;
+      }
+    }
+    // The values read are checked, of the table's columns not checked whole (§2.2).
+    const cells = await Promise.all(
+      sources.map((source) => (source.values ? null : this.cellsOf(table, source.index, rowIds))),
+    );
     const values: JsonValue[][] = [];
     // By name in a Map: a column may be named "__proto__".
     const truncated = new Map<string, number[]>();
-    for (let position = start; position < end; position++) {
-      const row = view.order ? view.order[position] : position;
-      const offset = position - start;
-      rowIds.push(row);
+    for (let offset = 0; offset < rowIds.length; offset++) {
+      const row = rowIds[offset];
       values.push(
-        sources.map(({ index, values }, at) => {
-          // The values read are checked, of the table's columns not checked whole (§2.2).
-          const value = values ? values.at(row) : this.cell(table, row, index);
+        sources.map(({ values }, at) => {
+          const value = values ? values.at(row) : (cells[at] as JsonValue[])[offset];
           if (typeof value !== "string" || columns[at].type !== "string") return value;
           const shorter = cut(value, limit);
           if (shorter === null) return value;
@@ -691,6 +864,11 @@ class Engine implements MemoryEngine {
     for (const [start, end] of spans) {
       for (let position = start; position < end; position++) rows[at++] = view.order ? view.order[position] : position;
     }
+    await this.readColumns(
+      table,
+      [...sources.values()].filter((source) => !source.values).map((source) => source.index),
+      running,
+    );
     const summary = new Summary();
     for (const { column, index, values } of sources.values()) {
       summary.add(column, values ?? this.valuesOf(table, index), rows);
@@ -711,6 +889,11 @@ class Engine implements MemoryEngine {
     const sensitive = request.caseSensitive === true;
     const { mapCase } = await import("./evaluate.js");
     const needle = sensitive ? text : mapCase(text, false);
+    await this.readColumns(
+      table,
+      sources.filter((source) => !source.values).map((source) => source.index),
+      running,
+    );
     const values = sources.map((source) => source.values ?? this.valuesOf(table, source.index));
     const matches = (position: number, at: number) => {
       const value = values[at].at(view.order ? view.order[position] : position);
@@ -769,6 +952,11 @@ class Engine implements MemoryEngine {
     const view = await this.view(table, request.plan, running);
     const names = (request.columns as string[] | undefined) ?? view.columns.map((column) => column.name);
     const sources = this.columnsOf(table, view, names);
+    await this.readColumns(
+      table,
+      sources.filter((source) => !source.values).map((source) => source.index),
+      running,
+    );
     const values = sources.map((source) => source.values ?? this.valuesOf(table, source.index));
     const { writeExport } = await import("./export.js");
     const bytes = await writeExport({
@@ -808,6 +996,9 @@ class Engine implements MemoryEngine {
     const name = request.rowKey as string;
     // In a view of groups, values are looked up among the groups' keys; groups have no row IDs.
     const group = view.grouped ? view.derived.get(name) : undefined;
+    if (column !== undefined && !group && keys.some((key) => "value" in key)) {
+      await this.readColumns(table, [column], running);
+    }
     let ranks: ColumnRanks | undefined;
     return {
       rows: keys.map((key) => {
@@ -844,7 +1035,7 @@ class Engine implements MemoryEngine {
    * Writes cells (§7.2): every update or none. Values are checked as their column's type, `previous` against the
    * cell's value now, and the written rows replace the host's rows in the engine's own list of rows.
    */
-  private write(request: Json) {
+  private async write(request: Json, running: Running) {
     const table = this.table(request);
     const updates = request.updates as { key: RowKey; column: string; value: JsonValue; previous?: JsonValue }[];
     let keyColumn: number | undefined;
@@ -857,8 +1048,12 @@ class Engine implements MemoryEngine {
         });
       }
     }
+    if (keyColumn !== undefined && updates.some((update) => "value" in update.key)) {
+      await this.readColumns(table, [keyColumn], running);
+    }
     const width = table.columns.length;
-    const changes = updates.map((update, at) => {
+    const changes: { row: number; index: number; value: JsonValue }[] = [];
+    for (const [at, update] of updates.entries()) {
       const index = table.index.get(update.column);
       const column = index === undefined ? undefined : table.columns[index];
       if (
@@ -887,16 +1082,16 @@ class Engine implements MemoryEngine {
           details: { update: at },
         });
       }
-      const now = this.cell(table, row, index);
+      const [now] = await this.cellsOf(table, index, [row]);
       if (update.previous !== undefined && !sameCellValue(now, update.previous, column)) {
         throw new Failure("edit_conflict", "The cell holds another value now.", { details: { update: at } });
       }
-      return { row, index, value: update.value };
-    });
+      changes.push({ row, index, value: update.value });
+    }
     if (changes.length === 0) return { updated: 0, edits: { ...table.edits } };
-    // The host's rows and Arrow columns stay as they were: writes change the engine's own arrays of values.
+    // The host's rows, Arrow columns and files stay as they were: writes change the engine's own values.
     for (const { row, index, value } of changes) {
-      this.ownValues(table, index)[row] = value;
+      this.setCell(table, row, index, value);
       table.written.add(row * width + index);
       table.ranks[index] = undefined;
       table.keys.delete(index);
