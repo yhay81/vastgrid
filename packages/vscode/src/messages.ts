@@ -6,6 +6,8 @@
 export type HostMessage =
   /** The engine started again (the file was reverted): open the file anew, keeping the document. */
   | { vastgrid: "restart" }
+  /** Show this sheet of the workbook, as the bar above the grid does. */
+  | { vastgrid: "sheet"; name: string }
   /** Apply a command of §6 to the grid, and answer it. */
   | { vastgrid: "dispatch"; call: number; command: unknown };
 
@@ -17,7 +19,11 @@ export type ViewMessage =
   | { vastgrid: "listening"; on: boolean }
   /** An error that the page did not catch, for the extension's log. */
   | { vastgrid: "error"; message: string }
-  /** The person pressed the key that saves. */
-  | { vastgrid: "save" }
+  /** The person pressed the key that saves, undoes or redoes: VS Code does it, for the file. */
+  | { vastgrid: "save" | "undo" | "redo" }
+  /** The sheets that the bar above the grid offers (none for a file without sheets), and the one shown. */
+  | { vastgrid: "sheets"; names: string[]; sheet?: string }
+  /** The grid wrote cells, as a new step of its history (§7.4): an edit on VS Code's stack. */
+  | { vastgrid: "edit" }
   /** The outcome of a `dispatch`. */
   | { vastgrid: "answer"; call: number; ok: boolean; output?: unknown; error?: { code: string; message: string } };

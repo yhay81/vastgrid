@@ -25,23 +25,26 @@ vastgrid opens them with "Open With…", the editor's "Open in vastgrid" button,
 | CSV, TSV compressed | `.csv.gz`, `.csv.zst`, `.tsv.gz`, `.tsv.zst` | read |
 | JSON Lines | `.jsonl`, `.ndjson` (also `.gz`) | read |
 | Parquet | `.parquet`, `.pq` | read, by default |
-| Excel | `.xlsx`, `.xlsm` | read, by default; a bar above the grid chooses the sheet |
+| Excel | `.xlsx`, `.xlsm` | read, by default; a bar above the grid, or "vastgrid: Choose Sheet", chooses the sheet |
 
 ## Editing and saving
 
-- The grid writes cells as it does elsewhere (§6.5, §7.2): typing, pasting, clearing and filling. A write makes
-  the editor dirty. Undo and redo (⌘Z, ⇧⌘Z or Ctrl+Y) are the grid's: each editor undoes the writes it made (§7.4).
+- The grid writes cells as it does elsewhere (§6.5, §7.2): typing, pasting, clearing and filling. Each new step of
+  the grid's history (§7.4) is an edit on VS Code's stack (`CustomDocumentEditEvent`), which VS Code undoes and
+  redoes in the grid that made it (`history.undo`, `history.redo`): the Edit menu's Undo and Redo, and the keys
+  (⌘Z, ⇧⌘Z or Ctrl+Y), which the page leaves to VS Code outside the fields it types in. The editor is dirty while
+  the stack is away from the point where the file was saved: undoing every write back to it makes it clean again.
 - VS Code's Save (⌘S or Ctrl+S, also while a cell is edited, which is written first) saves the written cells into
-  the file (`save`, §7.5). A file changed on disk by someone else since it was read is not saved: VS Code shows
-  `file_changed`, and the toolbar's "Discard edits and reload" reads the file as it is now (§7.6).
+  the file (`save`, §7.5). A file changed on disk by someone else since it was read is not saved over: the save
+  fails with `file_changed`, the editor stays dirty with its cells, Save As writes them elsewhere, and Revert (or
+  the toolbar's "Discard edits and reload") reads the file as it is now (§7.6).
 - Save As writes the whole table, with the written cells, as CSV, TSV, Parquet, JSON or Excel, by the new name's
   extension (`export` of the plan `{}`, §8.2). It is also the way to save the cells of a file that is only read.
 - Revert drops the written cells: the file's engine closes and the editors open the file anew, keeping their
   document (sorts, filters, columns).
 - The grid's Export menu writes the view or the table where a save dialog says.
 - The grid does not save by itself (`capabilities.save` is false in the webview) and offers no Save button: VS Code
-  saves, so that its dirty state follows the file. A file whose cells were all undone stays dirty until it is saved
-  or reverted; saving it then writes nothing.
+  saves, so that its dirty state follows the file.
 
 ## Lifetimes
 
@@ -56,8 +59,13 @@ vastgrid opens them with "Open With…", the editor's "Open in vastgrid" button,
 - A grid keeps its rows and place while its tab is hidden (`retainContextWhenHidden`). The page keeps its document,
   session and sheet in the webview's state, so that a page that loads again (Developer: Reload Webviews, or VS Code
   restoring the editor) shows them again; the handles of the page before are closed.
-- Written cells live in the engine: they do not outlive VS Code's window. A backup (hot exit) holds nothing, and an
-  editor restored from one opens the file as it is on disk.
+- Written cells live in the engine, in a table that a handle of the extension's own keeps open for the engine's
+  life (§7.2): pages that load again close theirs. Save, Save As and backups use that handle, which holds the
+  written cells also when the file changed on disk since (§7.6). A page reaches only the handles it opened.
+- A backup (hot exit, `backupCustomDocument`) holds the writes since the file was read or saved, as updates without
+  `previous`, with the size and modification time of the file they were written on. An editor restored from one
+  opens the file and writes them again, as new steps of nothing (the history starts empty), so that the editor is
+  dirty with them; when the file changed since, it writes none and says how many were not restored.
 
 ## Messages
 
@@ -65,8 +73,9 @@ The webview and the extension exchange the messages of §8 as they are, with blo
 encoding of §8.8): VS Code carries `Uint8Array`s between the extension and its webviews without copying them into
 text. The page's transport is `workerTransport` over the webview's `postMessage`. Besides those, the extension and
 the page send messages with a `vastgrid` member (`src/messages.ts`): `ready` when the page loads, `listening` when
-its grid takes commands, `save` for the key that saves, `restart` after a revert, and `dispatch` and `answer` for the
-extension's commands.
+its grid takes commands, `save`, `undo` and `redo` for the keys that VS Code acts on, `edit` for a new step of the
+grid's history, `sheets` and `sheet` for the sheets of a workbook, `restart` after a revert, and `dispatch` and
+`answer` for the extension's commands.
 
 The extension returns an API to other extensions: `dispatch(uri, command)` applies a command of §6 in the grid of
 a file open in vastgrid (its active editor, or the first), as the person's keys and menus do, and gives its output.
@@ -74,8 +83,8 @@ a file open in vastgrid (its active editor, or the first), as the person's keys 
 ## Trust, files and the page
 
 - In a workspace that VS Code does not trust, files open read-only (`untrustedWorkspaces: limited`): the grid
-  writes no cells and nothing is saved. Opening a file in a workspace trusted later still opens it read-only until
-  it is opened again.
+  writes no cells and nothing is saved. When VS Code trusts the workspace, the CSV and TSV files open read-only
+  open anew, editable, keeping their documents.
 - The extension opens files on disk only (`file:` URIs; in a remote window, the remote's disk, where the extension
   runs). The engine reads the file where it really is, links followed.
 - The page is `dist/webview.js` and `dist/webview.css` of the extension, the only files it may load. Its CSP is
@@ -84,25 +93,50 @@ a file open in vastgrid (its active editor, or the first), as the person's keys 
 
 ## Platforms and packaging
 
-The extension needs VS Code 1.100 or later, on the platforms of DuckDB's Node.js bindings: macOS (arm64, x64),
-Linux (x64, arm64, glibc and musl) and Windows (x64, arm64). `npm run build -w vastgrid-vscode` bundles
-`dist/extension.cjs` with esbuild and leaves `@duckdb/node-bindings` outside: a package of the extension is made
-for each platform (`vsce package --target darwin-arm64`, and so on) with the bindings of that platform in its
-`node_modules` (`@duckdb/node-bindings`, `@duckdb/node-bindings-<platform>` and `detect-libc`). The extension is not
-published yet.
+The extension needs VS Code 1.100 or later, on the platforms of DuckDB's Node.js bindings. `npm run build -w
+vastgrid-vscode` bundles `dist/extension.cjs` with esbuild and leaves `@duckdb/node-bindings` outside, and `npm run
+package -w vastgrid-vscode -- <target>` (`scripts/package.mjs`) makes the package of one platform,
+`dist/vastgrid-vscode-<version>-<target>.vsix`, with the bindings of that platform in `dist/node_modules`
+(`@duckdb/node-bindings`, `@duckdb/node-bindings-<platform>` and `detect-libc`): those installed, or fetched from
+npm at the version installed for another platform. Without a target, it is this machine's.
+
+| VS Code target | DuckDB's bindings | Tested in CI |
+| --- | --- | --- |
+| `darwin-arm64` | `darwin-arm64` | yes (macOS) |
+| `darwin-x64` | `darwin-x64` | |
+| `linux-x64` | `linux-x64` | yes (Ubuntu) |
+| `linux-arm64` | `linux-arm64` | |
+| `alpine-x64` | `linux-x64-musl` | |
+| `alpine-arm64` | `linux-arm64-musl` | |
+| `win32-x64` | `win32-x64` | yes (Windows) |
+| `win32-arm64` | `win32-arm64` | |
+
+There is no package for the web (vscode.dev) nor for 32-bit Arm Linux: DuckDB's bindings do not run there. CI makes
+the packages of macOS, Linux and Windows and tests each in VS Code (below); they are kept as the workflow's
+artifacts.
+
+To publish a release, from a clean checkout at its tag:
+
+1. `npm ci`, `npm run build`, and `npm run package -w vastgrid-vscode -- <target>` for each target of the table.
+2. Test the packages of the platforms at hand: `VASTGRID_VSIX=dist/<package>.vsix npm run test:vscode -w
+   vastgrid-vscode`.
+3. Publish them with `npx vsce publish --packagePath dist/*.vsix` in `packages/vscode` (a token of the publisher
+   `yhay81` in `VSCE_PAT`). The Marketplace serves each platform its package.
 
 ## Testing
 
 - `packages/vscode/test/table-file.test.ts` runs `TableFile` without VS Code: grids of `vastgrid-grid` talk to it
-  through messages as the page does. Two editors reading and writing one file, saving, Save As, revert, read-only
-  files, exports, the extension's commands, and the engine's lifetime.
+  through messages as the page does. Two editors reading and writing one file, VS Code's undo and redo, saving, a
+  file changed on disk, Save As, revert, backups, trust, read-only files, exports, the extension's commands, and the
+  engine's lifetime.
 - `npm run test:vscode -w vastgrid-vscode` runs the built extension in VS Code (`VSCODE_PATH`, or a stable VS Code
-  that @vscode/test-electron downloads), in a window and a profile of its own: open, edit, save, open again,
-  revert, two editors of one file, Parquet and Excel files read-only, and the engines closed with their editors.
+  that @vscode/test-electron downloads), in a window and a profile of its own: open, edit, save, VS Code's Undo and
+  Redo with the dirty state, a file changed on disk that is not saved over, open again, revert, two editors of one
+  file, TSV saved, JSON Lines, Parquet and Excel read-only, a sheet chosen in a workbook and its last row of
+  200,000, the last row of CSV and Parquet files of a million rows, and the engines closed with their editors.
+  With `VASTGRID_VSIX`, VS Code installs that package and the suite runs on it.
 
 ## Not yet
 
-- Undo and redo are not on VS Code's own stack (the Edit menu's Undo does not reach the grid), and the dirty state
-  does not follow undo back to the file's values.
-- Written cells are not kept in backups.
-- The extension is not in the Marketplace, and no `.vsix` is built in CI.
+- The extension is not in the Marketplace yet (nor in Open VSX): its packages are CI's artifacts.
+- Files of other schemes than `file:` (a remote file system of another extension, vscode.dev) do not open.

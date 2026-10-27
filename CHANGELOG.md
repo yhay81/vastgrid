@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- `vastgrid-vscode` (unreleased v2): VS Code's Undo and Redo (the Edit menu and the keys) undo and redo the grid's
+  writes, each a step on VS Code's stack, and the editor is clean again when they are undone back to the saved file.
+  Cells not saved are kept in VS Code's backups (hot exit) and written again when the window opens, unless the file
+  changed since. Files opened read-only in a workspace not trusted open anew, editable, once VS Code trusts it.
+  "vastgrid: Choose Sheet" chooses the sheet of a workbook from the command palette.
+- `vastgrid-vscode` (unreleased v2): a save of a file changed on disk since it was read fails with `file_changed`
+  and keeps the written cells, which Save As writes. Before, the save found no written cells in the file read again,
+  succeeded without writing, and the editor lost them.
+- `vastgrid-vscode` (unreleased v2): `npm run package -w vastgrid-vscode -- <target>` makes the extension's package
+  for a platform with DuckDB's bindings for it, and CI tests the packages of Linux, macOS and Windows installed in
+  VS Code (docs/vscode.md).
+- `vastgrid-duckdb-engine` (unreleased v2): `export`, `find` and `summarize` of a table that is still loading wait
+  until it has loaded (§9). Before, an export wrote only the rows read so far: Save As of a large CSV file in VS Code
+  wrote its first rows.
+- `vastgrid-grid` (unreleased v2): a command whose view was replaced while it ran (a `changed` event after a write
+  of another editor) is applied again to the new view instead of failing with `cancelled`.
+
 - `vastgrid-grid` (unreleased v2): a write that fails stays in the snapshot's `failedWrite`, and the status bar says
   why with Retry (Overwrite after an `edit_conflict`, which writes over the other change) and Discard, as v1 did;
   `GridStore.retryWrite` and `discardWrite` do the same. An undo or a redo pressed while a write is still being sent

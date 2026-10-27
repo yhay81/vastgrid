@@ -277,6 +277,21 @@ export class DuckDBEngine {
     return table;
   }
 
+  /**
+   * The table of a request that reads every row of its view (`summarize`, `find`, `export`): one that is loading is
+   * read once it has loaded (§9), as a write is; until then its view holds the rows read so far.
+   */
+  private async loaded(request: Json, signal: AbortSignal): Promise<LoadedTable> {
+    const table = this.table(request);
+    if (table.status !== "loading") return table;
+    const revision = table.revision;
+    await untilReady(table, signal);
+    if (table.revision !== revision) {
+      throw new EngineError("revision_changed", "The table has another revision: read its TableInfo again.");
+    }
+    return table;
+  }
+
   private async answer(request: Request, signal: AbortSignal): Promise<unknown> {
     switch (request.op) {
       case "open":
@@ -301,15 +316,15 @@ export class DuckDBEngine {
       case "locate":
         return this.views.locate(this.table(request), request, signal);
       case "summarize":
-        return this.views.summarize(this.table(request), request, signal);
+        return this.views.summarize(await this.loaded(request, signal), request, signal);
       case "find":
-        return this.views.find(this.table(request), request, signal);
+        return this.views.find(await this.loaded(request, signal), request, signal);
       case "write":
         return this.write(this.table(request), request, signal);
       case "save":
         return this.save(this.table(request), signal);
       case "export":
-        return this.exportView(this.table(request), request, signal);
+        return this.exportView(await this.loaded(request, signal), request, signal);
       default:
         throw new EngineError("internal", `The engine does not answer ${request.op}.`);
     }
@@ -690,4 +705,20 @@ export class DuckDBEngine {
     this.listeners.clear();
     await this.session.dispose();
   }
+}
+
+/** Waits until a table has loaded (or failed to), or until the request is cancelled. */
+function untilReady(table: LoadedTable, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(new EngineError("cancelled", "The request was cancelled."));
+    if (signal.aborted) {
+      abort();
+      return;
+    }
+    signal.addEventListener("abort", abort, { once: true });
+    table
+      .whenReady()
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener("abort", abort));
+  });
 }

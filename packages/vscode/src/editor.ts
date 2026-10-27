@@ -1,13 +1,13 @@
 /**
  * vastgrid's custom editor (docs/vscode.md): a `TableFile` for each file that VS Code opens with it, and a webview
- * with `DataGrid` for each editor of the file. VS Code's dirty state, Save, Save As and Revert act on the file;
- * undo and redo are the grid's, for the cells that each editor wrote.
+ * with `DataGrid` for each editor of the file. VS Code's dirty state, Save, Save As, Revert and backups act on the
+ * file; each write of a grid is an edit on VS Code's stack, which the grid that wrote it undoes and redoes.
  */
 import { randomBytes } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
-import { type FileView, TableFile } from "./table-file.js";
+import { type FileView, readBackup, TableFile } from "./table-file.js";
 
 /** The editors' view types: one that opens binary files by default, one offered for text files. */
 export const VIEW_TYPES = { table: "vastgrid.table", text: "vastgrid.text" } as const;
@@ -19,9 +19,11 @@ class TableDocument implements vscode.CustomDocument {
   constructor(
     readonly uri: vscode.Uri,
     readonly file: TableFile,
+    private readonly closed: () => void,
   ) {}
 
   dispose() {
+    this.closed();
     void this.file.dispose();
   }
 }
@@ -39,19 +41,23 @@ function escapeHtml(text: string) {
 }
 
 export class TableEditorProvider implements vscode.CustomEditorProvider<TableDocument> {
-  private readonly changes = new vscode.EventEmitter<vscode.CustomDocumentContentChangeEvent<TableDocument>>();
+  private readonly changes = new vscode.EventEmitter<vscode.CustomDocumentEditEvent<TableDocument>>();
   readonly onDidChangeCustomDocument = this.changes.event;
   /** The editors of each file, by its URI. */
   private readonly editors = new Map<string, Set<Editor>>();
+  private readonly documents = new Set<TableDocument>();
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly log: vscode.LogOutputChannel,
   ) {}
 
-  async openCustomDocument(uri: vscode.Uri): Promise<TableDocument> {
+  async openCustomDocument(uri: vscode.Uri, context: vscode.CustomDocumentOpenContext): Promise<TableDocument> {
     if (uri.scheme !== "file") throw new Error("vastgrid opens files on disk only.");
-    // A backup holds nothing: written cells do not outlive the window (docs/vscode.md).
+    // An editor restored from a backup (hot exit) writes its cells again.
+    const restore = context.backupId
+      ? readBackup(new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.parse(context.backupId))))
+      : null;
     const file = new TableFile(uri.fsPath, {
       tempDirectory: path.join(os.tmpdir(), "vastgrid-vscode"),
       editable: vscode.workspace.isTrusted,
@@ -64,11 +70,32 @@ export class TableEditorProvider implements vscode.CustomEditorProvider<TableDoc
         await vscode.workspace.fs.copy(vscode.Uri.file(kept.path), target, { overwrite: true });
         return true;
       },
+      ...(restore ? { restore } : {}),
+      notRestored: (writes) =>
+        void vscode.window.showWarningMessage(
+          vscode.l10n.t(
+            "{0}: {1} of the edits not saved were not restored, because the file changed since.",
+            path.basename(uri.fsPath),
+            writes,
+          ),
+        ),
       log: (message, error) => this.log.error(message, error),
     });
-    const document = new TableDocument(uri, file);
-    file.onWrite(() => this.changes.fire({ document }));
-    file.onSaveKey(() => void vscode.workspace.save(uri));
+    const document = new TableDocument(uri, file, () => this.documents.delete(document));
+    this.documents.add(document);
+    // VS Code undoes and redoes a write in the grid that made it; its dirty state follows.
+    file.onEdit((view) =>
+      this.changes.fire({
+        document,
+        label: vscode.l10n.t("Edit cells"),
+        undo: () => step(view, "history.undo"),
+        redo: () => step(view, "history.redo"),
+      }),
+    );
+    file.onKey((key) => {
+      if (key === "save") void vscode.workspace.save(uri);
+      else void vscode.commands.executeCommand(key);
+    });
     return document;
   }
 
@@ -139,10 +166,20 @@ export class TableEditorProvider implements vscode.CustomEditorProvider<TableDoc
   }
 
   async backupCustomDocument(
-    _document: TableDocument,
+    document: TableDocument,
     context: vscode.CustomDocumentBackupContext,
   ): Promise<vscode.CustomDocumentBackup> {
-    return { id: context.destination.toString(), delete: () => {} };
+    const destination = context.destination;
+    await vscode.workspace.fs.writeFile(destination, new TextEncoder().encode(JSON.stringify(document.file.backup())));
+    return {
+      id: destination.toString(),
+      delete: () => void Promise.resolve(vscode.workspace.fs.delete(destination)).catch(() => {}),
+    };
+  }
+
+  /** VS Code trusts the workspace now: files opened read-only because it did not open anew, editable. */
+  trust() {
+    for (const document of this.documents) void document.file.trust();
   }
 
   /** Whether the file has an editor of this provider. */
@@ -150,13 +187,23 @@ export class TableEditorProvider implements vscode.CustomEditorProvider<TableDoc
     return this.editors.has(uri.toString());
   }
 
+  /** The webview of an editor of the file: the active one, or the first. */
+  view(uri: vscode.Uri): FileView | undefined {
+    const editors = [...(this.editors.get(uri.toString()) ?? [])];
+    return (editors.find(({ panel }) => panel.active) ?? editors[0])?.view;
+  }
+
   /** Applies a command of §6 in an editor of the file: the active one, or the first. */
   dispatch(uri: vscode.Uri, command: unknown): Promise<unknown> {
-    const editors = [...(this.editors.get(uri.toString()) ?? [])];
-    const editor = editors.find(({ panel }) => panel.active) ?? editors[0];
-    if (!editor) return Promise.reject(new Error(`${uri.toString()} is not open in vastgrid.`));
-    return editor.view.dispatch(command);
+    const view = this.view(uri);
+    if (!view) return Promise.reject(new Error(`${uri.toString()} is not open in vastgrid.`));
+    return view.dispatch(command);
   }
+}
+
+/** Undoes or redoes a step in the grid of an editor. */
+async function step(view: FileView, command: "history.undo" | "history.redo") {
+  await view.dispatch({ command });
 }
 
 function signalOf(cancellation: vscode.CancellationToken): AbortSignal {

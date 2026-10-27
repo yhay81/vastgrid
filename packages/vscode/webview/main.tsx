@@ -17,6 +17,7 @@ import {
 import "vastgrid-grid/styles.css";
 import "./editor.css";
 import type { GridDocument, GridSession } from "vastgrid-spec";
+import { newSteps } from "../src/history.js";
 import type { HostMessage, ViewMessage } from "../src/messages.js";
 
 interface VsCodeApi {
@@ -56,6 +57,16 @@ const port: WorkerLike = {
   removeEventListener: (type, listener) => window.removeEventListener(type, listener),
 };
 
+/** Whether the person types in a field (the cell's editor, a menu's), whose text the browser undoes. */
+function inField(target: EventTarget | null) {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  );
+}
+
 function post(message: ViewMessage) {
   vscode.postMessage(message);
 }
@@ -76,6 +87,23 @@ function Editor({ sheet, onSheet }: { sheet: string | undefined; onSheet: (sheet
     ...(saved.session ? { session: saved.session } : {}),
   });
   const sheets = useSheets(store);
+  const names = JSON.stringify(sheets.sheets.map((item) => item.name));
+  const shown = sheets.sheet;
+
+  useEffect(() => {
+    // VS Code's "Choose Sheet" offers the bar's sheets, and shows one as the bar does.
+    post({
+      vastgrid: "sheets",
+      names: JSON.parse(names) as string[],
+      ...(shown === undefined ? {} : { sheet: shown }),
+    });
+    const receive = (event: MessageEvent) => {
+      const message = event.data as HostMessage | null;
+      if (message?.vastgrid === "sheet" && message.name !== shown) onSheet(message.name);
+    };
+    window.addEventListener("message", receive);
+    return () => window.removeEventListener("message", receive);
+  }, [names, shown, onSheet]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -101,8 +129,8 @@ function Editor({ sheet, onSheet }: { sheet: string | undefined; onSheet: (sheet
   }, [store, transport, sheet]);
 
   useEffect(() => {
-    // The extension's commands (§6), and the key that saves: VS Code saves the file, after the cell being edited
-    // is written.
+    // The extension's commands (§6), and the keys that VS Code acts on: it saves the file, after the cell being
+    // edited is written, and undoes and redoes the grids' writes, which are its edits.
     const receive = (event: MessageEvent) => {
       const message = event.data as HostMessage | null;
       if (message?.vastgrid !== "dispatch") return;
@@ -115,7 +143,16 @@ function Editor({ sheet, onSheet }: { sheet: string | undefined; onSheet: (sheet
       });
     };
     const keydown = (event: KeyboardEvent) => {
-      if (keyCommand(event, isApple())?.command !== "save") return;
+      const command = keyCommand(event, isApple())?.command;
+      if (command === "history.undo" || command === "history.redo") {
+        // Neither the grid nor VS Code's own handling of the page's keys sees them.
+        event.stopPropagation();
+        if (inField(event.target)) return;
+        event.preventDefault();
+        post({ vastgrid: command === "history.undo" ? "undo" : "redo" });
+        return;
+      }
+      if (command !== "save") return;
       event.preventDefault();
       event.stopPropagation();
       const written = store.getSnapshot().session.editor
@@ -125,10 +162,17 @@ function Editor({ sheet, onSheet }: { sheet: string | undefined; onSheet: (sheet
         if (outcome.ok) post({ vastgrid: "save" });
       });
     };
+    let history = store.getSnapshot().session.history;
+    const stopHistory = store.on("session", (session) => {
+      const added = newSteps(history, session.history);
+      history = session.history;
+      for (let step = 0; step < added; step++) post({ vastgrid: "edit" });
+    });
     window.addEventListener("message", receive);
     window.addEventListener("keydown", keydown, true);
     post({ vastgrid: "listening", on: true });
     return () => {
+      stopHistory();
       post({ vastgrid: "listening", on: false });
       window.removeEventListener("message", receive);
       window.removeEventListener("keydown", keydown, true);

@@ -920,17 +920,23 @@ export class GridStore {
     // An undo or a redo takes the last step once the writes sent before it are in the history.
     if (given.command === "history.undo" || given.command === "history.redo") await this.writing;
     let applied = this.applyNow(given, options);
-    if (
+    for (
+      let tries = 0;
+      tries < 3 &&
       applied.kind === "failed" &&
       applied.view &&
       applied.error instanceof CommandError &&
       applied.error.reason === "not_loaded" &&
-      applied.error.details
+      applied.error.details;
+      tries++
     ) {
+      const view = applied.view;
       try {
-        await this.load(applied.view, applied.error.details as { rows: [number, number][]; columns: string[] });
+        await this.load(view, applied.error.details as { rows: [number, number][]; columns: string[] });
       } catch (failure) {
-        return { ok: false, error: asGridError(failure) };
+        // A view that another replaced while its rows were read (a write, or the file read again) is cancelled:
+        // the command applies to the new one.
+        if (!isCancelled(failure) || view === this.current) return { ok: false, error: asGridError(failure) };
       }
       applied = this.applyNow(given, options);
     }

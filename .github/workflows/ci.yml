@@ -75,3 +75,42 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run build
       - run: npm run e2e
+  vscode:
+    name: VS Code extension (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: macos-latest
+            target: darwin-arm64
+          - os: windows-latest
+            target: win32-x64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run package -w vastgrid-vscode -- ${{ matrix.target }}
+      # The package, installed in a stable VS Code (in a virtual display on Linux): open, edit, save, read-only
+      # formats, sheets and the last rows of large files (docs/vscode.md).
+      - name: Test the package in VS Code
+        shell: bash
+        run: |
+          version=$(node -p "require('./packages/vscode/package.json').version")
+          export VASTGRID_VSIX="dist/vastgrid-vscode-$version-${{ matrix.target }}.vsix"
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run -a npm run test:vscode -w vastgrid-vscode
+          else
+            npm run test:vscode -w vastgrid-vscode
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vastgrid-vscode-${{ matrix.target }}
+          path: packages/vscode/dist/*.vsix
+          if-no-files-found: error

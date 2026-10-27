@@ -180,6 +180,19 @@ test("exports read the written cells (§7.2)", async () => {
   assert.equal(await readFile(path.join(workspace, "edited.csv"), "utf8"), "a,b\n1,x\n2,y\n", "the file stays");
 });
 
+test("an export of a table that is loading waits for every row (§9)", async () => {
+  await writeFile(
+    path.join(workspace, "loading.csv"),
+    `n\n${Array.from({ length: 1_000_000 }, (_, i) => i).join("\n")}\n`,
+  );
+  const info = await client.result<TableInfo>("open", { ref: "loading.csv" });
+  const done = await exported(info, { format: "csv", target: "loading.csv" });
+  assert.equal(done.rows, 1_000_000);
+  const text = await readFile(out("loading.csv"), "utf8");
+  assert.equal(text.split("\n").length, 1_000_002);
+  assert.ok(text.endsWith("\n999999\n"));
+});
+
 test("refuses xlsx beyond the rows of a sheet, and exports a filtered view of the same table", async () => {
   await writeFile(
     path.join(workspace, "many.csv"),

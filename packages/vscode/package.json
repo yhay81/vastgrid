@@ -114,6 +114,11 @@
         "command": "vastgrid.open",
         "title": "Open in vastgrid",
         "category": "vastgrid"
+      },
+      {
+        "command": "vastgrid.sheet",
+        "title": "Choose Sheet",
+        "category": "vastgrid"
       }
     ],
     "menus": {
@@ -135,12 +140,17 @@
         {
           "command": "vastgrid.open",
           "when": "resourceFilename =~ /\\.(csv|tsv|tab|jsonl|ndjson|parquet|pq|xlsx|xlsm)(\\.gz|\\.zst)?$/i"
+        },
+        {
+          "command": "vastgrid.sheet",
+          "when": "activeCustomEditorId == vastgrid.table && resourceFilename =~ /\\.(xlsx|xlsm)$/i"
         }
       ]
     }
   },
   "scripts": {
     "build": "tsc -b && node scripts/build.mjs",
+    "package": "node scripts/package.mjs",
     "test:vscode": "node scripts/test-vscode.mjs"
   },
   "dependencies": {
@@ -151,6 +161,7 @@
   "devDependencies": {
     "@types/vscode": "1.100.0",
     "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "4.0.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   }

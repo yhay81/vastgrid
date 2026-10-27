@@ -1377,7 +1377,9 @@ A `rows` request with `preview: true` MAY be answered before the whole view is m
 A table that is loading (`status: "loading"`) answers `rows` with the plan `{}` for its readable rows: that
 view is `building`, with the readable rows as its `rowCount` (not exact), until the table has loaded, and
 `view` events (§8.5) tell when it grows and when it is `ready`. Engines that report `partialViews` MAY also
-answer other plans over the readable rows, with `view.partial: true`.
+answer other plans over the readable rows, with `view.partial: true`. Requests that read every row of the view
+(`summarize`, `find`, `export`) and writes wait until the table has loaded, and fail with `revision_changed` when
+its revision changed meanwhile.
 
 The Node.js DuckDB engine implements these previews for large sorts, sharing the saved result between equivalent
 requests. A non-preview read waits for a sorted view to finish; it also surfaces a failed background build to
