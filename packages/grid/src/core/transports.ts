@@ -112,10 +112,14 @@ export interface HttpTransportOptions {
 export function httpTransport(url: string, options: HttpTransportOptions = {}): Transport {
   const request = options.fetch ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
   const exports = options.exports ?? `${url.replace(/\/+$/, "")}/exports/`;
+  // While the event stream connects, requests wait: an engine sends each event to the streams open at the time, so
+  // a table opened before would finish loading without the client hearing it.
+  let connecting: Promise<void> | null = null;
   const transport: Transport = {
     cancels: "signal",
     exportUrl: (target) => `${exports}${encodeURIComponent(target)}`,
     async send(message, { signal }) {
+      if (connecting) await connecting;
       const response = await request(url, {
         method: "POST",
         headers: {
@@ -135,6 +139,18 @@ export function httpTransport(url: string, options: HttpTransportOptions = {}): 
   if (events !== undefined) {
     transport.subscribe = (listener) => {
       const source = new EventSource(events);
+      let open = () => {};
+      const opening = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      connecting = opening;
+      // Open, or failed: a stream that cannot connect does not hold the requests back.
+      const settle = () => {
+        open();
+        if (connecting === opening) connecting = null;
+      };
+      source.onopen = settle;
+      source.onerror = settle;
       source.onmessage = (event) => {
         try {
           listener(JSON.parse(event.data as string));
@@ -142,7 +158,10 @@ export function httpTransport(url: string, options: HttpTransportOptions = {}): 
           // An event that is not JSON is not an event of §8.5.
         }
       };
-      return () => source.close();
+      return () => {
+        settle();
+        source.close();
+      };
     };
   }
   return transport;

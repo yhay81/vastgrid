@@ -49,6 +49,9 @@ that was not edited kept. [From v1 to v2](docs/v2-from-v1.md) is the migration g
   and when its cell runs again, and keeps the notebook's keys of command mode off while it has the focus. The corpus,
   pytest and a comparison with vastgrid-js's memory engine test it (docs/notebook.md). docs/entries.md and
   docs/entries.ja.md compare the six places v2 opens files: formats, editing, saving, exporting and installing.
+- `vastgrid`: `httpTransport` sends requests once its stream of events is open (or has failed). A table that
+  finished loading before the stream connected stayed "loading" for its grid, without the menu items that need
+  the whole table.
 - `vastgrid`: the grid follows a theme that the host marks on the body, as VS Code's webviews (`vscode-dark`) and
   JupyterLab (`data-jp-theme-light`) do, and draws again when its own `className` or `style` changes.
   `workerTransport` is documented for anything that carries messages as a worker does (v2-react.md §4.4).

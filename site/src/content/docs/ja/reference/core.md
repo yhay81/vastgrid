@@ -161,7 +161,7 @@ const transport = workerTransport(new Worker(new URL("./worker.ts", import.meta.
 | --- | --- | --- | --- |
 | `fetch` | `typeof fetch` | グローバルの `fetch` | リクエストを送る関数。 |
 | `headers` | `Record<string, string>` | | すべてのリクエストに付けるヘッダー（認可など）。 |
-| `events` | `string` | | エンジンのイベントを運ぶ Server-Sent Events の URL。ないと、ほかのクライアントの書き込みはグリッドに届きません。 |
+| `events` | `string` | | エンジンのイベントを運ぶ Server-Sent Events の URL。ないと、ほかのクライアントの書き込みはグリッドに届きません。開いたテーブルのイベントを取りこぼさないよう、要求はストリームが開く（か失敗する）まで待ちます。 |
 | `exports` | `string` | `<url>/exports/` | target なしの書き出しをダウンロードする URL の接頭辞。 |
 
 ### `Transport` と `Engine`

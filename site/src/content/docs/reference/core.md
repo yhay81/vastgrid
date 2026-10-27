@@ -185,7 +185,7 @@ const transport = workerTransport(new Worker(new URL("./worker.ts", import.meta.
 | --- | --- | --- | --- |
 | `fetch` | `typeof fetch` | the global `fetch` | The function that sends requests. |
 | `headers` | `Record<string, string>` | | Headers sent with every request, such as an authorization. |
-| `events` | `string` | | The URL of the Server-Sent Events that carry the engine's events. Without it, the grid does not hear of writes made by others. |
+| `events` | `string` | | The URL of the Server-Sent Events that carry the engine's events. Without it, the grid does not hear of writes made by others. Requests wait until the stream is open (or fails), so that no event of a table the grid opens is missed. |
 | `exports` | `string` | `<url>/exports/` | The URL under which exports without a target are downloaded. |
 
 ### `Transport` and `Engine`

@@ -149,6 +149,58 @@ test("over HTTP, blocks come attached to the response (§8.8)", async () => {
   assert.deepEqual(rows.block.bytes, encodeBlock([{ name: "id", type: "integer" }], [[0], [1], [2]]));
 });
 
+test("over HTTP, requests wait until the event stream is open, and one that fails does not hold them", async () => {
+  // An engine sends each event to the streams open at the time: a table opened before its client's stream would
+  // finish loading unheard.
+  class FakeEventSource {
+    static made: FakeEventSource[] = [];
+    onopen: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    onmessage: ((event: { data: string }) => void) | null = null;
+    closed = false;
+    constructor(readonly url: string) {
+      FakeEventSource.made.push(this);
+    }
+    close() {
+      this.closed = true;
+    }
+  }
+  const global = globalThis as { EventSource?: unknown };
+  const before = global.EventSource;
+  global.EventSource = FakeEventSource;
+  try {
+    const sent: string[] = [];
+    const transport = httpTransport("https://example.test/grid", {
+      events: "https://example.test/grid/events",
+      fetch: async (_url, init) => {
+        sent.push(JSON.parse(String(init?.body)).op);
+        return Response.json({ v: 2, id: 1, result: {} });
+      },
+    });
+    const events: unknown[] = [];
+    const stop = transport.subscribe?.((event) => events.push(event));
+    const answer = transport.send({ v: 2, id: 1, op: "open", ref: "x" } as never, {});
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.deepEqual(sent, []);
+    const [source] = FakeEventSource.made;
+    source.onopen?.();
+    await answer;
+    assert.deepEqual(sent, ["open"]);
+    source.onmessage?.({ data: '{"v":2,"event":"progress"}' });
+    assert.deepEqual(events, [{ v: 2, event: "progress" }]);
+    stop?.();
+    assert.equal(source.closed, true);
+
+    transport.subscribe?.(() => {});
+    const failed = transport.send({ v: 2, id: 2, op: "info", table: "t1" } as never, {});
+    FakeEventSource.made[1].onerror?.();
+    await failed;
+    assert.deepEqual(sent, ["open", "info"]);
+  } finally {
+    global.EventSource = before;
+  }
+});
+
 test("a worker serves an engine through a MessagePort, events included", async () => {
   const engine = fakeEngine(numbers(5));
   const channel = new MessageChannel();

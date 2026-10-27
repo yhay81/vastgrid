@@ -186,7 +186,7 @@ interface Transport {
 | --- | --- | --- |
 | `localTransport(engine)` | in the same thread, such as `vastgrid-js`'s memory engine | structured |
 | `workerTransport(worker)` | in a Web Worker, where `serveEngine(engine, self)` answers, or behind anything that carries messages as a worker does (`WorkerLike`: a `MessagePort`, VS Code's webview, a notebook widget's messages); buffers are transferred | structured |
-| `httpTransport(url)` | on a server, with `accept: application/vnd.vastgrid.v2+arrow` | attached |
+| `httpTransport(url, { events })` | on a server, with `accept: application/vnd.vastgrid.v2+arrow`; while its stream of `events` connects, requests wait, so that no event of a table it opens is missed | attached |
 | `serverFunctionTransport(action)` | a `"use server"` function (§7) | structured |
 
 The client gives ids, checks every response and event (`checkResponse`, `checkEvent`), and sends `cancel` when
