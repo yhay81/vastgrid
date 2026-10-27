@@ -36,8 +36,9 @@ before such a change.
 
 Find the lines with `rg -n`, then read only those lines.
 
-- Over 1,000 lines: `packages/spec/src/commands.ts` (2,000), `packages/grid/src/core/store.ts`,
-  `packages/js/src/engine.ts`; check others with `wc -l` first.
+- Over 1,000 lines: `packages/notebook/python/src/vastgrid/_engine.py` (1,400), `packages/js/src/text.ts`,
+  `packages/grid/src/canvas/grid-canvas.ts`, `packages/js/src/engine.ts`, `packages/grid/src/core/store.ts`; check
+  others with `wc -l` first.
 - Code and tests cite the specs by section (§2.4). `rg -n '^#' docs/v2-spec.md` is the outline of its 1,400
   lines; read only the section. The same goes for `docs/v2-react.md`.
 - `packages/spec/conformance/` holds JSON files of up to 80 KB: query them with `jq` or `rg`.
