@@ -28,10 +28,12 @@ import {
   type RowKey,
   repairDocument,
 } from "vastgrid-spec";
-import { BLOCK_ROWS, type Read, ViewCache } from "./cache.js";
+import { ViewCache } from "./cache.js";
 import { GridClient, type Transport } from "./client.js";
 import { valuesPlan } from "./filters.js";
-import { measuresPlan, totalMeasures } from "./measures.js";
+import { measuresPlan } from "./measures.js";
+import { RowReader, sameColumns, type View, type Viewport } from "./rows.js";
+import { TotalsReader } from "./totals.js";
 import { now, track } from "./trace.js";
 import {
   type CommandOutcome,
@@ -74,26 +76,6 @@ export interface DispatchOptions {
   clipboard?: { text?: string; html?: string };
 }
 
-/** Where the canvas is: its first row, how many rows it shows and the columns it draws. */
-export interface Viewport {
-  top: number;
-  rows: number;
-  columns: readonly string[];
-}
-
-/** A view of the document's plan, being read or on screen. */
-interface View {
-  readonly key: string;
-  readonly plan: Plan;
-  readonly checked: CheckedPlan;
-  /** The table's revision and edits version that the view's rows belong to. */
-  readonly revision: string | null;
-  readonly edits: number;
-  info: ViewInfo | null;
-  readonly cache: ViewCache;
-  readonly abort: AbortController;
-}
-
 type Part = "document" | "session";
 
 /** A command applied, or why it was not. */
@@ -123,11 +105,6 @@ function planKey(plan: Plan): string {
   return canonicalJson(normalizePlan(plan));
 }
 
-/** Whether two lists of columns have the same names and types. */
-function sameColumns(a: readonly Column[], b: readonly Column[]) {
-  return a.length === b.length && a.every((column, index) => canonicalJson(column) === canonicalJson(b[index]));
-}
-
 /**
  * The grid without a screen (§4 of v2-react.md): the state of the specification as immutable snapshots, the
  * commands that change it, and the rows of the view on screen, read through a transport. Making a store has
@@ -152,7 +129,7 @@ export class GridStore {
   private opened = false;
   private current: View | null = null;
   private next: View | null = null;
-  private viewport: Viewport = { top: 0, rows: 0, columns: [] };
+  private readonly reader: RowReader;
   /**
    * Values of writes (§7.2) that the rows read do not hold yet, by the key text of their row and by column, with
    * the write that gave them: the grid shows them at once, and drops them when the write fails or once the view
@@ -164,14 +141,30 @@ export class GridStore {
   private readonly writeVersions = new Map<number, number>();
   /** Settles once the writes sent so far are answered and their steps are in the history. */
   private writing: Promise<void> = Promise.resolve();
-  private readScheduled = false;
-  private totalsKey = "";
-  private totalsAbort: AbortController | null = null;
+  private readonly totals = new TotalsReader(
+    (plan, revision, signal) => this.measure(plan, revision, signal),
+    (totals) => this.publish({ totals }),
+  );
   private rowsVersion = 0;
-  private readonly budget: number;
 
   constructor(private readonly options: GridStoreOptions) {
-    this.budget = options.cacheBytes ?? CACHE_BYTES;
+    this.reader = new RowReader(
+      {
+        current: () => this.current,
+        next: () => this.next,
+        client: () => this.client,
+        table: () => this.snapshot.table,
+        opened: () => this.opened,
+        rowKey: () => this.base("document").rowKey,
+        keyed: () => Boolean(this.base("session").active?.key),
+        showView: (info) => this.publish({ view: info }),
+        showRows: () => this.emitRows(),
+        fail: (error) => {
+          if (!isCancelled(error)) this.fail(asGridError(error));
+        },
+      },
+      options.cacheBytes ?? CACHE_BYTES,
+    );
     this.snapshot = {
       document: options.document ?? emptyDocument(),
       session: options.session ?? emptySession(),
@@ -222,33 +215,7 @@ export class GridStore {
     next.displayed = keep ? previous.displayed : this.displayedOf(next);
     this.snapshot = next;
     for (const listener of this.listeners) listener();
-    this.followTotals();
-  }
-
-  /** Reads the totals row again when the view on screen, its edits or the totals change. */
-  private followTotals() {
-    const view = this.current;
-    const measures = totalMeasures(this.snapshot.displayed);
-    // A view that is being made is totalled once it is ready.
-    if (view && measures.length > 0 && this.snapshot.view?.status !== "ready") return;
-    const plan = view && measures.length > 0 ? measuresPlan(view.plan, measures) : null;
-    const key = view && plan ? `${view.revision}\u0000${view.edits}\u0000${canonicalJson(plan)}` : "";
-    if (key === this.totalsKey) return;
-    this.totalsKey = key;
-    this.totalsAbort?.abort();
-    this.totalsAbort = null;
-    if (!view || !plan) {
-      if (this.snapshot.totals) this.publish({ totals: null });
-      return;
-    }
-    const abort = new AbortController();
-    this.totalsAbort = abort;
-    // The totals on screen stay until the new ones come.
-    this.measure(plan, view.revision, abort.signal)
-      .then((totals) => {
-        if (!abort.signal.aborted) this.publish({ totals });
-      })
-      .catch(() => {});
+    this.totals.follow(this.current, this.snapshot);
   }
 
   /** Reads the one row of a plan that aggregates without keys: its values and their types, by column name. */
@@ -339,113 +306,12 @@ export class GridStore {
 
   /** Tells the store what the canvas shows, so that it reads those rows and a page around them. */
   setViewport(viewport: Viewport) {
-    const before = this.viewport;
-    if (
-      before.top === viewport.top &&
-      before.rows === viewport.rows &&
-      before.columns.length === viewport.columns.length &&
-      before.columns.every((column, index) => column === viewport.columns[index])
-    ) {
-      return;
-    }
-    this.viewport = viewport;
-    this.scheduleReads();
+    this.reader.setViewport(viewport);
   }
 
   /** Reads rows `[start, end)` of `columns` of the view on screen if they are not read, for cells React renders. */
   ensure(start: number, end: number, columns: readonly string[]) {
-    const view = this.current;
-    if (!view?.info || !this.opened || this.next || view.abort.signal.aborted) return;
-    for (const read of view.cache.reads(start, end, this.withKey(columns), view.info.rowCount)) {
-      void this.read(view, read).catch(() => {});
-    }
-  }
-
-  private scheduleReads() {
-    if (this.readScheduled) return;
-    this.readScheduled = true;
-    queueMicrotask(() => {
-      this.readScheduled = false;
-      this.readVisible();
-    });
-  }
-
-  /** The columns to read: those asked for, and the row key column (§5.3), which commands need. */
-  private withKey(columns: readonly string[]): string[] {
-    const key = this.base("document").rowKey;
-    const view = this.current?.info?.columns ?? [];
-    if (key === undefined || columns.includes(key) || !view.some((column) => column.name === key)) {
-      return [...columns];
-    }
-    return [...columns, key];
-  }
-
-  private readVisible() {
-    const view = this.current;
-    if (!view?.info || !this.opened || this.next || view.abort.signal.aborted) return;
-    const { top, rows, columns } = this.viewport;
-    if (columns.length === 0) return;
-    const margin = Math.max(rows, 32);
-    const start = Math.max(0, top - margin);
-    const readable = view.info.status === "building" ? view.info.readableRows : view.info.rowCount;
-    const end = Math.min(readable, top + rows + margin);
-    view.cache.touch(top, top + rows);
-    for (const read of view.cache.reads(start, end, this.withKey(columns), readable)) {
-      void this.read(view, read).catch(() => {});
-    }
-    view.cache.evict(this.budget, start, end);
-  }
-
-  /** Reads rows of a view into its cache. */
-  private async read(view: View, read: Read): Promise<void> {
-    const client = this.client;
-    const table = this.snapshot.table;
-    if (!client || !table) return;
-    view.cache.reading(read, true);
-    try {
-      const result = await client.request<RowsResult>(
-        "rows",
-        {
-          table: table.table,
-          revision: view.revision,
-          plan: view.plan,
-          start: read.start,
-          end: read.end,
-          columns: read.columns,
-          // A keyed selection needs locate on the complete view before its position can change.
-          ...(!view.info && table.capabilities.preview && !this.base("session").active?.key ? { preview: true } : {}),
-        },
-        view.abort.signal,
-      );
-      if (view !== this.current && view !== this.next) return;
-      const block = decodeBlock(result.block.bytes);
-      view.cache.receive(
-        result.start,
-        result.rowIds,
-        block.columns.map((column) => column.name),
-        block.rows,
-        result.truncated,
-      );
-      const info = result.view;
-      view.cache.reading(read, false);
-      // A ready event can arrive before the response containing the preview.
-      if (
-        !(view.info?.status === "ready" && info.status === "building") &&
-        (!view.info ||
-          view.info.rowCount !== info.rowCount ||
-          view.info.status !== info.status ||
-          view.info.readableRows !== info.readableRows)
-      ) {
-        view.info =
-          view.info && sameColumns(view.info.columns, info.columns) ? { ...info, columns: view.info.columns } : info;
-        if (view === this.current) this.publish({ view: view.info });
-      }
-      if (view === this.current) this.emitRows();
-    } catch (error) {
-      view.cache.reading(read, false);
-      if (!isCancelled(error) && (view === this.current || view === this.next)) this.fail(asGridError(error));
-      throw error;
-    }
+    this.reader.ensure(start, end, columns);
   }
 
   // ----- connecting -----
@@ -512,7 +378,7 @@ export class GridStore {
     this.publish({ table: info, status: info.status === "error" ? "error" : "ready" });
     if (repaired.removed.length > 0) this.change(repaired.document, this.base("session"));
     this.showPlan(this.base("document").plan ?? {});
-    this.scheduleReads();
+    this.reader.schedule();
   }
 
   private onEvent(event: Record<string, unknown>, connection: number) {
@@ -554,9 +420,9 @@ export class GridStore {
       // A view still being made reads its rows again once the table is read, also without `view` events (§9).
       const view = this.current;
       if (event.status === "ready" && view?.info && view.info.status !== "ready") {
-        const columns = this.withKeyFor(view, this.viewport.columns);
-        void this.read(view, this.around(this.viewport.top, null, columns)).then(
-          () => this.scheduleReads(),
+        const columns = this.reader.withKeyFor(view, this.reader.viewport.columns);
+        void this.reader.read(view, this.reader.around(this.reader.viewport.top, null, columns)).then(
+          () => this.reader.schedule(),
           () => {},
         );
       }
@@ -573,7 +439,7 @@ export class GridStore {
           rowCountExact: event.rowCountExact as boolean,
         };
         if (view === this.current) this.publish({ view: view.info });
-        this.scheduleReads();
+        this.reader.schedule();
       }
     }
   }
@@ -674,26 +540,17 @@ export class GridStore {
     return connection === this.connection && view === this.next;
   }
 
-  /** The rows from `row` for a viewport, in whole blocks. */
-  private around(row: number, rowCount: number | null, columns: readonly string[]): Read {
-    const start = Math.floor(row / BLOCK_ROWS) * BLOCK_ROWS;
-    const rows = Math.max(this.viewport.rows, 1);
-    let end = Math.ceil((row + rows) / BLOCK_ROWS) * BLOCK_ROWS;
-    if (rowCount !== null) end = Math.min(end, Math.max(rowCount, start + 1));
-    return { start, end: Math.max(end, start + 1), columns: [...columns] };
-  }
-
   private async prepare(view: View, connection: number) {
     const table = this.snapshot.table as TableInfo;
     const client = this.client as GridClient;
-    const columns = this.withKeyFor(view, this.viewport.columns);
+    const columns = this.reader.withKeyFor(view, this.reader.viewport.columns);
     try {
-      const top = this.current ? this.viewport.top : (this.base("session").scroll?.row ?? 0);
-      await this.read(view, this.around(top, null, columns));
+      const top = this.current ? this.reader.viewport.top : (this.base("session").scroll?.row ?? 0);
+      await this.reader.read(view, this.reader.around(top, null, columns));
       if (!this.live(view, connection) || !view.info) return;
       let info: ViewInfo = view.info;
       if (top >= info.rowCount && info.rowCount > 0) {
-        await this.read(view, this.around(info.rowCount - 1, info.rowCount, columns));
+        await this.reader.read(view, this.reader.around(info.rowCount - 1, info.rowCount, columns));
         if (!this.live(view, connection) || !view.info) return;
         info = view.info;
       }
@@ -731,7 +588,7 @@ export class GridStore {
         view.cache.value(target, columns[0] ?? "") === undefined &&
         columns.length > 0
       ) {
-        await this.read(view, this.around(target, info.rowCount, columns));
+        await this.reader.read(view, this.reader.around(target, info.rowCount, columns));
         if (!this.live(view, connection)) return;
       }
       const previous = this.current;
@@ -746,12 +603,12 @@ export class GridStore {
       // Values of writes that the new rows hold are no longer needed.
       this.dropWritten((write) => (this.writeVersions.get(write) ?? Number.POSITIVE_INFINITY) <= view.edits);
       this.emitRows();
-      this.scheduleReads();
+      this.reader.schedule();
       // A normal read waits for completion, also when there is no event channel or the ready event raced
       // the preview. It reports a failed build and is cancelled when the plan or connection changes.
       if (view.info?.status === "building" && table.status === "ready") {
-        void this.read(view, this.around(Math.max(0, target), null, columns)).then(
-          () => this.scheduleReads(),
+        void this.reader.read(view, this.reader.around(Math.max(0, target), null, columns)).then(
+          () => this.reader.schedule(),
           () => {},
         );
       }
@@ -762,15 +619,6 @@ export class GridStore {
       }
       if (connection === this.connection && !isCancelled(error)) this.fail(asGridError(error));
     }
-  }
-
-  private withKeyFor(view: View, columns: readonly string[]): string[] {
-    const names = new Set(view.checked.columns.map((column) => column.name));
-    const wanted = columns.filter((column) => names.has(column));
-    const key = this.base("document").rowKey;
-    if (key !== undefined && names.has(key) && !wanted.includes(key)) wanted.push(key);
-    if (wanted.length === 0 && view.checked.columns.length > 0) wanted.push(view.checked.columns[0].name);
-    return wanted;
   }
 
   private contextFor(view: View, table: TableInfo, info: ViewInfo | null = view.info): CommandContext {
@@ -784,7 +632,7 @@ export class GridStore {
         rowIds: view.checked.rowIds,
       },
       lookup: (row) => this.withWritten(view.cache.loaded(row, rowKey)),
-      page: Math.max(1, this.viewport.rows - 1),
+      page: Math.max(1, this.reader.viewport.rows - 1),
       capabilities: table.capabilities,
     };
   }
@@ -847,7 +695,7 @@ export class GridStore {
     if (document === previous) return;
     this.publish({ document });
     if (document.plan !== previous.plan) this.showPlan(document.plan ?? {});
-    this.scheduleReads();
+    this.reader.schedule();
   }
 
   /** Shows a session given by the host. */
@@ -932,7 +780,7 @@ export class GridStore {
     ) {
       const view = applied.view;
       try {
-        await this.load(view, applied.error.details as { rows: [number, number][]; columns: string[] });
+        await this.reader.load(view, applied.error.details as { rows: [number, number][]; columns: string[] });
       } catch (failure) {
         // A view that another replaced while its rows were read (a write, or the file read again) is cancelled:
         // the command applies to the new one.
@@ -1065,7 +913,7 @@ export class GridStore {
     this.publish({ table: info, status: info.status === "error" ? "error" : "ready" });
     if (repaired.removed.length > 0) this.change(repaired.document, this.base("session"));
     this.showPlan(this.base("document").plan ?? {});
-    this.scheduleReads();
+    this.reader.schedule();
   }
 
   /** Counts and sums the cells of ranges of the view on screen (`summarize`, §8.2). */
@@ -1176,21 +1024,6 @@ export class GridStore {
     );
     const block = decodeBlock(result.block.bytes);
     return { value: block.rows[0]?.[0] ?? null, column: block.columns[0] };
-  }
-
-  /** Reads the rows that a command needs (`not_loaded`, §6.1), in whole blocks. */
-  private async load(view: View, details: { rows: [number, number][]; columns: string[] }) {
-    const rowCount = view.info?.rowCount ?? 0;
-    const columns = this.withKeyFor(view, details.columns);
-    const reads: Promise<void>[] = [];
-    for (const [start, end] of details.rows) {
-      const first = Math.floor(start / BLOCK_ROWS) * BLOCK_ROWS;
-      const last = Math.min(rowCount, Math.ceil(end / BLOCK_ROWS) * BLOCK_ROWS);
-      for (let at = first; at < last; at += BLOCK_ROWS * 16) {
-        reads.push(this.read(view, { start: at, end: Math.min(last, at + BLOCK_ROWS * 16), columns }));
-      }
-    }
-    await Promise.all(reads);
   }
 
   /** Sends the requests of a command and applies the commands of §6.7 that their answers call for. */
