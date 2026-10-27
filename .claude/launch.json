@@ -1,0 +1,49 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "site",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "-w", "vastgrid-site", "--", "--port", "4321"],
+      "port": 4321
+    },
+    {
+      "name": "site-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "preview", "-w", "vastgrid-site", "--", "--port", "4322"],
+      "port": 4322
+    },
+    {
+      "name": "bench",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "preview", "-w", "vastgrid-bench"],
+      "port": 5181
+    },
+    {
+      "name": "files",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "preview", "-w", "vastgrid-files-example"],
+      "port": 5183
+    },
+    {
+      "name": "cli",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "packages/cli/dist/cli.js",
+        "--no-open",
+        "--save",
+        "--port",
+        "5185",
+        ".data/cli",
+        ".data/bench/sales-100000000.parquet"
+      ],
+      "port": 5185
+    },
+    {
+      "name": "mcp-host",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx", "packages/mcp/host/serve.ts", ".data", "5184"],
+      "port": 5184
+    }
+  ]
+}
