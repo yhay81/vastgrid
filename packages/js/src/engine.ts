@@ -15,6 +15,7 @@ import {
   FUNCTIONS,
   type JsonValue,
   keyText,
+  MEASURES,
   MESSAGE_LIMITS,
   type Operation,
   PlanError,
@@ -22,10 +23,11 @@ import {
   planHash,
   planOptions,
   type RowKey,
+  SpecError,
   sameCellValue,
 } from "vastgrid-spec";
-import type { ColumnReader } from "./evaluate.js";
 import { type ColumnRanks, type RankedKey, rankColumn, sortRows } from "./order.js";
+import type { ViewColumn, ViewShape } from "./plan.js";
 import { Summary } from "./summary.js";
 import { checkTable, type MemoryTable, shown, TableProblem, valueChecker } from "./table.js";
 
@@ -46,21 +48,21 @@ export interface MemoryEngine {
 }
 
 /**
- * What the engine evaluates (§4.10): plans that derive, filter, search and sort, with every function of §4.4;
+ * What the engine evaluates (§4.10): every plan of §4.1, with every function of §4.4 and every measure of §4.5;
  * `summarize` and `locate`.
  */
 export const MEMORY_CAPABILITIES: Readonly<Capabilities> = Object.freeze({
   plan: Object.freeze({
     derive: true,
     where: true,
-    aggregate: false,
-    pivot: false,
-    having: false,
+    aggregate: true,
+    pivot: true,
+    having: true,
     sort: true,
     search: true,
   }),
   functions: Object.freeze([...FUNCTIONS]) as unknown as string[],
-  measures: [],
+  measures: Object.freeze([...MEASURES]) as unknown as string[],
   summarize: true,
   find: false,
   locate: true,
@@ -77,7 +79,7 @@ function capabilities(write = false): Capabilities {
     ...MEMORY_CAPABILITIES,
     plan: { ...MEMORY_CAPABILITIES.plan },
     functions: [...FUNCTIONS],
-    measures: [],
+    measures: [...MEASURES],
     write,
   };
 }
@@ -132,28 +134,27 @@ interface Table {
   open: number;
 }
 
-/** A derived column of a view (§4.1): its values for every row of the table, by row ID. */
-interface Derived {
-  column: Column;
-  values: JsonValue[];
-}
-
 /** A view of a table (§4.2): its rows in order. */
 interface View {
   hash: string;
   columns: Column[];
-  /** The derived columns by name. */
-  derived: Map<string, Derived>;
-  /** The rows of the table when the view was made. */
+  /** The derived columns by name; in a view of groups, every column of the view, by group number. */
+  derived: Map<string, ViewColumn>;
+  /** Whether the view's rows are groups (§4.2), which have no row IDs. */
+  grouped: boolean;
+  /** The rows of the table when the view was made; the groups of a view of groups. */
   tableRows: number;
   rowCount: number;
-  /** The row ID at each position; null when the view is every row of the table in row ID order. */
+  /** The row ID (group number) at each position; null when the view is every row of the table (every group) in order. */
   order: Uint32Array | null;
   /** The position of each row ID, made when `locate` first needs it. */
   positions?: Uint32Array;
-  /** For each column that `locate` looked values up in, by its index: the first position of each rank. */
-  firsts: Map<number, Int32Array>;
+  /** For each column that `locate` looked values up in, by its name: the first position of each rank. */
+  firsts: Map<string, Int32Array>;
 }
+
+/** The row of a table that a view of groups reads: none, as it reads only its own columns. */
+const EMPTY: readonly JsonValue[] = [];
 
 /** A column that a request reads: a table's column at its index, or a derived column with its values. */
 interface Source {
@@ -271,6 +272,7 @@ class Engine implements MemoryEngine {
       if (error instanceof ProtocolError) {
         return errorResponse(request.id, "invalid_request", error.message, { path: error.path, reason: error.reason });
       }
+      if (error instanceof SpecError) return errorResponse(request.id, error.code as ErrorCode, error.message);
       return errorResponse(request.id, "internal", error instanceof Error ? error.message : String(error));
     } finally {
       if (this.running.get(request.id) === running) this.running.delete(request.id);
@@ -438,49 +440,50 @@ class Engine implements MemoryEngine {
       return kept;
     }
     const count = table.rows.length;
-    // derive, then where, then sort (§4.1); expressions read the table's columns and the derived ones before.
-    const derived = new Map<string, Derived>();
-    const read: ColumnReader = (name) => {
-      const values = derived.get(name)?.values ?? this.valuesOf(table, table.index.get(name) as number);
-      return (row) => values[row];
-    };
-    let filtered: Uint32Array | null = null;
-    if (checked.derive.length > 0 || checked.where) {
-      // The evaluator loads with the first plan that needs it, so that pages that only sort do not load it.
-      const { evaluate, filter } = await import("./evaluate.js");
-      for (const item of checked.derive) {
-        derived.set(item.name, { column: item.column, values: evaluate(item.expr, read, count) });
-      }
-      if (checked.where) filtered = filter(checked.where, read, count);
+    const ranks = (name: string) => this.ranksOf(table, table.index.get(name) as number);
+    let shape: ViewShape;
+    if (checked.derive.length > 0 || checked.where || checked.aggregate) {
+      const { planView } = await import("./plan.js");
+      shape = planView(checked, {
+        count,
+        values: (name) => this.valuesOf(table, table.index.get(name) as number),
+        ranks,
+        rankColumn,
+        sortRows,
+        sortKeys: (ranksOf) => this.sortKeys(checked, ranksOf),
+      });
+    } else {
+      shape = {
+        columns: checked.columns,
+        derived: new Map(),
+        grouped: false,
+        tableRows: count,
+        rowCount: count,
+        order: sortRows(count, this.sortKeys(checked, ranks), null),
+      };
     }
-    // A key on a column that an earlier key has already sorted by cannot break a tie.
+    const view: View = { hash, ...shape, firsts: new Map() };
+    table.views.set(hash, view);
+    if (table.views.size > KEPT_VIEWS) table.views.delete(table.views.keys().next().value as string);
+    return view;
+  }
+
+  /** The sort keys of a plan (§3.3); a key on a column that an earlier key sorted by cannot break a tie. */
+  private sortKeys(checked: CheckedPlan, ranksOf: (name: string) => ColumnRanks): RankedKey[] {
     const used = new Set<string>();
     const keys: RankedKey[] = [];
     for (const key of checked.sort) {
       const name = key.column.name;
       if (used.has(name)) continue;
       used.add(name);
-      const made = derived.get(name);
-      const ranks = made ? rankColumn(made.column, made.values) : this.ranksOf(table, table.index.get(name) as number);
-      keys.push({ ranks, descending: key.direction === "desc" });
+      keys.push({ ranks: ranksOf(name), descending: key.direction === "desc" });
     }
-    const view: View = {
-      hash,
-      columns: checked.columns,
-      derived,
-      tableRows: count,
-      rowCount: filtered ? filtered.length : count,
-      order: sortRows(count, keys, filtered),
-      firsts: new Map(),
-    };
-    table.views.set(hash, view);
-    if (table.views.size > KEPT_VIEWS) table.views.delete(table.views.keys().next().value as string);
-    return view;
+    return keys;
   }
 
   /**
    * The columns that a request names, which must be columns of the view: the index of a table's column, or the
-   * values of a derived one.
+   * values of a derived one or of a column of groups.
    */
   private columnsOf(table: Table, view: View, names: string[]): Source[] {
     return names.map((name, at) => {
@@ -514,7 +517,7 @@ class Engine implements MemoryEngine {
     const truncated = new Map<string, number[]>();
     for (let position = start; position < end; position++) {
       const row = view.order ? view.order[position] : position;
-      const source = table.rows[row];
+      const source = view.grouped ? EMPTY : table.rows[row];
       const offset = position - start;
       rowIds.push(row);
       values.push(
@@ -551,7 +554,7 @@ class Engine implements MemoryEngine {
       },
       start,
       end,
-      rowIds,
+      rowIds: view.grouped ? null : rowIds,
       block: { bytes: encodeBlock(columns, values) },
       ...(truncated.size > 0 ? { truncated: Object.fromEntries(truncated) } : {}),
     };
@@ -594,14 +597,19 @@ class Engine implements MemoryEngine {
         reason: "syntax",
       });
     }
+    const name = request.rowKey as string;
+    // In a view of groups, values are looked up among the groups' keys; groups have no row IDs.
+    const group = view.grouped ? view.derived.get(name) : undefined;
+    let ranks: ColumnRanks | undefined;
     return {
       rows: keys.map((key) => {
-        if ("rowId" in key) return this.positionOf(view, key.rowId);
+        if ("rowId" in key) return view.grouped ? null : this.positionOf(view, key.rowId);
+        if (view.grouped && !group) return null;
         // The first position in the view of a row whose value equals the key's (§3.1).
-        const ranks = this.ranksOf(table, column as number);
+        ranks ??= group ? rankColumn(group.column, group.values) : this.ranksOf(table, column as number);
         const rank = ranks.rankOf(key.value);
         if (rank < 0) return null;
-        const first = this.firstsOf(view, column as number, ranks)[rank];
+        const first = this.firstsOf(view, name, ranks)[rank];
         return first < 0 ? null : first;
       }),
     };
@@ -724,7 +732,7 @@ class Engine implements MemoryEngine {
   }
 
   /** The first position in a view of each rank of a column, −1 for ranks that no row of the view has. */
-  private firstsOf(view: View, column: number, ranks: ColumnRanks): Int32Array {
+  private firstsOf(view: View, column: string, ranks: ColumnRanks): Int32Array {
     let firsts = view.firsts.get(column);
     if (!firsts) {
       firsts = new Int32Array(ranks.distinct + 2).fill(-1);

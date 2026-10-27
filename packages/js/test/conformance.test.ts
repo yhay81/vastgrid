@@ -23,13 +23,6 @@ function fits(item: CorpusCase): boolean {
   return !Object.keys(plan).some((member) => UNOFFERED.includes(member));
 }
 
-/** The names of a plan's derived columns, when it has them in the form of §4.1. */
-function derivedNames(plan: unknown): string[] {
-  const derive = (plan as { derive?: unknown } | null)?.derive;
-  if (!Array.isArray(derive)) return [];
-  return derive.flatMap((item) => (typeof item?.name === "string" ? [item.name] : []));
-}
-
 const counts = { run: 0, skipped: 0 };
 
 for (const file of readCorpus()) {
@@ -46,13 +39,20 @@ for (const file of readCorpus()) {
       await t.test(item.id, async () => {
         const opened = (await send("open", { ref: item.table })).result as { table: string; revision: string };
         const start = item.read?.start ?? 0;
-        // By default, every column of the view, which for this engine's plans are the table's and the derived
-        // ones. A case that reads no columns still reads rows: one column is read, and its values are left out.
-        const names = item.read?.columns ?? [
-          ...file.tables[item.table].columns.map((column) => column.name),
-          ...derivedNames(item.plan),
-        ];
-        const read = names.length > 0 ? names : [file.tables[item.table].columns[0].name];
+        // By default, every column of the view, which a read of no columns gives first. A case that reads no
+        // columns still reads rows: one column is read, and its values are left out.
+        const view = (
+          await send("rows", {
+            table: opened.table,
+            revision: opened.revision,
+            plan: item.plan,
+            start,
+            end: start,
+            columns: [],
+          })
+        ).result as { view: { columns: Column[] } } | undefined;
+        const names = item.read?.columns ?? view?.view.columns.map((column) => column.name) ?? [];
+        const read = names.length > 0 ? names : (view?.view.columns.slice(0, 1).map((column) => column.name) ?? [""]);
         const response = await send("rows", {
           table: opened.table,
           revision: opened.revision,
@@ -106,5 +106,5 @@ test("every case of the corpus is run or skipped, and the cases that fit are the
   t.diagnostic(`${counts.run} cases run, ${counts.skipped} skipped: their plans use what the engine does not offer`);
   assert.equal(counts.run + counts.skipped, cases.length);
   assert.equal(counts.run, cases.filter(fits).length);
-  assert.ok(counts.run >= 98, `${counts.run} cases run`);
+  assert.ok(counts.run >= 116, `${counts.run} cases run`);
 });

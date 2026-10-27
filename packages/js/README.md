@@ -36,12 +36,12 @@ const info = await engine.handle({ v: 2, id: 1, op: "open", ref: "orders" });
 - `engine.handle(message)` answers a request with its response or error, with blocks in the structured
   encoding (`{ bytes }`, §8.8), and never throws; `cancel` has no answer. `engine.subscribe(listener)` listens
   to the events of §8.5: `changed` after every write.
-- The engine offers what `MEMORY_CAPABILITIES` reports (§4.10): plans that derive, filter (`where`), search
-  and sort, with every function of §4.4, `summarize` and `locate`, and
-  `write` for tables given with `editable: true` (§7.2: by row ID or by `rowKey`, every update or none, with
+- The engine offers what `MEMORY_CAPABILITIES` reports (§4.10): every plan of §4.1 (derive, `where`, search,
+  `aggregate` with `pivot`, `having` and sort), with every function of §4.4 and every measure of §4.5,
+  `summarize` and `locate`, and `write` for tables given with `editable: true` (§7.2: by row ID or by `rowKey`, every update or none, with
   `previous` checked, and a `changed` event). Written values are kept apart from the host's rows, which stay as
   they were, and a table that holds them keeps them when it is closed. Other plans fail with `invalid_plan`
-  (`unsupported`), `write` on other tables with `read_only`, `save` with `save_unsupported`, and `find` and
+  (`unsupported`) only when they name functions or members that a later version adds, `write` on other tables with `read_only`, `save` with `save_unsupported`, and `find` and
   `export` with `invalid_request` (`unknown_op`).
 - Expressions are compiled once per view to functions of a row ID (§3.6, §3.7, §4.4): exact numbers are
   computed as integers at their scale, with BigInt where a number would not be exact, so a result that does not
@@ -49,13 +49,21 @@ const info = await engine.handle({ v: 2, id: 1, op: "open", ref: "orders" });
   Strings compare by code point, and `lower` and `upper` map code points one by one as DuckDB 1.5 does (`İ` →
   `i`, `ß` → `ẞ`). Derived columns are computed for every row of the table, then `where` keeps the rows of the
   view; `locate` gives null for rows that it leaves out. A million rows derive a decimal product, filter by it
-  and sort by it in about 0.7 seconds. The evaluator is a module of its own, loaded with the first plan that
-  derives or filters.
+  and sort by it in about 0.7 seconds.
+- Groups are made from the ranks of their keys, so that values equal by §3.1 make one group (every NaN, −0.0 and
+  0.0) and groups come in the order of §3.9; each measure keeps its state per group, or per group and pivot
+  combination. Sums of exact numbers are exact, and null when they do not fit decimal(38, s); averages come
+  from the exact sum; `stddev` is Welford's sample standard deviation and `quantile` interpolates as DuckDB's
+  `quantile_cont`. Approximate measures are computed exactly. A view of groups has no row IDs: `rows` answers
+  `rowIds` null, `locate` finds values of a key of the view (by `rowKey`) and nothing by row ID. A million rows
+  group by 1,000 keys with four measures and sort in about 0.5 seconds.
+- Plans that derive, filter or group are run by a module of their own, loaded with the first such plan, so that
+  pages whose plans only sort do not load it.
 - Views are in the order of §3.3. Each column's values are ranked once, by a radix sort of their bits for
   values of fixed width and by code point for strings; a view is then one counting sort per sort key. A
-  million floats sort in about 0.2 seconds. Intervals compare as DuckDB 1.5 compares them: whole days of the
-  time go into the days, then whole 30-day months of the days into the months, truncating, and the parts
-  compare in that order.
+  million floats sort in about 0.2 seconds. Intervals compare as DuckDB 1.5 compares them (`normalizeInterval`
+  of `vastgrid-spec`): whole days of the time go into the days, then whole 30-day months of the days into the
+  months, truncating, and the parts compare in that order.
 - `locate` finds a value of `rowKey` at its first position in the view; `summarize` counts each cell of
   `ranges` × `columns` once, sums exact numbers exactly, and gives floats that are not finite as cells but
   not as numbers.

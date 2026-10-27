@@ -10,8 +10,15 @@
  * Values of fixed width are ranked through 32-bit words compared as unsigned integers, most significant
  * first, with a radix sort; strings and bytes are ranked with a comparison sort.
  */
-import { type Column, daysFromCivil, floatOf, fromBase64, isValueOf, type JsonValue } from "vastgrid-spec";
-import { normalizeInterval } from "./interval.js";
+import {
+  type Column,
+  daysFromCivil,
+  floatOf,
+  fromBase64,
+  isValueOf,
+  type JsonValue,
+  normalizeInterval,
+} from "vastgrid-spec";
 
 /** The ranks of one column's values. */
 export interface ColumnRanks {

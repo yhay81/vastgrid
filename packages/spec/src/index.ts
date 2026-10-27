@@ -5,6 +5,7 @@ export {
   daysFromCivil,
   type IntervalParts,
   intervalText,
+  normalizeInterval,
   parseDateText,
   parseIntervalText,
   parseTimestampText,

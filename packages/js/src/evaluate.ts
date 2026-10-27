@@ -16,6 +16,7 @@ import {
   isDateText,
   isValueOf,
   type JsonValue,
+  normalizeInterval,
   parseDateText,
   parseTimestampText,
   sameType,
@@ -26,7 +27,6 @@ import {
   UNIT_PER_SECOND,
   type ValueType,
 } from "vastgrid-spec";
-import { normalizeInterval } from "./interval.js";
 
 /** The value of an expression, or of a column, at a row ID. */
 export type RowValue = (row: number) => JsonValue;
@@ -55,14 +55,14 @@ function scaleOf(type: ValueType): number {
 }
 
 /** An exact number as its integer at the scale of its type: the decimal `"-0.10"` is −10. */
-function unscaled(value: JsonValue, type: ValueType): bigint {
+export function unscaled(value: JsonValue, type: ValueType): bigint {
   if (typeof value === "number") return BigInt(value);
   const text = value as string;
   return type.type === "decimal" && (type.scale ?? 0) > 0 ? BigInt(text.replace(".", "")) : BigInt(text);
 }
 
 /** The text of a decimal from its integer at a scale: −10 at scale 2 is `"-0.10"`. */
-function decimalText(value: bigint, scale: number): string {
+export function decimalText(value: bigint, scale: number): string {
   const negative = value < 0n;
   const digits = (negative ? -value : value).toString();
   if (scale === 0) return negative ? `-${digits}` : digits;
@@ -72,7 +72,7 @@ function decimalText(value: bigint, scale: number): string {
 }
 
 /** The typed JSON of an exact number of a type from its integer at the type's scale; null when it does not fit. */
-function exactJson(value: bigint, type: ValueType): JsonValue {
+export function exactJson(value: bigint, type: ValueType): JsonValue {
   switch (type.type) {
     case "integer":
       return value >= INT32_MIN && value <= INT32_MAX ? Number(value) : null;
@@ -87,7 +87,7 @@ function exactJson(value: bigint, type: ValueType): JsonValue {
 }
 
 /** A number as a 64-bit float; the exact side of a comparison is rounded to the nearest float (§3.1). */
-function toFloat(value: JsonValue, type: ValueType): number {
+export function toFloat(value: JsonValue, type: ValueType): number {
   if (typeof value === "number") return value;
   return type.type === "float" ? floatOf(value) : Number(value);
 }

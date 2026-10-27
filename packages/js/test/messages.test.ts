@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkResponse, FUNCTIONS, MESSAGE_LIMITS, planHash } from "vastgrid-spec";
+import { checkResponse, FUNCTIONS, MEASURES, MESSAGE_LIMITS, planHash } from "vastgrid-spec";
 import { MEMORY_CAPABILITIES, type MemoryTable, memoryEngine } from "../src/index.ts";
 import { Client, type Json, single } from "./client.ts";
 
@@ -43,9 +43,9 @@ test("open gives TableInfo with the capabilities of the engine; info and changes
     readableRows: 6,
     columns: ORDERS.columns,
     capabilities: {
-      plan: { derive: true, where: true, aggregate: false, pivot: false, having: false, sort: true, search: true },
+      plan: { derive: true, where: true, aggregate: true, pivot: true, having: true, sort: true, search: true },
       functions: [...FUNCTIONS],
-      measures: [],
+      measures: [...MEASURES],
       summarize: true,
       find: false,
       locate: true,
@@ -251,8 +251,8 @@ test("plans are checked against the table and the engine's capabilities (§4.7, 
     [{ where: { fn: "eq", args: [{ col: "region" }, { lit: 1 }] } }, "type", "/where"],
     [{ where: { col: "qty" } }, "type", "/where"],
     [{ derive: [{ name: "id", expr: { lit: 1 } }] }, "duplicate_name", "/derive/0/name"],
-    [{ aggregate: { keys: ["region"], measures: [] } }, "unsupported", "/aggregate"],
-    [{ having: { lit: true } }, "unsupported", "/having"],
+    [{ aggregate: { keys: ["zzz"], measures: [] } }, "unknown_column", "/aggregate/keys/0"],
+    [{ having: { lit: true } }, "misplaced", "/having"],
     [{ filter: {} }, "syntax", "/filter"],
     [{ sort: Array.from({ length: 33 }, () => ({ column: "id", direction: "asc" })) }, "limit", "/sort"],
   ];
