@@ -1,7 +1,8 @@
 /**
  * A host for testing the App (docs/mcp-app.md): it starts the built server (`dist/cli.js`) over stdio as an MCP
  * client, serves the App's page with MCP Apps' default CSP in a sandboxed frame, and carries the frame's tool calls
- * to the server. `node --import tsx packages/mcp/host/serve.ts <folder> [port]`; e2e/mcp.spec.ts uses it.
+ * to the server; `POST /restart` starts the server again. `node --import tsx packages/mcp/host/serve.ts <folder> [port]`;
+ * e2e/mcp.spec.ts uses it.
  */
 import { mkdirSync } from "node:fs";
 import { createServer } from "node:http";
@@ -25,10 +26,16 @@ export const APP_CSP =
   "media-src 'self' data:; font-src 'self' data:; connect-src 'none'; frame-src 'none'; object-src 'none'; " +
   "base-uri 'none'";
 
-const client = new Client({ name: "vastgrid-test-host", version: "0.0.0" });
-await client.connect(
-  new StdioClientTransport({ command: process.execPath, args: [path.join(here, "..", "dist", "cli.js"), folder] }),
-);
+/** Starts the server and connects to it. */
+async function connect() {
+  const started = new Client({ name: "vastgrid-test-host", version: "0.0.0" });
+  await started.connect(
+    new StdioClientTransport({ command: process.execPath, args: [path.join(here, "..", "dist", "cli.js"), folder] }),
+  );
+  return started;
+}
+
+let client = await connect();
 const script = await build({
   entryPoints: [path.join(here, "page.ts")],
   bundle: true,
@@ -60,6 +67,12 @@ createServer(async (request, response) => {
       const result = await client.callTool({ name, arguments: args });
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify(result));
+    } else if (url.pathname === "/restart" && request.method === "POST") {
+      // The server stops and starts again, as a host does when it restarts a server that failed: its grids are gone.
+      await client.close();
+      client = await connect();
+      response.writeHead(204);
+      response.end();
     } else {
       response.writeHead(404);
       response.end();

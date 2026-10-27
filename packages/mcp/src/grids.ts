@@ -38,6 +38,8 @@ export interface GridsOptions {
   wait?: number;
   /** Grids kept at most; the one used least recently goes first. 16 by default. */
   maxGrids?: number;
+  /** Milliseconds after which an App that stopped asking is forgotten and its tables closed. 5 minutes by default. */
+  idle?: number;
 }
 
 /** Why a tool of the server failed, for the agent or the App: a code of §8.7, `grid_not_found` or `invalid_command`. */
@@ -59,7 +61,7 @@ const CORE_COMMANDS = new Set(["view.update", "history.push", "history.undone", 
 export const ROWS_LIMIT = 500;
 const TEXT_LIMIT = 1000;
 
-/** Milliseconds after which an App that stopped asking is forgotten, with its events. */
+/** Milliseconds after which an App that stopped asking is forgotten, with its events and tables. */
 const CLIENT_IDLE = 5 * 60_000;
 
 /** Events kept for an App at most, and the members by which a newer event replaces an older one. */
@@ -122,6 +124,7 @@ export class Grid {
     readonly store: GridStore,
     private readonly ids: RequestIds,
     private readonly wait: number,
+    private readonly idle = CLIENT_IDLE,
   ) {
     this.disconnect = store.connect();
     // The agent's commands change the state that the Apps then follow. The store also applies commands of its own
@@ -149,8 +152,12 @@ export class Grid {
       this.clients.set(id, client);
     }
     client.lastSeen = Date.now();
-    const idle = Date.now() - CLIENT_IDLE;
-    for (const [other, value] of this.clients) if (value.lastSeen < idle) this.clients.delete(other);
+    const idle = Date.now() - this.idle;
+    for (const [other, value] of this.clients) {
+      if (value.lastSeen >= idle) continue;
+      this.clients.delete(other);
+      release(value);
+    }
     return client;
   }
 
@@ -355,10 +362,23 @@ export class Grid {
 
   close() {
     for (const stop of this.stopEvents) stop();
-    for (const client of this.clients.values()) client.wake?.();
+    for (const client of this.clients.values()) {
+      client.wake?.();
+      release(client);
+    }
     this.clients.clear();
     this.disconnect();
   }
+}
+
+/** Closes the tables that an App opened and left open: one that the server forgets, or whose grid closes. */
+function release(client: Client) {
+  client.wake?.();
+  for (const table of client.tables) {
+    void client.engine.handle({ v: 2, id: 0, op: "close", table }).catch(() => {});
+  }
+  client.tables.clear();
+  client.events.clear();
 }
 
 /** The grids of a server, by id. */
@@ -387,7 +407,7 @@ export class Grids {
       ...(options.sheet === undefined ? {} : { open: { sheet: options.sheet } }),
       ...(document ? { document } : {}),
     });
-    const grid = new Grid(id, file, store, this.ids, this.options.wait ?? 20_000);
+    const grid = new Grid(id, file, store, this.ids, this.options.wait ?? 20_000, this.options.idle);
     try {
       await grid.settled(signal);
     } catch (error) {

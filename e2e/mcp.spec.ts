@@ -130,3 +130,32 @@ test("an App that loads again shows the grid as it was", async ({ page }) => {
   expect(await page.evaluate(() => window.host.calls.includes("open_grid"))).toBe(false);
   await expect.poll(() => columnValues(page, 1), { timeout: 30_000 }).toEqual(["4", "3", "2", "1"]);
 });
+
+test("an App whose server started again opens the file again, as the person saw it", async ({ page }) => {
+  const { grid } = await openApp(page);
+  const app = page.frameLocator("iframe");
+  await agent(page, "grid_command", {
+    grid,
+    command: { command: "sort.set", keys: [{ column: "id", direction: "desc" }] },
+  });
+  await agent(page, "grid_command", { grid, command: { command: "column.hide", names: ["region"] } });
+  await expect.poll(() => columnValues(page, 1), { timeout: 30_000 }).toEqual(["4", "3", "2", "1"]);
+  await expect(app.getByRole("columnheader", { name: "region" })).toHaveCount(0);
+  expect((await page.request.post(`${site}/restart`)).status()).toBe(204);
+  // The new server has no grid of that id: the App opens the file again with the document it shows.
+  await expect
+    .poll(() => page.evaluate(() => window.host.calls.filter((name) => name === "open_grid").length), {
+      timeout: 30_000,
+    })
+    .toBe(1);
+  await expect.poll(() => columnValues(page, 1), { timeout: 30_000 }).toEqual(["4", "3", "2", "1"]);
+  await expect(app.getByRole("columnheader", { name: "region" })).toHaveCount(0);
+  await expect(app.locator(".vastgrid-app-status")).toHaveCount(0, { timeout: 30_000 });
+  const old = (await page.evaluate(([name, args]) => window.host.call(name, args), [
+    "grid_state",
+    { grid },
+  ] as const)) as {
+    isError?: boolean;
+  };
+  expect(old.isError).toBe(true);
+});

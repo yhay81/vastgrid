@@ -82,6 +82,9 @@ The engine's requests are numbered by each client (§8.1). The server gives the 
 each `grid_rows` and the grid's own store) ids that are unique in the engine and gives the answers the client's ids
 back, so that a `cancel` of one client never stops another's request.
 
+An App that stops asking (its conversation was closed) is forgotten after a while, and the tables it opened in the
+engine are closed; so are those of every App of a grid that closes (the least recently used of 16).
+
 ## The page
 
 `npm run build -w vastgrid-mcp` bundles the App (`packages/mcp/app`) with esbuild into one HTML file,
@@ -96,12 +99,15 @@ The App takes the host's theme and locale (English or Japanese).
 ## Testing
 
 - `packages/mcp/test/server.test.ts` runs the tools through an MCP client, with an App's store on
-  `vastgrid_message` and `grid_sync`: the agent's sort reaching the App, the person's selection and filter
-  reaching the agent, writes and undo, conflicts, and ids.
+  `vastgrid_message` and `grid_sync`: the agent's sort, selection and column settings reaching the App, the
+  person's selection, filter, search, sort and hidden columns reaching the agent, an App that loads again, writes
+  and undo, saving into the file, conflicts, and ids. `packages/mcp/test/grids.test.ts` checks that an App's
+  `cancel` stops its own request only, and that the tables of Apps that stopped asking are closed.
 - `e2e/mcp.spec.ts` runs the built server over stdio behind a test host (`packages/mcp/host/serve.ts`), which
   serves the page in a frame with `sandbox="allow-scripts"` and MCP Apps' default CSP and connects it with
-  ext-apps' `AppBridge`, as hosts do. `node --import tsx packages/mcp/host/serve.ts <folder> [port]` starts it
-  by hand: `http://127.0.0.1:5184/?file=orders.csv`.
+  ext-apps' `AppBridge`, as hosts do; `POST /restart` starts the server again, and the App opens the file again as
+  the person saw it. `node --import tsx packages/mcp/host/serve.ts <folder> [port]` starts it by hand:
+  `http://127.0.0.1:5184/?file=orders.csv`.
 
 ## Not yet
 

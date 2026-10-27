@@ -3,7 +3,7 @@
  * rows through `vastgrid_message` and follows the grid with `grid_sync`, as the page in a host does.
  */
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
@@ -31,7 +31,11 @@ before(async () => {
   outside = await mkdtemp(path.join(os.tmpdir(), "vastgrid-mcp-outside-"));
   await writeFile(path.join(folder, "orders.csv"), "id,region,price\n1,EU,10.5\n2,US,30\n3,EU,20\n4,JP,5\n");
   await writeFile(path.join(outside, "secret.csv"), "a\n1\n");
-  engine = await DuckDBEngine.create({ allowedDirectories: [folder], tempDirectory: path.join(folder, ".tmp") });
+  engine = await DuckDBEngine.create({
+    allowedDirectories: [folder],
+    tempDirectory: path.join(folder, ".tmp"),
+    saveFiles: true,
+  });
   const server = new McpServer({ name: "vastgrid", version: "0.0.0" });
   grids = registerVastgrid(server, {
     engine,
@@ -177,6 +181,75 @@ test("the agent's commands reach the App, and the person's changes reach the age
   }
 });
 
+test("columns, the search and the sort go both ways, and an App that starts again gets them all", async () => {
+  const opened = await open();
+  const grid = await appGrid(opened.grid, opened.document);
+  try {
+    // The agent sets how columns show: the App takes the document's columns.
+    for (const command of [
+      { command: "column.resize", name: "price", width: 180 },
+      { command: "column.pin", name: "id", side: "left" },
+      { command: "column.format", name: "price", format: { label: "Price" } },
+    ]) {
+      const done = await call("grid_command", { grid: opened.grid, command });
+      assert.equal(done.error, false, JSON.stringify(done.content));
+    }
+    const answer = await grid.take();
+    assert.deepEqual(answer.document?.columns, grid.store.getSnapshot().document.columns);
+    const shown = new Map((grid.store.getSnapshot().document.columns ?? []).map((item) => [item.name, item]));
+    assert.deepEqual(
+      [shown.get("price")?.width, shown.get("id")?.pin, shown.get("price")?.format?.label],
+      [180, "left", "Price"],
+    );
+
+    // The person searches, sorts by a header and hides a column: the agent reads the same view.
+    await grid.store.dispatch({ command: "search.set", text: "EU" });
+    await grid.store.dispatch({ command: "sort.toggle", column: "id" });
+    await grid.store.dispatch({ command: "sort.toggle", column: "id" });
+    await grid.store.dispatch({ command: "column.hide", names: ["region"] });
+    await grid.take({ document: grid.store.getSnapshot().document });
+    const state = (await call("grid_state", { grid: opened.grid })).content as Json & {
+      document: GridDocument;
+      columns: { name: string; label?: string }[];
+    };
+    assert.deepEqual(state.document.plan?.sort, [{ column: "id", direction: "desc" }]);
+    assert.deepEqual(
+      state.columns.map((column) => column.name),
+      ["id", "price"],
+    );
+    assert.equal(state.columns[1].label, "Price");
+    const rows = await call("grid_rows", { grid: opened.grid });
+    assert.deepEqual((rows.content as { rows: unknown[] }).rows, [
+      [3, 20],
+      [1, 10.5],
+    ]);
+
+    // The agent selects two rows: the App shows the same selection.
+    const selected = await call("grid_command", {
+      grid: opened.grid,
+      command: { command: "select.rows", from: 0, to: 1 },
+    });
+    assert.equal(selected.error, false, JSON.stringify(selected.content));
+    const selection = await grid.take();
+    const agents = (await call("grid_state", { grid: opened.grid })).content as Json & { session: GridSession };
+    assert.deepEqual(agents.session.selection, [{ rows: [0, 2], columns: "all" }]);
+    assert.deepEqual(selection.session?.selection, agents.session.selection);
+
+    // An App that loads again starts from version −1 and gets the whole state.
+    const again = await appGrid(opened.grid, opened.document);
+    try {
+      const whole = await again.take();
+      const now = (await call("grid_state", { grid: opened.grid })).content as Json & { session: GridSession };
+      assert.deepEqual(whole.document, state.document);
+      assert.deepEqual(whole.session, now.session);
+    } finally {
+      again.stop();
+    }
+  } finally {
+    grid.stop();
+  }
+});
+
 test("the agent writes cells with the commands of the grid, and the App reads what it wrote", async () => {
   const opened = await open();
   const grid = await appGrid(opened.grid, opened.document);
@@ -300,4 +373,24 @@ test("App requests keep their ids apart from the grid's, and invalid messages ar
   })) as Json;
   // The revision is the table's, so the request fails; the answer still carries the App's id.
   assert.deepEqual([rows.id, (rows.error as Json | undefined)?.code ?? "ok"], [3, "revision_changed"]);
+});
+
+test("the agent saves written cells into the CSV file, with the grid's `save` command (§7.5)", async () => {
+  const file = path.join(folder, "save.csv");
+  await writeFile(file, "id,name\n1,Ann\n2,Bob\n");
+  const opened = await call("open_grid", { file: "save.csv" });
+  assert.equal(opened.error, false, JSON.stringify(opened.content));
+  const grid = (opened.content as { grid: string }).grid;
+  for (const command of [
+    { command: "select", row: 1, column: "name" },
+    { command: "edit.begin", text: "Bea" },
+    { command: "edit.commit" },
+    { command: "save" },
+  ]) {
+    const done = await call("grid_command", { grid, command });
+    assert.equal(done.error, false, JSON.stringify(done.content));
+  }
+  assert.equal(await readFile(file, "utf8"), "id,name\n1,Ann\n2,Bea\n");
+  const state = (await call("grid_state", { grid })).content as { table: { edits: number } };
+  assert.equal(state.table.edits, 0);
 });

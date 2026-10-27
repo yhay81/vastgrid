@@ -85,3 +85,25 @@ test("an App's cancel stops its own request and no other's, though the others us
     grids.dispose();
   }
 });
+
+test("the tables of an App that stopped asking are closed, and so are those of a grid that closes", async () => {
+  const grids = new Grids({ engine: duckdb, wait: 50, idle: 100 });
+  const read = (table: string) => duckdb.handle({ v: 2, id: 9, op: "info", table });
+  try {
+    const grid = await grids.open(file);
+    const first = ((await grid.message("a", { v: 2, id: 1, op: "open", ref: file })) as { result: Json }).result;
+    assert.equal(((await read(first.table as string)) as Json).error, undefined);
+    // App a leaves; when App b next asks, a is forgotten and its table is closed.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await grid.sync("b", { version: -1 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal((((await read(first.table as string)) as Json).error as Json).code, "table_not_found");
+    // A grid that closes closes the tables of the Apps that show it.
+    const second = ((await grid.message("b", { v: 2, id: 1, op: "open", ref: file })) as { result: Json }).result;
+    grids.close(grid.id);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal((((await read(second.table as string)) as Json).error as Json).code, "table_not_found");
+  } finally {
+    grids.dispose();
+  }
+});

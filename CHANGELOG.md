@@ -6,6 +6,8 @@
   why with Retry (Overwrite after an `edit_conflict`, which writes over the other change) and Discard, as v1 did;
   `GridStore.retryWrite` and `discardWrite` do the same. An undo or a redo pressed while a write is still being sent
   waits for it, so that it undoes that write and not the one before.
+- `vastgrid-mcp` (unreleased v2): the tables that an App opened in the engine are closed once the App stops asking
+  (its conversation was closed) and when its grid closes; before, they stayed open as long as the server ran.
 - `vastgrid-mcp` (unreleased v2): each App of a grid and each `grid_rows` keep their request ids apart. The Apps of
   a grid and the agent's reads shared one client of the engine, so that an App's `cancel` of its request 1 could
   stop another App's request 1, and an App could not cancel a request while the agent read rows. `Grid` takes the
