@@ -260,7 +260,11 @@ def check_request(message: Any) -> dict[str, Any]:
             if "delimiter" in read:
                 delimiter = _string(read["delimiter"], "/read/delimiter")
                 if len(delimiter) != 1 or delimiter == '"' or not (delimiter == "\t" or " " <= delimiter <= "~"):
-                    _fail("/read/delimiter", "syntax", "delimiter is tab or one printable ASCII character other than a quote.")
+                    _fail(
+                        "/read/delimiter",
+                        "syntax",
+                        "delimiter is tab or one printable ASCII character other than a quote.",
+                    )
             _boolean(read, "keepEmptyRows", "/read/keepEmptyRows")
             _boolean(read, "keepEmptyColumns", "/read/keepEmptyColumns")
     elif op == "rows":
