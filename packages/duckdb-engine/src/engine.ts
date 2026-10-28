@@ -446,7 +446,13 @@ export class DuckDBEngine {
     const info = await stat(file);
     if (!info.isFile()) throw new EngineError("load_failed", "Only files are opened as tables.");
     const revision = await fileRevision(file);
-    const options: ReadOptions = format === "xlsx" ? readOptionsOf(read) : {};
+    const readOptions = readOptionsOf(read);
+    const options: ReadOptions =
+      format === "xlsx"
+        ? readOptions
+        : format === "csv" || format === "tsv"
+          ? readOptionsOf({ headerRow: readOptions.headerRow, delimiter: readOptions.delimiter })
+          : {};
     const key = tableKey(file, options);
     const loaded = this.tables.get(key);
     // The handles of a table whose file changed follow it first (§7.6), so that all of them read the same table.

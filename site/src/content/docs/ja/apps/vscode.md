@@ -7,15 +7,15 @@ description: どんな大きさの CSV・TSV・Parquet・JSON Lines・Excel の�
 
 ## インストール
 
-[GitHub Release](https://github.com/yhay81/vastgrid/releases/tag/v0.2.0) から OS と CPU に合う
-`vastgrid-vscode-0.2.0-<target>.vsix` をダウンロードし、VS Code の **Extensions: Install from VSIX…**
+[GitHub Release](https://github.com/yhay81/vastgrid/releases/tag/v0.2.1) から OS と CPU に合う
+`vastgrid-vscode-0.2.1-<target>.vsix` をダウンロードし、VS Code の **Extensions: Install from VSIX…**
 で選択します。ターミナルからも導入できます。次は Apple シリコンの例です。
 
 ```sh
-code --install-extension vastgrid-vscode-0.2.0-darwin-arm64.vsix
+code --install-extension vastgrid-vscode-0.2.1-darwin-arm64.vsix
 ```
 
-0.2.0 の Marketplace 掲載は後日対応します。VS Code 1.100 以降が必要です。macOS（Apple シリコン・Intel）、Linux（x64・arm64、Alpine は x64）、Windows（x64・arm64）にそれぞれのパッケージがあります。バインディングが動かない vscode.dev と 32 ビットの Arm の Linux では動きません。
+0.2.1 の Marketplace 掲載は後日対応します。VS Code 1.100 以降が必要です。macOS（Apple シリコン・Intel）、Linux（x64・arm64、Alpine は x64）、Windows（x64・arm64）にそれぞれのパッケージがあります。バインディングが動かない vscode.dev と 32 ビットの Arm の Linux では動きません。
 
 ## ファイルを開く
 

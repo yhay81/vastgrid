@@ -61,7 +61,13 @@ temporary folder.
   reads in tens of milliseconds. Delimited and JSON files and the sheets of workbooks are loaded into a database
   of the engine's session; the first rows are readable at once while the rest loads (§9), and `progress` and
   `view` events tell when the table has loaded. Text encodings (UTF-16, Shift_JIS, EUC-JP and others) are found
-  and converted, and files whose types change late fall back to wider types.
+  and converted, including gzip and zstd files, and files whose types change late fall back to wider types.
+  CSV uses comma and TSV uses tab, with standard double quotes; single quotes, semicolons and pipes in CSV
+  values stay as data. Set `read: { delimiter: ";" }` on `open` for semicolon-separated files. Headers are
+  detected by default: `read: { headerRow: 1 }` forces the first record to be a header, `headerRow: 0` reads
+  every record as data, and a larger value skips records before that header. These options also apply to saves
+  and reloads; a grid passes them through its `open` prop. Parent folders named `key=value` never add or replace
+  columns. Long records raise the reader's buffer limit as needed, subject to the engine's memory limit.
 - **Reading.** `rows`, `locate`, `summarize` and `find` read the views of plans that
   [`vastgrid-sql`](https://www.npmjs.com/package/vastgrid-sql) compiles. Every column is read as its logical type
   (§2.1), and a view without `where`, `aggregate` and `sort` is read by row IDs. Other views save their total order once and read ranges of

@@ -139,6 +139,8 @@ export class LoadedTable {
    * have the same fields are read without padding, in parallel (`plain`).
    */
   reading: DelimitedReading = "padded";
+  /** Raised only when a record exceeds DuckDB's default; shared by preview, load and save sniffing. */
+  private lineBytes = 2_000_000;
   /** The quoted name of the session's table that holds the loaded rows; null for a Parquet file read in place. */
   base: string | null = null;
   private readonly objects: string[] = [];
@@ -288,7 +290,16 @@ export class LoadedTable {
   delimitedOptions(attempt = this.attempt, reading = this.reading): string {
     // Text without strict quotes is read with padding: unpadded, such a record would fail the read.
     if (reading === "plain" && attempt >= LOOSE_ATTEMPT) reading = "sequential";
-    let options = this.format === "tsv" ? ", delim='\\t'" : "";
+    // One file's contents, not partition columns inferred from its parent folders. Standard quoting must work
+    // even when the first quoted field occurs beyond the sniffer's sample.
+    let options = ", hive_partitioning=false, quote='\"', escape='\"'";
+    options += `, delim=${quoteLiteral(this.read.delimiter ?? (this.format === "tsv" ? "\t" : ","))}`;
+    if (this.read.headerRow !== undefined) {
+      options += `, header=${this.read.headerRow > 0}, skip=${Math.max(0, this.read.headerRow - 1)}`;
+    }
+    if (this.lineBytes > 2_000_000) {
+      options += `, max_line_size=${this.lineBytes}, buffer_size=${this.lineBytes * 4}`;
+    }
     // Without null_padding, DuckDB's sniffer may settle on the last consistent part of a file whose rows have
     // different numbers of fields and silently skip the rest (`readsPlain` rules that out).
     if (reading !== "plain") options += ", null_padding=true";
@@ -297,9 +308,9 @@ export class LoadedTable {
     // Types sniffed from the beginning did not hold for the whole file: sniff all rows.
     if (attempt === 1) return `${options}, sample_size=-1`;
     // Records that the strict parser refuses (line breaks of both kinds, stray quotes): tolerate them, with types.
-    if (attempt === LOOSE_ATTEMPT) return `${options}, sample_size=-1, strict_mode=false, max_line_size=67108864`;
+    if (attempt === LOOSE_ATTEMPT) return `${options}, sample_size=-1, strict_mode=false`;
     // Irregular files: read every column as text and tolerate quotes and long lines.
-    return `${options}, all_varchar=true, strict_mode=false, max_line_size=67108864`;
+    return `${options}, all_varchar=true, strict_mode=false`;
   }
 
   private async load() {
@@ -417,7 +428,7 @@ export class LoadedTable {
 
   private async loadPreview(source: string, workbook: string) {
     try {
-      await this.readPreview(source, workbook);
+      await this.readDelimited(source, () => this.readPreview(source, workbook));
     } catch (error) {
       // The full load reports the error; the preview is only a head start.
       this.options.log?.(`The preview of ${this.path} failed`, error);
@@ -432,6 +443,19 @@ export class LoadedTable {
     try {
       await read();
     } catch (error) {
+      // A long record is still valid CSV. Grow the limit without relaxing quotes or throwing away its types.
+      // Only inspect DuckDB's diagnostic suffix, not the (potentially enormous) original record in the error.
+      const size = /\nMaximum line size of \d+ bytes exceeded\. Actual Size:(\d+) bytes\./.exec(
+        errorMessage(error).slice(-4096),
+      );
+      if ((this.format === "csv" || this.format === "tsv") && size) {
+        const bytes = Math.max(this.lineBytes * 2, Number(size[1]) + 2);
+        if (Number.isSafeInteger(bytes * 4) && bytes > this.lineBytes) {
+          this.lineBytes = bytes;
+          this.reading = "sequential";
+          return this.readDelimited(source, read);
+        }
+      }
       if (this.reading === "padded" && refusesParallel(error)) {
         // A sniff that fails (strict records refused) leaves only the reading in one thread, which every attempt takes.
         this.reading = (await this.readsPlain(source).catch(() => false)) ? "plain" : "sequential";

@@ -253,10 +253,14 @@ def check_request(message: Any) -> dict[str, Any]:
         _string(request["ref"], "/ref")
         if "read" in request:
             read = _object(request["read"], "/read", "read")
-            _members(read, (), ("sheet", "headerRow", "keepEmptyRows", "keepEmptyColumns"), "/read")
+            _members(read, (), ("sheet", "headerRow", "delimiter", "keepEmptyRows", "keepEmptyColumns"), "/read")
             _optional_string(read, "sheet", "/read/sheet")
             if "headerRow" in read:
                 _integer(read["headerRow"], "/read/headerRow")
+            if "delimiter" in read:
+                delimiter = _string(read["delimiter"], "/read/delimiter")
+                if len(delimiter) != 1 or delimiter == '"' or not (delimiter == "\t" or " " <= delimiter <= "~"):
+                    _fail("/read/delimiter", "syntax", "delimiter is tab or one printable ASCII character other than a quote.")
             _boolean(read, "keepEmptyRows", "/read/keepEmptyRows")
             _boolean(read, "keepEmptyColumns", "/read/keepEmptyColumns")
     elif op == "rows":

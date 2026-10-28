@@ -1,9 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 — 2026-10-28
 
 ### Fixes
 
+- `vastgrid-duckdb`: CSV and TSV files inside `key=value` folders keep their own columns and values. Quoted
+  fields appearing after the sniff sample are decoded correctly, including doubled quotes, on reads and saves.
+- `vastgrid-duckdb`: CSV uses comma and standard double quotes so that single quotes, semicolons and pipes in
+  values are preserved. `open.read.delimiter` selects other separators; `open.read.headerRow` now applies to
+  CSV and TSV too (`0` for no header, `1` for the first record). Both options survive saves and reloads.
+- `vastgrid-duckdb`: gzip and zstd CSV/TSV files have their encoding detected and converted after decompression,
+  including UTF-16 and Shift_JIS. Late invalid UTF-8 also converts decompressed text.
+- `vastgrid-duckdb`: valid records longer than 64 MiB load with their column types. The line and buffer limits
+  grow only when needed, using one reader thread and the configured memory limit.
 - `vastgrid-duckdb`: a CSV or TSV file whose records DuckDB's strict parser refuses, such as one with line breaks
   of both kinds (a row appended with LF to a file of CRLF lines), keeps its column types: it is read without
   strict records (`strict_mode=false`) before being read as text. Only DuckDB's error of invalid UTF-8 converts a
@@ -11,6 +20,11 @@
   file is not saved (`save_unsupported`), as a file read as text was not.
 - `vastgrid-duckdb`: a CSV or TSV file with line breaks of both kinds and a line break in quotes opens: when
   DuckDB's strict sniffer refuses it while choosing how to read the file, it is read in one thread.
+
+### Release
+
+- All npm packages and the Python package are released at 0.2.1. The VS Code extension is available as
+  platform-specific VSIX files on the GitHub release; Marketplace publication remains deferred.
 
 ## 0.2.0 — 2026-10-28
 

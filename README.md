@@ -84,6 +84,10 @@ For files larger than the page should hold, run the memory engine
 [guides](https://vastgrid.yhay81.com/getting-started/) cover state, editing and saving, formulas, grouping,
 exporting, theming and your own engine.
 
+The DuckDB engine reads CSV with comma separators and standard double quotes. For other separators or an
+explicit header, pass `open={{ read: { delimiter: ";", headerRow: 1 } }}` to the grid; `headerRow: 0` means
+no header. See the [engine's reading options](packages/duckdb-engine#what-it-does).
+
 ## Packages
 
 | Package | Contents |
@@ -95,7 +99,7 @@ exporting, theming and your own engine.
 | [`vastgrid-sql`](packages/sql) | Plans as DuckDB SQL. |
 | [`vastgrid-cli`](packages/cli) | `npx vastgrid-cli <file>`: a file in a grid in the browser, read by DuckDB on this computer. |
 | [`vastgrid-mcp`](packages/mcp) | An MCP server with an MCP App. |
-| [`vastgrid-vscode`](packages/vscode) | The VS Code extension; install 0.2.0's VSIX from the [GitHub release](https://github.com/yhay81/vastgrid/releases/tag/v0.2.0). |
+| [`vastgrid-vscode`](packages/vscode) | The VS Code extension; install 0.2.1's VSIX from the [GitHub release](https://github.com/yhay81/vastgrid/releases/tag/v0.2.1). |
 | [`vastgrid` (Python)](packages/notebook/python) | The Jupyter widget, on PyPI. |
 
 The npm packages are released together at one version. `vastgrid` needs React 19.3 or later (an optional peer

@@ -67,6 +67,7 @@ export interface RowsResult {
 export interface OpenOptions {
   sheet?: string;
   headerRow?: number;
+  delimiter?: string;
   keepEmptyRows?: boolean;
   keepEmptyColumns?: boolean;
 }

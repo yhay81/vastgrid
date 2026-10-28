@@ -10,25 +10,28 @@
 import { columnLetters, MAX_SERIAL, serialTime } from "./excel.js";
 import type { LogicalType } from "./types.js";
 
-/** How `open` reads a workbook (§8.2). */
+/** How `open` reads a workbook or a delimited file (§8.2). */
 export interface ReadOptions {
   /** The sheet to read, by name. Defaults to the first visible sheet. */
   sheet?: string;
   /** The 1-based row that holds the column names; rows above it are skipped. `0` reads without names. */
   headerRow?: number;
+  /** CSV/TSV: the field separator. Defaults to comma for CSV and tab for TSV. */
+  delimiter?: string;
   /** Keep rows without any value between the first and the last data row. */
   keepEmptyRows?: boolean;
   /** Keep columns without any value (and no name) inside the used range. */
   keepEmptyColumns?: boolean;
 }
 
-/** The options of `open` that change how a workbook is read (§8.2), with only those given, in one order. */
+/** The options of `open` that change how a file is read (§8.2), with only those given, in one order. */
 export function readOptionsOf(read: unknown): ReadOptions {
   const options: ReadOptions = {};
   if (read === null || typeof read !== "object") return options;
-  const { sheet, headerRow, keepEmptyRows, keepEmptyColumns } = read as ReadOptions;
+  const { sheet, headerRow, delimiter, keepEmptyRows, keepEmptyColumns } = read as ReadOptions;
   if (sheet !== undefined) options.sheet = sheet;
   if (headerRow !== undefined) options.headerRow = headerRow;
+  if (delimiter !== undefined) options.delimiter = delimiter;
   if (keepEmptyRows) options.keepEmptyRows = true;
   if (keepEmptyColumns) options.keepEmptyColumns = true;
   return options;

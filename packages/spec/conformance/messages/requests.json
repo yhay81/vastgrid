@@ -37,6 +37,64 @@
       }
     },
     {
+      "id": "request.open-csv-read",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "open",
+        "ref": "data.csv",
+        "read": { "delimiter": ";", "headerRow": 0 }
+      },
+      "expect": { "valid": true }
+    },
+    {
+      "id": "request.open-csv-long-delimiter",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "open",
+        "ref": "data.csv",
+        "read": { "delimiter": ",;" }
+      },
+      "expect": {
+        "error": { "code": "invalid_request", "reason": "syntax", "path": "/read/delimiter" }
+      }
+    },
+    {
+      "id": "request.open-csv-quote-delimiter",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "open",
+        "ref": "data.csv",
+        "read": { "delimiter": "\"" }
+      },
+      "expect": {
+        "error": { "code": "invalid_request", "reason": "syntax", "path": "/read/delimiter" }
+      }
+    },
+    {
+      "id": "request.open-csv-newline-delimiter",
+      "section": "8.2",
+      "kind": "request",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "op": "open",
+        "ref": "data.csv",
+        "read": { "delimiter": ";\n" }
+      },
+      "expect": {
+        "error": { "code": "invalid_request", "reason": "syntax", "path": "/read/delimiter" }
+      }
+    },
+    {
       "id": "request.info",
       "section": "8.2",
       "kind": "request",

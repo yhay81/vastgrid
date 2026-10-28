@@ -212,7 +212,11 @@ Node.js の `http` リクエストのハンドラー `(request, response, next?)
 | Parquet | `.parquet`、`.pq` | その場で、行番号で読みます |
 | Excel | `.xlsx`、`.xlsm` | シートを DuckDB に読み込みます。`open` の `read` で `sheet`、`headerRow`、`keepEmptyRows`、`keepEmptyColumns` を選びます |
 
-テキストのエンコーディング（UTF-16、Shift_JIS、EUC-JP など）は判定して変換し、途中で型が変わるファイルはより広い型に切り替えます。書き出しは CSV、TSV、Parquet、JSON、Excel です。Excel の書き出しは最大 1,048,575 行、16,384 列です（`export_too_large`）。
+CSV はカンマ区切り、TSV はタブ区切りで、二重引用符を使って読みます。CSV の値に含まれる単一引用符・セミコロン・パイプは、そのまま値として扱います。別の区切り文字は `open.read.delimiter` で指定できます（二重引用符以外の印字可能な ASCII 文字 1 文字、またはタブ）。見出しは既定では自動判定です。`open.read.headerRow: 1` は最初のレコードを見出しに、`0` は全レコードをデータにし、より大きい値は見出しより前のレコードを読み飛ばします。保存・再読み込みでも同じ設定を使います。グリッドには `open={{ read: { delimiter: ";", headerRow: 1 } }}` の形で渡します。
+
+`key=value` というフォルダー名で列が追加・置換されることはありません。引用符がファイルの後半に初めて現れる場合も正しく読みます。長いレコードは、エンジンのメモリー上限の範囲で読み込みバッファを必要に応じて広げます。
+
+テキストのエンコーディング（UTF-16、Shift_JIS、EUC-JP など）は判定して変換します。gzip・zstd の圧縮ファイルも展開後に判定します。途中で型が変わるファイルはより広い型に切り替えます。書き出しは CSV、TSV、Parquet、JSON、Excel です。Excel の書き出しは最大 1,048,575 行、16,384 列です（`export_too_large`）。
 
 ### そのほかのエクスポート
 

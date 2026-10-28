@@ -10,15 +10,15 @@ with VS Code's own Save, with the bytes that were not edited kept as they are.
 
 ## Installing
 
-Download `vastgrid-vscode-0.2.0-<target>.vsix` for your OS and architecture from the
-[GitHub release](https://github.com/yhay81/vastgrid/releases/tag/v0.2.0), then choose **Extensions: Install from
+Download `vastgrid-vscode-0.2.1-<target>.vsix` for your OS and architecture from the
+[GitHub release](https://github.com/yhay81/vastgrid/releases/tag/v0.2.1), then choose **Extensions: Install from
 VSIX…** in VS Code, or install the downloaded file from a terminal (this example is for Apple silicon):
 
 ```sh
-code --install-extension vastgrid-vscode-0.2.0-darwin-arm64.vsix
+code --install-extension vastgrid-vscode-0.2.1-darwin-arm64.vsix
 ```
 
-Marketplace publication is deferred for 0.2.0. It needs VS Code 1.100 or later, on macOS (Apple silicon or Intel), Linux (x64 or arm64; Alpine x64) or Windows
+Marketplace publication is deferred for 0.2.1. It needs VS Code 1.100 or later, on macOS (Apple silicon or Intel), Linux (x64 or arm64; Alpine x64) or Windows
 (x64 or arm64): the platforms of DuckDB's Node.js bindings, each with a package of its own. It does not run in
 vscode.dev or on 32-bit Arm Linux, where the bindings do not run.
 

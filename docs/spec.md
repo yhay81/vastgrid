@@ -1205,7 +1205,7 @@ an `internal` error.
 
 | `op` | Arguments | Result |
 | --- | --- | --- |
-| `open` | `ref`: the host's name for what to open; `read`: `{ "sheet"?, "headerRow"?, "keepEmptyRows"?, "keepEmptyColumns"? }` | `TableInfo` |
+| `open` | `ref`: the host's name for what to open; `read`: `{ "sheet"?, "headerRow"?, "delimiter"?, "keepEmptyRows"?, "keepEmptyColumns"? }` | `TableInfo` |
 | `info` | `table` | `TableInfo` |
 | `rows` | `table`, `revision`, `plan`, `start`, `end`, `columns`; `textLimit`; `preview` | `{ "view", "start", "end", "rowIds", "block", "truncated"? }` |
 | `summarize` | `table`, `revision`, `plan`, `ranges`: `[start, end)` pairs, `columns` | `{ "count", "numericCount", "sum", "min", "max", "average" }` |
@@ -1226,6 +1226,11 @@ an `internal` error.
   `readableRows` the rows that can be read now; `columns` §2.1; `capabilities` §4.10; `sheets`
   `[{ "name", "hidden"? }]` for workbooks; `fileChanged` true when the file changed on disk since the table,
   which has written values, was read (§7.6).
+- For CSV and TSV files in `vastgrid-duckdb`, `read.headerRow` is the 1-based record holding column names
+  (earlier records are skipped); `0` means no header, and omission keeps header detection. `read.delimiter`
+  is tab or one printable ASCII character other than `"`; the default is comma for CSV and tab for TSV.
+  Standard double quoting and doubled-quote escaping apply regardless of the sampled records. These options
+  also apply when saving and reloading the file. Workbook options retain their workbook meanings.
 - `rows` reads positions `[start, end)` of the plan's view: `columns` are names of the view's columns, at most
   1,000,000 rows and 1,000,000 cells. Positions beyond the view are left out: the answer's `end` is at most the
   view's row count, and a request whose `start` is at or beyond it is answered with no rows (`end` equal to

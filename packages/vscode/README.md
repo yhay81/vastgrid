@@ -4,8 +4,8 @@ CSV, TSV, Parquet, JSON Lines and Excel files of any size open in a grid, read b
 the last row of a file of millions of rows, sort, filter, group, find and summarize, and edit the cells of CSV and
 TSV files and save them with VS Code's Save, with the bytes that were not edited kept as they are.
 
-Install 0.2.0 from the [GitHub release](https://github.com/yhay81/vastgrid/releases/tag/v0.2.0): download the
-`vastgrid-vscode-0.2.0-<target>.vsix` for your OS and architecture, then run `code --install-extension <file>.vsix`
+Install 0.2.1 from the [GitHub release](https://github.com/yhay81/vastgrid/releases/tag/v0.2.1): download the
+`vastgrid-vscode-0.2.1-<target>.vsix` for your OS and architecture, then run `code --install-extension <file>.vsix`
 or choose **Extensions: Install from VSIX…** in VS Code. Marketplace publication is deferred for this release.
 
 | Format | Files | In vastgrid |

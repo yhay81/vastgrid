@@ -469,9 +469,19 @@ export function checkRequest(message: unknown): Json & { v: 2; id: number; op: O
       check.string(request.ref, "/ref");
       if (request.read !== undefined) {
         const read = check.object(request.read, "/read", "read");
-        check.members(read, [], ["sheet", "headerRow", "keepEmptyRows", "keepEmptyColumns"], "/read");
+        check.members(read, [], ["sheet", "headerRow", "delimiter", "keepEmptyRows", "keepEmptyColumns"], "/read");
         check.optionalString(read.sheet, "/read/sheet");
         if (read.headerRow !== undefined) check.integer(read.headerRow, "/read/headerRow");
+        if (read.delimiter !== undefined) {
+          check.string(read.delimiter, "/read/delimiter");
+          if ((read.delimiter as string).length !== 1 || !/^[\t\x20-\x21\x23-\x7e]$/.test(read.delimiter as string)) {
+            check.fail(
+              "/read/delimiter",
+              "syntax",
+              "delimiter is tab or one printable ASCII character other than a quote.",
+            );
+          }
+        }
         check.boolean(read.keepEmptyRows, "/read/keepEmptyRows", true);
         check.boolean(read.keepEmptyColumns, "/read/keepEmptyColumns", true);
       }

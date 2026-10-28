@@ -79,6 +79,10 @@ export function Orders() {
 または DuckDB エンジンを [サーバーで](https://vastgrid.yhay81.com/ja/guides/server/) 動かします。状態、編集と保存、計算式、
 グループ、書き出し、テーマ、独自のエンジンは [ガイド](https://vastgrid.yhay81.com/ja/getting-started/) にあります。
 
+DuckDB エンジンは CSV をカンマ区切り・二重引用符で読みます。区切り文字や見出しを指定する場合は、グリッドに
+`open={{ read: { delimiter: ";", headerRow: 1 } }}` を渡します。`headerRow: 0` は見出しなしです。
+詳しくは [エンジンの読み込み設定](packages/duckdb-engine#what-it-does) を参照してください。
+
 ## パッケージ
 
 | パッケージ | 内容 |
@@ -90,7 +94,7 @@ export function Orders() {
 | [`vastgrid-sql`](packages/sql) | プランを DuckDB の SQL に |
 | [`vastgrid-cli`](packages/cli) | `npx vastgrid-cli <ファイル>`: このコンピューターの DuckDB で読んだファイルをブラウザーのグリッドで |
 | [`vastgrid-mcp`](packages/mcp) | MCP App つきの MCP サーバー |
-| [`vastgrid-vscode`](packages/vscode) | VS Code の拡張機能。0.2.0 は [GitHub Release](https://github.com/yhay81/vastgrid/releases/tag/v0.2.0) の VSIX から導入 |
+| [`vastgrid-vscode`](packages/vscode) | VS Code の拡張機能。0.2.1 は [GitHub Release](https://github.com/yhay81/vastgrid/releases/tag/v0.2.1) の VSIX から導入 |
 | [`vastgrid`（Python）](packages/notebook/python) | Jupyter のウィジェット（PyPI） |
 
 npm のパッケージは同じ版でそろえて公開します。`vastgrid` には React 19.3 以降（省略できる peer 依存で、サーバーは React なしで
