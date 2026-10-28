@@ -189,10 +189,19 @@ test("the grid's store follows a file that changes, and reloads one whose writte
   const store = createGridStore({ transport: localTransport(context.engine), table: "grid.csv" });
   const disconnect = store.connect();
   store.setViewport({ top: 0, rows: 10, columns: ["id", "name"] });
-  await until(() => store.getSnapshot().view !== null && store.cell(1, "name") === "Bob", "the rows");
+  // Preview rows can arrive before the full read starts. Replace only after that read finishes, so the
+  // initial table cannot read the replacement's rows with the original file's revision.
+  await until(
+    () => store.getSnapshot().table?.status === "ready" && store.cell(1, "name") === "Bob",
+    "the loaded rows",
+  );
+  const revision = store.getSnapshot().table?.revision;
 
   await replace("grid.csv", "id,name\n1,Ann\n2,Bob\n3,Cy\n");
-  await until(() => store.cell(2, "name") === "Cy", "the new row");
+  await until(
+    () => store.getSnapshot().table?.revision !== revision && store.cell(2, "name") === "Cy",
+    "the new revision's row",
+  );
   // The view of the new table is read whole: nothing stays "building".
   await until(() => store.getSnapshot().view?.status === "ready" && store.getSnapshot().pending === null, "the view");
 
