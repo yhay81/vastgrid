@@ -210,13 +210,17 @@ class _Compiler:
     def _double(self, node: TypedExpr) -> str:
         return f"CAST({self._number(node)} AS DOUBLE)"
 
-    def _exact(self, node: TypedExpr) -> str:
-        """An exact operand of a decimal operation: integers are decimal(10, 0) and bigints decimal(19, 0) (§3.7)."""
+    def _exact(self, node: TypedExpr, wide: bool = False) -> str:
+        """An exact operand of a decimal operation: integers are decimal(10, 0) and bigints decimal(19, 0) (§3.7).
+        With `wide`, it has 19 digits at least."""
         sql = self.expression(node)
         if node.type["type"] == "integer":
-            return f"CAST({sql} AS DECIMAL(10,0))"
+            return f"CAST({sql} AS DECIMAL({19 if wide else 10},0))"
         if node.type["type"] == "bigint":
             return f"CAST({sql} AS DECIMAL(19,0))"
+        precision = node.type.get("precision")
+        if wide and node.type["type"] == "decimal" and precision is not None and precision < 19:
+            return f"CAST({sql} AS DECIMAL(19,{number_text(node.type.get('scale') or 0)}))"
         return sql
 
     def _text(self, node: TypedExpr) -> str:
@@ -269,7 +273,11 @@ class _Compiler:
                 return _finite(f"({self._double(args[0])} {operator} {self._double(args[1])})")
             if type["type"] == "bigint":
                 return f"TRY(CAST({arg(0)} AS BIGINT) {operator} CAST({arg(1)} AS BIGINT))"
-            return f"TRY({_cast(f'({self._exact(args[0])} {operator} {self._exact(args[1])})', type)})"
+            # DuckDB multiplies two decimals of at most 18 digits in 18 digits and fails past them; a left operand
+            # of 19 digits makes it keep every digit of the product.
+            precision = type.get("precision")
+            wide = fn == "mul" and type["type"] == "decimal" and (precision is None or precision > 18)
+            return f"TRY({_cast(f'({self._exact(args[0], wide)} {operator} {self._exact(args[1])})', type)})"
         if fn == "div":
             return _finite(f"({self._double(args[0])} / {self._double(args[1])})")
         if fn == "neg":

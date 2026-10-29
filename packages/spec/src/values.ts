@@ -22,7 +22,6 @@ const spaceSeparators = /^[\p{Zs}]+|[\p{Zs}]+$/gu;
 /** Digits after the point that each unit of timestamps keeps. */
 const unitDigits: Record<TimestampUnit, number> = { s: 0, ms: 3, us: 6, ns: 9 };
 
-/** The string without its leading and trailing space separators (Unicode category Zs), as `trim` (§4.4). */
 /** Whether a value is a JSON object: not null and not an array. */
 export function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -33,6 +32,7 @@ export function isBlank(value: JsonValue, type: ValueType): boolean {
   return value === null || (type.type === "string" && value === "");
 }
 
+/** The string without its leading and trailing space separators (Unicode category Zs), as `trim` (§4.4). */
 export function trimSpaces(text: string): string {
   return text.replace(spaceSeparators, "");
 }
@@ -217,13 +217,21 @@ function exactDigits(magnitude: number): { digits: string; power: number } {
   return { digits: (mantissa * 5n ** BigInt(-shift)).toString(), power: shift };
 }
 
-/** Exact digits rounded to `count` digits, halves to even, as Python and DuckDB's `printf` round them. */
-function roundedDigits(exact: { digits: string; power: number }, count: number): { digits: string; exponent: number } {
+/**
+ * Exact digits rounded to `count` digits, halves to even, as Python and DuckDB's `printf` round them; with `other`,
+ * rounded the other way.
+ */
+function roundedDigits(
+  exact: { digits: string; power: number },
+  count: number,
+  other = false,
+): { digits: string; exponent: number } {
   const { digits, power } = exact;
   let head = BigInt(digits.slice(0, count));
   const rest = digits.slice(count);
-  const above = rest > "5" && !/^50*$/.test(rest);
-  if (above || (/^50*$/.test(rest) && head % 2n === 1n)) head += 1n;
+  const half = /^50*$/.test(rest);
+  const up = (rest > "5" && !half) || (half && head % 2n === 1n);
+  if (up !== other) head += 1n;
   const text = head.toString();
   return { digits: text.replace(/0+$/, "") || "0", exponent: text.length - 1 + power + rest.length };
 }
@@ -237,9 +245,13 @@ function shortestDigits(value: number, bits: 32 | 64): { digits: string; exponen
   if (bits === 32) {
     const exact = exactDigits(magnitude);
     for (let count = 1; count < exact.digits.length; count++) {
-      const rounded = roundedDigits(exact, count);
-      const read = Number(`${rounded.digits}e${rounded.exponent - rounded.digits.length + 1}`);
-      if (Math.fround(read) === magnitude) return rounded;
+      // At a power of two the float below is nearer than the float above, so the nearer digits can read back as
+      // the float below while the others read back as this one.
+      for (const other of [false, true]) {
+        const rounded = roundedDigits(exact, count, other);
+        const read = Number(`${rounded.digits}e${rounded.exponent - rounded.digits.length + 1}`);
+        if (Math.fround(read) === magnitude) return rounded;
+      }
     }
     return roundedDigits(exact, exact.digits.length);
   }

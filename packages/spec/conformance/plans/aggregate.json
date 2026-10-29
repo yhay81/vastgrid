@@ -27,6 +27,10 @@
     "big": {
       "columns": [{ "name": "b", "type": "bigint" }],
       "rows": [["9223372036854775807"], ["9223372036854775807"]]
+    },
+    "extremes": {
+      "columns": [{ "name": "x", "type": "float" }],
+      "rows": [[-1.7976931348623157e308], [1.7976931348623157e308]]
     }
   },
   "cases": [
@@ -252,6 +256,22 @@
         }
       },
       "expect": { "rowCount": 1, "rows": [[1.2909944487358056, 2.5, 1.75, 2.5]], "tolerance": 1e-12 }
+    },
+    {
+      "id": "aggregate.quantile-extremes",
+      "section": "3.8",
+      "description": "A quantile between the largest floats of either sign does not overflow: their median is 0.",
+      "table": "extremes",
+      "plan": {
+        "aggregate": {
+          "keys": [],
+          "measures": [
+            { "name": "median", "fn": "quantile", "column": "x", "p": 0.5 },
+            { "name": "q1", "fn": "quantile", "column": "x", "p": 0.25 }
+          ]
+        }
+      },
+      "expect": { "rowCount": 1, "rows": [[0, -8.988465674311579e307]], "tolerance": 1e-12 }
     },
     {
       "id": "aggregate.exact-bigint-sum",

@@ -357,10 +357,15 @@ def type_name(type: dict[str, Any]) -> str:
     return kind
 
 
-def _exponential(magnitude: float, digits: int) -> Decimal:
-    """The exact value rounded to `digits` digits, halves to even, as DuckDB's `printf` rounds it."""
+def _exponential(magnitude: float, digits: int, other: bool = False) -> Decimal:
+    """The exact value rounded to `digits` digits, halves to even, as DuckDB's `printf` rounds it; with `other`,
+    rounded the other way."""
     exact = Decimal(magnitude)
-    return exact.quantize(Decimal(1).scaleb(exact.adjusted() - digits + 1), rounding=ROUND_HALF_EVEN)
+    unit = Decimal(1).scaleb(exact.adjusted() - digits + 1)
+    rounded = exact.quantize(unit, rounding=ROUND_HALF_EVEN)
+    if not other:
+        return rounded
+    return rounded + unit if rounded < exact else rounded - unit
 
 
 def _shortest_digits(magnitude: float, bits: int) -> tuple[str, int]:
@@ -368,9 +373,12 @@ def _shortest_digits(magnitude: float, bits: int) -> tuple[str, int]:
     are as short, the nearer, and of two as near, the even one."""
     if bits == 32:
         for count in range(1, 10):
-            candidate = _exponential(magnitude, count)
-            if fround(float(candidate)) == magnitude:
-                return "".join(map(str, candidate.as_tuple().digits)).rstrip("0") or "0", candidate.adjusted()
+            # At a power of two the float below is nearer than the float above, so the nearer digits can read back
+            # as the float below while the others read back as this one.
+            for other in (False, True):
+                candidate = _exponential(magnitude, count, other)
+                if fround(float(candidate)) == magnitude:
+                    return "".join(map(str, candidate.as_tuple().digits)).rstrip("0") or "0", candidate.adjusted()
     return _digits(magnitude)
 
 

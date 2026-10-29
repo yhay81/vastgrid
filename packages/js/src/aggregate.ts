@@ -207,7 +207,8 @@ function accumulator(measure: CheckedMeasure, input: GroupInput, cells: number):
           }
           list.push(toFloat(value, column));
         },
-        // Linear interpolation between the two closest ranks (DuckDB's quantile_cont).
+        // Linear interpolation between the two closest ranks, weighing each as DuckDB's quantile_cont does: the
+        // difference of the two would overflow between the largest floats of either sign.
         result: (cell) => {
           const list = numbers[cell];
           if (!list) return null;
@@ -215,7 +216,8 @@ function accumulator(measure: CheckedMeasure, input: GroupInput, cells: number):
           const place = p * (sorted.length - 1);
           const low = Math.floor(place);
           const high = Math.ceil(place);
-          return finite(sorted[low] + (sorted[high] - sorted[low]) * (place - low));
+          const weight = place - low;
+          return finite(sorted[low] * (1 - weight) + sorted[high] * weight);
         },
       };
     }

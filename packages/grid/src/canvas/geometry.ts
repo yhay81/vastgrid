@@ -150,7 +150,12 @@ export class Geometry {
       0,
       Math.min(rowCount - 1, Math.floor((y - this.headerHeight + this.scrollY.position) / this.rowHeight)),
     );
+    // Below the last row, the gutter and the cells are empty.
+    const empty =
+      y >= this.headerHeight &&
+      (rowCount === 0 || y - this.headerHeight + this.scrollY.position >= rowCount * this.rowHeight);
     if (x < this.gutterWidth) {
+      if (empty) return none;
       return {
         area: y < this.headerHeight ? "corner" : "gutter",
         row,
@@ -178,7 +183,7 @@ export class Geometry {
     if (y < this.headerHeight) {
       return { area: "header", row: 0, column, edge, menu: !edge && x >= right - MENU_WIDTH - 4 };
     }
-    if (rowCount === 0 || y - this.headerHeight + this.scrollY.position >= rowCount * this.rowHeight) return none;
+    if (empty) return none;
     return { area: "cell", row, column, edge: false, menu: false };
   }
 

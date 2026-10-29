@@ -43,6 +43,24 @@ test("numbers and dates show by their format; other formats leave the text form"
   assert.equal(formatterFor(columns[1], { number: { style: "currency" } }, "en-US"), null);
 });
 
+test("date patterns: text in quotes, two quotes as a quote, 12-hour clocks, fractions and short years", () => {
+  const timestamp: Column = { name: "t", type: "timestamp" };
+  const show = (pattern: string, value: string, column = timestamp) =>
+    formatterFor(column, { date: { pattern } }, "en-US")?.(value);
+  assert.equal(show("yyyy''MM", "2024-02-29 00:00:00"), "2024'02");
+  assert.equal(show("h 'o''clock'", "2024-02-29 15:00:00"), "3 o'clock");
+  assert.equal(show("'yyyy' yyyy", "2024-02-29 00:00:00"), "yyyy 2024");
+  // Midnight and noon are 12 on a 12-hour clock.
+  assert.equal(show("hh:mm a", "2024-02-29 00:05:00"), "12:05 AM");
+  assert.equal(show("hh:mm a", "2024-02-29 12:00:00"), "12:00 PM");
+  assert.equal(show("H:m:s", "2024-02-29 09:05:07"), "9:5:7");
+  // Fraction digits are cut, not rounded, and filled with zeros.
+  assert.equal(show("ss.SSS", "2024-02-29 10:00:05.25"), "05.250");
+  assert.equal(show("ss.S", "2024-02-29 10:00:05.999"), "05.9");
+  assert.equal(show("yy/M/d", "2009-01-05 00:00:00"), "09/1/5");
+  assert.equal(show("yyyy-MM-dd", "0099-12-31", columns[4]), "0099-12-31");
+});
+
 test("style rules evaluate the conditions that the menus write, with nulls as §3.6 has them", () => {
   const rule = (when: Expr) => {
     const compiled = compileRule(when, columns);

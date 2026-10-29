@@ -17,6 +17,17 @@
         [3, 2, "10.00", "2.000", 0]
       ]
     },
+    "wide": {
+      "columns": [
+        { "name": "i", "type": "integer" },
+        { "name": "d", "type": "decimal", "precision": 10, "scale": 2 }
+      ],
+      "rows": [
+        [2147483647, "99999999.99"],
+        [-2147483648, "-99999999.99"],
+        [null, "0.01"]
+      ]
+    },
     "texts": {
       "columns": [{ "name": "s", "type": "string" }],
       "rows": [
@@ -93,6 +104,31 @@
         "columns": [{ "name": "x", "type": "decimal", "precision": 15, "scale": 5 }],
         "rowCount": 4,
         "rows": [["1.87500"], ["-0.00010"], [null], ["20.00000"]]
+      }
+    },
+    {
+      "id": "eval.decimal-mul-wide",
+      "section": "3.7",
+      "description": "A product of more than 18 digits is exact: decimal(10, 2) × decimal(10, 2) is decimal(20, 4), and integer × decimal(10, 2) is decimal(20, 2).",
+      "table": "wide",
+      "plan": {
+        "derive": [
+          { "name": "x", "expr": { "fn": "mul", "args": [{ "col": "d" }, { "col": "d" }] } },
+          { "name": "y", "expr": { "fn": "mul", "args": [{ "col": "i" }, { "col": "d" }] } }
+        ]
+      },
+      "read": { "columns": ["x", "y"] },
+      "expect": {
+        "columns": [
+          { "name": "x", "type": "decimal", "precision": 20, "scale": 4 },
+          { "name": "y", "type": "decimal", "precision": 20, "scale": 2 }
+        ],
+        "rowCount": 3,
+        "rows": [
+          ["9999999998000000.0001", "214748364678525163.53"],
+          ["9999999998000000.0001", "214748364778525163.52"],
+          ["0.0001", null]
+        ]
       }
     },
     {

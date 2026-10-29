@@ -233,11 +233,17 @@ class Compiler {
     return `CAST(${this.number(node)} AS DOUBLE)`;
   }
 
-  /** An exact operand of a decimal operation: integers are decimal(10, 0) and bigints decimal(19, 0) (§3.7). */
-  private exact(node: TypedExpr) {
+  /**
+   * An exact operand of a decimal operation: integers are decimal(10, 0) and bigints decimal(19, 0) (§3.7). With
+   * `wide`, it has 19 digits at least.
+   */
+  private exact(node: TypedExpr, wide = false) {
     const sql = this.expression(node);
-    if (node.type.type === "integer") return `CAST(${sql} AS DECIMAL(10,0))`;
+    if (node.type.type === "integer") return `CAST(${sql} AS DECIMAL(${wide ? 19 : 10},0))`;
     if (node.type.type === "bigint") return `CAST(${sql} AS DECIMAL(19,0))`;
+    if (wide && node.type.type === "decimal" && (node.type.precision ?? 38) < 19) {
+      return `CAST(${sql} AS DECIMAL(19,${node.type.scale ?? 0}))`;
+    }
     return sql;
   }
 
@@ -300,7 +306,10 @@ class Compiler {
         const operator = { add: "+", sub: "-", mul: "*", mod: "%" }[node.fn];
         if (type.type === "float") return finite(`(${this.double(args[0])} ${operator} ${this.double(args[1])})`);
         if (type.type === "bigint") return `TRY(CAST(${arg(0)} AS BIGINT) ${operator} CAST(${arg(1)} AS BIGINT))`;
-        return `TRY(${cast(`(${this.exact(args[0])} ${operator} ${this.exact(args[1])})`, type)})`;
+        // DuckDB multiplies two decimals of at most 18 digits in 18 digits and fails past them; a left operand of
+        // 19 digits makes it keep every digit of the product.
+        const wide = node.fn === "mul" && type.type === "decimal" && (type.precision ?? 38) > 18;
+        return `TRY(${cast(`(${this.exact(args[0], wide)} ${operator} ${this.exact(args[1])})`, type)})`;
       }
       case "div":
         return finite(`(${this.double(args[0])} / ${this.double(args[1])})`);

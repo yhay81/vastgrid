@@ -242,9 +242,10 @@ function dateFormatter(locale: string | undefined, format: DateFormat) {
             part = String(shown.second);
             break;
           default:
-            part = token.startsWith("S")
-              ? shown.fraction.slice(0, token.length).padEnd(token.length, "0")
-              : token.slice(1, -1).replaceAll("''", "'");
+            if (token.startsWith("S")) part = shown.fraction.slice(0, token.length).padEnd(token.length, "0");
+            // Text in quotes, with a doubled quote for a quote; two quotes alone are a quote too, as in the
+            // Excel export.
+            else part = token === "''" ? "'" : token.slice(1, -1).replaceAll("''", "'");
         }
         text += part + texts[index + 1];
       });

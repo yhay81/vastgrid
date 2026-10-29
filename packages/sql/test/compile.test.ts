@@ -39,6 +39,24 @@ test("source parameters come first", () => {
   assert.ok(view.with.includes("CAST(CAST($2 AS VARCHAR) AS BIGINT)"), view.with);
 });
 
+test("a product of decimals widens its left operand only when the product has more than 18 digits", () => {
+  const decimals: Column[] = [
+    { name: "d", type: "decimal", precision: 10, scale: 2 },
+    { name: "e", type: "decimal", precision: 5, scale: 3 },
+    { name: "n", type: "integer" },
+  ];
+  const product = (left: string, right: string) =>
+    compileView(
+      checkPlan({ derive: [{ name: "x", expr: { fn: "mul", args: [{ col: left }, { col: right }] } }] }, decimals),
+      source,
+    ).with;
+  // decimal(10, 2) × decimal(5, 3) is decimal(15, 5), which DuckDB multiplies in 64 bits.
+  assert.ok(!product("d", "e").includes("DECIMAL(19,"), product("d", "e"));
+  // decimal(10, 2) × decimal(10, 2) is decimal(20, 4), and integer × decimal(10, 2) decimal(20, 2).
+  assert.ok(product("d", "d").includes('CAST("d" AS DECIMAL(19,2))'), product("d", "d"));
+  assert.ok(product("n", "d").includes('CAST("n" AS DECIMAL(19,0))'), product("n", "d"));
+});
+
 test("the row ID column takes a name that no column has", () => {
   const plan = checkPlan({}, [{ name: "vg_row", type: "integer" }]);
   const view = compileView(plan, source);

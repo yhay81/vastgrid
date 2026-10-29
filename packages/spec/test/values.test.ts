@@ -51,6 +51,30 @@ test("32-bit floats have the shortest digits of 32 bits", () => {
   assert.equal(floatText(3.4028234663852886e38, 32), "3.4028235e+38");
   assert.equal(floatText(1.5e-7, 32), "1.5e-07");
   assert.equal(floatText(Math.fround(0.1), 64), "0.10000000149011612");
+  // The smallest and the largest 32-bit floats, and the smallest normal one.
+  assert.equal(floatText(2 ** -149, 32), "1e-45");
+  assert.equal(floatText(-(2 ** -149), 32), "-1e-45");
+  assert.equal(floatText(2 ** -126, 32), "1.1754944e-38");
+  assert.equal(floatText(-3.4028234663852886e38, 32), "-3.4028235e+38");
+});
+
+test("32-bit powers of two take the shortest digits on the far side of their nearer neighbor", () => {
+  // The float below a power of two is twice as near as the float above it: the nearest eight digits of 2^-96 read
+  // back as the float below, and the other eight digits as 2^-96 itself.
+  assert.equal(floatText(2 ** -96, 32), "1.2621775e-29");
+  assert.equal(floatText(2 ** 87, 32), "1.5474251e+26");
+  assert.equal(floatText(2 ** 90, 32), "1.2379401e+27");
+  assert.equal(floatText(-(2 ** 90), 32), "-1.2379401e+27");
+  // Every 32-bit power of two reads back as itself, with no more digits than it needs.
+  for (let power = -149; power <= 127; power++) {
+    const text = floatText(2 ** power, 32);
+    assert.equal(Math.fround(Number(text)), 2 ** power, text);
+    const digits = text
+      .replace(/e.*$/, "")
+      .replace(/[-.]/g, "")
+      .replace(/^0+|0+$/g, "");
+    assert.ok(digits.length <= 9, text);
+  }
 });
 
 test("decimal literals take their precision and scale from their digits (§2.5)", () => {

@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- `vastgrid-sql`, `vastgrid-duckdb` and the Python package `vastgrid`: a product of two decimals of up to 18 digits
+  each keeps every digit of its type (§3.7) instead of being null past 18 digits, as DuckDB computes such products
+  in 18 digits: `99999999.99 × 99999999.99` is `9999999998000000.0001`.
+- `vastgrid-spec` and the Python package `vastgrid`: the text of a 32-bit float at a power of two whose nearest
+  digits read back as the float below, such as 2⁻⁹⁶, has the shortest digits (§2.4.1), as DuckDB writes it:
+  `1.2621775e-29`, not `1.26217745e-29`.
+- `vastgrid-js`: `quantile` weighs the two closest ranks as DuckDB's `quantile_cont` does, so that a quantile
+  between the largest floats of either sign is a number, not null.
+- `vastgrid`: two single quotes in a date pattern show a quote, as the Excel export writes them. A click in the
+  gutter below the last row no longer selects the last row or toggles its check box.
+
 ## 0.2.1 — 2026-10-28
 
 ### Fixes
