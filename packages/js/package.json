@@ -1,6 +1,6 @@
 {
   "name": "vastgrid-js",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "vastgrid's engine in memory, for the browser and Node.js: tables of rows, Apache Arrow, CSV, TSV, JSON Lines, Excel and Parquet files (over HTTP ranges too), with sorting, filters, groups, pivots, formulas, writes and exports.",
   "keywords": [
     "data grid",
@@ -43,6 +43,6 @@
   "dependencies": {
     "hyparquet": "1.31.5",
     "hyparquet-compressors": "1.1.2",
-    "vastgrid-spec": "0.2.1"
+    "vastgrid-spec": "0.2.2"
   }
 }
