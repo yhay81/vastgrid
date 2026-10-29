@@ -532,9 +532,32 @@
       ],
       "expect": {
         "output": {
-          "tsv": "Tokyo\n",
+          "tsv": "Tokyo\n\n",
           "html": "<meta charset=\"utf-8\"><table><tr><td>Tokyo</td></tr><tr><td></td></tr></table>",
           "markdown": "|  |\n| --- |\n| Tokyo |\n|  |"
+        }
+      }
+    },
+    {
+      "id": "copy.empty-cell",
+      "section": "6.6",
+      "state": {},
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 2,
+          "column": "qty"
+        },
+        {
+          "command": "copy"
+        }
+      ],
+      "expect": {
+        "output": {
+          "tsv": "\n",
+          "html": "<meta charset=\"utf-8\"><table><tr><td></td></tr></table>",
+          "markdown": "|  |\n| --- |\n|  |"
         }
       }
     },

@@ -1026,7 +1026,8 @@ the grid shows, which only the screen's formatting knows, so the reference imple
 `unsupported`. Null is the empty string.
 
 - **TSV**: fields joined by tabs and rows by line feeds; a field with a tab, a line break or a quote is quoted
-  with `"`, and its quotes are doubled.
+  with `"`, and its quotes are doubled. A last row of one empty field is followed by a line feed, as pasting
+  reads the line break after the last row as the end of the text: an empty cell alone is `\n`.
 - **HTML**: `<meta charset="utf-8"><table>`, one `<tr>` per row, `<th>` cells for the header and `<td>`
   cells otherwise; `&`, `<`, `>` and `"` are escaped and line breaks become `<br>`.
 - **Markdown**: a header row (the column names, or empty cells without `headers`), a row of `---`, then the

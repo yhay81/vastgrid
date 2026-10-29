@@ -10,7 +10,16 @@ test("TSV quotes fields with tabs, line breaks and quotes (§6.6)", () => {
     ]),
     'a\t"b\tc"\n"say ""hi"""\t"x\ny"',
   );
-  assert.equal(toTsv([[""], [""]]), "\n");
+});
+
+test("a TSV whose last row is one empty field ends with a line feed, as pasting drops the last one (§6.6)", () => {
+  assert.equal(toTsv([["Tokyo"], [""]]), "Tokyo\n\n");
+  assert.equal(toTsv([[""], [""]]), "\n\n");
+  assert.equal(toTsv([[""]]), "\n");
+  // Other rows are not empty text: two empty fields are a tab.
+  assert.equal(toTsv([["Tokyo"], ["", ""]]), "Tokyo\n\t");
+  assert.equal(toTsv([[""], ["Tokyo"]]), "\nTokyo");
+  assert.equal(toTsv([]), "");
 });
 
 test("TSV reads back what it writes", () => {
@@ -19,6 +28,21 @@ test("TSV reads back what it writes", () => {
     ['say "hi"', "x\r\ny", "z"],
   ];
   assert.deepEqual(parseTsv(toTsv(rows)), rows);
+  // Tables of up to four rows of up to three fields, made of the characters that TSV reads apart.
+  const pieces = ["", "a", " ", "\t", "\n", "\r", "\r\n", '"', '""'];
+  let seed = 1;
+  const random = (count: number) => {
+    seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+    return Math.floor((seed / 2_147_483_648) * count);
+  };
+  for (let index = 0; index < 5_000; index++) {
+    const table = Array.from({ length: 1 + random(4) }, () =>
+      Array.from({ length: 1 + random(3) }, () =>
+        Array.from({ length: random(3) }, () => pieces[random(pieces.length)]).join(""),
+      ),
+    );
+    assert.deepEqual(parseTsv(toTsv(table)), table, JSON.stringify(table));
+  }
 });
 
 test("TSV rows end at CRLF, LF or CR, and the last line break ends the text", () => {

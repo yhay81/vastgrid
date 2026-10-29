@@ -7,9 +7,14 @@ function tsvField(text: string) {
   return /[\t\n\r"]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
-/** Tab-separated values: fields with tabs, line breaks or quotes are quoted, as Excel quotes them. */
+/**
+ * Tab-separated values: fields with tabs, line breaks or quotes are quoted, as Excel quotes them. A last row of one
+ * empty field is followed by a line feed, as pasting reads the line break after the last row as the end of the text.
+ */
 export function toTsv(rows: readonly (readonly string[])[]): string {
-  return rows.map((row) => row.map(tsvField).join("\t")).join("\n");
+  const text = rows.map((row) => row.map(tsvField).join("\t")).join("\n");
+  const last = rows.at(-1);
+  return last?.length === 1 && last[0] === "" ? `${text}\n` : text;
 }
 
 function escapeHtml(text: string) {

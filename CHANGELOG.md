@@ -10,10 +10,14 @@
 - `vastgrid-spec` and the Python package `vastgrid`: the text of a 32-bit float at a power of two whose nearest
   digits read back as the float below, such as 2⁻⁹⁶, has the shortest digits (§2.4.1), as DuckDB writes it:
   `1.2621775e-29`, not `1.26217745e-29`.
+- `vastgrid-spec`: the TSV of a copy whose last row is one empty cell, such as an empty cell below a copied one, ends
+  with one more line feed, so that pasting it gives that row back (§6.6): `Tokyo\n\n`, not `Tokyo\n`, and `\n` for
+  an empty cell alone.
 - `vastgrid-js`: `quantile` weighs the two closest ranks as DuckDB's `quantile_cont` does, so that a quantile
   between the largest floats of either sign is a number, not null.
 - `vastgrid`: two single quotes in a date pattern show a quote, as the Excel export writes them. A click in the
-  gutter below the last row no longer selects the last row or toggles its check box.
+  gutter below the last row no longer selects the last row or toggles its check box. The number of copied cells read
+  out after a copy counts a cell with a tab or a line break as one cell.
 
 ## 0.2.1 — 2026-10-28
 

@@ -14,7 +14,7 @@ import {
   useState,
 } from "react";
 import { browser } from "react-dom";
-import { CommandError, type GridCommand, type RowKey } from "vastgrid-spec";
+import { CommandError, type GridCommand, parseTsv, type RowKey } from "vastgrid-spec";
 import type { Hit } from "../canvas/geometry.js";
 import { GridCanvas } from "../canvas/grid-canvas.js";
 import type { CellAction, CellHooks, ColumnGroup, GridCell } from "../canvas/hooks.js";
@@ -142,10 +142,9 @@ function useClipboard(store: GridStore, scroller: RefObject<HTMLDivElement | nul
 }
 
 /** The cells of a copy: its TSV's fields. */
-function countCells(output: unknown) {
+export function countCells(output: unknown) {
   const { tsv } = output as { tsv: string };
-  if (tsv === "") return 0;
-  return tsv.split("\n").reduce((count, line) => count + line.split("\t").length, 0);
+  return parseTsv(tsv).reduce((count, row) => count + row.length, 0);
 }
 
 /** A click or Space on a cell that is a link or a button (`cellAction`). */
