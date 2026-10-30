@@ -163,6 +163,7 @@ TIMESTAMP: ValueType = {"type": "timestamp"}
 _ORDERABLE = frozenset(
     ("integer", "bigint", "decimal", "float", "string", "boolean", "date", "time", "timestamp", "timestamptz", "uuid")
 )
+_TEMPORAL = frozenset(("date", "time", "timestamp", "timestamptz"))
 _MISSING = object()
 _FRACTION = re.compile(r"\.([0-9]+)\Z")
 
@@ -239,8 +240,12 @@ def _measure_type(fn: str, column: Column | None) -> ValueType:
         if column["type"] == "decimal":
             return _decimal(38, _member(column, "scale", 0))
         return FLOAT
-    if fn in ("avg", "stddev", "quantile"):
+    if fn in ("avg", "stddev"):
         return FLOAT
+    if fn == "quantile":
+        if column is not None and column["type"] in ("date", "timestamp"):
+            return TIMESTAMP
+        return {"type": column["type"]} if column is not None and column["type"] in _TEMPORAL else FLOAT
     return value_type(column) if column else BIGINT
 
 
@@ -666,6 +671,8 @@ class _Checker:
                     accepted = True
                 elif fn in ("count_distinct", "min", "max"):
                     accepted = column["type"] in _ORDERABLE
+                elif fn == "quantile":
+                    accepted = _is_number(column) or column["type"] in _TEMPORAL
                 else:
                     accepted = _is_number(column)
                 if not accepted:

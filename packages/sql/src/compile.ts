@@ -463,6 +463,9 @@ class Compiler {
       case "max":
         return `${measure.fn}(${column})${filter}`;
       case "quantile": {
+        // DuckDB interpolates temporal values in microseconds and gives a TIMESTAMP for a DATE (§3.8); its
+        // approx_quantile keeps a DATE and nanoseconds, so they are exact.
+        if (measure.type.type !== "float") return `quantile_cont(${column}, ${Number(measure.p)})${filter}`;
         const fn = measure.approx ? "approx_quantile" : "quantile_cont";
         // Interpolated in doubles, also for a 32-bit float column (§3.7).
         return `${fn}(CAST(${column} AS DOUBLE), ${Number(measure.p)})${filter}`;
@@ -475,6 +478,12 @@ class Compiler {
 function sortTerms(sql: string, type: ValueType, direction: "asc" | "desc") {
   const order = direction === "desc" ? "DESC" : "ASC";
   return type.type === "string" ? [`NULLIF(${sql}, '') ${order} NULLS LAST`] : [`${sql} ${order} NULLS LAST`];
+}
+
+/** The value of a group's key: DuckDB keeps the first row's, which may be −0.0 where §3.9 reads 0.0. */
+function keySql(column: Column): string {
+  const name = quoteIdentifier(column.name);
+  return column.type === "float" ? `(${name} + CAST(0 AS ${duckdbType(column)}))` : name;
 }
 
 /** ORDER BY terms of group keys (§3.9): ascending, blanks last, the empty string before null. */
@@ -522,9 +531,7 @@ export function pivotQuery(plan: CheckedPlan, source: SqlSource): SqlQuery {
   const compiler = new Compiler(new Params(source.params));
   const entries = rowsWith(plan, source, compiler, rowIdAlias(plan));
   const names = pivot.columns.map((column) => quoteIdentifier(column.name));
-  const texts = pivot.columns.map(
-    (column, index) => `${textSql(quoteIdentifier(column.name), column)} AS "vg_value${index}"`,
-  );
+  const texts = pivot.columns.map((column, index) => `${textSql(keySql(column), column)} AS "vg_value${index}"`);
   const limit = Math.floor(pivot.maxColumns / plan.aggregate.measures.length) + 1;
   const sql = `WITH ${entries.join(", ")} SELECT ${texts.join(", ")} FROM (SELECT DISTINCT ${names.join(", ")} FROM vg_rows) ORDER BY ${pivot.columns.flatMap(keyTerms).join(", ")} LIMIT ${limit}`;
   return { sql, params: compiler.params.values };
@@ -552,7 +559,7 @@ export function compileView(plan: CheckedPlan, source: SqlSource, combinations?:
   }
   const { keys, measures, pivot } = plan.aggregate;
   const columns = [...plan.columns];
-  const outputs = keys.map((key) => quoteIdentifier(key.name));
+  const outputs = keys.map((key) => `${keySql(key)} AS ${quoteIdentifier(key.name)}`);
   if (pivot) {
     if (!combinations) throw new RangeError("A pivot needs the combinations that pivotQuery reads.");
     if (combinations.length > Math.floor(pivot.maxColumns / measures.length)) {

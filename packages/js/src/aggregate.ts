@@ -2,18 +2,24 @@
  * Groups (docs/spec.md §3.8, §3.9, §4.5, §4.6): the rows that `where` keeps, one group for each combination
  * of the ranks of their keys, with the measures of each group and the generated columns of a pivot.
  *
- * Ranks make groups by §3.1 equality (all NaNs are one value, −0.0 and 0.0 are one) and order them as §3.9 does:
- * values ascending, then the empty string, then null. Groups are numbered in that order, so a view without
- * `sort` is the groups in number order, and a sort is stable over them.
+ * Ranks make groups by §3.1 equality (all NaNs are one value, −0.0 and 0.0 are one, whose key is 0.0) and order
+ * them as §3.9 does: values ascending, then the empty string, then null. Groups are numbered in that order, so a
+ * view without `sort` is the groups in number order, and a sort is stable over them.
  */
 import {
   type CheckedAggregate,
   type CheckedMeasure,
   type Column,
   type JsonValue,
+  parseDateText,
+  parseTimestampText,
+  parseTimeText,
   SpecError,
   type TypedExpr,
   textOf,
+  timestampText,
+  timeText,
+  UNIT_PER_SECOND,
   uniqueName,
   type ValueType,
   valueType,
@@ -195,6 +201,7 @@ function accumulator(measure: CheckedMeasure, input: GroupInput, cells: number):
     }
     case "quantile": {
       const p = measure.p ?? 0.5;
+      const [read, write] = quantileScale(column);
       const numbers: (number[] | undefined)[] = new Array(cells);
       return {
         add: (cell, row) => {
@@ -205,7 +212,7 @@ function accumulator(measure: CheckedMeasure, input: GroupInput, cells: number):
             list = [];
             numbers[cell] = list;
           }
-          list.push(toFloat(value, column));
+          list.push(read(value));
         },
         // Linear interpolation between the two closest ranks, weighing each as DuckDB's quantile_cont does: the
         // difference of the two would overflow between the largest floats of either sign.
@@ -217,11 +224,56 @@ function accumulator(measure: CheckedMeasure, input: GroupInput, cells: number):
           const low = Math.floor(place);
           const high = Math.ceil(place);
           const weight = place - low;
-          return finite(sorted[low] * (1 - weight) + sorted[high] * weight);
+          return write(sorted[low] * (1 - weight) + sorted[high] * weight);
         },
       };
     }
   }
+}
+
+/**
+ * How `quantile` reads a column's values as floats and writes its result (§3.8): numbers as they are, and
+ * temporal values as microseconds, rounded back to the nearest one with halves away from zero.
+ */
+function quantileScale(column: Column): [(value: JsonValue) => number, (value: number) => JsonValue] {
+  const micros = (text: (count: bigint) => string) => (value: number) => {
+    if (!Number.isFinite(value)) return null;
+    const count = BigInt(Math.sign(value) * Math.round(Math.abs(value)));
+    try {
+      return text(count);
+    } catch {
+      return null; // beyond the years 1 to 9999, which floats far from 1970 can round to
+    }
+  };
+  switch (column.type) {
+    case "date":
+      return [(value) => (parseDateText(value as string) as number) * DAY_MICROS, micros(timestampText)];
+    case "timestamp": {
+      const unit = column.unit ?? "us";
+      const count = (value: JsonValue) => parseTimestampText(value as string, unit) as bigint;
+      const read =
+        unit === "ns"
+          ? (value: JsonValue) => Number(count(value)) / 1000
+          : (value: JsonValue) => Number(count(value) * (1_000_000n / UNIT_PER_SECOND[unit]));
+      return [read, micros(timestampText)];
+    }
+    case "time":
+      return [(value) => Number(parseTimeText(value as string)), micros(timeText)];
+    case "timestamptz":
+      return [
+        (value) => Number(parseTimestampText((value as string).slice(0, -3))),
+        micros((count) => `${timestampText(count)}+00`),
+      ];
+    default:
+      return [(value) => toFloat(value, column), finite];
+  }
+}
+
+const DAY_MICROS = 86_400_000_000;
+
+/** The key of a group from the value of its first row: 0.0 for the group of −0.0 and 0.0 (§3.9). */
+function keyValue(value: JsonValue): JsonValue {
+  return typeof value === "number" ? value + 0 : value;
 }
 
 function finite(value: number): JsonValue {
@@ -328,7 +380,7 @@ function groupColumns(input: GroupInput): { columns: Column[]; values: Map<strin
     const source = input.values(key.name);
     values.set(
       key.name,
-      groups.firsts.map((row) => source.at(row)),
+      groups.firsts.map((row) => keyValue(source.at(row))),
     );
   }
   const results = (measure: number, combination: number) =>
@@ -341,7 +393,7 @@ function groupColumns(input: GroupInput): { columns: Column[]; values: Map<strin
   }
   const taken = new Set(columns.map((column) => column.name));
   combinations.firsts.forEach((row, combination) => {
-    const combinationValues = pivot.columns.map((column) => input.values(column.name).at(row));
+    const combinationValues = pivot.columns.map((column) => keyValue(input.values(column.name).at(row)));
     const labels = combinationValues.map((value, index) => {
       const text = textOf(value, pivot.columns[index]);
       return text === null ? "(null)" : text === "" ? "(empty)" : text;

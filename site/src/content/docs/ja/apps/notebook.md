@@ -41,7 +41,7 @@ JupyterLab 4.6 と Jupyter Notebook 7.6（ipywidgets 8）で試験していま�
 | CSV、TSV | `.csv`、`.txt`、`.tsv`、`.tab`（`.gz`、`.zst` も） | 編集できる |
 | JSON、JSON Lines | `.json`、`.jsonl`、`.ndjson`（`.gz`、`.zst` も） | 編集できる |
 | Parquet | `.parquet`、`.pq` | 編集できる。その場で行の範囲ごとに読む |
-| Excel | `.xlsx` | 編集できる。ブックのシートを（隠しシートには印を付けて）示し、`sheet` で選ぶ |
+| Excel | `.xlsx`、`.xlsm` | 編集できる。ブックのシートを（隠しシートには印を付けて）示し、`sheet` で選ぶ |
 | DataFrame | pandas、Polars、PyArrow の表、DuckDB のリレーション | 編集できる |
 
 DataFrame は、表を開くときに行の順のまま DuckDB に写します。DataFrame そのものは変わりません。Parquet 以外のファイルは DuckDB の表に読み込みます。カーネルのすべての表はメモリー上の 1 つの DuckDB のデータベースを共有するので、DuckDB のメモリーの上限はすべての表にまとめてかかり、収まらない分はデータベースと一緒に消える専用の一時フォルダーに書き出されます。
@@ -76,7 +76,6 @@ grid.close()                   # 表とそのテーブル、書き込んだセ�
 
 ## まだできないこと
 
-- `.xlsm` のブックは開きません。
 - 読んだファイルには保存しません。表を書き出すか、DataFrame から書いてください。
 - 書き込んだセルはカーネルのメモリーにあり、カーネルを再起動すると失われます。
 

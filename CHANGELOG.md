@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- `vastgrid-spec`, `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb` and the Python package `vastgrid`: `quantile`
+  measures dates, times, timestamps and `timestamptz` values (§3.8), as DuckDB's `quantile_cont` does: in
+  microseconds, rounded to the nearest one with halves away from zero, as a timestamp for dates and timestamps.
+  The median of `2024-01-01` and `2024-01-02` is `2024-01-01 12:00:00`. `vastgrid`'s column statistics show the
+  median of such columns.
+- The Python package `vastgrid`: `.xlsm` workbooks open, as `.xlsx` ones do.
+- `vastgrid-spec`: the specification settles what `vastgrid-js` answered as open questions: intervals compare by
+  their length (§3.1); `locate` finds values equal by §3.1, at their first position; `summarize` MAY sum exact
+  numbers exactly; an operation that the capabilities leave out is `unknown_op` (§8.7); and `planHash` needs a
+  secure page (§4.8).
+
+### Fixes
+
+- `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb` and the Python package `vastgrid`: the key of the group of
+  −0.0 and 0.0 is 0.0 whichever comes first (§3.9), and so are a pivot's values and the names of its columns
+  (`0.0 / n`, not `-0.0 / n`), where the engines kept the first row's.
+
 ## 0.3.0 — 2026-10-30
 
 ### Breaking changes

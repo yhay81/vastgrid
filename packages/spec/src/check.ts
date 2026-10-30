@@ -156,6 +156,10 @@ function isDateLike(type: ValueType) {
   return type.type === "date" || type.type === "timestamp";
 }
 
+function isTemporal(type: ValueType) {
+  return isDateLike(type) || type.type === "time" || type.type === "timestamptz";
+}
+
 function isNull(type: ExprType): type is NullType {
   return type.type === "null";
 }
@@ -210,8 +214,10 @@ function measureType(fn: MeasureName, column: Column | null): ValueType {
       return FLOAT;
     case "avg":
     case "stddev":
-    case "quantile":
       return FLOAT;
+    case "quantile":
+      if (column && isDateLike(column)) return TIMESTAMP;
+      return column && isTemporal(column) ? { type: column.type } : FLOAT;
     case "min":
     case "max":
       return column ? valueType(column) : BIGINT;
@@ -679,7 +685,9 @@ class Checker {
             ? () => true
             : fn === "count_distinct" || fn === "min" || fn === "max"
               ? (type: ValueType) => ORDERABLE.has(type.type)
-              : isNumber;
+              : fn === "quantile"
+                ? (type: ValueType) => isNumber(type) || isTemporal(type)
+                : isNumber;
         if (!accepts(column)) fail(child(at, "column"), "type", `${fn} does not measure ${typeName(column)} values.`);
       }
       let p: number | null = null;

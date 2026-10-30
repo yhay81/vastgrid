@@ -18,6 +18,7 @@ import pyarrow as pa
 import pytest
 
 from vastgrid import Engine, Source
+from vastgrid._engine import file_format
 from vastgrid._messages import ProtocolError, check_request
 
 MESSAGES = Path(__file__).resolve().parents[3] / "spec" / "conformance" / "messages"
@@ -150,9 +151,11 @@ def test_files_of_every_format(engine: Engine, tmp_path: Path) -> None:
         (tmp_path / name).write_text(text, "utf-8")
     duckdb.sql(f"COPY (SELECT 'Tokyo' AS city, 1 AS n UNION ALL SELECT 'Osaka', 2) TO '{tmp_path / 'a.parquet'}'")
     workbook(tmp_path / "a.xlsx", {"Cities": [["city", "n"], ["Tokyo", 1], ["Osaka", 2]]})
-    for name in [*files, "a.parquet", "a.xlsx"]:
+    # A workbook with macros is a workbook of the same parts, and its macros are not run.
+    workbook(tmp_path / "a.xlsm", {"Cities": [["city", "n"], ["Tokyo", 1], ["Osaka", 2]]})
+    for name in [*files, "a.parquet", "a.xlsx", "a.xlsm"]:
         path = tmp_path / name
-        engine.add(name, Source(path=str(path), format=name.rsplit(".", 1)[1].replace("jsonl", "ndjson")))
+        engine.add(name, Source(path=str(path), format=file_format(name) or ""))
         info = client.result("open", ref=name)
         assert info["status"] == "ready" and info["rowCount"] == 2, name
         assert [column["name"] for column in info["columns"]] == ["city", "n"], name

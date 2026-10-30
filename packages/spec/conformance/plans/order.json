@@ -23,9 +23,25 @@
     "dates": {
       "columns": [{ "name": "d", "type": "date" }],
       "rows": [["2024-01-31"], ["2023-12-31"], [null], ["2024-01-01"]]
+    },
+    "intervals": {
+      "columns": [{ "name": "i", "type": "interval" }],
+      "rows": [["1 month"], ["30 days 01:00:00"], [null], ["30 days"], ["29 days 23:59:59"]]
     }
   },
   "cases": [
+    {
+      "id": "order.intervals-by-length",
+      "section": "3.1",
+      "description": "Intervals compare by their length, with months of 30 days and days of 24 hours: 1 month ties with 30 days.",
+      "table": "intervals",
+      "plan": { "sort": [{ "column": "i", "direction": "asc" }] },
+      "expect": {
+        "rowCount": 5,
+        "rowIds": [4, 0, 3, 1, 2],
+        "rows": [["29 days 23:59:59"], ["1 month"], ["30 days"], ["30 days 01:00:00"], [null]]
+      }
+    },
     {
       "id": "order.no-sort",
       "section": "3.3",

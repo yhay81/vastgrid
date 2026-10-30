@@ -589,6 +589,8 @@ export function measureTakes(fn: MeasureName, type: ValueType): boolean {
     case "min":
     case "max":
       return type.type !== "interval" && type.type !== "binary";
+    case "quantile":
+      return measureTakes("sum", type) || ["date", "time", "timestamp", "timestamptz"].includes(type.type);
     default:
       return type.type === "integer" || type.type === "bigint" || type.type === "decimal" || type.type === "float";
   }

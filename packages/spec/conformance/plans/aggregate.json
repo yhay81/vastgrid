@@ -23,6 +23,10 @@
       "columns": [{ "name": "x", "type": "float" }],
       "rows": [["NaN"], ["NaN"], [0], [-0.0], [null], [null]]
     },
+    "zeros": {
+      "columns": [{ "name": "x", "type": "float" }],
+      "rows": [[-0.0], [0], [-0.0], [1.5]]
+    },
     "values": { "columns": [{ "name": "v", "type": "integer" }], "rows": [[1], [2], [3], [4], [null]] },
     "big": {
       "columns": [{ "name": "b", "type": "bigint" }],
@@ -31,6 +35,32 @@
     "extremes": {
       "columns": [{ "name": "x", "type": "float" }],
       "rows": [[-1.7976931348623157e308], [1.7976931348623157e308]]
+    },
+    "moments": {
+      "columns": [
+        { "name": "day", "type": "date" },
+        { "name": "at", "type": "timestamp" },
+        { "name": "nano", "type": "timestamp", "unit": "ns" },
+        { "name": "t", "type": "time" },
+        { "name": "tz", "type": "timestamptz" }
+      ],
+      "rows": [
+        [
+          "2024-01-01",
+          "1969-12-31 23:59:59.999999",
+          "1969-12-31 23:59:59.9999985",
+          "00:00:00",
+          "2024-01-01 00:00:00+00"
+        ],
+        [null, null, null, null, null],
+        [
+          "2024-01-02",
+          "1970-01-01 00:00:00",
+          "1969-12-31 23:59:59.9999985",
+          "00:00:00.000003",
+          "2024-01-01 00:00:00.000001+00"
+        ]
+      ]
     }
   },
   "cases": [
@@ -225,6 +255,32 @@
       }
     },
     {
+      "id": "aggregate.zero-key",
+      "section": "3.9",
+      "description": "The key of the group of −0.0 and 0.0 reads as 0.0, also when −0.0 comes first: its text is 0.0.",
+      "table": "zeros",
+      "plan": {
+        "aggregate": { "keys": ["x"], "measures": [{ "name": "n", "fn": "count" }] },
+        "having": { "fn": "eq", "args": [{ "fn": "text", "args": [{ "col": "x" }] }, { "lit": "0.0" }] }
+      },
+      "expect": { "rowCount": 1, "rows": [[0, 3]] }
+    },
+    {
+      "id": "aggregate.zero-pivot",
+      "section": "4.6",
+      "description": "A pivot's columns of the group of −0.0 and 0.0 are named after 0.0.",
+      "table": "zeros",
+      "plan": { "aggregate": { "keys": [], "measures": [{ "name": "n", "fn": "count" }], "pivot": { "columns": ["x"] } } },
+      "expect": {
+        "columns": [
+          { "name": "0.0 / n", "type": "bigint", "pivot": { "values": [0], "measure": "n" } },
+          { "name": "1.5 / n", "type": "bigint", "pivot": { "values": [1.5], "measure": "n" } }
+        ],
+        "rowCount": 1,
+        "rows": [[3, 1]]
+      }
+    },
+    {
       "id": "aggregate.count-distinct-nan",
       "section": "3.8",
       "table": "floats",
@@ -272,6 +328,54 @@
         }
       },
       "expect": { "rowCount": 1, "rows": [[0, -8.988465674311579e307]], "tolerance": 1e-12 }
+    },
+    {
+      "id": "aggregate.quantile-temporal",
+      "section": "3.8",
+      "description": "Quantiles of dates and times count microseconds and round to the nearest one, halves away from zero: dates and timestamps in nanoseconds give timestamps in microseconds.",
+      "table": "moments",
+      "plan": {
+        "aggregate": {
+          "keys": [],
+          "measures": [
+            { "name": "day", "fn": "quantile", "column": "day", "p": 0.5 },
+            { "name": "q1", "fn": "quantile", "column": "day", "p": 0.25 },
+            { "name": "at", "fn": "quantile", "column": "at", "p": 0.5 },
+            { "name": "nano", "fn": "quantile", "column": "nano", "p": 0.5 },
+            { "name": "t", "fn": "quantile", "column": "t", "p": 0.5 },
+            { "name": "tz", "fn": "quantile", "column": "tz", "p": 0.5 }
+          ]
+        }
+      },
+      "expect": {
+        "columns": [
+          { "name": "day", "type": "timestamp" },
+          { "name": "q1", "type": "timestamp" },
+          { "name": "at", "type": "timestamp" },
+          { "name": "nano", "type": "timestamp" },
+          { "name": "t", "type": "time" },
+          { "name": "tz", "type": "timestamptz" }
+        ],
+        "rowCount": 1,
+        "rows": [
+          [
+            "2024-01-01 12:00:00",
+            "2024-01-01 06:00:00",
+            "1969-12-31 23:59:59.999999",
+            "1969-12-31 23:59:59.999998",
+            "00:00:00.000002",
+            "2024-01-01 00:00:00.000001+00"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "aggregate.quantile-of-strings",
+      "section": "4.5",
+      "description": "quantile measures numbers and temporal values, not strings.",
+      "table": "sales",
+      "plan": { "aggregate": { "keys": [], "measures": [{ "name": "q", "fn": "quantile", "column": "city", "p": 0.5 }] } },
+      "expect": { "error": { "code": "invalid_plan", "reason": "type", "path": "/aggregate/measures/0/column" } }
     },
     {
       "id": "aggregate.exact-bigint-sum",

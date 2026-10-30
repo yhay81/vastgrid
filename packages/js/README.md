@@ -187,7 +187,7 @@ The engine can also be called directly: `await engine.handle({ v: 2, id: 1, op: 
   0.0) and groups come in the order of §3.9; each measure keeps its state per group, or per group and pivot
   combination. Sums of exact numbers are exact, and null when they do not fit decimal(38, s); averages come
   from the exact sum; `stddev` is Welford's sample standard deviation and `quantile` interpolates as DuckDB's
-  `quantile_cont`. Approximate measures are computed exactly. A view of groups has no row IDs: `rows` answers
+  `quantile_cont`, temporal values in microseconds. Approximate measures are computed exactly. A view of groups has no row IDs: `rows` answers
   `rowIds` null, `locate` finds values of a key of the view (by `rowKey`) and nothing by row ID. A million rows
   group by 1,000 keys with four measures and sort in about 0.5 seconds.
 - Plans that derive, filter or group are run by a module of their own, loaded with the first such plan, so that

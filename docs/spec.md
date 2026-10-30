@@ -189,6 +189,8 @@ comparisons with exact columns stay exact (§3.1).
 - **Booleans**: false < true.
 - **Dates and times** compare in time; a date compared with a timestamp is the timestamp at midnight.
   `timestamptz` compares instants and is not comparable with `date` or `timestamp` (the plan is invalid).
+- **Intervals** compare by their length, with months of 30 days and days of 24 hours, as DuckDB 2.0 does:
+  `1 month` equals `30 days`, and `1 month -1 day` equals `29 days`.
 - **UUIDs and binary values** compare by their bytes.
 - Values of different kinds (a number and a string, a string and a date) are not comparable: the plan is
   invalid. A comparison with null is null.
@@ -278,7 +280,12 @@ measures are null.
   value.
 - `stddev` is the sample standard deviation, null with fewer than two values.
 - `quantile`, with `p` from 0 to 1, interpolates linearly between the two closest ranks (DuckDB's
-  `quantile_cont`) and is a float.
+  `quantile_cont`): with `n` values in order and `h = p × (n − 1)`, it is `x[⌊h⌋] × (1 − w) + x[⌈h⌉] × w`
+  where `w = h − ⌊h⌋`, computed in 64-bit floats. Over numbers it is a float. Over temporal values it counts
+  microseconds (since midnight for a time, since 1970-01-01 00:00:00 for the others, with a fraction for
+  nanoseconds) and rounds the result to the nearest microsecond, halves away from zero: it is a timestamp (in
+  microseconds) over dates and timestamps of any unit, a time over times, and a timestamptz over timestamptz
+  values. The median of `2024-01-01` and `2024-01-02` is `2024-01-01 12:00:00`.
 
 Sums and averages of floats depend on the order of the additions. Engines MAY add in any order, and
 conformance compares them with a relative tolerance. Measures with `"approx": true` (`count_distinct`,
@@ -288,7 +295,8 @@ conformance compares them with a relative tolerance. Measures with `"approx": tr
 
 `aggregate` makes one group for each distinct combination of key values, by §3.1 equality, except that
 null and the empty string are each a group of their own, different from each other. All NaNs form one
-group, and so do −0.0 and 0.0 (which of the two its key reads as is not specified).
+group, and so do −0.0 and 0.0, whose key reads as 0.0 whichever comes first, as do the values of a pivot and
+the names of its columns (§4.6).
 
 Without `sort`, and to break the ties of `sort`, groups are ordered by their keys, each ascending as in
 §3.3, with the empty string before null among blank keys.
@@ -423,7 +431,7 @@ A measure is `{ "name", "fn", "column"?, "p"?, "approx"? }`:
 | `sum` | a number column | §3.8 |
 | `avg`, `stddev` | a number column | float |
 | `min`, `max` | an orderable column | the column's type |
-| `quantile` | a number column, with `p` from 0 to 1 | float |
+| `quantile` | a number or temporal column, with `p` from 0 to 1 | §3.8 |
 
 `column` names a column of the rows before grouping: a table column or a derived column.
 
@@ -465,7 +473,10 @@ The **normal form** of a plan leaves out `derive` and `sort` when they are empty
 as it is. It is written as JSON with the members of every object sorted by name (in code point order),
 without white space, and with strings and numbers as `JSON.stringify` writes them. The **hash** of a plan is
 `sha256:` followed by the lowercase hex SHA-256 of its normal form in UTF-8. Plans with the same normal form
-are the same view; engines MAY keep views by table, revision, edits version and hash (§8.3).
+are the same view; engines MAY keep views by table, revision, edits version and hash (§8.3). Browsers give
+`crypto.subtle`, and so `planHash` of `vastgrid-spec`, only to secure pages (HTTPS and `localhost`): a client
+in another page takes hashes from the engine's answers (`view.hash`), as `vastgrid` does, and an engine there
+cannot make them.
 
 ### 4.9 Limits
 
@@ -1243,7 +1254,10 @@ an `internal` error.
   (default 2,000).
 - `summarize` counts the cells of `ranges` × `columns` that are not blank (`count`, each cell once), and the
   numbers among them that are finite (`numericCount`), with their `sum`, `min`, `max` and `average` as floats
-  (§2.2; a sum beyond the largest float is `"Infinity"`), null without numbers. At most 1,000 ranges.
+  (§2.2; a sum beyond the largest float is `"Infinity"`), null without numbers. At most 1,000 ranges. Engines
+  MAY add in any order, MAY sum exact numbers exactly before the sum becomes a float (`vastgrid-js` answers
+  `0.3` for `0.10 + 0.20`, where DuckDB's doubles give `0.30000000000000004`), and MAY answer a finite
+  `average` when the sum is beyond the largest float.
 - `find` searches the cells of the view row by row and, in a row, in the order of `columns` (at least one),
   from the cell after `from` (before it with −1), wrapping around at the ends and ending with `from` itself,
   for a value whose text form contains `text` (by `lower` unless `caseSensitive`, §3.4); null matches nothing,
@@ -1254,7 +1268,9 @@ an `internal` error.
   for each time it is named, `find` searches it so, and `summarize` counts each cell once, as it does where
   ranges overlap.
 - `locate` gives the positions in the plan's view of rows by key (`rowId`, or values of `rowKey`), null for
-  keys that the view does not have. At most 10,000 keys.
+  keys that the view does not have. A value finds the values of `rowKey` equal to it by §3.1 (the key `"1.5"`
+  finds the decimal(4, 2) `"1.50"`), and the first position in the view of the rows that have it. At most
+  10,000 keys.
 - `write` follows §7.2; `edits` is the table's new `{ "version", "cells" }`.
 - `export` writes the view (§4.2) in `format` (`csv`, `tsv`, `parquet`, `json`, `xlsx`): `columns` are names
   (default all), `headers` replace their names in the header of CSV, TSV and xlsx, and `numberFormats` (one
@@ -1264,7 +1280,9 @@ an `internal` error.
   `target` (over HTTP, a `GET` of `exports/<target>` next to the requests' URL, §8.8). One whose delivery is
   `data` answers `data`, the file's bytes, as a block is carried (§8.8), and `target` null. `rows` is the view's
   row count. The rows are those of the whole view, in its order, with the written values (§7.2); a file is
-  complete or not there: a failed or cancelled export leaves nothing behind.
+  complete or not there: a failed or cancelled export leaves nothing behind. A `format` that
+  `capabilities.export.formats` does not list is `invalid_request` at `/format` with the reason `syntax`, and a
+  `target` sent to an engine whose delivery is `data` is `not_allowed`.
 
   | Format | Written as | Limits |
   | --- | --- | --- |
@@ -1341,7 +1359,10 @@ answer it. `cancel` itself has no response.
 | `cancelled` | §8.6 | 499 |
 | `internal` | anything else | 500 |
 
-Errors MAY carry `details`, an object; `invalid_request` and `invalid_plan` carry `path` and `reason`.
+Errors MAY carry `details`, an object; `invalid_request` and `invalid_plan` carry `path` and `reason`. An
+operation that the engine does not offer (`summarize`, `find`, `locate` or `export` that its capabilities
+leave out, §4.10) is `invalid_request` at `/op` with the reason `unknown_op`, as an operation that §8.2 does not
+name is.
 
 ### 8.8 Transports
 
@@ -1459,32 +1480,13 @@ comes with conformance cases checked against DuckDB, and the JS engine follows i
 
 - Native nested types (lists, structs, maps) instead of their text.
 - Collations and folding (reading order of Japanese, full-width and half-width forms) as capabilities.
-- `quantile` and `count_distinct` over dates and times; a `histogram` measure instead of `derive` then
-  `aggregate`.
+- A `histogram` measure instead of `derive` then `aggregate`.
 - Plans over a table that is still loading (`partialViews`): what `rowCount` and `where` mean there.
-- Whether the key of the group of −0.0 and 0.0 reads as 0.0.
 - `copy` with `values: "formatted"` (§6.6): the display formatting of `number` and `date` formats, so that
   every core copies the same text.
 - Typed text in time zones other than UTC for `timestamptz` (§7.3).
 - Dates and timestamps outside the years 0001 to 9999 (DuckDB has dates from 5877642 BC), and the forms
   that would write them (§2.2).
-
-Found while writing the memory engine of [`vastgrid-js`](../packages/js), which answers them as noted:
-
-- The order of intervals (§3.1). Sort keys on interval columns validate, but §3.1 does not order intervals.
-  DuckDB 2.0 compares their lengths, with months of 30 days and days of 24 hours, so that `1 month -1 day` equals
-  `29 days`; `vastgrid-js` does the same. (DuckDB 1.5 moved whole days of the nanoseconds into the days and whole
-  30-day months of the days into the months, truncating toward zero, and put `1 month -1 day` above `29 days`.)
-- An operation that the capabilities do not offer has no error code in §8.7; `vastgrid-js` answers
-  `invalid_request` with the reason `unknown_op`, and an `export` of a format that `capabilities.export` does not
-  list (`parquet`) `invalid_request` at `/format` with the reason `syntax`. It answers exports as data (§8.2) and
-  writes no files: an `export` with a `target` is `not_allowed`.
-- `summarize`: whether exact sums are exact before they become floats (`0.10 + 0.20` is `0.3`), and the average
-  when the sum is beyond the largest float.
-- `locate` by a value that rows repeat: `vastgrid-js` gives its first position in the view. And whether a key
-  `"1.5"` finds the decimal(4, 2) value `"1.50"`.
-- `planHash` needs `crypto.subtle`, which browsers give only to secure pages; a client can take hashes from the
-  engine's answers (as `vastgrid` does), but an engine in such a page cannot make them.
 
 ## Appendix A. From 0.1
 

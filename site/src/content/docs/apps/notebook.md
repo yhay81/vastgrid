@@ -48,7 +48,7 @@ notebooks, Google Colab, marimo) are not tested yet.
 | CSV, TSV | `.csv`, `.txt`, `.tsv`, `.tab` (also `.gz`, `.zst`) | edited |
 | JSON, JSON Lines | `.json`, `.jsonl`, `.ndjson` (also `.gz`, `.zst`) | edited |
 | Parquet | `.parquet`, `.pq` | edited; read in place, a row range at a time |
-| Excel | `.xlsx` | edited; the sheets of the workbook, hidden ones marked, and `sheet` chooses one |
+| Excel | `.xlsx`, `.xlsm` | edited; the sheets of the workbook, hidden ones marked, and `sheet` chooses one |
 | DataFrames | pandas, Polars, PyArrow tables, DuckDB relations | edited |
 
 A DataFrame is copied into DuckDB in its row order when the grid opens; the DataFrame itself does not change.
@@ -95,7 +95,6 @@ JupyterLab's theme, light or dark.
 
 ## Not yet
 
-- `.xlsm` workbooks do not open.
 - The grid does not save into the file it read: export the table, or write it from the DataFrame.
 - Written cells stay in the kernel's memory; a kernel that restarts loses them.
 

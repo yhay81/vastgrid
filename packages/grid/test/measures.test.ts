@@ -8,12 +8,14 @@ import { CAPABILITIES, fakeEngine, numbers, settle } from "./fake-engine.ts";
 
 const qty: Column = { name: "qty", type: "integer" };
 const city: Column = { name: "city", type: "string" };
+const day: Column = { name: "day", type: "date" };
 
 test("statistics take the column's type and what the engine evaluates (§4.5, §4.10)", () => {
   const kinds = (column: Column, measures?: string[]) =>
     statisticsOf(column, { ...CAPABILITIES, plan: { aggregate: true }, measures }).map((item) => item.kind);
   assert.deepEqual(kinds(qty), ["rows", "values", "distinct", "min", "max", "sum", "average", "median", "stddev"]);
   assert.deepEqual(kinds(city), ["rows", "values", "distinct", "min", "max"]);
+  assert.deepEqual(kinds(day), ["rows", "values", "distinct", "min", "max", "median"]);
   assert.deepEqual(kinds(qty, ["count", "sum"]), ["rows", "values", "sum"]);
   assert.deepEqual(kinds(qty, ["sum"]), []);
   assert.deepEqual(statisticsOf(qty, { plan: { aggregate: false } }), []);

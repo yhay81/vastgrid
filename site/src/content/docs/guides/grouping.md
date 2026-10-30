@@ -40,7 +40,7 @@ The [charts guide](/guides/charts/) draws the groups that the grid shows.
 | Average (`avg`) | A number column | A float, from the exact sum |
 | Standard deviation (`stddev`) | A number column | A float: the sample standard deviation |
 | Minimum, Maximum (`min`, `max`) | An orderable column: numbers, text, booleans, dates and times, UUIDs | The column's type, shown with its format |
-| Quantile (`quantile`) | A number column, with `p` from 0 to 1 | A float, interpolated between the two closest values |
+| Quantile (`quantile`) | A number, date or time column, with `p` from 0 to 1 | Interpolated between the two closest values: a float, or a time to the microsecond (a timestamp for dates) |
 
 Quantile is set from code; the Group menu offers the others.
 

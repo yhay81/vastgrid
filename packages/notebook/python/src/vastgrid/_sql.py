@@ -424,6 +424,10 @@ class _Compiler:
             return f"(CASE WHEN isfinite({stddev}) THEN {stddev} END)"
         if fn in ("min", "max"):
             return f"{fn}({column}){where}"
+        if measure.type["type"] != "float":
+            # DuckDB interpolates temporal values in microseconds and gives a TIMESTAMP for a DATE (§3.8); its
+            # approx_quantile keeps a DATE and nanoseconds, so they are exact.
+            return f"quantile_cont({column}, {number_text(measure.p)}){where}"
         # quantile, interpolated in doubles, also for a 32-bit float column (§3.7).
         name = "approx_quantile" if measure.approx else "quantile_cont"
         return f"{name}(CAST({column} AS DOUBLE), {number_text(measure.p)}){where}"
@@ -472,6 +476,12 @@ def _rows_with(plan: CheckedPlan, source: SqlSource, compiler: _Compiler, alias:
     return entries
 
 
+def _key_sql(column: Column) -> str:
+    """The value of a group's key: DuckDB keeps the first row's, which may be −0.0 where §3.9 reads 0.0."""
+    name = quote_identifier(column["name"])
+    return f"({name} + CAST(0 AS {duckdb_type(column)}))" if column["type"] == "float" else name
+
+
 def pivot_query(plan: CheckedPlan, source: SqlSource) -> SqlQuery:
     """The query that reads the combinations of a pivot's values (§4.6), as their text forms, in order. It reads one
     more combination than the pivot may make columns for, so that `compile_view` can refuse too many."""
@@ -481,10 +491,7 @@ def pivot_query(plan: CheckedPlan, source: SqlSource) -> SqlQuery:
     compiler = _Compiler(_Params(source.params))
     entries = _rows_with(plan, source, compiler, _row_id_alias(plan))
     names = [quote_identifier(column["name"]) for column in pivot.columns]
-    texts = [
-        f'{text_sql(quote_identifier(column["name"]), column)} AS "vg_value{index}"'
-        for index, column in enumerate(pivot.columns)
-    ]
+    texts = [f'{text_sql(_key_sql(column), column)} AS "vg_value{index}"' for index, column in enumerate(pivot.columns)]
     limit = pivot.max_columns // len(plan.aggregate.measures) + 1
     order = ", ".join(term for column in pivot.columns for term in _key_terms(column))
     sql = (
@@ -528,7 +535,7 @@ def compile_view(plan: CheckedPlan, source: SqlSource, combinations: PivotCombin
         )
     keys, measures, pivot = plan.aggregate.keys, plan.aggregate.measures, plan.aggregate.pivot
     columns = list(plan.columns)
-    outputs = [quote_identifier(key["name"]) for key in keys]
+    outputs = [f"{_key_sql(key)} AS {quote_identifier(key['name'])}" for key in keys]
     if pivot is not None:
         if combinations is None:
             raise ValueError("A pivot needs the combinations that pivot_query reads.")

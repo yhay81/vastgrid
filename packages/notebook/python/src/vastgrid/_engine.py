@@ -76,6 +76,7 @@ FILE_FORMATS = {
     ".ndjson": "ndjson",
     ".jsonl": "ndjson",
     ".xlsx": "xlsx",
+    ".xlsm": "xlsx",
 }
 
 # The longest text that a message holds (§8.1): `previous` is compared with the whole value up to it.
