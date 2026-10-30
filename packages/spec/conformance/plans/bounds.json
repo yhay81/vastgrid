@@ -79,6 +79,59 @@
           "1999-12-31 23:59:59+00"
         ]
       ]
+    },
+    "infinities": {
+      "columns": [
+        {
+          "name": "d",
+          "type": "date"
+        },
+        {
+          "name": "t",
+          "type": "timestamp"
+        },
+        {
+          "name": "n",
+          "type": "timestamp",
+          "unit": "ns"
+        },
+        {
+          "name": "z",
+          "type": "timestamptz"
+        }
+      ],
+      "rows": [
+        [
+          "infinity",
+          "2024-01-01 12:00:00",
+          "infinity",
+          "-infinity"
+        ],
+        [
+          "2024-01-01",
+          "infinity",
+          "1970-01-01 00:00:00",
+          "2024-01-01 00:00:00+00"
+        ],
+        [
+          "-infinity",
+          "-infinity",
+          "-infinity",
+          "infinity"
+        ],
+        [
+          "2024-01-03",
+          "2024-01-03 00:00:00",
+          "2262-04-11 23:47:16.854775806",
+          null
+        ],
+        [
+          null,
+          null,
+          null,
+          "2024-01-02 00:00:00+00"
+        ]
+      ]
     }
   },
   "cases": [
@@ -655,6 +708,592 @@
             "+010000-01-01"
           ]
         ]
+      }
+    },
+    {
+      "id": "bounds.infinities",
+      "section": "2.2",
+      "description": "DuckDB's infinity and -infinity are values of dates, timestamps of every unit and timestamptz, without +00.",
+      "table": "infinities",
+      "plan": {},
+      "expect": {
+        "rowCount": 5,
+        "rowIds": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "rows": [
+          [
+            "infinity",
+            "2024-01-01 12:00:00",
+            "infinity",
+            "-infinity"
+          ],
+          [
+            "2024-01-01",
+            "infinity",
+            "1970-01-01 00:00:00",
+            "2024-01-01 00:00:00+00"
+          ],
+          [
+            "-infinity",
+            "-infinity",
+            "-infinity",
+            "infinity"
+          ],
+          [
+            "2024-01-03",
+            "2024-01-03 00:00:00",
+            "2262-04-11 23:47:16.854775806",
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            "2024-01-02 00:00:00+00"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bounds.infinities-order",
+      "section": "3.3",
+      "description": "-infinity comes before every other value and infinity after it, and blanks after both.",
+      "table": "infinities",
+      "plan": {
+        "sort": [
+          {
+            "column": "d",
+            "direction": "asc"
+          }
+        ]
+      },
+      "read": {
+        "columns": [
+          "d"
+        ]
+      },
+      "expect": {
+        "rowCount": 5,
+        "rowIds": [
+          2,
+          1,
+          3,
+          0,
+          4
+        ],
+        "rows": [
+          [
+            "-infinity"
+          ],
+          [
+            "2024-01-01"
+          ],
+          [
+            "2024-01-03"
+          ],
+          [
+            "infinity"
+          ],
+          [
+            null
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bounds.infinities-order-desc",
+      "section": "3.3",
+      "table": "infinities",
+      "plan": {
+        "sort": [
+          {
+            "column": "z",
+            "direction": "desc"
+          }
+        ]
+      },
+      "read": {
+        "columns": [
+          "z"
+        ]
+      },
+      "expect": {
+        "rowCount": 5,
+        "rowIds": [
+          2,
+          4,
+          1,
+          0,
+          3
+        ],
+        "rows": [
+          [
+            "infinity"
+          ],
+          [
+            "2024-01-02 00:00:00+00"
+          ],
+          [
+            "2024-01-01 00:00:00+00"
+          ],
+          [
+            "-infinity"
+          ],
+          [
+            null
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bounds.infinities-compare",
+      "section": "3.1",
+      "description": "A date's infinity equals a timestamp's, as its midnight does.",
+      "table": "infinities",
+      "plan": {
+        "where": {
+          "fn": "eq",
+          "args": [
+            {
+              "col": "d"
+            },
+            {
+              "col": "t"
+            }
+          ]
+        }
+      },
+      "read": {
+        "columns": [
+          "d",
+          "t"
+        ]
+      },
+      "expect": {
+        "rowCount": 2,
+        "rowIds": [
+          2,
+          3
+        ],
+        "rows": [
+          [
+            "-infinity",
+            "-infinity"
+          ],
+          [
+            "2024-01-03",
+            "2024-01-03 00:00:00"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bounds.infinities-literal",
+      "section": "2.5",
+      "table": "infinities",
+      "plan": {
+        "where": {
+          "fn": "in",
+          "args": [
+            {
+              "col": "n"
+            },
+            {
+              "lit": "infinity",
+              "type": "timestamp"
+            },
+            {
+              "lit": "-infinity",
+              "type": "timestamp"
+            }
+          ]
+        }
+      },
+      "read": {
+        "columns": [
+          "n"
+        ]
+      },
+      "expect": {
+        "rowCount": 2,
+        "rowIds": [
+          0,
+          2
+        ],
+        "rows": [
+          [
+            "infinity"
+          ],
+          [
+            "-infinity"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bounds.infinities-functions",
+      "section": "3.6",
+      "description": "The parts of an infinity, the days to or from it and the days added to it are null; its text is infinity.",
+      "table": "infinities",
+      "plan": {
+        "derive": [
+          {
+            "name": "y",
+            "expr": {
+              "fn": "year",
+              "args": [
+                {
+                  "col": "d"
+                }
+              ]
+            }
+          },
+          {
+            "name": "m",
+            "expr": {
+              "fn": "month",
+              "args": [
+                {
+                  "col": "t"
+                }
+              ]
+            }
+          },
+          {
+            "name": "h",
+            "expr": {
+              "fn": "hour",
+              "args": [
+                {
+                  "col": "n"
+                }
+              ]
+            }
+          },
+          {
+            "name": "w",
+            "expr": {
+              "fn": "isodow",
+              "args": [
+                {
+                  "col": "d"
+                }
+              ]
+            }
+          },
+          {
+            "name": "dd",
+            "expr": {
+              "fn": "date_diff_days",
+              "args": [
+                {
+                  "col": "d"
+                },
+                {
+                  "col": "t"
+                }
+              ]
+            }
+          },
+          {
+            "name": "a",
+            "expr": {
+              "fn": "add_days",
+              "args": [
+                {
+                  "col": "d"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "b",
+            "expr": {
+              "fn": "add_days",
+              "args": [
+                {
+                  "col": "t"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "x",
+            "expr": {
+              "fn": "text",
+              "args": [
+                {
+                  "col": "d"
+                }
+              ]
+            }
+          },
+          {
+            "name": "tz",
+            "expr": {
+              "fn": "text",
+              "args": [
+                {
+                  "col": "z"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "read": {
+        "columns": [
+          "y",
+          "m",
+          "h",
+          "w",
+          "dd",
+          "a",
+          "b",
+          "x",
+          "tz"
+        ]
+      },
+      "expect": {
+        "rowCount": 5,
+        "rows": [
+          [
+            null,
+            1,
+            null,
+            null,
+            null,
+            null,
+            "2024-01-02 12:00:00",
+            "infinity",
+            "-infinity"
+          ],
+          [
+            2024,
+            null,
+            0,
+            1,
+            null,
+            "2024-01-02",
+            null,
+            "2024-01-01",
+            "2024-01-01 00:00:00+00"
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "-infinity",
+            "infinity"
+          ],
+          [
+            2024,
+            1,
+            23,
+            3,
+            0,
+            "2024-01-04",
+            "2024-01-04 00:00:00",
+            "2024-01-03",
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "2024-01-02 00:00:00+00"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bounds.infinities-measures",
+      "section": "3.8",
+      "description": "min, max and quantile leave out the infinities, as they do for floats; counts count them.",
+      "table": "infinities",
+      "plan": {
+        "aggregate": {
+          "keys": [],
+          "measures": [
+            {
+              "name": "c",
+              "fn": "count",
+              "column": "d"
+            },
+            {
+              "name": "cd",
+              "fn": "count_distinct",
+              "column": "d"
+            },
+            {
+              "name": "lo",
+              "fn": "min",
+              "column": "d"
+            },
+            {
+              "name": "hi",
+              "fn": "max",
+              "column": "d"
+            },
+            {
+              "name": "med",
+              "fn": "quantile",
+              "column": "d",
+              "p": 0.5
+            },
+            {
+              "name": "nmax",
+              "fn": "max",
+              "column": "n"
+            },
+            {
+              "name": "tmin",
+              "fn": "min",
+              "column": "t"
+            },
+            {
+              "name": "zmin",
+              "fn": "min",
+              "column": "z"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "rowCount": 1,
+        "rows": [
+          [
+            4,
+            4,
+            "2024-01-01",
+            "2024-01-03",
+            "2024-01-02 00:00:00",
+            "2262-04-11 23:47:16.854775806",
+            "2024-01-01 12:00:00",
+            "2024-01-01 00:00:00+00"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bounds.infinities-groups",
+      "section": "3.9",
+      "table": "infinities",
+      "plan": {
+        "aggregate": {
+          "keys": [
+            "d"
+          ],
+          "measures": [
+            {
+              "name": "rows",
+              "fn": "count"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "rowCount": 5,
+        "rows": [
+          [
+            "-infinity",
+            1
+          ],
+          [
+            "2024-01-01",
+            1
+          ],
+          [
+            "2024-01-03",
+            1
+          ],
+          [
+            "infinity",
+            1
+          ],
+          [
+            null,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bounds.infinities-search",
+      "section": "3.5",
+      "table": "infinities",
+      "plan": {
+        "where": {
+          "search": "INFINITY"
+        }
+      },
+      "read": {
+        "columns": [
+          "d"
+        ]
+      },
+      "expect": {
+        "rowCount": 3,
+        "rowIds": [
+          0,
+          1,
+          2
+        ],
+        "rows": [
+          [
+            "infinity"
+          ],
+          [
+            "2024-01-01"
+          ],
+          [
+            "-infinity"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bounds.reject-infinity-sign",
+      "section": "2.2",
+      "description": "An infinity is written infinity or -infinity, in lowercase.",
+      "table": "infinities",
+      "plan": {
+        "derive": [
+          {
+            "name": "bad",
+            "expr": {
+              "lit": "+infinity",
+              "type": "date"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_plan",
+          "reason": "literal",
+          "path": "/derive/0/expr"
+        }
       }
     }
   ]

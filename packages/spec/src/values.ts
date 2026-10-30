@@ -2,7 +2,14 @@
  * Rules of values (docs/spec.md §2): how JSON writes them, their text form, literals, and when two are the same
  * value (§3.1).
  */
-import { dateLength, parseDateText, parseIntervalText, parseTimestampText, temporalTextForm } from "./calendar.js";
+import {
+  dateLength,
+  infinityOf,
+  parseDateText,
+  parseIntervalText,
+  parseTimestampText,
+  temporalTextForm,
+} from "./calendar.js";
 import type { JsonValue, TimestampUnit, ValueType } from "./types.js";
 
 const INT32_MIN = -2147483648;
@@ -93,9 +100,9 @@ function timestampAt(text: string, end: number, digits: number): boolean {
   return text.charCodeAt(length) === 32 && dateAt(text, length) && timeAt(text, length + 1, end, digits);
 }
 
-/** Whether the text is a date as §2.2 writes it (`YYYY-MM-DD` or `±YYYYYY-MM-DD`), naming a real day. */
+/** Whether the text is a date as §2.2 writes it (`YYYY-MM-DD` or `±YYYYYY-MM-DD`, or an infinity), naming a real day. */
 export function isDateText(text: string): boolean {
-  return dateAt(text, text.length);
+  return dateAt(text, text.length) || infinityOf(text) !== 0;
 }
 
 /** Whether the text is a time as §2.2 writes it, with at most `digits` digits after the point. */
@@ -103,9 +110,12 @@ export function isTimeText(text: string, digits = 6): boolean {
   return timeAt(text, 0, text.length, digits);
 }
 
-/** Whether the text is a timestamp as §2.2 writes it, for a unit. */
+/** Whether the text is a timestamp as §2.2 writes it, or an infinity, for a unit. */
 export function isTimestampText(text: string, unit: TimestampUnit = "us"): boolean {
-  return timestampAt(text, text.length, unitDigits[unit]) && (unit !== "ns" || parseTimestampText(text, unit) !== null);
+  if (infinityOf(text) !== 0) return true;
+  if (!timestampAt(text, text.length, unitDigits[unit])) return false;
+  // The ends of a 64-bit count: nanoseconds reach them in the years 1677 to 2262, other units only in signed years.
+  return (unit !== "ns" && dateLength(text) === 10) || parseTimestampText(text, unit) !== null;
 }
 
 /** The precision and scale of a decimal written as text (§2.5), or null when the text is not a decimal. */
@@ -151,8 +161,12 @@ export function isValueOf(value: JsonValue, type: ValueType): boolean {
       return typeof value === "string" && isTimeText(value);
     case "timestamp":
       return typeof value === "string" && isTimestampText(value, type.unit);
-    case "timestamptz":
-      return typeof value === "string" && value.endsWith("+00") && timestampAt(value, value.length - 3, unitDigits.us);
+    case "timestamptz": {
+      if (typeof value !== "string") return false;
+      if (infinityOf(value) !== 0) return true;
+      const text = value.slice(0, -3);
+      return value.endsWith("+00") && infinityOf(text) === 0 && isTimestampText(text, "us");
+    }
     case "uuid":
       return typeof value === "string" && uuidText.test(value);
     case "binary":

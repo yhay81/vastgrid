@@ -164,8 +164,12 @@ def float_param(value: int | float) -> str:
     return "-0.0" if number == 0 and math.copysign(1, number) < 0 else number_text(number)
 
 
+_FINITE_TYPES = ("float", "date", "timestamp", "timestamptz")
+"""The types whose values may be infinite."""
+
+
 def _finite(sql: str) -> str:
-    """Null unless the number is finite (§3.6)."""
+    """Null unless the number, the date or the timestamp is finite (§3.6)."""
     return f"(CASE WHEN isfinite({sql}) THEN {sql} END)"
 
 
@@ -379,8 +383,9 @@ class _Compiler:
             days = f"TRY_CAST({arg(1)} AS INTEGER)"
             total = f"TRY({arg(0)} + {days})" if type["type"] == "date" else f"TRY({arg(0)} + to_days({days}))"
             # The dates of §2.2, as the JS engine gives them: DuckDB's dates go further, and its timestamps do not.
+            # DuckDB keeps an infinity, which gives null (§3.6).
             if type["type"] != "date":
-                return total
+                return _finite(total)
             return f"(CASE WHEN {total} BETWEEN {FIRST_DATE} AND {LAST_DATE} THEN {total} END)"
         raise ValueError(f"There is no function {fn}.")
 
@@ -408,7 +413,9 @@ class _Compiler:
         """A measure (§3.8, §4.5), optionally over the rows of a pivot's combination."""
         column = quote_identifier(measure.column["name"]) if measure.column else None
         conditions: list[str] = []
-        if measure.column and measure.column["type"] == "float" and measure.fn not in ("count", "count_distinct"):
+        # Measures leave out NaN and the infinities of floats, dates and timestamps (§3.8).
+        finite_type = measure.column is not None and measure.column["type"] in _FINITE_TYPES
+        if finite_type and measure.fn not in ("count", "count_distinct"):
             conditions.append(f"isfinite({column})")
         if condition:
             conditions.append(condition)

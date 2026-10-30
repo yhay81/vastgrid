@@ -305,7 +305,7 @@ export function formatterFor(
     }
     if (date && typeof value === "string") {
       const parts = parseDate(value.replace(/\+00$/, "Z"));
-      // The years BC and those beyond JavaScript's dates show their text form (§2.4), with its `(BC)`.
+      // The years BC, those beyond JavaScript's dates and the infinities show their text form (§2.4).
       return parts && (!parts.hasDate || (parts.year >= 1 && parts.year <= 275_759)) ? date(parts) : null;
     }
     return null;

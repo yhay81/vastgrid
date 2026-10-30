@@ -8,13 +8,16 @@
  */
 import {
   type Column,
+  DATE_INFINITY,
   dateText,
   daysFromCivil,
   FIRST_DAY,
   floatJson,
   type JsonValue,
   LAST_DAY,
+  TIMESTAMP_INFINITY,
   timestampText,
+  timestamptzText,
   timeText,
 } from "vastgrid-spec";
 import type { ColumnNumbers } from "vastgrid-spec/columns";
@@ -97,8 +100,8 @@ const FLOAT_WORDS = new Map<string, number>(
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
 const DAY_MICROS = 86_400_000_000;
-/** The microseconds of the last date's day that a timestamp holds, before 64 bits overflow. */
-const LAST_DAY_MICROS = Number(INT64_MAX - BigInt(LAST_DAY) * BigInt(DAY_MICROS));
+/** The microseconds of the last date's day that a timestamp holds, below the count of DuckDB's infinity. */
+const LAST_DAY_MICROS = Number(INT64_MAX - 1n - BigInt(LAST_DAY) * BigInt(DAY_MICROS));
 
 // The page, Web Workers and Node.js all have these; the package is typed without the DOM or Node.js.
 declare const TextDecoder: new (
@@ -481,7 +484,7 @@ function numberJson(type: Column["type"]): (value: number | bigint) => JsonValue
     case "timestamp":
       return (value) => timestampText(value as bigint);
     default:
-      return (value) => `${timestampText(value as bigint)}+00`;
+      return (value) => timestamptzText(value as bigint);
   }
 }
 
@@ -809,7 +812,8 @@ function floatRest(bytes: Uint8Array, index: number, end: number, whole: boolean
 
 /**
  * The types that the text of a field fits, of those in `wanted`: booleans (`true`, `false` in any case), integers
- * by their range, floats (with `nan`, `inf` and `infinity`), and times, dates and timestamps (`temporalFits`).
+ * by their range, floats (with `nan`, `inf` and `infinity`), and times, dates and timestamps (`temporalFits`, with
+ * `infinity` and `-infinity`).
  */
 function textFits(bytes: Uint8Array, start: number, end: number, wanted: number): number {
   const first = bytes[start];
@@ -830,10 +834,10 @@ function textFits(bytes: Uint8Array, start: number, end: number, wanted: number)
   ) {
     return wanted & temporalFits(bytes, start, end);
   }
-  if (wanted & (BOOLEAN | FLOAT) && whole === 0 && end - start <= 9) {
+  if (wanted & (BOOLEAN | FLOAT | TEMPORAL) && whole === 0 && end - start <= 9) {
     const word = ascii(bytes, start, end).toLowerCase();
     if (word === "true" || word === "false") return wanted & BOOLEAN;
-    if (FLOAT_WORDS.has(word)) return wanted & FLOAT;
+    if (FLOAT_WORDS.has(word)) return wanted & (FLOAT | temporalFits(bytes, start, end));
   }
   return 0;
 }
@@ -844,10 +848,27 @@ const SPACE = 0x20;
 const UPPER_T = 0x54;
 const UPPER_Z = 0x5a;
 
-/** The days and the microseconds of the day of the text that `temporalFits` last read, and where its clock ended. */
+/**
+ * The days and the microseconds of the day of the text that `temporalFits` last read, and where its clock ended;
+ * `readInfinity` is 1 or −1 for an infinity, and then the others are not read.
+ */
 let readDays = 0;
 let readMicros = 0;
+let readInfinity = 0;
 let clockEnd = 0;
+
+/** 1 for `infinity` and −1 for `-infinity` in any letter case, as DuckDB reads them; 0 for other text. */
+function infinityAt(bytes: Uint8Array, start: number, end: number): number {
+  const sign = bytes[start] === MINUS ? -1 : 1;
+  const from = sign < 0 ? start + 1 : start;
+  if (end - from !== 8) return 0;
+  for (let index = 0; index < 8; index++) {
+    if ((bytes[from + index] | 0x20) !== INFINITY_WORD.charCodeAt(index)) return 0;
+  }
+  return sign;
+}
+
+const INFINITY_WORD = "infinity";
 
 /** The number of two digits at `at`, or −1. */
 function twoDigits(bytes: Uint8Array, at: number): number {
@@ -885,9 +906,12 @@ function clockAt(bytes: Uint8Array, at: number, end: number): number {
  * The type of the text of a time (`HH:MM:SS` with up to 6 fraction digits), a date (`YYYY-MM-DD`, or
  * `±YYYYYY-MM-DD` for other years than 0000 to 9999, which also fits timestamps), a timestamp (a date, a space or
  * `T`, and a time) or a timestamp with `Z` or an offset (`+HH`, `+HH:MM` or `+HHMM`), which is an instant; 0 for
- * other text. Keeps the value in `readDays` and `readMicros`, in UTC for an instant.
+ * other text. Keeps the value in `readDays` and `readMicros`, in UTC for an instant. `infinity` and `-infinity`
+ * fit dates and timestamps, and keep their sign in `readInfinity`.
  */
 function temporalFits(bytes: Uint8Array, start: number, end: number): number {
+  readInfinity = infinityAt(bytes, start, end);
+  if (readInfinity !== 0) return DATE | TIMESTAMP | TIMESTAMPTZ;
   if (bytes[start + 2] === COLON) {
     const micros = clockAt(bytes, start, end);
     if (micros < 0 || clockEnd !== end) return 0;
@@ -1076,7 +1100,10 @@ function putText(built: Built, bytes: Uint8Array, start: number, end: number, ro
 
 /** Writes what `temporalFits` last read into a column of a time, a date or a timestamp. */
 function putTemporal(built: Built, row: number) {
-  if (built.column.type === "date") (built.numbers as Int32Array)[row] = readDays;
+  if (readInfinity !== 0) {
+    if (built.column.type === "date") (built.numbers as Int32Array)[row] = readInfinity * DATE_INFINITY;
+    else (built.numbers as BigInt64Array)[row] = BigInt(readInfinity) * TIMESTAMP_INFINITY;
+  } else if (built.column.type === "date") (built.numbers as Int32Array)[row] = readDays;
   else if (built.column.type === "time") putInt64(built, row, readMicros);
   else {
     // Microseconds since 1970-01-01 are safe integers for about 285 years either side of it.

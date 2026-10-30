@@ -6,7 +6,15 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from ._calendar import date_text, parse_timestamp_text, timestamp_text
+from ._calendar import (
+    DATE_INFINITY,
+    TIMESTAMP_INFINITY,
+    date_text,
+    infinity_of,
+    parse_timestamp_text,
+    timestamp_text,
+    timestamptz_text,
+)
 from ._json import MAX_SAFE_INTEGER, is_number, js_number
 from ._sql import FIRST_DATE, LAST_DATE, duckdb_type, quote_identifier, temporal_param, text_sql
 from ._values import float_json
@@ -75,11 +83,16 @@ _EPOCHS = {
 """The SQL of a timestamp's count of its unit since 1970-01-01 00:00:00."""
 
 
+def _infinities(sql: str, count: int) -> str:
+    """The `WHEN`s of DuckDB's infinities of a date or a timestamp, as their counts (§2.2)."""
+    return f"WHEN {sql} = 'infinity' THEN {count} WHEN {sql} = '-infinity' THEN -{count}"
+
+
 def read_expression(column: dict[str, Any], sql: str, text_limit: int) -> str:
     """The SQL that reads a value of a column for `read_value`: exact numbers, times as their text forms (§2.4), dates
     as days and timestamps as counts of their unit from 1970-01-01, binary values as base64, and strings with a mark
-    in front, `.` for a whole value and `+` for one cut at `text_limit` code points. Values that are not dates or
-    timestamps of §2.2 (`infinity`, and dates beyond the first and the last) read as null (§12)."""
+    in front, `.` for a whole value and `+` for one cut at `text_limit` code points. DuckDB's infinities read as the
+    counts of §2.2, and its dates beyond the first and the last as null (§12)."""
     kind = column["type"]
     if kind in ("boolean", "integer", "bigint", "float"):
         return sql
@@ -87,11 +100,12 @@ def read_expression(column: dict[str, Any], sql: str, text_limit: int) -> str:
         return f"(CASE WHEN length({sql}) > {text_limit} THEN '+' || left({sql}, {text_limit}) ELSE '.' || {sql} END)"
     if kind == "date":
         within = f"{sql} BETWEEN {FIRST_DATE} AND {LAST_DATE}"
-        return f"(CASE WHEN isfinite({sql}) AND {within} THEN {sql} - DATE '1970-01-01' END)"
+        return f"(CASE WHEN {within} THEN {sql} - DATE '1970-01-01' {_infinities(sql, DATE_INFINITY)} END)"
+    infinities = _infinities(sql, TIMESTAMP_INFINITY)
     if kind == "timestamp":
-        return f"(CASE WHEN isfinite({sql}) THEN {_EPOCHS[column.get('unit') or 'us'].format(sql)} END)"
+        return f"(CASE WHEN isfinite({sql}) THEN {_EPOCHS[column.get('unit') or 'us'].format(sql)} {infinities} END)"
     if kind == "timestamptz":
-        return f"(CASE WHEN isfinite({sql}) THEN epoch_us({sql}) END)"
+        return f"(CASE WHEN isfinite({sql}) THEN epoch_us({sql}) {infinities} END)"
     if kind == "time":
         return f"(CASE WHEN {sql} < TIME '24:00:00' THEN CAST({sql} AS VARCHAR) END)"
     if kind == "binary":
@@ -127,7 +141,7 @@ def _temporal_json(column: dict[str, Any], count: int) -> str | None:
         if column["type"] == "date":
             return date_text(count)
         if column["type"] == "timestamptz":
-            return timestamp_text(count, "us") + "+00"
+            return timestamptz_text(count)
         return timestamp_text(count, column.get("unit") or "us")
     except ValueError:
         return None
@@ -146,7 +160,7 @@ def value_expression(value: Any, column: dict[str, Any], params: list[Any]) -> s
     if column["type"] == "binary":
         return f"from_base64(CAST(${at} AS VARCHAR))"
     # DuckDB's VARCHAR cast overflows near the TIMESTAMP_NS limits: give it the exact count.
-    if column["type"] == "timestamp" and column.get("unit") == "ns":
+    if column["type"] == "timestamp" and column.get("unit") == "ns" and infinity_of(str(value)) == 0:
         params[-1] = str(parse_timestamp_text(str(value), "ns"))
         return f"make_timestamp_ns(CAST(${at} AS BIGINT))"
     if column["type"] in ("date", "timestamp", "timestamptz"):

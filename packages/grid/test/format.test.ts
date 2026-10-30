@@ -59,8 +59,8 @@ test("date patterns: text in quotes, two quotes as a quote, 12-hour clocks, frac
   assert.equal(show("yy/M/d", "2009-01-05 00:00:00"), "09/1/5");
   assert.equal(show("yyyy-MM-dd", "0099-12-31", columns[4]), "0099-12-31");
   assert.equal(show("yyyy-MM-dd EEE", "+010000-01-01 00:00:00"), "10000-01-01 Sat");
-  // Years BC, and years beyond JavaScript's dates, show their text form.
-  for (const value of ["0000-12-31 00:00:00", "-000001-01-01 00:00:00", "+294247-01-10 00:00:00"])
+  // Years BC, years beyond JavaScript's dates and DuckDB's infinities show their text form.
+  for (const value of ["0000-12-31 00:00:00", "-000001-01-01 00:00:00", "+294247-01-10 00:00:00", "-infinity"])
     assert.equal(show("yyyy-MM-dd EEE", value), null, value);
 });
 

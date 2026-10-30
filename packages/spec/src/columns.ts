@@ -14,7 +14,7 @@ import {
   type RawBatch,
   UNIT_NAMES,
 } from "./block.js";
-import { dateText, timestampText, timeText, UNIT_PER_SECOND } from "./calendar.js";
+import { dateText, timestampText, timestamptzText, timeText, UNIT_PER_SECOND } from "./calendar.js";
 import type { Column, JsonValue, ValueType } from "./types.js";
 import { floatJson } from "./values.js";
 
@@ -203,7 +203,7 @@ function numberJson(type: ValueType): (value: number | bigint) => JsonValue {
       return (value) => timestampText(value as bigint, unit);
     }
     default:
-      return (value) => `${timestampText(value as bigint, "us")}+00`;
+      return (value) => timestamptzText(value as bigint);
   }
 }
 

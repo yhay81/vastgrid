@@ -38,8 +38,11 @@ import {
   parseDateText,
   parseIntervalText,
   parseTimestampText,
+  parseTimestamptzText,
   parseTimeText,
+  TIMESTAMP_INFINITY,
   timestampText,
+  timestamptzText,
   timeText,
   UNIT_PER_SECOND,
 } from "./calendar.js";
@@ -255,9 +258,7 @@ function buffers(type: ValueType, values: JsonValue[]) {
             type.type === "time"
               ? parseTimeText(text)
               : type.type === "timestamptz"
-                ? text.endsWith("+00")
-                  ? parseTimestampText(text.slice(0, -3), "us")
-                  : null
+                ? parseTimestamptzText(text)
                 : parseTimestampText(text, unit);
           if (count === null) throw new TypeError(`${JSON.stringify(value)} is not a ${type.type}.`);
           return count;
@@ -473,8 +474,10 @@ export function batchReader(arrow: ArrowField, batch: RawBatch, logical: ValueTy
       }
       case Type.Timestamp: {
         const count = view.getBigInt64(index * 8, true);
-        if (logical.type === "timestamptz")
-          return `${timestampText((count * 1_000_000n) / perSecond(type.unit), "us")}+00`;
+        if (logical.type === "timestamptz") {
+          const infinite = count === TIMESTAMP_INFINITY || count === -TIMESTAMP_INFINITY;
+          return timestamptzText(infinite ? count : (count * 1_000_000n) / perSecond(type.unit));
+        }
         return timestampText(count, UNIT_NAMES[type.unit ?? 2]);
       }
       case Type.Interval: {

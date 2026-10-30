@@ -17,7 +17,7 @@ gave the grid's texts in nine languages, each its own import ([Languages and tex
 - **The specification.** Its open questions
   ([§12](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#12-open-questions)): lists, structs and maps
   as their own types instead of their text (and a `histogram` measure that gives one), collations such as the
-  reading order of Japanese, and DuckDB's `infinity` dates.
+  reading order of Japanese, and DuckDB's dates beyond those of its timestamps.
 
 ## Left out
 

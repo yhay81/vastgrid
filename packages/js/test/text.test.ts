@@ -141,7 +141,9 @@ test("text that is almost a value of a type is a string: times past a day, fract
     ["2024-13-01", "2024-01-01"],
     ["+002024-01-01", "2024-01-01"],
     ["+294247-01-11", "2024-01-01"],
-    ["+294247-01-10 04:00:54.775808", "2024-01-01 00:00:00"],
+    ["+294247-01-10 04:00:54.775807", "2024-01-01 00:00:00"],
+    ["+infinity", "2024-01-01"],
+    ["inf", "2024-01-01"],
     ["+294247-01-10 04:00:00-01:00", "2024-01-01 00:00:00Z"],
     [" 1", "2"],
     ["1_000", "2"],
@@ -169,6 +171,15 @@ test("dates and timestamps of every year read as their text of §2.2", async () 
   const stamps = await read("x\n+010000-01-01T12:00:00\n-000001-01-01 00:00:00\n");
   assert.equal(stamps.columns[0].type, "timestamp");
   assert.deepEqual(stamps.rows, [["+010000-01-01 12:00:00"], ["-000001-01-01 00:00:00"]]);
+  // DuckDB's infinities, in any letter case, are dates and timestamps; alone they are floats.
+  const infinite = await read(
+    "d,t,z,f\nInfinity,-infinity,infinity,infinity\n2024-01-01,2024-01-01 12:00:00,2024-01-01T00:00:00Z,1\n",
+  );
+  assert.deepEqual(
+    infinite.columns.map((column) => column.type),
+    ["date", "timestamp", "timestamptz", "float"],
+  );
+  assert.deepEqual(infinite.rows[0], ["infinity", "-infinity", "infinity", "Infinity"]);
   // DuckDB's text form, as an export writes it, is not read back.
   assert.equal((await read("x\n10000-01-01\n0001-01-01 (BC)\n")).columns[0].type, "string");
 });

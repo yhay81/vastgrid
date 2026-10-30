@@ -12,7 +12,7 @@ from typing import Any
 import duckdb
 import pytest
 
-from vastgrid._calendar import date_text, timestamp_text
+from vastgrid._calendar import DATE_INFINITY, TIMESTAMP_INFINITY, date_text, timestamp_text, timestamptz_text
 from vastgrid._check import check_plan
 from vastgrid._plan import PlanError, SpecError
 from vastgrid._sql import (
@@ -81,12 +81,15 @@ def output(column: dict[str, Any], sql: str) -> str:
     counts from 1970-01-01, which `json_of` writes. Strings get a leading "." that `json_of` removes, as in the
     TypeScript test."""
     kind = column["type"]
+    infinities = f"WHEN {sql} = 'infinity' THEN {{0}} WHEN {sql} = '-infinity' THEN -{{0}}"
     if kind == "date":
-        return f"({sql} - DATE '1970-01-01')"
+        date = f"{sql} - DATE '1970-01-01'"
+        return f"(CASE WHEN isfinite({sql}) THEN {date} {infinities.format(DATE_INFINITY)} END)"
     if kind == "timestamp":
-        return f"CAST({_EPOCHS[column.get('unit') or 'us']}({sql}) AS BIGINT)"
+        count = f"CAST({_EPOCHS[column.get('unit') or 'us']}({sql}) AS BIGINT)"
+        return f"(CASE WHEN isfinite({sql}) THEN {count} {infinities.format(TIMESTAMP_INFINITY)} END)"
     if kind == "timestamptz":
-        return f"epoch_us({sql})"
+        return f"(CASE WHEN isfinite({sql}) THEN epoch_us({sql}) {infinities.format(TIMESTAMP_INFINITY)} END)"
     if kind == "string":
         return f"('.' || {sql})"
     if kind == "decimal":
@@ -107,7 +110,7 @@ def json_of(value: Any, column: dict[str, Any]) -> Any:
     if kind == "timestamp":
         return timestamp_text(int(value), column.get("unit") or "us")
     if kind == "timestamptz":
-        return timestamp_text(int(value)) + "+00"
+        return timestamptz_text(int(value))
     if kind == "bigint":
         return value_of_text(js_string(value), column)
     if kind == "integer":

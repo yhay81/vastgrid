@@ -25,7 +25,7 @@ import {
   utf8,
   Version,
 } from "@uwdata/flechette";
-import { decodeBlock } from "vastgrid-spec";
+import { decodeBlock, encodeBlock } from "vastgrid-spec";
 import type { ArrowTable, MemoryTable } from "../src/index.ts";
 import { Client, type Json } from "./client.ts";
 
@@ -36,6 +36,12 @@ function oneColumn(name: string, column: ArrowColumn<unknown>): Uint8Array {
     [column],
   );
   return tableToIPC(table, { format: "stream" }) as Uint8Array;
+}
+
+/** A column of one batch of numbers without nulls, as they are. */
+function fixedColumn(type: ArrowColumn<unknown>["type"], values: BigInt64Array): ArrowColumn<unknown> {
+  const batch = new Batch({ length: values.length, nullCount: 0, type, validity: new Uint8Array(0), values } as never);
+  return new ArrowColumn([batch], type);
 }
 
 /** Milliseconds in a day. */
@@ -178,6 +184,8 @@ test("values of an Arrow table that have no typed JSON fail to load when they ar
     time: { arrow: oneColumn("x", columnFromValues([0n, 86_400_000_000n], timeMicrosecond())) },
     date: { arrow: oneColumn("x", columnFromValues([0, 106_751_992 * DAY], dateDay())) },
     decimal: { arrow: oneColumn("x", columnFromValues([1n, 1_000_000n], decimal(6, 2, 128))) },
+    // −2^63 nanoseconds, which is neither a timestamp nor DuckDB's -infinity.
+    ns: { arrow: oneColumn("x", fixedColumn(timestamp(TimeUnit.NANOSECOND), new BigInt64Array([0n, -(2n ** 63n)]))) },
   };
   const client = new Client(bad);
   for (const ref of Object.keys(bad)) {
@@ -191,6 +199,27 @@ test("values of an Arrow table that have no typed JSON fail to load when they ar
       assert.equal(error.code, "load_failed", ref);
       assert.ok(error.message.includes("at /rows/1/0,"), `${ref}: ${error.message}`);
     }
+  }
+});
+
+test("DuckDB's infinities of an Arrow table read and sort as values (§2.2, §2.3)", async () => {
+  const columns = [
+    { name: "d", type: "date" },
+    { name: "ns", type: "timestamp", unit: "ns" },
+    { name: "s", type: "timestamp", unit: "s" },
+    { name: "z", type: "timestamptz" },
+  ] as const;
+  const rows = [
+    ["infinity", "infinity", "infinity", "infinity"],
+    ["2024-01-01", "2262-04-11 23:47:16.854775806", "+294247-01-10 00:00:00", "2024-01-01 00:00:00+00"],
+    ["-infinity", "-infinity", "-infinity", "-infinity"],
+  ];
+  const client = new Client({ t: { arrow: encodeBlock([...columns], rows) } });
+  const info = await client.open("t");
+  assert.deepEqual((await client.rows(info, {})).rows, rows);
+  for (const { name } of columns) {
+    const sorted = await client.rows(info, { sort: [{ column: name, direction: "asc" }] });
+    assert.deepEqual(sorted.rows, [rows[2], rows[1], rows[0]], name);
   }
 });
 

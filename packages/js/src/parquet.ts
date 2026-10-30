@@ -18,6 +18,7 @@ import {
 import { compressors } from "hyparquet-compressors";
 import {
   type Column,
+  DATE_INFINITY,
   dateText,
   decimalJson,
   FIRST_DAY,
@@ -26,8 +27,10 @@ import {
   intervalText,
   type JsonValue,
   LAST_DAY,
+  TIMESTAMP_INFINITY,
   type TimestampUnit,
   timestampText,
+  timestamptzText,
   timeText,
   toBase64,
   UNIT_PER_SECOND,
@@ -295,11 +298,12 @@ function untyped(column: Column, read: (value: unknown) => JsonValue): Kind {
   };
 }
 
-/** Whether a count of `perDay` per day falls on a date (§2.2). */
+/** Whether a count of `perDay` per day falls on a date (§2.2), and is not a count of an infinity or −2^63. */
 function inYears(count: bigint, perDay: bigint): boolean {
   let day = count / perDay;
   if (count % perDay < 0n) day--;
-  return day >= BigInt(FIRST_DAY) && day <= BigInt(LAST_DAY);
+  const finite = count > -TIMESTAMP_INFINITY && count < TIMESTAMP_INFINITY;
+  return finite && day >= BigInt(FIRST_DAY) && day <= BigInt(LAST_DAY);
 }
 
 function isNull(value: unknown): value is null | undefined {
@@ -381,8 +385,12 @@ function kindOf(node: SchemaTree): Kind {
     return typed(
       { name, type: "date", sourceType: "DATE" },
       "int32",
-      (value) =>
-        isNull(value) || (value as number) < FIRST_DAY || (value as number) > LAST_DAY ? null : (value as number),
+      (value) => {
+        if (isNull(value)) return null;
+        const days = value as number;
+        const infinite = days === DATE_INFINITY || days === -DATE_INFINITY;
+        return infinite || (days >= FIRST_DAY && days <= LAST_DAY) ? days : null;
+      },
       (value) => dateText(value as number),
     );
   }
@@ -429,11 +437,15 @@ function kindOf(node: SchemaTree): Kind {
       "int64",
       (value) => {
         if (isNull(value)) return null;
-        const count = scaled(BigInt(value as number | bigint));
+        const stored = BigInt(value as number | bigint);
+        // DuckDB's infinities, in any unit.
+        const infinite = stored === TIMESTAMP_INFINITY || stored === -TIMESTAMP_INFINITY;
+        if (infinite && timestamp.unit !== "INT96") return stored;
+        const count = scaled(stored);
         return inYears(count, perDay) ? count : null;
       },
       timestamp.isAdjustedToUTC
-        ? (value) => `${timestampText(value as bigint)}+00`
+        ? (value) => timestamptzText(value as bigint)
         : (value) => timestampText(value as bigint, unit),
     );
   }

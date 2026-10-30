@@ -16,6 +16,7 @@ import {
   parseDateText,
   parseIntervalText,
   parseTimestampText,
+  parseTimestamptzText,
   parseTimeText,
   type SortKey,
   type TimestampUnit,
@@ -91,10 +92,7 @@ function compareValues(a: JsonValue, b: JsonValue, column: Column): number {
       );
     }
     case "timestamptz":
-      return compareBigInts(
-        parseTimestampText((a as string).slice(0, -3)) as bigint,
-        parseTimestampText((b as string).slice(0, -3)) as bigint,
-      );
+      return compareBigInts(parseTimestamptzText(a as string) as bigint, parseTimestamptzText(b as string) as bigint);
     case "uuid":
       return compareBigInts(
         BigInt(`0x${(a as string).replaceAll("-", "")}`),
@@ -351,8 +349,10 @@ test("dates, times and timestamps compare in time, their fractions included", as
       "1970-01-01",
       "2000-02-29",
       null,
+      "infinity",
+      "-infinity",
     ]),
-    { asc: [1, 3, 4, 5, 0, 2, 6] },
+    { asc: [8, 1, 3, 4, 5, 0, 2, 7, 6] },
   );
   await checkOrder(
     single({ type: "time" }, [
@@ -384,10 +384,12 @@ test("dates, times and timestamps compare in time, their fractions included", as
       "1970-01-01 00:00:00.000000001",
       "1970-01-01 00:00:00",
       "1969-12-31 23:59:59.999999999",
-      "2262-04-11 23:47:16.854775807",
-      "1677-09-21 00:12:43.145224192",
+      "2262-04-11 23:47:16.854775806",
+      "1677-09-21 00:12:43.145224194",
+      "infinity",
+      "-infinity",
     ]),
-    { asc: [4, 2, 1, 0, 3] },
+    { asc: [6, 4, 2, 1, 0, 3, 5] },
   );
   await checkOrder(
     single({ type: "timestamp", unit: "s" }, ["2024-01-31 12:00:01", "2024-01-31 12:00:00", "0001-01-01 00:00:00"]),

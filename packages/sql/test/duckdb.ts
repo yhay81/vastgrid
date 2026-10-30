@@ -3,7 +3,15 @@
  * tests of this package.
  */
 import type { DuckDBConnection } from "@duckdb/node-api";
-import { type Column, dateText, type JsonValue, timestampText } from "vastgrid-spec";
+import {
+  type Column,
+  DATE_INFINITY,
+  dateText,
+  type JsonValue,
+  TIMESTAMP_INFINITY,
+  timestampText,
+  timestamptzText,
+} from "vastgrid-spec";
 import type { CorpusTable } from "vastgrid-spec/conformance";
 import { duckdbType, floatParam, quoteIdentifier, type SqlValue, temporalParam, textSql } from "../src/index.ts";
 
@@ -57,14 +65,19 @@ const EPOCHS = { s: "epoch", ms: "epoch_ms", us: "epoch_us", ns: "epoch_ns" };
  * counts from 1970-01-01, which `jsonOf` writes. Strings get a leading "." that `jsonOf` removes:
  * `@duckdb/node-api` 2.0.0-r.1 decodes text with a `TextDecoder` that drops a U+FEFF at the start of a value.
  */
+/** DuckDB's infinities as the counts of §2.2. */
+function infinities(sql: string, count: number | bigint) {
+  return `WHEN ${sql} = 'infinity' THEN ${count} WHEN ${sql} = '-infinity' THEN -${count}`;
+}
+
 export function output(column: Column, sql: string): string {
   switch (column.type) {
     case "date":
-      return `(${sql} - DATE '1970-01-01')`;
+      return `(CASE WHEN isfinite(${sql}) THEN ${sql} - DATE '1970-01-01' ${infinities(sql, DATE_INFINITY)} END)`;
     case "timestamp":
-      return `CAST(${EPOCHS[column.unit ?? "us"]}(${sql}) AS BIGINT)`;
+      return `(CASE WHEN isfinite(${sql}) THEN CAST(${EPOCHS[column.unit ?? "us"]}(${sql}) AS BIGINT) ${infinities(sql, TIMESTAMP_INFINITY)} END)`;
     case "timestamptz":
-      return `epoch_us(${sql})`;
+      return `(CASE WHEN isfinite(${sql}) THEN epoch_us(${sql}) ${infinities(sql, TIMESTAMP_INFINITY)} END)`;
     case "string":
       return `('.' || ${sql})`;
     case "decimal":
@@ -89,7 +102,7 @@ export function jsonOf(value: unknown, column: Column): JsonValue {
     case "timestamp":
       return timestampText(BigInt(value as bigint), column.unit ?? "us");
     case "timestamptz":
-      return `${timestampText(BigInt(value as bigint))}+00`;
+      return timestamptzText(BigInt(value as bigint));
     case "bigint": {
       const text = String(value);
       return Number.isSafeInteger(Number(text)) ? Number(text) : text;

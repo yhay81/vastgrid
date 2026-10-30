@@ -175,7 +175,10 @@ export function temporalParam(text: string): string {
   return text.startsWith("+") ? text.slice(1) : text;
 }
 
-/** Null unless the number is finite (§3.6). */
+/** The types whose values may be infinite. */
+const FINITE_TYPES = new Set(["float", "date", "timestamp", "timestamptz"]);
+
+/** Null unless the number, the date or the timestamp is finite (§3.6). */
 function finite(sql: string) {
   return `(CASE WHEN isfinite(${sql}) THEN ${sql} END)`;
 }
@@ -414,7 +417,8 @@ class Compiler {
         const days = `TRY_CAST(${arg(1)} AS INTEGER)`;
         const sum = type.type === "date" ? `TRY(${arg(0)} + ${days})` : `TRY(${arg(0)} + to_days(${days}))`;
         // The dates of §2.2, as the JS engine gives them: DuckDB's dates go further, and its timestamps do not.
-        if (type.type !== "date") return sum;
+        // DuckDB keeps an infinity, which gives null (§3.6).
+        if (type.type !== "date") return finite(sum);
         return `(CASE WHEN ${sum} BETWEEN ${FIRST_DATE} AND ${LAST_DATE} THEN ${sum} END)`;
       }
     }
@@ -444,9 +448,9 @@ class Compiler {
   measure(measure: CheckedMeasure, condition?: string): string {
     const column = measure.column ? quoteIdentifier(measure.column.name) : null;
     const conditions: string[] = [];
-    if (measure.column?.type === "float" && measure.fn !== "count" && measure.fn !== "count_distinct") {
-      conditions.push(`isfinite(${column})`);
-    }
+    // Measures leave out NaN and the infinities of floats, dates and timestamps (§3.8).
+    const finiteType = measure.column && FINITE_TYPES.has(measure.column.type);
+    if (finiteType && measure.fn !== "count" && measure.fn !== "count_distinct") conditions.push(`isfinite(${column})`);
     if (condition) conditions.push(condition);
     const filter = conditions.length > 0 ? ` FILTER (WHERE ${conditions.join(" AND ")})` : "";
     switch (measure.fn) {

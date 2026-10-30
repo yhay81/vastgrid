@@ -214,7 +214,7 @@ test("cells of a Parquet file read in place are written by row ID, with exact ty
   ]);
   const unrounded = await client.error("write", write(info, [{ key: { rowId: 0 }, column: "f", value: 0.1 }]));
   assert.equal(unrounded.code, "invalid_value");
-  // DuckDB keeps the largest count for its infinity: §2.2 allows it, the engine's source does not.
+  // The largest count is DuckDB's infinity, which §2.2 writes `infinity`.
   const beyond = await client.error(
     "write",
     write(info, [updates[0], { key: { rowId: 0 }, column: "t", value: "2262-04-11 23:47:16.854775807" }]),

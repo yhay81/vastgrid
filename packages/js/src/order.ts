@@ -12,10 +12,12 @@
  */
 import {
   type Column,
+  DATE_INFINITY,
   dateLength,
   daysFromCivil,
   floatOf,
   fromBase64,
+  infinityOf,
   isValueOf,
   type JsonValue,
   normalizeInterval,
@@ -135,8 +137,19 @@ function fractionAt(text: string, start: number, places: number): number {
   return number;
 }
 
-/** Days since 1970-01-01 of the date at the start of a text (§2.2), whose year may have a sign and six digits. */
+/**
+ * The seconds that a timestamp's infinity has in its words: beyond those of every timestamp (§2.2), whatever its
+ * unit, with no fraction.
+ */
+export const INFINITE_SECONDS = Number.MAX_SAFE_INTEGER;
+
+/**
+ * Days since 1970-01-01 of the date at the start of a text (§2.2), whose year may have a sign and six digits, and
+ * ±`DATE_INFINITY` for an infinity.
+ */
 function daysAt(text: string): number {
+  const infinity = infinityOf(text);
+  if (infinity !== 0) return infinity * DATE_INFINITY;
   const at = dateLength(text) - 10;
   const year = at === 0 ? digitsAt(text, 0, 4) : yearOf(text);
   return daysFromCivil(year, digitsAt(text, at + 5, 2), digitsAt(text, at + 8, 2));
@@ -243,6 +256,12 @@ function codecOf(column: Column): WordCodec {
         width: 3,
         write: (value, words, at) => {
           const text = value as string;
+          const infinity = infinityOf(text);
+          if (infinity !== 0) {
+            writeInt64(infinity * INFINITE_SECONDS, words[0], words[1], at);
+            words[2][at] = 0;
+            return;
+          }
           const time = dateLength(text) + 1;
           writeInt64(daysAt(text) * 86_400 + secondsAt(text, time), words[0], words[1], at);
           words[2][at] = fractionAt(text, time + 8, 9);

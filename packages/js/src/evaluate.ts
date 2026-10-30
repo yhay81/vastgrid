@@ -15,6 +15,7 @@ import {
   floatJson,
   floatOf,
   fromBase64,
+  infinityOf,
   isDateText,
   isValueOf,
   type JsonValue,
@@ -155,7 +156,7 @@ function compareFloats(x: number, y: number): number {
 
 /** The text of a date or a timestamp as a timestamp, which compares by its text (§3.1). */
 function asTimestampText(value: string, type: ValueType): string {
-  return type.type === "date" ? `${value} 00:00:00` : value;
+  return type.type === "date" && infinityOf(value) === 0 ? `${value} 00:00:00` : value;
 }
 
 /**
@@ -216,6 +217,8 @@ function caster(from: ValueType, to: ValueType): (value: JsonValue) => JsonValue
     const [a, b] = [UNIT_PER_SECOND[source], UNIT_PER_SECOND[unit]];
     return (value) => {
       if (value === null) return null;
+      // An infinity is the same in every unit.
+      if (infinityOf(value as string) !== 0) return value;
       const count = parseTimestampText(asTimestampText(value as string, from), source) as bigint;
       const result = timestampText(b >= a ? count * (b / a) : floorDivide(count, a / b), unit);
       return isValueOf(result, to) ? result : null;
@@ -651,19 +654,19 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
     case "to_timestamp":
       return string1(a, toTimestamp);
     case "year":
-      return string1(a, yearOf);
+      return finite1(a, yearOf);
     case "month":
-      return string1(a, (text) => Number(text.slice(dateLength(text) - 5, dateLength(text) - 3)));
+      return finite1(a, (text) => Number(text.slice(dateLength(text) - 5, dateLength(text) - 3)));
     case "day":
-      return string1(a, (text) => Number(text.slice(dateLength(text) - 2, dateLength(text))));
+      return finite1(a, (text) => Number(text.slice(dateLength(text) - 2, dateLength(text))));
     case "isodow":
-      return string1(a, (text) => ((((daysOf(text) + 3) % 7) + 7) % 7) + 1);
+      return finite1(a, (text) => ((((daysOf(text) + 3) % 7) + 7) % 7) + 1);
     case "hour":
     case "minute":
     case "second": {
       const offset = { hour: 0, minute: 3, second: 6 }[expr.fn];
       if (types[0].type === "time") return string1(a, (text) => Number(text.slice(offset, offset + 2)));
-      return string1(a, (text) => {
+      return finite1(a, (text) => {
         const at = dateLength(text) + 1 + offset;
         return Number(text.slice(at, at + 2));
       });
@@ -673,12 +676,13 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
         const x = a(row);
         if (x === null) return null;
         const y = b(row);
-        return y === null ? null : daysOf(y as string) - daysOf(x as string);
+        if (y === null || infinityOf(x as string) !== 0 || infinityOf(y as string) !== 0) return null;
+        return daysOf(y as string) - daysOf(x as string);
       };
     case "add_days":
       return (row) => {
         const x = a(row);
-        if (x === null) return null;
+        if (x === null || infinityOf(x as string) !== 0) return null;
         const y = b(row);
         if (y === null) return null;
         const count = whole(y);
@@ -690,6 +694,11 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
         return isValueOf(result, type) ? result : null;
       };
   }
+}
+
+/** A function of the text of a date, a time or a timestamp that gives null for null and for an infinity (§3.6). */
+function finite1(a: RowValue, apply: (text: string) => JsonValue): RowValue {
+  return string1(a, (text) => (infinityOf(text) === 0 ? apply(text) : null));
 }
 
 /** A function of one string that gives null for null. */

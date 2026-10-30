@@ -23,6 +23,13 @@ const invalid: [ValueType, JsonValue][] = [
   [ns, "9999-12-31 23:59:59.999999999"],
   [ns, "1677-09-21 00:12:43.145224191"],
   [ns, "2262-04-11 23:47:16.854775808"],
+  // The counts of DuckDB's infinities, and −2^63, which is neither.
+  [ns, "2262-04-11 23:47:16.854775807"],
+  [ns, "1677-09-21 00:12:43.145224193"],
+  [ns, "1677-09-21 00:12:43.145224192"],
+  [{ type: "date" }, "Infinity"],
+  [{ type: "date" }, "+infinity"],
+  [{ type: "timestamptz" }, "infinity+00"],
   [f32, 1e39],
   [f32, -1e39],
   [f32, 0.1],
@@ -63,8 +70,14 @@ test("block writers reject invalid values and identify their row and column", ()
 
 test("the limits themselves and valid Unicode survive blocks unchanged", () => {
   const valid: [ValueType, JsonValue][] = [
-    [ns, "1677-09-21 00:12:43.145224192"],
-    [ns, "2262-04-11 23:47:16.854775807"],
+    [ns, "1677-09-21 00:12:43.145224194"],
+    [ns, "2262-04-11 23:47:16.854775806"],
+    [ns, "infinity"],
+    [ns, "-infinity"],
+    [{ type: "timestamp", unit: "s" }, "infinity"],
+    [{ type: "timestamptz" }, "-infinity"],
+    [{ type: "date" }, "infinity"],
+    [{ type: "date" }, "-infinity"],
     [ns, "1969-12-31 23:59:59.999999999"],
     [f32, Math.fround(0.1)],
     [f32, 3.4028234663852886e38],
@@ -92,8 +105,12 @@ test("the limits themselves and valid Unicode survive blocks unchanged", () => {
 });
 
 test("calendar parsers refuse counts outside their Arrow integers", () => {
-  assert.equal(parseTimestampText("1677-09-21 00:12:43.145224192", "ns"), min64);
-  assert.equal(parseTimestampText("2262-04-11 23:47:16.854775807", "ns"), max64);
+  assert.equal(parseTimestampText("1677-09-21 00:12:43.145224194", "ns"), min64 + 2n);
+  assert.equal(parseTimestampText("2262-04-11 23:47:16.854775806", "ns"), max64 - 1n);
+  assert.equal(parseTimestampText("2262-04-11 23:47:16.854775807", "ns"), null);
+  assert.equal(parseTimestampText("1677-09-21 00:12:43.145224193", "ns"), null);
+  assert.equal(parseTimestampText("infinity", "ns"), max64);
+  assert.equal(parseTimestampText("-infinity", "s"), -max64);
   assert.equal(parseTimestampText("1677-09-21 00:12:43.145224191", "ns"), null);
   assert.equal(parseTimestampText("2262-04-11 23:47:16.854775808", "ns"), null);
   assert.equal(parseIntervalText("2562047:47:16.854775808"), null);

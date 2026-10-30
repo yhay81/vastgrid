@@ -10,7 +10,13 @@ from typing import Any
 
 import pyarrow as pa
 
-from ._calendar import parse_date_text, parse_interval_text, parse_time_text, parse_timestamp_text
+from ._calendar import (
+    parse_date_text,
+    parse_interval_text,
+    parse_time_text,
+    parse_timestamp_text,
+    parse_timestamptz_text,
+)
 from ._values import is_value_of, type_name
 
 UUID_EXTENSION = (b"ARROW:extension:name", b"arrow.uuid")
@@ -75,7 +81,7 @@ def _count(column: dict[str, Any], text: str) -> int:
     if kind == "time":
         return parse_time_text(text)
     if kind == "timestamptz":
-        return parse_timestamp_text(text[:-3], "us")
+        return parse_timestamptz_text(text)
     return parse_timestamp_text(text, column.get("unit", "us"))
 
 

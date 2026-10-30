@@ -100,7 +100,8 @@ The engine can also be called directly: `await engine.handle({ v: 2, id: 1, op: 
   and `infinity`), `time` (`HH:MM:SS` with up to 6 fraction digits), `date` (`YYYY-MM-DD`, or `±YYYYYY-MM-DD`
   for other years than 0000 to 9999, as §2.2 writes them; DuckDB's text `10000-01-01` and `0001-01-01 (BC)` is a
   string), `timestamp` (a date, a space or `T` and a time; dates fit too) and `timestamptz` (a timestamp with
-  `Z`, `+HH`, `+HH:MM` or `+HHMM`, kept in UTC). Text that is almost a value (`24:00:00`, ` 1`, `2023-02-29`) makes a
+  `Z`, `+HH`, `+HH:MM` or `+HHMM`, kept in UTC). `infinity` and `-infinity` in any case fit dates and timestamps
+  too, so a column of them alone is a `float`. Text that is almost a value (`24:00:00`, ` 1`, `2023-02-29`) makes a
   string column, which keeps every value as it is written.
 - CSV and TSV: the first line names the columns unless `header: false` (empty names are `column0`, `column1`, …,
   and a repeated name gets `_1`, `_2`, …). CSV's separator is `delimiter`, or the one of `,`, tab, `;` and `|` that

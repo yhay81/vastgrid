@@ -110,9 +110,9 @@ Split the question in two, and do the first part only.
 
 ## 3. Dates and timestamps outside the years 0001 to 9999
 
-Done for the years, with the bound of DuckDB's timestamps (`-290308-12-22` to `+294247-01-10`) rather than six
-digits of year, so that a date always compares with a timestamp in DuckDB (§2.2, §2.4, §7.3). Infinities are
-still open (§12).
+Done, with the bound of DuckDB's timestamps (`-290308-12-22` to `+294247-01-10`) rather than six digits of
+year, so that a date always compares with a timestamp in DuckDB (§2.2, §2.4, §7.3), and with the infinities as
+proposed below (§2.2, §3.6, §3.8). DuckDB's dates beyond those of its timestamps remain open (§12).
 
 ### Before
 

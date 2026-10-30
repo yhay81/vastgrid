@@ -1,7 +1,8 @@
 """Dates and times as integers and as text (docs/spec.md §2.2): days since 1970-01-01 in the proleptic Gregorian
 calendar, and counts of seconds, milliseconds, microseconds or nanoseconds. Dates are the days from `-290308-12-22` to
-`+294247-01-10`, whose midnights a 64-bit count of microseconds holds; year 0 is 1 BC. Python ints stand in for
-JavaScript's bigints."""
+`+294247-01-10`, whose midnights a 64-bit count of microseconds holds; year 0 is 1 BC. DuckDB's `infinity` and
+`-infinity` are counts that no date or timestamp has, as DuckDB stores them. Python ints stand in for JavaScript's
+bigints."""
 
 from __future__ import annotations
 
@@ -23,6 +24,18 @@ FIRST_DAY = -106_751_991
 """The first day that a date may be (§2.2), as days from 1970-01-01."""
 LAST_DAY = 106_751_991
 """The last day that a date may be (§2.2), as days from 1970-01-01."""
+
+DATE_INFINITY = 2_147_483_647
+"""DuckDB's `infinity` of dates, as days from 1970-01-01; `-infinity` is its negation."""
+TIMESTAMP_INFINITY = _INT64_MAX
+"""DuckDB's `infinity` of timestamps, as a count of any unit; `-infinity` is its negation."""
+_INFINITIES = {"infinity": 1, "-infinity": -1}
+
+
+def infinity_of(text: str) -> int:
+    """1 for the text `infinity`, -1 for `-infinity`, and 0 for the text of another date or timestamp (§2.2)."""
+    return _INFINITIES.get(text, 0)
+
 
 _DATE = re.compile(r"([0-9]{4}|[+-][0-9]{6})-([0-9]{2})-([0-9]{2})")
 _CLOCK = re.compile(r"([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]+))?")
@@ -78,8 +91,10 @@ def _year_text(year: int) -> str:
 
 
 def date_text(days: int) -> str:
-    """`YYYY-MM-DD` of a count of days, or `±YYYYYY-MM-DD` outside the years 0000 to 9999. Raises outside the
-    dates."""
+    """`YYYY-MM-DD` of a count of days, or `±YYYYYY-MM-DD` outside the years 0000 to 9999, and `infinity` or
+    `-infinity` for ±`DATE_INFINITY`. Raises outside the dates."""
+    if days in (DATE_INFINITY, -DATE_INFINITY):
+        return "infinity" if days > 0 else "-infinity"
     if not FIRST_DAY <= days <= LAST_DAY:
         raise ValueError(f"{days} days from 1970-01-01 is not a date.")
     year, month, day = civil_from_days(days)
@@ -88,6 +103,9 @@ def date_text(days: int) -> str:
 
 def parse_date_text(text: str) -> int | None:
     """The count of days of the text of a date (§2.2), or None when it is not a real day that a date may be."""
+    infinity = infinity_of(text)
+    if infinity != 0:
+        return infinity * DATE_INFINITY
     match = _DATE.fullmatch(text)
     if not match:
         return None
@@ -103,15 +121,15 @@ def parse_date_text(text: str) -> int | None:
 
 def date_length(text: str) -> int:
     """The length of the date at the start of the text of a date or a timestamp: 13 for a signed year, otherwise
-    10."""
+    10. The text is not an infinity."""
     return 13 if text[:1] in ("+", "-") else 10
 
 
 def temporal_text_form(text: str) -> str:
     """The text form (§2.4) of the text of a date, a timestamp or a timestamptz (§2.2), as DuckDB writes it: years
     after 9999 without a sign or leading zeros (`10000-01-01`), and the years before 1 by their number BC
-    (`0001-12-31 (BC)` for year 0), before the time."""
-    if text[:1] not in ("+", "-") and not text.startswith("0000"):
+    (`0001-12-31 (BC)` for year 0), before the time. The infinities are written the same."""
+    if (text[:1] not in ("+", "-") and not text.startswith("0000")) or infinity_of(text) != 0:
         return text
     dash = text.index("-", 1)
     year = int(text[:dash])
@@ -159,14 +177,23 @@ def parse_time_text(text: str) -> int | None:
 
 
 def timestamp_text(count: int, unit: str = "us") -> str:
-    """The text of a timestamp (§2.2) from a count of its unit since 1970-01-01 00:00:00."""
+    """The text of a timestamp (§2.2) from a count of its unit since 1970-01-01 00:00:00, and `infinity` or
+    `-infinity` for ±`TIMESTAMP_INFINITY`. Raises for -2^63, which is neither."""
+    if count in (TIMESTAMP_INFINITY, -TIMESTAMP_INFINITY):
+        return "infinity" if count > 0 else "-infinity"
+    if count < -TIMESTAMP_INFINITY:
+        raise ValueError("-2^63 is not a timestamp.")
     per_day = _DAY_SECONDS * UNIT_PER_SECOND[unit]
     days = count // per_day
     return f"{date_text(days)} {_clock(count - days * per_day, unit)}"
 
 
 def parse_timestamp_text(text: str, unit: str = "us") -> int | None:
-    """The count of the unit since 1970-01-01 00:00:00 of the text of a timestamp (§2.2), or None."""
+    """The count of the unit since 1970-01-01 00:00:00 of the text of a timestamp (§2.2), or None. The infinities are
+    ±`TIMESTAMP_INFINITY`, which no other timestamp is."""
+    infinity = infinity_of(text)
+    if infinity != 0:
+        return infinity * TIMESTAMP_INFINITY
     space = text.find(" ")
     if space not in (10, 13):
         return None
@@ -175,7 +202,23 @@ def parse_timestamp_text(text: str, unit: str = "us") -> int | None:
     if days is None or time is None:
         return None
     count = days * _DAY_SECONDS * UNIT_PER_SECOND[unit] + time
-    return count if _INT64_MIN <= count <= _INT64_MAX else None
+    return count if -TIMESTAMP_INFINITY < count < TIMESTAMP_INFINITY else None
+
+
+def timestamptz_text(micros: int) -> str:
+    """The text of a timestamptz (§2.2) from microseconds since 1970-01-01 00:00:00 UTC."""
+    text = timestamp_text(micros, "us")
+    return text if infinity_of(text) != 0 else text + "+00"
+
+
+def parse_timestamptz_text(text: str) -> int | None:
+    """Microseconds since 1970-01-01 00:00:00 UTC of the text of a timestamptz (§2.2), or None."""
+    if infinity_of(text) != 0:
+        return parse_timestamp_text(text, "us")
+    timestamp = text[:-3]
+    if not text.endswith("+00") or infinity_of(timestamp) != 0:
+        return None
+    return parse_timestamp_text(timestamp, "us")
 
 
 @dataclass

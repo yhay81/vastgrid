@@ -111,6 +111,11 @@ test("booleans, dates and times", () => {
     ["290309-12-21 (BC)", no("date")],
     ["0000-01-01 BC", no("date")],
     ["-000001-01-01 BC", no("date")],
+    // DuckDB's infinities, in any letter case.
+    [" Infinity ", ok("infinity")],
+    ["-INFINITY", ok("-infinity")],
+    ["+infinity", no("date")],
+    ["inf", no("date")],
   ]);
   reads({ type: "time" }, [
     ["9:05", ok("09:05:00")],
@@ -132,6 +137,11 @@ test("timestamps keep the digits of their unit, and timestamptz is UTC", () => {
   reads({ type: "timestamp" }, [
     ["0001-01-01 (BC) 12:00", ok("0000-01-01 12:00:00")],
     ["+010000-01-01T00:00:01", ok("+010000-01-01 00:00:01")],
+    ["infinity", ok("infinity")],
+  ]);
+  reads({ type: "timestamp", unit: "ns" }, [
+    ["-infinity", ok("-infinity")],
+    ["2262-04-11 23:47:16.854775807", no("range")],
   ]);
   reads({ type: "timestamp", unit: "ns" }, [["2024-01-31 12:30:00.123456789", ok("2024-01-31 12:30:00.123456789")]]);
   reads({ type: "timestamp", unit: "s" }, [["2024-01-31 12:30:00.5", no("timestamp")]]);
@@ -142,6 +152,8 @@ test("timestamps keep the digits of their unit, and timestamptz is UTC", () => {
     ["2024-01-31 12:00:00Z", ok("2024-01-31 12:00:00+00")],
     ["2024-01-31 12:00:00", ok("2024-01-31 12:00:00+00")],
     ["2024-01-31 12:00:00+24", no("timestamp")],
+    ["-Infinity", ok("-infinity")],
+    ["infinity+00", no("timestamp")],
   ]);
 });
 
@@ -169,6 +181,8 @@ test("timestamptz text without an offset is the time of day in the format's time
     "0001-01-01 00:00:00+00",
     "0000-01-01 00:00:00+00",
     "+010000-01-01 00:00:00+00",
+    "infinity",
+    "-infinity",
   ]) {
     const text = editText(value, tz, { timeZone: "America/New_York" });
     assert.deepEqual(read(text, "America/New_York"), ok(value), text);

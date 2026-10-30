@@ -8,7 +8,7 @@ description: vastgrid のバージョン 0.3 の後に予定していること�
 ## 次に行うこと
 
 - **Marketplace 掲載。** vastgrid は npm・PyPI・GitHub で提供し、VS Code 拡張は GitHub の VSIX から導入します。Visual Studio Marketplace と Open VSX への掲載が残っています。どちらも、設定が済めばリリースが公開します。
-- **仕様。** 未解決の問い（[§12](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#12-open-questions)）です。リスト・構造体・マップをテキストではなくそれ自身の型として扱うこと（それを返す `histogram` の集計も）、日本語の読みの順のような照合順序、DuckDB の `infinity` の日付などがあります。
+- **仕様。** 未解決の問い（[§12](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#12-open-questions)）です。リスト・構造体・マップをテキストではなくそれ自身の型として扱うこと（それを返す `histogram` の集計も）、日本語の読みの順のような照合順序、DuckDB のタイムスタンプが届かない年の日付などがあります。
 
 ## 入れないもの
 

@@ -1,7 +1,8 @@
 /**
  * Dates and times as integers and as text (docs/spec.md §2.2): days since 1970-01-01 in the proleptic
  * Gregorian calendar, and counts of seconds, milliseconds, microseconds or nanoseconds. Dates are the days from
- * `-290308-12-22` to `+294247-01-10`, whose midnights a 64-bit count of microseconds holds; year 0 is 1 BC.
+ * `-290308-12-22` to `+294247-01-10`, whose midnights a 64-bit count of microseconds holds; year 0 is 1 BC. DuckDB's
+ * `infinity` and `-infinity` are counts that no date or timestamp has, as DuckDB stores them.
  */
 import type { TimestampUnit } from "./types.js";
 
@@ -18,6 +19,18 @@ export const FIRST_DAY = -106_751_991;
 export const LAST_DAY = 106_751_991;
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
+
+/** DuckDB's `infinity` of dates, as days from 1970-01-01; `-infinity` is its negation. */
+export const DATE_INFINITY = 2_147_483_647;
+/** DuckDB's `infinity` of timestamps, as a count of any unit; `-infinity` is its negation. */
+export const TIMESTAMP_INFINITY = INT64_MAX;
+
+/** 1 for the text `infinity`, −1 for `-infinity`, and 0 for the text of another date or timestamp (§2.2). */
+export function infinityOf(text: string): number {
+  // Dates and timestamps start with a digit or a sign followed by a digit.
+  if (text.charCodeAt(0) === 105) return text === "infinity" ? 1 : 0;
+  return text.charCodeAt(1) === 105 && text === "-infinity" ? -1 : 0;
+}
 
 /** `a / b` rounded down, for a positive `b`. */
 function floorDiv(a: bigint, b: bigint) {
@@ -58,8 +71,12 @@ function yearText(year: number): string {
   return `${year < 0 ? "-" : "+"}${pad(Math.abs(year), 6)}`;
 }
 
-/** `YYYY-MM-DD` of a count of days, or `±YYYYYY-MM-DD` outside the years 0000 to 9999. Throws outside the dates. */
+/**
+ * `YYYY-MM-DD` of a count of days, or `±YYYYYY-MM-DD` outside the years 0000 to 9999, and `infinity` or `-infinity`
+ * for ±`DATE_INFINITY`. Throws outside the dates.
+ */
 export function dateText(days: number): string {
+  if (days === DATE_INFINITY || days === -DATE_INFINITY) return days > 0 ? "infinity" : "-infinity";
   if (!(days >= FIRST_DAY && days <= LAST_DAY)) throw new RangeError(`${days} days from 1970-01-01 is not a date.`);
   const [year, month, day] = civilFromDays(days);
   return `${yearText(year)}-${pad(month, 2)}-${pad(day, 2)}`;
@@ -69,6 +86,8 @@ const DATE_TEXT = /^([0-9]{4}|[+-][0-9]{6})-([0-9]{2})-([0-9]{2})$/;
 
 /** The count of days of the text of a date (§2.2), or null when it is not a real day that a date may be. */
 export function parseDateText(text: string): number | null {
+  const infinity = infinityOf(text);
+  if (infinity !== 0) return infinity * DATE_INFINITY;
   const match = DATE_TEXT.exec(text);
   if (!match) return null;
   const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
@@ -80,22 +99,29 @@ export function parseDateText(text: string): number | null {
   return y === year && m === month && d === day && days >= FIRST_DAY && days <= LAST_DAY ? days : null;
 }
 
-/** The length of the date at the start of the text of a date or a timestamp: 13 for a signed year, otherwise 10. */
+/**
+ * The length of the date at the start of the text of a date or a timestamp: 13 for a signed year, otherwise 10. The
+ * text is not an infinity.
+ */
 export function dateLength(text: string): number {
   const first = text.charCodeAt(0);
   return first === 43 || first === 45 ? 13 : 10;
 }
 
-/** The year of the text of a date or a timestamp (§2.2). */
+/** The year of the text of a date or a timestamp (§2.2) that is not an infinity. */
 export function yearOf(text: string): number {
   return Number(text.slice(0, dateLength(text) - 6));
 }
 
 /**
- * How the texts of two dates, or of two timestamps, compare: negative, 0 or positive. Their years compare as
- * numbers, and the rest of their texts as text, whose fields have fixed widths.
+ * How the texts of two dates, or of two timestamps, compare: negative, 0 or positive. The infinities come before
+ * and after every other value, years compare as numbers, and the rest of the texts as text, whose fields have fixed
+ * widths.
  */
 export function compareTemporalText(x: string, y: string): number {
+  const infinityX = infinityOf(x);
+  const infinityY = infinityOf(y);
+  if (infinityX !== 0 || infinityY !== 0) return infinityX - infinityY;
   const a = dateLength(x);
   const b = dateLength(y);
   if (a === 10 && b === 10) return x < y ? -1 : x > y ? 1 : 0;
@@ -108,12 +134,13 @@ export function compareTemporalText(x: string, y: string): number {
 /**
  * The text form (§2.4) of the text of a date, a timestamp or a timestamptz (§2.2), as DuckDB writes it: years after
  * 9999 without a sign or leading zeros (`10000-01-01`), and the years before 1 by their number BC
- * (`0001-12-31 (BC)` for year 0), before the time.
+ * (`0001-12-31 (BC)` for year 0), before the time. The infinities are written the same.
  */
 export function temporalTextForm(text: string): string {
   const first = text.charCodeAt(0);
   // The years 0001 to 9999 are written the same.
   if (first !== 43 && first !== 45 && !text.startsWith("0000")) return text;
+  if (infinityOf(text) !== 0) return text;
   const dash = text.indexOf("-", 1);
   const year = Number(text.slice(0, dash));
   const date = `${pad(year > 0 ? year : 1 - year, 4)}${text.slice(dash, dash + 6)}`;
@@ -156,23 +183,46 @@ export function parseTimeText(text: string): bigint | null {
   return parseClock(text, "us");
 }
 
-/** The text of a timestamp (§2.2) from a count of its unit since 1970-01-01 00:00:00. */
+/**
+ * The text of a timestamp (§2.2) from a count of its unit since 1970-01-01 00:00:00, and `infinity` or `-infinity`
+ * for ±`TIMESTAMP_INFINITY`. Throws for −2^63, which is neither.
+ */
 export function timestampText(count: bigint, unit: TimestampUnit = "us"): string {
+  if (count === TIMESTAMP_INFINITY || count === -TIMESTAMP_INFINITY) return count > 0n ? "infinity" : "-infinity";
+  if (count < -TIMESTAMP_INFINITY) throw new RangeError("−2^63 is not a timestamp.");
   // `dateText` throws for a timestamp whose date is not a date.
   const perDay = DAY_SECONDS * UNIT_PER_SECOND[unit];
   const days = floorDiv(count, perDay);
   return `${dateText(Number(days))} ${clock(count - days * perDay, unit)}`;
 }
 
-/** The count of the unit since 1970-01-01 00:00:00 of the text of a timestamp (§2.2), or null. */
+/**
+ * The count of the unit since 1970-01-01 00:00:00 of the text of a timestamp (§2.2), or null. The infinities are
+ * ±`TIMESTAMP_INFINITY`, which no other timestamp is.
+ */
 export function parseTimestampText(text: string, unit: TimestampUnit = "us"): bigint | null {
+  const infinity = infinityOf(text);
+  if (infinity !== 0) return BigInt(infinity) * TIMESTAMP_INFINITY;
   const space = text.indexOf(" ");
   if (space !== 10 && space !== 13) return null;
   const days = parseDateText(text.slice(0, space));
   const time = parseClock(text.slice(space + 1), unit);
   if (days === null || time === null) return null;
   const count = BigInt(days) * DAY_SECONDS * UNIT_PER_SECOND[unit] + time;
-  return count >= INT64_MIN && count <= INT64_MAX ? count : null;
+  return count > -TIMESTAMP_INFINITY && count < TIMESTAMP_INFINITY ? count : null;
+}
+
+/** The text of a timestamptz (§2.2) from microseconds since 1970-01-01 00:00:00 UTC. */
+export function timestamptzText(micros: bigint): string {
+  const text = timestampText(micros, "us");
+  return infinityOf(text) === 0 ? `${text}+00` : text;
+}
+
+/** Microseconds since 1970-01-01 00:00:00 UTC of the text of a timestamptz (§2.2), or null. */
+export function parseTimestamptzText(text: string): bigint | null {
+  if (infinityOf(text) !== 0) return parseTimestampText(text, "us");
+  const timestamp = text.slice(0, -3);
+  return text.endsWith("+00") && infinityOf(timestamp) === 0 ? parseTimestampText(timestamp, "us") : null;
 }
 
 /** An interval (§2.1): months, days and nanoseconds. */

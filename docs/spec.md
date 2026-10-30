@@ -102,7 +102,9 @@ microseconds since the Unix epoch holds; they are also the dates of DuckDB's tim
 and DuckDB's `year()` count them: year 0 is 1 BC, and year −1 is 2 BC. The years 0000 to 9999 are written with
 four digits, and other years with a sign and six digits, as RFC 9557 writes them (`+010000-01-01`,
 `-000001-12-31`). Other forms, such as `+002024-01-01` and `10000-01-01`, are not dates. The date of a
-`timestamp` or a `timestamptz` is such a date. DuckDB's `infinity` and `-infinity` are not values (§12).
+`timestamp` or a `timestamptz` is such a date. Dates, timestamps of every unit and `timestamptz` also have
+DuckDB's two infinities, `"infinity"` and `"-infinity"`, in lowercase and without `+00`. `-infinity` is before
+every other value of its type and `infinity` after it (§3.1), and neither is blank.
 
 Typed JSON is already a value of its declared type, rather than text awaiting conversion:
 
@@ -111,9 +113,10 @@ Typed JSON is already a value of its declared type, rather than text awaiting co
   typed JSON for that type. Typed input is rounded before it becomes typed JSON (§7.3).
 - A `string` MUST be well-formed Unicode text: paired UTF-16 surrogates are allowed, lone surrogates are
   not. Readers and writers MUST NOT silently replace invalid text with U+FFFD.
-- A `timestamp` MUST fit a signed 64-bit count of its unit since the Unix epoch. For `ns`, the inclusive
-  bounds are `1677-09-21 00:12:43.145224192` and `2262-04-11 23:47:16.854775807`. Other units are limited
-  by the dates above, and `us` ends at `+294247-01-10 04:00:54.775807`. Engines may have a narrower source range (for example reserved infinity values).
+- A `timestamp` MUST fit a signed 64-bit count of its unit since the Unix epoch, without the ends of that
+  range: 2^63 − 1 and −(2^63 − 1) are the infinities, and −2^63 is not a value. For `ns`, the inclusive bounds
+  are `1677-09-21 00:12:43.145224194` and `2262-04-11 23:47:16.854775806`. Other units are limited by the
+  dates above, and `us` ends at `+294247-01-10 04:00:54.775806`.
 - An `interval` has signed 32-bit months and days (−2^31 through 2^31 − 1) and signed 64-bit nanoseconds
   (−2^63 through 2^63 − 1). Its parsed totals MUST fit these ranges; blocks write the canonical text of
   those same three parts when read back.
@@ -124,7 +127,8 @@ Typed JSON is already a value of its declared type, rather than text awaiting co
 
 Rows travel as Apache Arrow IPC streams (§8.4) with the Arrow types of §2.1. Timestamps keep their unit;
 `timestamptz` is UTC microseconds. Strings may use Utf8, LargeUtf8 or Utf8View, and readers MUST accept all
-three. Decimals use Decimal128 with the column's precision and scale.
+three. Decimals use Decimal128 with the column's precision and scale. The infinities are DuckDB's: ±(2^31 − 1)
+in a Date32, and ±(2^63 − 1) in a Timestamp of any unit.
 
 ### 2.4 Text form
 
@@ -138,10 +142,10 @@ UTC:
 | `decimal` | the digits with exactly `scale` fraction digits: `1.50`, `-0.10` |
 | `float` | §2.4.1 |
 | `string` | the string itself |
-| `date` | `YYYY-MM-DD` for the years 0001 to 9999; as DuckDB writes them, later years without a sign or leading zeros (`10000-01-01`), and earlier years by their number BC, then ` (BC)` (`0001-12-31 (BC)` for year 0) |
+| `date` | `YYYY-MM-DD` for the years 0001 to 9999; as DuckDB writes them, later years without a sign or leading zeros (`10000-01-01`), and earlier years by their number BC, then ` (BC)` (`0001-12-31 (BC)` for year 0); `infinity` and `-infinity` |
 | `time` | `HH:MM:SS`, then `.` and the fraction without trailing zeros when it is not 0 |
 | `timestamp` | the date, a space and the time, as above (`0002-01-01 (BC) 12:00:00`) |
-| `timestamptz` | the timestamp in UTC, then `+00` |
+| `timestamptz` | the timestamp in UTC, then `+00`; the infinities without it |
 | `uuid` | lowercase hex, `8-4-4-4-12` |
 | `interval`, `binary` | DuckDB's text form |
 
@@ -192,6 +196,8 @@ comparisons with exact columns stay exact (§3.1).
   one the other way; JS engines MUST compare code points.
 - **Booleans**: false < true.
 - **Dates and times** compare in time; a date compared with a timestamp is the timestamp at midnight.
+  `-infinity` is before every other date or timestamp and `infinity` after it; a date's infinity equals a
+  timestamp's.
   `timestamptz` compares instants and is not comparable with `date` or `timestamp` (the plan is invalid).
 - **Intervals** compare by their length, with months of 30 days and days of 24 hours, as DuckDB 2.0 does:
   `1 month` equals `30 days`, and `1 month -1 day` equals `29 days`.
@@ -253,6 +259,9 @@ out instead.
   table "Arithmetic and numbers") gives null when an argument is NaN or infinite, and when its result would
   be. Division by zero therefore gives null. Values of float columns that are NaN or infinite are read as
   they are (`{ "col": "x" }` reads NaN) and compare as in §3.1; only computations make them null.
+- **The infinities of dates and timestamps** give null in the functions of dates and times (§4.4): `year`,
+  `month`, `day`, `hour`, `minute`, `second`, `isodow`, `date_diff_days` and `add_days` (DuckDB keeps an
+  infinity there). They are read, compared and written as they are, and `text` gives `infinity`.
 
 ### 3.7 Types of numeric results
 
@@ -273,8 +282,9 @@ decimal(19, 0). For operands of precision p₁, p₂ and scale s₁, s₂:
 ### 3.8 Aggregates
 
 Measures (§4.5) leave out null values. For float columns, `sum`, `avg`, `min`, `max`, `stddev` and
-`quantile` also leave out NaN and the infinities (DuckDB does not: there, the sum of NaN and 1 is NaN);
-`count` and `count_distinct` count them. Over no values, `count` and `count_distinct` are 0 and the other
+`quantile` also leave out NaN and the infinities, and for date, timestamp and timestamptz columns `min`, `max`
+and `quantile` leave out the infinities (DuckDB does not: there, the sum of NaN and 1 is NaN, and the `min` of
+dates is `-infinity`); `count` and `count_distinct` count them. Over no values, `count` and `count_distinct` are 0 and the other
 measures are null.
 
 - `sum` of integers and bigints is exact, a decimal(38, 0); `sum` of a decimal(p, s) is an exact
@@ -1102,8 +1112,8 @@ again as it is. A file that changes on disk opens as a new table with a new revi
 handles opened before follow it when the table has no written values, and otherwise keep reading, and writing, the
 table as it was read, whose saving is then refused (`file_changed`, §7.6). A write to a table that is still
 loading waits until it has loaded, and fails with `revision_changed` when its types changed meanwhile (§9). An
-engine whose source holds a narrower range than §2.2 (DuckDB keeps the ends of the 64-bit range of nanosecond
-timestamps for its infinities) fails the write with `invalid_value` for a value beyond it.
+engine whose source holds a narrower range than §2.2 fails the write with `invalid_value` for a value beyond
+it.
 
 ### 7.3 Reading typed text
 
@@ -1123,6 +1133,9 @@ the text is removed first, except for strings. An empty text is null for every t
 | `timestamptz` | a timestamp, then optionally `Z` or an offset `±HH`, `±HHMM` or `±HH:MM` | the instant in UTC (§2.2); without an offset, the time of day in the column's time zone (below), or UTC | `timestamp` |
 | `uuid` | 32 hex digits, with or without the dashes of `8-4-4-4-12`, in any letter case | lowercase with dashes | `uuid` |
 | `interval`, `binary` | nothing | | `type` |
+
+`date`, `timestamp` and `timestamptz` also read `infinity` and `-infinity` in any letter case, as the infinities
+of §2.2 (`+infinity` is not one).
 
 With **digit grouping** (pasting), numbers whose whole digits are grouped by commas in threes (`1,234.5`) are
 also read, without the commas. The text that an editor starts with for a value is its text form (§2.4), and
@@ -1507,8 +1520,7 @@ comes with conformance cases checked against DuckDB, and the JS engine follows i
 - Native nested types (lists, structs, maps) instead of their text, and measures that give them, such as a
   `histogram` that gives the counts of all the bins in one value.
 - Collations and folding (reading order of Japanese, full-width and half-width forms) as capabilities.
-- DuckDB's `infinity` and `-infinity` for dates and timestamps, which read as null, and its dates beyond those of
-  §2.2 (to 5877642 BC and 5881580 AD).
+- DuckDB's dates beyond those of §2.2 (to 5877642 BC and 5881580 AD), which read as null.
 
 ## Appendix A. From 0.1
 
@@ -1581,6 +1593,7 @@ DuckDB 2.0 through `@duckdb/node-api` 2.0.0-r.1, on 2026-10-27 (first checked wi
 | `TRY_CAST('0x10' AS INTEGER)`, `TRY_CAST('1_000' AS INTEGER)`, `TRY_CAST('1.5' AS INTEGER)` | 16, 1000, 2 (`to_number` refuses these forms, §4.4) |
 | `NULL IN ('a')`, `'b' IN ('a', NULL)` | NULL, NULL |
 | `contains('', '')`, `contains(NULL, 'a')` | true, NULL |
+| `DATE 'infinity' + 1`, `year(DATE 'infinity')`, `min` of `DATE '-infinity'` and `DATE '2024-01-01'`, `CAST('+infinity' AS DATE)` | `infinity`, NULL, `-infinity`, an error: 0.2 gives null for `add_days` and leaves the infinities out of `min` (§3.6, §3.8) |
 | `isodow(DATE '2024-01-07')` (a Sunday), `date_diff('day', TIMESTAMP '2024-01-01 23:00', TIMESTAMP '2024-01-02 01:00')` | 7, 1 |
 | `round(9223372036854775807::BIGINT, -1)`, `round(2147483647::INTEGER, -1)` | errors, null in `TRY()` (DuckDB 1.5 wrapped around to `-9223372036854775800` and `-2147483646`), so `vastgrid-sql` rounds integers in their own type (§3.6) |
 | `TRY(sum(x))` | refused (`aggregates are not allowed inside the TRY expression`), so measures use `TRY_CAST` |

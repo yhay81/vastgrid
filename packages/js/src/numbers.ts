@@ -2,17 +2,27 @@
  * The numbers that hold the values of typed columns (`Vector.numbers`): of tables given as Arrow or as text files,
  * read by the modules of those tables and loaded with them.
  */
-import { type Column, FIRST_DAY, LAST_DAY, UNIT_PER_SECOND } from "vastgrid-spec";
+import { type Column, DATE_INFINITY, FIRST_DAY, LAST_DAY, TIMESTAMP_INFINITY, UNIT_PER_SECOND } from "vastgrid-spec";
 import type { ColumnNumbers } from "vastgrid-spec/columns";
-import { HIGH, int32Word, LOW, type NumberWriter, SIGN, TWO_32, writeFloat, writeInt64 } from "./order.js";
+import {
+  HIGH,
+  INFINITE_SECONDS,
+  int32Word,
+  LOW,
+  type NumberWriter,
+  SIGN,
+  TWO_32,
+  writeFloat,
+  writeInt64,
+} from "./order.js";
 
 const DAY_SECONDS = 86_400n;
 
 /**
  * The first row of a column's numbers (`Vector.numbers`) whose value is not a value of the column's type
  * (§2.2), as `valueChecker` would find it in the value's JSON, or −1 when every value is: integers, bigints and
- * floats always are; dates and the dates of timestamps are within the dates, times within a day, and decimals
- * of no more digits than their precision.
+ * floats always are; dates and the dates of timestamps are within the dates or DuckDB's infinities, times within a
+ * day, and decimals of no more digits than their precision.
  */
 export function firstInvalid(column: Column, numbers: ColumnNumbers, validity: Uint8Array | null): number {
   const length = numbers.length;
@@ -23,7 +33,9 @@ export function firstInvalid(column: Column, numbers: ColumnNumbers, validity: U
     case "date": {
       const days = numbers as Int32Array;
       for (let row = 0; row < length; row++) {
-        if ((days[row] < FIRST_DAY || days[row] > LAST_DAY) && valid(row)) return row;
+        const day = days[row];
+        const infinite = day === DATE_INFINITY || day === -DATE_INFINITY;
+        if ((day < FIRST_DAY || day > LAST_DAY) && !infinite && valid(row)) return row;
       }
       return -1;
     }
@@ -38,17 +50,21 @@ export function firstInvalid(column: Column, numbers: ColumnNumbers, validity: U
     case "timestamp":
     case "timestamptz": {
       const perSecond = UNIT_PER_SECOND[column.type === "timestamp" ? (column.unit ?? "us") : "us"];
+      // −2^63 is neither a timestamp nor an infinity.
       low = BigInt(FIRST_DAY) * DAY_SECONDS * perSecond;
+      if (low < -TIMESTAMP_INFINITY) low = -TIMESTAMP_INFINITY;
       high = (BigInt(LAST_DAY) + 1n) * DAY_SECONDS * perSecond - 1n;
       break;
     }
     default:
       return -1;
   }
+  const temporal = column.type !== "decimal" && column.type !== "time";
   const counts = numbers as BigInt64Array;
   for (let row = 0; row < length; row++) {
     const count = counts[row];
-    if ((count < low || count > high) && valid(row)) return row;
+    const infinite = temporal && (count === TIMESTAMP_INFINITY || count === -TIMESTAMP_INFINITY);
+    if ((count < low || count > high) && !infinite && valid(row)) return row;
   }
   return -1;
 }
@@ -104,6 +120,9 @@ export function numberWriter(column: Column, numbers: ColumnNumbers): NumberWrit
             seconds++;
             rest -= perSecond;
           }
+        } else if (counts[row] === TIMESTAMP_INFINITY || counts[row] === -TIMESTAMP_INFINITY) {
+          seconds = counts[row] > 0n ? INFINITE_SECONDS : -INFINITE_SECONDS;
+          rest = 0;
         } else {
           const count = counts[row];
           let whole = count / big;

@@ -3,9 +3,12 @@
  */
 import {
   daysFromCivil,
+  infinityOf,
   parseDateText,
   parseTimestampText,
+  TIMESTAMP_INFINITY,
   timestampText,
+  timestamptzText,
   UNIT_DIGITS,
   UNIT_PER_SECOND,
 } from "./calendar.js";
@@ -186,8 +189,10 @@ function readTimestamp(text: string, type: ValueType, timeZone: string | undefin
       // A zone that Intl does not know: UTC, as the grid then shows the text form.
     }
   }
+  // An offset may move the instant onto the count of an infinity.
+  if (utc >= TIMESTAMP_INFINITY || utc <= -TIMESTAMP_INFINITY) return fail("timestamp");
   try {
-    return { ok: true, value: `${timestampText(utc, "us")}+00` };
+    return { ok: true, value: timestamptzText(utc) };
   } catch {
     return fail("timestamp");
   }
@@ -207,6 +212,9 @@ export function readCellText(text: string, type: ValueType, options: InputOption
   if (trimmed === "") return { ok: true, value: null };
   const numeric = type.type === "integer" || type.type === "bigint" || type.type === "decimal" || type.type === "float";
   if (options.grouping && numeric && groupedText.test(trimmed)) trimmed = trimmed.replaceAll(",", "");
+  // DuckDB's infinities, in any letter case (§2.2).
+  const temporal = type.type === "date" || type.type === "timestamp" || type.type === "timestamptz";
+  if (temporal && /^-?infinity$/i.test(trimmed)) return { ok: true, value: trimmed.toLowerCase() };
   switch (type.type) {
     case "integer":
     case "bigint":
@@ -260,7 +268,7 @@ export function editText(value: JsonValue, type: ValueType, options: { timeZone?
     // Offsets with seconds (local mean times before 1900) have no text that §7.3 reads.
     if (offset % 60_000 !== 0) return text;
     const local = timestampText(utc + BigInt(offset) * 1000n, "us");
-    if (parseTimestampText(local, "us") === null) return text;
+    if (infinityOf(local) !== 0 || parseTimestampText(local, "us") === null) return text;
     const minutes = Math.abs(offset / 60_000);
     const pad = (count: number) => String(count).padStart(2, "0");
     const hours = `${offset < 0 ? "-" : "+"}${pad(Math.floor(minutes / 60))}`;

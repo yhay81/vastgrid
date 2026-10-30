@@ -12,7 +12,14 @@ import struct
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Any
 
-from ._calendar import UNIT_DIGITS, parse_date_text, parse_interval_text, parse_timestamp_text, temporal_text_form
+from ._calendar import (
+    UNIT_DIGITS,
+    infinity_of,
+    parse_date_text,
+    parse_interval_text,
+    parse_timestamp_text,
+    temporal_text_form,
+)
 
 LOGICAL_TYPES: tuple[str, ...] = (
     "boolean",
@@ -250,9 +257,10 @@ def _is_time(hour: str, minute: str, second: str, fraction: str | None, digits: 
 
 
 def is_date_text(text: str) -> bool:
-    """Whether the text is a date as §2.2 writes it (`YYYY-MM-DD` or `±YYYYYY-MM-DD`), naming a real day."""
+    """Whether the text is a date as §2.2 writes it (`YYYY-MM-DD` or `±YYYYYY-MM-DD`, or an infinity), naming a real
+    day."""
     match = _DATE_TEXT.fullmatch(text)
-    return match is not None and _is_date(*match.groups())
+    return (match is not None and _is_date(*match.groups())) or infinity_of(text) != 0
 
 
 def is_time_text(text: str, digits: int = 6) -> bool:
@@ -267,9 +275,14 @@ def _is_timestamp(text: str, digits: int) -> bool:
 
 
 def is_timestamp_text(text: str, unit: str | None = "us") -> bool:
-    """Whether the text is a timestamp as §2.2 writes it, for a unit."""
+    """Whether the text is a timestamp as §2.2 writes it, or an infinity, for a unit."""
     unit = unit or "us"
-    return _is_timestamp(text, UNIT_DIGITS[unit]) and (unit != "ns" or parse_timestamp_text(text, unit) is not None)
+    if infinity_of(text) != 0:
+        return True
+    if not _is_timestamp(text, UNIT_DIGITS[unit]):
+        return False
+    # The ends of a 64-bit count: nanoseconds reach them in the years 1677 to 2262, other units only in signed years.
+    return (unit != "ns" and text[:1] not in ("+", "-")) or parse_timestamp_text(text, unit) is not None
 
 
 def decimal_text_type(text: str) -> dict[str, int] | None:
@@ -328,7 +341,10 @@ def is_value_of(value: Any, type: dict[str, Any]) -> bool:
     if kind == "timestamp":
         return is_timestamp_text(value, type.get("unit"))
     if kind == "timestamptz":
-        return value.endswith("+00") and _is_timestamp(value[:-3], UNIT_DIGITS["us"])
+        if infinity_of(value) != 0:
+            return True
+        text = value[:-3]
+        return value.endswith("+00") and infinity_of(text) == 0 and is_timestamp_text(text, "us")
     if kind == "uuid":
         return _UUID_TEXT.fullmatch(value) is not None
     if kind == "binary":

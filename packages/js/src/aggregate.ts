@@ -10,14 +10,17 @@ import {
   type CheckedAggregate,
   type CheckedMeasure,
   type Column,
+  infinityOf,
   type JsonValue,
   parseDateText,
   parseTimestampText,
+  parseTimestamptzText,
   parseTimeText,
   SpecError,
   type TypedExpr,
   textOf,
   timestampText,
+  timestamptzText,
   timeText,
   UNIT_PER_SECOND,
   uniqueName,
@@ -115,12 +118,22 @@ interface Accumulator {
   result(cell: number): JsonValue;
 }
 
-/** Whether a value counts for a measure (§3.8): not null, and for floats, finite except for counts. */
+/**
+ * Whether a value counts for a measure (§3.8): not null, and for floats, dates and timestamps, finite except for
+ * counts.
+ */
 function counted(column: ValueType, measure: CheckedMeasure): (value: JsonValue) => boolean {
-  if (column.type !== "float" || measure.fn === "count" || measure.fn === "count_distinct") {
-    return (value) => value !== null;
+  if (measure.fn === "count" || measure.fn === "count_distinct") return (value) => value !== null;
+  switch (column.type) {
+    case "float":
+      return (value) => value !== null && typeof value === "number";
+    case "date":
+    case "timestamp":
+    case "timestamptz":
+      return (value) => value !== null && infinityOf(value as string) === 0;
+    default:
+      return (value) => value !== null;
   }
-  return (value) => value !== null && typeof value === "number";
 }
 
 function accumulator(measure: CheckedMeasure, input: GroupInput, cells: number): Accumulator {
@@ -260,10 +273,7 @@ function quantileScale(column: Column): [(value: JsonValue) => number, (value: n
     case "time":
       return [(value) => Number(parseTimeText(value as string)), micros(timeText)];
     case "timestamptz":
-      return [
-        (value) => Number(parseTimestampText((value as string).slice(0, -3))),
-        micros((count) => `${timestampText(count)}+00`),
-      ];
+      return [(value) => Number(parseTimestamptzText(value as string)), micros(timestamptzText)];
     default:
       return [(value) => toFloat(value, column), finite];
   }

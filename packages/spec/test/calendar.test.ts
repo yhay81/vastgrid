@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   civilFromDays,
+  compareTemporalText,
+  DATE_INFINITY,
   dateText,
   daysFromCivil,
   FIRST_DAY,
@@ -10,9 +12,12 @@ import {
   parseDateText,
   parseIntervalText,
   parseTimestampText,
+  parseTimestamptzText,
   parseTimeText,
+  TIMESTAMP_INFINITY,
   temporalTextForm,
   timestampText,
+  timestamptzText,
   timeText,
 } from "../src/index.ts";
 
@@ -46,6 +51,28 @@ test("dates, timestamps and timestamptz have DuckDB's text form (§2.4)", () => 
   assert.equal(temporalTextForm("-000001-01-01 12:00:00"), "0002-01-01 (BC) 12:00:00");
   assert.equal(temporalTextForm("-290308-12-22 00:00:00+00"), "290309-12-22 (BC) 00:00:00+00");
   assert.equal(timestampText(parseTimestampText("+010000-01-01 00:00:01") as bigint), "+010000-01-01 00:00:01");
+});
+
+test("DuckDB's infinities are counts that no date or timestamp has (§2.2)", () => {
+  assert.equal(dateText(DATE_INFINITY), "infinity");
+  assert.equal(dateText(-DATE_INFINITY), "-infinity");
+  assert.equal(parseDateText("-infinity"), -DATE_INFINITY);
+  assert.equal(parseDateText("Infinity"), null);
+  for (const unit of ["s", "ms", "us", "ns"] as const) {
+    assert.equal(timestampText(TIMESTAMP_INFINITY, unit), "infinity");
+    assert.equal(parseTimestampText("-infinity", unit), -TIMESTAMP_INFINITY);
+  }
+  assert.throws(() => timestampText(-TIMESTAMP_INFINITY - 1n, "ns"), RangeError);
+  assert.equal(timestamptzText(-TIMESTAMP_INFINITY), "-infinity");
+  assert.equal(timestamptzText(0n), "1970-01-01 00:00:00+00");
+  assert.equal(parseTimestamptzText("infinity"), TIMESTAMP_INFINITY);
+  assert.equal(parseTimestamptzText("infinity+00"), null);
+  assert.equal(temporalTextForm("-infinity"), "-infinity");
+  const order = ["-infinity", "-290308-12-22", "0000-01-01", "2024-01-01", "+294247-01-10", "infinity"];
+  for (const [i, x] of order.entries()) {
+    for (const [j, y] of order.entries())
+      assert.equal(Math.sign(compareTemporalText(x, y)), Math.sign(i - j), `${x} ${y}`);
+  }
 });
 
 test("times and timestamps are written without trailing zeros (§2.2)", () => {
