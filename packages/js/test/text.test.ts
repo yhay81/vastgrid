@@ -661,3 +661,146 @@ test("a large generated file answers sorts, filters, groups and summaries as the
     assert.deepEqual([view.rowCount, head.rows, order.rowIds, order.rows], answers[0][2 + at], JSON.stringify(plan));
   }
 });
+
+/**
+ * A file whose slices that reach beyond `open` bytes wait for `release`, so that a test sees the table while it
+ * loads (§9).
+ */
+function gated(text: string, open: number) {
+  const blob = new Blob([text]);
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const file: TextFile = {
+    size: blob.size,
+    name: "t.csv",
+    slice: (start = 0, end = blob.size) => ({
+      arrayBuffer: async () => {
+        if (end > open) await released;
+        return blob.slice(start, end).arrayBuffer();
+      },
+    }),
+  };
+  return { file, release };
+}
+
+/** The lines of a CSV file of `id` and `v`, with `last` as the last `v`. */
+function numbered(rows: number, last: string): string {
+  const lines = Array.from({ length: rows }, (_, row) => `${row},${row === rows - 1 ? last : row * 2}`);
+  return `id,v\n${lines.join("\n")}\n`;
+}
+
+test("a text file larger than previewBytes opens with the rows of its first bytes, and loads the rest after", async () => {
+  const { file, release } = gated(numbered(100, "x"), 64);
+  const client = new Client({ t: { file } }, { previewBytes: 64 });
+  const events: Record<string, unknown>[] = [];
+  client.engine.subscribe((event) => events.push(event));
+  const info = await client.open("t");
+  // "id,v\n" and the lines of 0 to 11 end in the first 64 bytes; the last of them may be cut and is left out.
+  assert.equal(info.status, "loading");
+  assert.equal(info.rowCount, null);
+  assert.equal(info.readableRows, 11);
+  assert.deepEqual(
+    info.columns.map((column) => column.type),
+    ["integer", "integer"],
+  );
+  const first = await client.rows(info, {}, { end: 11 });
+  assert.deepEqual(
+    first.rows,
+    Array.from({ length: 11 }, (_, row) => [row, row * 2]),
+  );
+  assert.deepEqual([first.view.status, first.view.rowCount, first.view.rowCountExact], ["building", 11, false]);
+  // Only the plan `{}` is answered meanwhile; a summary waits for the whole file (§9).
+  const at = { table: info.table, revision: info.revision };
+  assert.equal(
+    (
+      await client.error("rows", {
+        ...at,
+        plan: { sort: [{ column: "v", direction: "desc" }] },
+        start: 0,
+        end: 1,
+        columns: ["v"],
+      })
+    ).code,
+    "not_ready",
+  );
+  const summary = client.send("summarize", { ...at, plan: {}, ranges: [[0, 1]], columns: ["v"] });
+  release();
+  // The last `v` is text: the columns changed, and so did the revision.
+  assert.equal(((await summary).error as { code: string }).code, "revision_changed");
+  const loaded = (await client.result("info", { table: info.table })) as typeof info;
+  assert.deepEqual(
+    [loaded.status, loaded.progress, loaded.rowCount, loaded.readableRows, loaded.columns[1].type],
+    ["ready", 1, 100, 100, "string"],
+  );
+  assert.notEqual(loaded.revision, info.revision);
+  assert.deepEqual((await client.rows(loaded, {}, { start: 98 })).rows, [
+    [98, "196"],
+    [99, "x"],
+  ]);
+  // `progress` events tell how much of the file is read, then the table's new revision and its view `{}` ready.
+  const told = events.map((event) => [event.event, event.status ?? null]);
+  assert.ok(told.length > 3);
+  assert.deepEqual(
+    told.slice(0, -3),
+    told.slice(0, -3).map(() => ["progress", "loading"]),
+  );
+  assert.deepEqual(told.slice(-3), [
+    ["changed", null],
+    ["view", "ready"],
+    ["progress", "ready"],
+  ]);
+  assert.equal(events.at(-2)?.hash, first.view.hash);
+});
+
+test("a file that loads with the columns of its first rows keeps its revision, and requests that read it whole wait", async () => {
+  const { file, release } = gated(numbered(100, "198"), 64);
+  const client = new Client({ t: { file } }, { previewBytes: 64 });
+  const info = await client.open("t");
+  assert.equal(info.status, "loading");
+  // Another open of the file shares its reading.
+  assert.equal((await client.open("t")).status, "loading");
+  const at = { table: info.table, revision: info.revision };
+  const found = client.result("find", {
+    ...at,
+    plan: {},
+    text: "99",
+    columns: ["id"],
+    from: { row: 0, column: 0 },
+    direction: 1,
+  });
+  release();
+  assert.ok(await found);
+  const loaded = (await client.result("info", { table: info.table })) as typeof info;
+  assert.deepEqual([loaded.status, loaded.revision, loaded.rowCount], ["ready", info.revision, 100]);
+});
+
+test("a file that fails to load after its first rows fails the requests about it, and opens again", async () => {
+  const text = `${numbered(20, "1")}"open`;
+  const { file, release } = gated(`${text}\n${"ÿ".repeat(4)}`, 32);
+  const broken: TextFile = {
+    ...file,
+    slice: (start, end) => ({
+      arrayBuffer: async () => {
+        const bytes = new Uint8Array(await file.slice(start, end).arrayBuffer());
+        // Bytes after the first 32 that are not UTF-8.
+        if ((end ?? file.size) > 32) bytes[bytes.length - 1] = 0xff;
+        return bytes.buffer;
+      },
+    }),
+  };
+  const client = new Client({ t: { file: broken } }, { previewBytes: 32 });
+  const info = await client.open("t");
+  assert.equal(info.status, "loading");
+  release();
+  const at = { table: info.table, revision: info.revision };
+  assert.equal(
+    (await client.error("summarize", { ...at, plan: {}, ranges: [[0, 1]], columns: ["v"] })).code,
+    "load_failed",
+  );
+  const failed = (await client.result("info", { table: info.table })) as typeof info & { error?: string };
+  assert.deepEqual([failed.status, failed.readableRows, typeof failed.error], ["error", 0, "string"]);
+  assert.equal((await client.error("rows", { ...at, plan: {}, start: 0, end: 1, columns: ["v"] })).code, "load_failed");
+  assert.equal((await client.error("open", { ref: "t" })).code, "load_failed");
+});

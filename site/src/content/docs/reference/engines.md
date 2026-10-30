@@ -88,6 +88,7 @@ encoding (`{ bytes }`), as `localTransport` and `workerTransport` carry them.
 | Option | Type | Description |
 | --- | --- | --- |
 | `tables` | `Record<string, table>` | The tables that `open` opens, by the `ref` that names them. Each is one of the kinds below. |
+| `previewBytes` | `number` | A text file larger than this (default 4 MiB) opens with the rows that end in its first `previewBytes`, `status: "loading"`, and is read whole after ([§9](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#9-progressive-views)). `0` opens files once read whole. |
 
 ### Rows: `MemoryTable`
 

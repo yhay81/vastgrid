@@ -113,7 +113,18 @@ The engine can also be called directly: `await engine.handle({ v: 2, id: 1, op: 
   `readOnly: true`); a column of other values mixed is strings, with numbers and booleans as their JSON.
 - A UTF-8 byte order mark is left out. A file in UTF-16, text that is not UTF-8 (at `/rows/{row}/{column}`; §2.2
   does not allow replacing it), a line of JSON Lines that is not an object (at `/rows/{row}`) and a file that cannot
-  be read fail with `load_failed`. Answering the first rows while a file loads (§9) is a later step.
+  be read fail with `load_failed`.
+- A text file larger than `previewBytes` of `memoryEngine` (default 4 MiB; `0` for none) opens once the rows that
+  end in its first `previewBytes` are read, with `status: "loading"` (§9): these are its readable rows, with the
+  types that they fit, until the file is read whole. Meanwhile `rows` answers the plan `{}` (its view `building`,
+  `rowCountExact` false) and other plans with `not_ready`; `summarize`, `find`, `export`, `locate` and writes wait
+  for the file. `progress` events tell how much of it is read, then a `view` and a `progress` event that it is
+  `ready`. When the whole file has other columns (a later value that is text in a column of numbers), the table
+  has another revision, with a `changed` event, and requests made with the first one fail with `revision_changed`.
+  A file that fails to load after its first rows is a table whose `status` is `error`, with the reason in `error`;
+  requests about it fail with `load_failed`, and opening it again does too. A CSV file of a million rows of six
+  columns (44 MB) opens with its first 97,000 rows in about 60 ms, and is read whole about 60 ms later than it is
+  without them.
 - `maxBytes` (default 1 GiB) is the most memory that a file's columns may take. A file whose columns would take
   more is not kept: its first reading notes where every 1,024th row starts, and
   the open answers then. Rows are read by those blocks, wherever they lie in a view, and the last 32 MiB of blocks

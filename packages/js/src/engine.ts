@@ -18,6 +18,7 @@ import {
   keyText,
   MEASURES,
   MESSAGE_LIMITS,
+  normalizePlan,
   type Operation,
   PlanError,
   ProtocolError,
@@ -60,6 +61,12 @@ export interface MemoryEngineOptions {
    * files.
    */
   tables: Record<string, HostTable>;
+  /**
+   * A text file larger than this many bytes (default 4 MiB) opens once the rows that end in its first `previewBytes`
+   * are read, with `status: "loading"`, and these are its readable rows until the whole file is (§9); `0` opens files
+   * when they are read whole.
+   */
+  previewBytes?: number;
 }
 
 export interface MemoryEngine {
@@ -69,7 +76,10 @@ export interface MemoryEngine {
    * `invalid_request`.
    */
   handle(message: unknown): Promise<Record<string, unknown> | undefined>;
-  /** Listens to the events of §8.5, until the function it gives is called. This engine sends none yet. */
+  /**
+   * Listens to the events of §8.5, until the function it gives is called: `changed` after writes, and `progress`
+   * and `view` while a text file loads (§9).
+   */
   subscribe(listener: (event: Record<string, unknown>) => void): () => void;
 }
 
@@ -178,7 +188,27 @@ interface Table {
   open: number;
   /** The sheets of a workbook, the one read, and what its reading changed (§8.2). */
   workbook: CheckedTable["workbook"] | null;
+  /**
+   * `loading` while a text file is read whole after its first rows, which the table holds until then (§9); `error`
+   * when that reading failed.
+   */
+  status: "loading" | "ready" | "error";
+  /** The share of the file read, while it loads. */
+  progress: number;
+  /** Why the file could not be read, of a table whose status is `error`. */
+  error: Failure | null;
+  /** Settles when a table that is loading has loaded, or failed to. */
+  loaded: Promise<void> | null;
 }
+
+/** A text file being read: its first rows, null when it opens once read whole, and then all of it. */
+interface TextReading {
+  first: Promise<CheckedTable | null>;
+  whole: Promise<CheckedTable>;
+}
+
+/** The bytes of a text file read before it opens, by default (`MemoryEngineOptions.previewBytes`). */
+const PREVIEW_BYTES = 4 * 1024 * 1024;
 
 /** A view of a table (§4.2): its rows in order. */
 interface View {
@@ -331,17 +361,25 @@ class Engine implements MemoryEngine {
   private readonly prepared = new Map<string, Table>();
   /** Files being read by ref, which every open of the file waits for. */
   private readonly reading = new Map<string, Promise<CheckedTable>>();
+  /** Text files being read by ref: their first rows, then all of them. */
+  private readonly texts = new Map<string, TextReading>();
   /** Tables by table ID. */
   private readonly tables = new Map<string, Table>();
   private readonly running = new Map<number, Running>();
   private readonly listeners = new Set<(event: Json) => void>();
+  private readonly previewBytes: number;
   private nextTable = 1;
 
   constructor(options: MemoryEngineOptions) {
     if (!isObject(options) || !isObject(options.tables)) {
       throw new TypeError("memoryEngine takes { tables }, the tables that open opens by ref.");
     }
+    const { previewBytes = PREVIEW_BYTES } = options;
+    if (typeof previewBytes !== "number" || !(previewBytes >= 0)) {
+      throw new TypeError("memoryEngine's previewBytes is a number of bytes.");
+    }
     this.sources = new Map(Object.entries(options.tables));
+    this.previewBytes = previewBytes;
   }
 
   subscribe(listener: (event: Json) => void): () => void {
@@ -456,6 +494,9 @@ class Engine implements MemoryEngine {
     const options = workbook ? workbook.readOptionsOf(read) : null;
     const key = options ? `${ref}\u0000${JSON.stringify(options)}` : ref;
     let table = this.prepared.get(key);
+    if (table?.error) throw table.error;
+    const text = !table && file && !workbook ? this.readText(key, source as FileTable) : null;
+    if (text) table = (await this.preview(ref, key, source as FileTable, typed, text)) ?? undefined;
     if (!table) {
       let checked: CheckedTable;
       try {
@@ -464,7 +505,7 @@ class Engine implements MemoryEngine {
           : workbook && options
             ? await this.reads(key, () => workbook.readSheet(source as FileTable, options))
             : file
-              ? await this.reads(key, async () => (await import("./text.js")).readFile(source as FileTable))
+              ? await (text ?? this.readText(key, source as FileTable)).whole
               : parquet
                 ? await this.reads(key, async () =>
                     (await import("./parquet.js")).ParquetFile.open(source as ParquetTable).then((file) =>
@@ -487,8 +528,8 @@ class Engine implements MemoryEngine {
   }
 
   /**
-   * Reads a table given as a file, once for every open that waits for it: a text file (text.ts), a sheet of a
-   * workbook (workbook.ts), or the footer of a Parquet file (parquet.ts).
+   * Reads a table given as a file other than text, once for every open that waits for it: a sheet of a workbook
+   * (workbook.ts), or the footer of a Parquet file (parquet.ts).
    */
   private reads(key: string, read: () => Promise<CheckedTable>): Promise<CheckedTable> {
     let reading = this.reading.get(key);
@@ -499,39 +540,207 @@ class Engine implements MemoryEngine {
     return reading;
   }
 
+  /**
+   * Reads a text file (text.ts), once for every open that waits for it: its first rows when it is larger than
+   * `previewBytes`, then all of it, telling the table that holds the first rows meanwhile how much has been read
+   * (each byte twice, unless the columns are not kept). The first rows are read alone, so that they come at once.
+   */
+  private readText(key: string, source: FileTable): TextReading {
+    let reading = this.texts.get(key);
+    if (reading) return reading;
+    const text = import("./text.js");
+    const { file } = source;
+    const sized = isObject(file) && typeof file.size === "number" && typeof file.slice === "function";
+    const first =
+      sized && this.previewBytes > 0 && file.size > this.previewBytes
+        ? text.then(({ readPreview }) => readPreview(source, this.previewBytes))
+        : Promise.resolve(null);
+    const whole = first.then(async () => {
+      const { readFile } = await text;
+      if (!sized) return readFile(source);
+      let read = 0;
+      const counted: FileTable["file"] = {
+        size: file.size,
+        name: file.name,
+        slice: (start = 0, end = file.size) => {
+          read += Math.max(0, Math.min(end, file.size) - start);
+          this.progressed(key, Math.min(0.99, read / (2 * file.size)));
+          return file.slice(start, end);
+        },
+      };
+      return readFile({ ...source, file: counted });
+    });
+    reading = { first, whole: whole.finally(() => this.texts.delete(key)) };
+    this.texts.set(key, reading);
+    return reading;
+  }
+
+  /**
+   * Opens a text file larger than `previewBytes` with its first rows (§9), as a table that is loading until the file
+   * is read whole; null when there are no first rows to open it with.
+   */
+  private async preview(
+    ref: string,
+    key: string,
+    source: FileTable,
+    typed: Table["typed"],
+    reading: TextReading,
+  ): Promise<Table | null> {
+    const first = await reading.first;
+    // Another open of the file may have made the table meanwhile.
+    const made = this.prepared.get(key);
+    if (made || !first) return made ?? null;
+    const table = this.prepare(ref, key, source, first, typed);
+    table.status = "loading";
+    table.progress = 0;
+    table.loaded = reading.whole.then(
+      (checked) => this.loadedWhole(table, checked),
+      (error) => this.failedWhole(table, error),
+    );
+    return table;
+  }
+
   /** A table that is opened from its host's table, checked or read. */
   private prepare(ref: string, key: string, source: HostTable, checked: CheckedTable, typed: Table["typed"]): Table {
-    const { columns } = checked;
     const table: Table = {
       ref,
       key,
+      ...this.contents(checked),
+      typed,
+      revision: revisionOf(source),
+      editable: source.editable === true,
+      edits: { version: 0, cells: 0 },
+      written: new Set(),
+      open: 0,
+      workbook: checked.workbook ?? null,
+      status: "ready",
+      progress: 1,
+      error: null,
+      loaded: null,
+    };
+    this.forgets(table);
+    this.prepared.set(key, table);
+    return table;
+  }
+
+  /** What a table holds of its rows and makes of them, which a file read whole replaces (§9). */
+  private contents(checked: CheckedTable) {
+    const { columns } = checked;
+    return {
       columns,
       index: new Map(columns.map((column, index) => [column.name, index])),
       rows: checked.rows,
       vectors: checked.vectors,
       reader: checked.reader ?? null,
-      typed,
       rowCount: checked.rowCount,
-      revision: revisionOf(source),
-      editable: source.editable === true,
-      edits: { version: 0, cells: 0 },
-      written: new Set(),
-      keys: new Map(),
+      keys: new Map<number, Map<string, number>>(),
       ranks: columns.map(() => undefined),
       checkers: columns.map((column, index) => valueChecker(column, index)),
       values: columns.map(() => undefined),
       overlays: columns.map(() => undefined),
-      views: new Map(),
-      open: 0,
-      workbook: checked.workbook ?? null,
+      views: new Map<string, View>(),
     };
-    // What the engine made of a column of a file that is forgotten, it makes again when a request reads it whole.
+  }
+
+  /** What the engine made of a column of a file that is forgotten, it makes again when a request reads it whole. */
+  private forgets(table: Table) {
     if (table.reader) {
       table.reader.forgotten = (index) => {
         table.values[index] = undefined;
       };
     }
-    this.prepared.set(key, table);
+  }
+
+  /** The IDs open on a table. */
+  private idsOf(table: Table): string[] {
+    return [...this.tables].flatMap(([id, item]) => (item === table ? [id] : []));
+  }
+
+  /** The `progress` event of a table that is loading, or has loaded or failed to (§8.5). */
+  private tellProgress(table: Table) {
+    for (const id of this.idsOf(table)) {
+      this.emit({
+        v: 2,
+        event: "progress",
+        table: id,
+        status: table.status,
+        progress: table.status === "error" ? null : table.progress,
+        readableRows: table.status === "error" ? 0 : table.rowCount,
+        rowCount: table.status === "ready" ? table.rowCount : null,
+      });
+    }
+  }
+
+  /** How much of a file the table that holds its first rows has read (`readText`). */
+  private progressed(key: string, progress: number) {
+    const table = this.prepared.get(key);
+    // Events tell every hundredth of the file.
+    if (table?.status !== "loading" || Math.floor(progress * 100) <= Math.floor(table.progress * 100)) return;
+    table.progress = progress;
+    this.tellProgress(table);
+  }
+
+  /**
+   * The file of a table that held its first rows is read whole: the table holds all of them, with another revision
+   * when their columns are not those of the first rows (§9).
+   */
+  private async loadedWhole(table: Table, checked: CheckedTable) {
+    if (table.status !== "loading") return;
+    const hash = await planHash(checkPlan({}, table.columns, PLAN_OPTIONS).plan);
+    const same = JSON.stringify(checked.columns) === JSON.stringify(table.columns);
+    Object.assign(table, this.contents(checked), { status: "ready", progress: 1, loaded: null });
+    this.forgets(table);
+    if (!same) table.revision = `${table.revision}:read`;
+    if (table.open === 0 && this.prepared.get(table.key) !== table) {
+      table.reader?.close();
+      return;
+    }
+    for (const id of this.idsOf(table)) {
+      if (!same) this.emit({ v: 2, event: "changed", table: id, revision: table.revision, edits: { ...table.edits } });
+      this.emit({
+        v: 2,
+        event: "view",
+        table: id,
+        hash,
+        status: "ready",
+        readableRows: table.rowCount,
+        rowCount: table.rowCount,
+        rowCountExact: true,
+      });
+    }
+    this.tellProgress(table);
+  }
+
+  /** The file of a table that held its first rows cannot be read whole: requests about the table fail as its open would. */
+  private failedWhole(table: Table, error: unknown) {
+    if (table.status !== "loading") return;
+    table.error =
+      error instanceof TableProblem
+        ? new Failure(
+            error.code,
+            `The table ${shown(table.ref)} cannot be read: ${error.path === "" ? "" : `at ${error.path}, `}${error.message}`,
+          )
+        : new Failure("load_failed", `The table ${shown(table.ref)} cannot be read: ${String(error)}`);
+    table.status = "error";
+    table.loaded = null;
+    this.tellProgress(table);
+  }
+
+  /**
+   * The table of a request that reads every row of it (`summarize`, `find`, `export`, `locate`) or writes: one that
+   * is loading once it has loaded (§9), and a failure when its revision changed meanwhile or it could not be read.
+   */
+  private async whole(request: Json, running: Running): Promise<Table> {
+    const table = this.table(request);
+    if (table.loaded) {
+      const revision = table.revision;
+      await table.loaded;
+      if (running.cancelled) throw new Failure("cancelled", "The request was cancelled (§8.6).");
+      if (table.revision !== revision) {
+        throw new Failure("revision_changed", `The table's revision is ${table.revision}; read info again.`);
+      }
+    }
+    if (table.error) throw table.error;
     return table;
   }
 
@@ -541,13 +750,14 @@ class Engine implements MemoryEngine {
       table: id,
       revision: table.revision,
       edits: { ...table.edits },
-      status: "ready",
-      progress: 1,
-      rowCount: table.rowCount,
-      readableRows: table.rowCount,
+      status: table.status,
+      progress: table.status === "error" ? null : table.progress,
+      rowCount: table.status === "ready" ? table.rowCount : null,
+      readableRows: table.status === "error" ? 0 : table.rowCount,
       columns: table.columns.map((column) => ({ ...column })),
       capabilities: capabilities(table.editable),
     };
+    if (table.error) info.error = table.error.message;
     const { workbook } = table;
     if (workbook) {
       if (workbook.notes.length > 0) info.notes = [...workbook.notes];
@@ -804,6 +1014,13 @@ class Engine implements MemoryEngine {
 
   private async rows(request: Json, running: Running) {
     const table = this.table(request);
+    if (table.error) throw table.error;
+    // A table that is loading answers the plan `{}` for the rows read so far, and other plans once it has loaded (§9).
+    const loading = table.status === "loading";
+    const revision = table.revision;
+    if (loading && Object.keys(normalizePlan(checkPlan(request.plan, table.columns, PLAN_OPTIONS).plan)).length > 0) {
+      throw new Failure("not_ready", "The table is still loading: until it has, only its rows are read (§9).");
+    }
     const view = await this.view(table, request.plan, running);
     const names = request.columns as string[];
     const sources = this.columnsOf(table, view, names);
@@ -847,12 +1064,16 @@ class Engine implements MemoryEngine {
         }),
       );
     }
+    // The rows of a table that loaded meanwhile are those read, unless their columns changed.
+    if (table.revision !== revision) {
+      throw new Failure("revision_changed", `The table's revision is ${table.revision}; read info again.`);
+    }
     return {
       view: {
         hash: view.hash,
-        status: "ready",
+        status: loading ? "building" : "ready",
         rowCount: view.rowCount,
-        rowCountExact: true,
+        rowCountExact: !loading,
         readableRows: view.rowCount,
         columns: view.columns.map((column) => ({ ...column })),
         edits: { ...table.edits },
@@ -866,7 +1087,7 @@ class Engine implements MemoryEngine {
   }
 
   private async summarize(request: Json, running: Running) {
-    const table = this.table(request);
+    const table = await this.whole(request, running);
     const view = await this.view(table, request.plan, running);
     // The cells of ranges × columns: each cell once, however the ranges overlap or a column repeats.
     const sources = new Map(this.columnsOf(table, view, request.columns as string[]).map((item) => [item.name, item]));
@@ -893,7 +1114,7 @@ class Engine implements MemoryEngine {
    * `columns`, from the cell after `from` (before it, with −1), wrapping around and ending with `from` itself.
    */
   private async find(request: Json, running: Running) {
-    const table = this.table(request);
+    const table = await this.whole(request, running);
     const view = await this.view(table, request.plan, running);
     const sources = this.columnsOf(table, view, request.columns as string[]);
     const text = request.text as string;
@@ -950,7 +1171,7 @@ class Engine implements MemoryEngine {
    * engine writes them, and xlsx. The engine has no files, so a `target` is not allowed.
    */
   private async export(request: Json, running: Running) {
-    const table = this.table(request);
+    const table = await this.whole(request, running);
     const format = request.format as string;
     if (!EXPORT_FORMATS.includes(format)) {
       throw new Failure("invalid_request", `This engine does not export ${format} (§4.10).`, {
@@ -987,7 +1208,7 @@ class Engine implements MemoryEngine {
   }
 
   private async locate(request: Json, running: Running) {
-    const table = this.table(request);
+    const table = await this.whole(request, running);
     const view = await this.view(table, request.plan, running);
     const keys = request.keys as RowKey[];
     let column: number | undefined;
@@ -1048,7 +1269,7 @@ class Engine implements MemoryEngine {
    * cell's value now, and the written rows replace the host's rows in the engine's own list of rows.
    */
   private async write(request: Json, running: Running) {
-    const table = this.table(request);
+    const table = await this.whole(request, running);
     const updates = request.updates as { key: RowKey; column: string; value: JsonValue; previous?: JsonValue }[];
     let keyColumn: number | undefined;
     if (request.rowKey !== undefined) {

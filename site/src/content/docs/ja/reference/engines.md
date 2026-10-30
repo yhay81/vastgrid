@@ -79,6 +79,7 @@ const engine = memoryEngine({
 | オプション | 型 | 説明 |
 | --- | --- | --- |
 | `tables` | `Record<string, table>` | `open` が開く表を、表を指す `ref` ごとに。それぞれ下のどれかの種類です。 |
+| `previewBytes` | `number` | これより大きいテキストのファイル（既定は 4 MiB）は、最初の `previewBytes` で終わる行で `status: "loading"` として開き、そのあと全体を読みます（[§9](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#9-progressive-views)）。`0` にすると全体を読んでから開きます。 |
 
 ### 行：`MemoryTable`
 

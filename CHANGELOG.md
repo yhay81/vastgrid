@@ -4,6 +4,13 @@
 
 ### New
 
+- `vastgrid-js`: a text file larger than `previewBytes` (default 4 MiB) opens with the rows that end in its first
+  `previewBytes`, as a table that is `loading` (§9), and is read whole after, with `progress`, `view` and (when the
+  whole file has other column types) `changed` events. Meanwhile `rows` answers the plan `{}`, other plans fail with
+  `not_ready`, and summaries, `find`, `export`, `locate` and writes wait for the file. A CSV file of a million rows
+  opens in about 60 ms instead of 600–800 ms. `previewBytes: 0` opens files once read whole, as before.
+- `vastgrid-spec`: §9 settles what a plan over a table that is still loading means for engines with `partialViews`:
+  the plan's view of the readable rows as if they were the table, made again over every row once it has loaded.
 - `vastgrid-spec`, `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb` and the Python package `vastgrid`: a `bin`
   function (§4.4), the lower bound of a number's bin of a given width, in the number's type and exact for integers,
   bigints and decimals: `bin(price, 10)` in `derive`, then `count` grouped by it, is a histogram. Formulas have it

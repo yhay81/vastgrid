@@ -96,6 +96,12 @@ their JSON text, read-only.
 Files must be UTF-8. A file in UTF-16, text that is not UTF-8, and a line of JSON Lines that is not an object
 fail with `load_failed`. Compressed files (`.csv.gz`) are not read in the browser.
 
+A text file larger than 4 MiB shows its first rows while the rest loads: the rows that end in its first 4 MiB, typed
+by what they hold. The grid's table is `loading` meanwhile, with a progress; sorting, filtering and grouping wait for
+the whole file, and so do summaries, find and export. Once the file has loaded, its columns may have other types
+(a value that is text far down a column of numbers), and the grid reads the table again. `memoryEngine`'s
+`previewBytes` changes the 4 MiB; `0` opens files only when they are read whole.
+
 ### Excel sheets
 
 A workbook opens at its first visible sheet. The table's info lists the workbook's `sheets` and the `sheet` read.

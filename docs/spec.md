@@ -1421,15 +1421,22 @@ A `rows` request with `preview: true` MAY be answered before the whole view is m
 A table that is loading (`status: "loading"`) answers `rows` with the plan `{}` for its readable rows: that
 view is `building`, with the readable rows as its `rowCount` (not exact), until the table has loaded, and
 `view` events (§8.5) tell when it grows and when it is `ready`. Engines that report `partialViews` MAY also
-answer other plans over the readable rows, with `view.partial: true`. Requests that read every row of the view
+answer other plans over the readable rows, with `view.partial: true`. Such a view is the plan's view of the
+readable rows as if they were the whole table: `where` keeps those of them that pass it, groups and measures are
+of them only, and `rowCount` is the view's rows, not exact; it is `building`, and its positions need not be those
+of the view of the whole table. When the table has loaded, the view is made again over every row, and a `view`
+event tells that it is `ready`; the client then reads its rows again. Requests that read every row of the view
 (`summarize`, `find`, `export`) and writes wait until the table has loaded, and fail with `revision_changed` when
-its revision changed meanwhile.
+its revision changed meanwhile. A table whose whole file has other columns than its readable rows had gets another
+revision when it has loaded, with a `changed` event.
 
 The Node.js DuckDB engine implements these previews for large sorts, sharing the saved result between equivalent
 requests. A non-preview read waits for a sorted view to finish; it also surfaces a failed background build to
 clients without events. Its file-loading views support only `{}` (`partialViews: false`). The React store defers
 other plans until the file is ready, and waits for a full view when moving an active row by key requires `locate`.
-See [the engine's limits and cleanup](../packages/duckdb-engine/README.md#limits-and-cleanup).
+See [the engine's limits and cleanup](../packages/duckdb-engine/README.md#limits-and-cleanup). `vastgrid-js` opens
+a text file larger than its `previewBytes` (4 MiB) with the rows that end in its first bytes, typed by what they
+hold, and answers `{}` over them (`partialViews: false`) until the file is read whole.
 
 ## 10. Conformance
 
@@ -1494,7 +1501,6 @@ comes with conformance cases checked against DuckDB, and the JS engine follows i
 - Native nested types (lists, structs, maps) instead of their text, and measures that give them, such as a
   `histogram` that gives the counts of all the bins in one value.
 - Collations and folding (reading order of Japanese, full-width and half-width forms) as capabilities.
-- Plans over a table that is still loading (`partialViews`): what `rowCount` and `where` mean there.
 - Dates and timestamps outside the years 0001 to 9999 (DuckDB has dates from 5877642 BC), and the forms
   that would write them (§2.2).
 

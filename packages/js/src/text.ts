@@ -21,6 +21,7 @@ import { HIGH, LOW, TWO_32 } from "./order.js";
 import {
   type CheckedTable,
   type FileTable,
+  isObject,
   shown,
   TableProblem,
   type TextFile,
@@ -148,7 +149,7 @@ export async function readFile(
   ) {
     throw new TableProblem("/file", "file is a Blob or a File.");
   }
-  const format = table.format ?? FORMATS.get(/\.([^.]+)$/.exec(String(file.name ?? ""))?.[1].toLowerCase() ?? "");
+  const format = formatOf(table);
   if (format !== "csv" && format !== "tsv" && format !== "jsonl") {
     throw new TableProblem(
       "/format",
@@ -192,6 +193,37 @@ export async function readFile(
     : await keepJson(file, built, rows, chunkBytes);
   if (read !== rows) throw changed();
   return { columns, rows: null, vectors: built.map((column) => vectorOf(column, rows)), rowCount: rows };
+}
+
+/** The format of a table given as a text file: its own, or the one of its file's name. */
+function formatOf(table: FileTable): TextFormat | undefined {
+  return table.format ?? FORMATS.get(/\.([^.]+)$/.exec(String(table.file.name ?? ""))?.[1].toLowerCase() ?? "");
+}
+
+/**
+ * The first rows of a text file larger than `bytes`, read as the file is from the lines that end in its first
+ * `bytes` (§9). The last of them is left out, since a line break in quotes may have cut it, and their columns have
+ * the types that those rows fit. Null for a smaller file, and for one whose start cannot be read: the reading of the
+ * whole file tells why.
+ */
+export async function readPreview(table: FileTable, bytes: number): Promise<CheckedTable | null> {
+  const { file } = table;
+  if (!isObject(file) || typeof file.size !== "number" || file.size <= bytes || typeof file.slice !== "function") {
+    return null;
+  }
+  try {
+    const head = new Uint8Array(await file.slice(0, bytes).arrayBuffer());
+    const end = head.lastIndexOf(LF) + 1;
+    if (end === 0) return null;
+    const lines: TextFile = {
+      size: end,
+      slice: (start = 0, stop = end) => ({ arrayBuffer: async () => head.slice(start, stop).buffer }),
+    };
+    const read = await readFile({ ...table, format: formatOf(table), file: lines });
+    return read.reader ? null : { ...read, rowCount: Math.max(0, read.rowCount - 1) };
+  } catch {
+    return null;
+  }
 }
 
 /** The columns of a CSV file's fields, by field: null for the fields that are not columns. */
