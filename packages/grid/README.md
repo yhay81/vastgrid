@@ -62,6 +62,8 @@ The grid fills the height you give it. Rows are typed JSON (decimals as strings 
 | `vastgrid` | `DataGrid`, `GridProvider`, the hooks, and everything of `vastgrid/core` | yes (`"use client"`) |
 | `vastgrid/core` | `createGridStore` and `GridStore`, and the transports | no |
 | `vastgrid/server` | `readInitialView`: the first rows, read on a server for `initial` | no |
+| `vastgrid/locales/<tag>` | the texts of one language for `messages`: `ja`, `zh-Hans`, `zh-Hant`, `ko`, `es`, `pt-BR`, `fr`, `de`, `en` | no |
+| `vastgrid/locales` | every language, and `messagesFor(locale)` | no |
 | `vastgrid/styles.css` | the styles, themed by CSS custom properties on `.vg-root` | — |
 
 ## Engines and transports

@@ -93,14 +93,14 @@ no header. See the [engine's reading options](packages/duckdb-engine#what-it-doe
 
 | Package | Contents |
 | --- | --- |
-| [`vastgrid`](packages/grid) | The React grid: `DataGrid`, `GridProvider` and the hooks; `vastgrid/core` (the store and the transports, without React), `vastgrid/server`, `vastgrid/styles.css`. |
+| [`vastgrid`](packages/grid) | The React grid: `DataGrid`, `GridProvider` and the hooks; `vastgrid/core` (the store and the transports, without React), `vastgrid/server`, `vastgrid/locales/<tag>` (the texts of each language), `vastgrid/styles.css`. |
 | [`vastgrid-js`](packages/js) | The memory engine, for the browser and Node.js: rows of typed JSON, Arrow, CSV, TSV, JSON Lines, Excel and Parquet (also over HTTP). |
 | [`vastgrid-duckdb`](packages/duckdb-engine) | The DuckDB engine for Node.js: files of any size, writing cells, saving CSV and TSV, following files, exports; an HTTP handler. |
 | [`vastgrid-spec`](packages/spec) | The specification as code: types, plan checking, commands, message schemas, the conformance corpus. |
 | [`vastgrid-sql`](packages/sql) | Plans as DuckDB SQL. |
 | [`vastgrid-cli`](packages/cli) | `npx vastgrid-cli <file>`: a file in a grid in the browser, read by DuckDB on this computer. |
 | [`vastgrid-mcp`](packages/mcp) | An MCP server with an MCP App. |
-| [`vastgrid-vscode`](packages/vscode) | The VS Code extension; install 0.2.1's VSIX from the [GitHub release](https://github.com/yhay81/vastgrid/releases/tag/v0.2.1). |
+| [`vastgrid-vscode`](packages/vscode) | The VS Code extension; install 0.3.0's VSIX from the [GitHub release](https://github.com/yhay81/vastgrid/releases/tag/v0.3.0). |
 | [`vastgrid` (Python)](packages/notebook/python) | The Jupyter widget, on PyPI. |
 
 The npm packages are released together at one version. `vastgrid` needs React 19.3 or later (an optional peer
