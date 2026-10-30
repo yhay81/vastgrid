@@ -2,7 +2,7 @@
  * Rules of values (docs/spec.md §2): how JSON writes them, their text form, literals, and when two are the same
  * value (§3.1).
  */
-import { parseIntervalText, parseTimestampText } from "./calendar.js";
+import { dateLength, parseDateText, parseIntervalText, parseTimestampText, temporalTextForm } from "./calendar.js";
 import type { JsonValue, TimestampUnit, ValueType } from "./types.js";
 
 const INT32_MIN = -2147483648;
@@ -58,13 +58,15 @@ function twoDigits(text: string, at: number): number {
   return tens >= 0 && tens <= 9 && ones >= 0 && ones <= 9 ? tens * 10 + ones : -1;
 }
 
-/** Whether `text` from `at` to `end` is `YYYY-MM-DD`, naming a real day. */
-function dateAt(text: string, at: number, end: number): boolean {
-  if (end - at !== 10 || text.charCodeAt(at + 4) !== 45 || text.charCodeAt(at + 7) !== 45) return false;
-  const century = twoDigits(text, at);
-  const years = twoDigits(text, at + 2);
-  if (century < 0 || years < 0 || (century === 0 && years === 0)) return false;
-  return isDay(century * 100 + years, twoDigits(text, at + 5), twoDigits(text, at + 8));
+/** Whether `text` up to `end` is a date as §2.2 writes it, naming a real day. */
+function dateAt(text: string, end: number): boolean {
+  // Signed years are rare: the calendar checks them, and their bounds.
+  if (end === 13) return dateLength(text) === 13 && parseDateText(text.slice(0, 13)) !== null;
+  if (end !== 10 || text.charCodeAt(4) !== 45 || text.charCodeAt(7) !== 45) return false;
+  const century = twoDigits(text, 0);
+  const years = twoDigits(text, 2);
+  if (century < 0 || years < 0) return false;
+  return isDay(century * 100 + years, twoDigits(text, 5), twoDigits(text, 8));
 }
 
 /** Whether `text` from `at` to `end` is `HH:MM:SS`, then a point and at most `digits` digits not ending in 0. */
@@ -87,12 +89,13 @@ function timeAt(text: string, at: number, end: number, digits: number): boolean 
 
 /** Whether `text` up to `end` is a date, a space and a time with at most `digits` digits after the point. */
 function timestampAt(text: string, end: number, digits: number): boolean {
-  return text.charCodeAt(10) === 32 && dateAt(text, 0, 10) && timeAt(text, 11, end, digits);
+  const length = dateLength(text);
+  return text.charCodeAt(length) === 32 && dateAt(text, length) && timeAt(text, length + 1, end, digits);
 }
 
-/** Whether the text is a date as §2.2 writes it: `YYYY-MM-DD`, naming a real day. */
+/** Whether the text is a date as §2.2 writes it (`YYYY-MM-DD` or `±YYYYYY-MM-DD`), naming a real day. */
 export function isDateText(text: string): boolean {
-  return dateAt(text, 0, text.length);
+  return dateAt(text, text.length);
 }
 
 /** Whether the text is a time as §2.2 writes it, with at most `digits` digits after the point. */
@@ -358,6 +361,10 @@ export function textOf(value: JsonValue, type: ValueType): string | null {
       return floatText(floatOf(value), type.bits ?? 64);
     case "binary":
       return bytesText(fromBase64(String(value)));
+    case "date":
+    case "timestamp":
+    case "timestamptz":
+      return temporalTextForm(String(value));
     default:
       return String(value);
   }

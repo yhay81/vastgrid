@@ -242,7 +242,7 @@ function quantileScale(column: Column): [(value: JsonValue) => number, (value: n
     try {
       return text(count);
     } catch {
-      return null; // beyond the years 1 to 9999, which floats far from 1970 can round to
+      return null; // beyond the dates, which floats far from 1970 can round to
     }
   };
   switch (column.type) {

@@ -12,12 +12,14 @@
  */
 import {
   type Column,
+  dateLength,
   daysFromCivil,
   floatOf,
   fromBase64,
   isValueOf,
   type JsonValue,
   normalizeInterval,
+  yearOf,
 } from "vastgrid-spec";
 import type { Vector } from "./table.js";
 
@@ -133,9 +135,11 @@ function fractionAt(text: string, start: number, places: number): number {
   return number;
 }
 
-/** Days since 1970-01-01 of `YYYY-MM-DD` at `start` (§2.2). */
-function daysAt(text: string, start: number): number {
-  return daysFromCivil(digitsAt(text, start, 4), digitsAt(text, start + 5, 2), digitsAt(text, start + 8, 2));
+/** Days since 1970-01-01 of the date at the start of a text (§2.2), whose year may have a sign and six digits. */
+function daysAt(text: string): number {
+  const at = dateLength(text) - 10;
+  const year = at === 0 ? digitsAt(text, 0, 4) : yearOf(text);
+  return daysFromCivil(year, digitsAt(text, at + 5, 2), digitsAt(text, at + 8, 2));
 }
 
 /** Seconds since midnight of `HH:MM:SS` at `start` (§2.2). */
@@ -219,7 +223,7 @@ function codecOf(column: Column): WordCodec {
       return {
         width: 1,
         write: (value, words, at) => {
-          words[0][at] = int32Word(daysAt(value as string, 0));
+          words[0][at] = int32Word(daysAt(value as string));
         },
         accept,
       };
@@ -239,8 +243,9 @@ function codecOf(column: Column): WordCodec {
         width: 3,
         write: (value, words, at) => {
           const text = value as string;
-          writeInt64(daysAt(text, 0) * 86_400 + secondsAt(text, 11), words[0], words[1], at);
-          words[2][at] = fractionAt(text, 19, 9);
+          const time = dateLength(text) + 1;
+          writeInt64(daysAt(text) * 86_400 + secondsAt(text, time), words[0], words[1], at);
+          words[2][at] = fractionAt(text, time + 8, 9);
         },
         accept,
       };

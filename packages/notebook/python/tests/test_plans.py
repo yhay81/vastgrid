@@ -12,7 +12,7 @@ from typing import Any
 import duckdb
 import pytest
 
-from vastgrid._calendar import timestamp_text
+from vastgrid._calendar import date_text, timestamp_text
 from vastgrid._check import check_plan
 from vastgrid._plan import PlanError, SpecError
 from vastgrid._sql import (
@@ -25,6 +25,7 @@ from vastgrid._sql import (
     pivot_query,
     quote_identifier,
     rows_query,
+    temporal_param,
     text_sql,
 )
 from vastgrid._values import fround, is_number, js_float, js_string, json_text, same_type, type_name, value_of_text
@@ -52,7 +53,12 @@ def _input(value: Any, column: dict[str, Any], params: list[Any]) -> str:
     if is_number(value) and column["type"] == "integer":
         params.append(value)
         return f"CAST(${len(params)} AS {type})"
-    params.append(float_param(value) if is_number(value) and column["type"] == "float" else js_string(value))
+    if is_number(value) and column["type"] == "float":
+        params.append(float_param(value))
+    elif column["type"] in ("date", "timestamp", "timestamptz"):
+        params.append(temporal_param(js_string(value)))
+    else:
+        params.append(js_string(value))
     if column["type"] == "binary":
         return f"from_base64(CAST(${len(params)} AS VARCHAR))"
     return f"CAST(CAST(${len(params)} AS VARCHAR) AS {type})"
@@ -67,17 +73,25 @@ def create_table(connection: duckdb.DuckDBPyConnection, name: str, table: dict[s
         connection.execute(f"INSERT INTO {quote_identifier(name)} VALUES ({', '.join([*values, str(index)])})", params)
 
 
+_EPOCHS = {"s": "epoch", "ms": "epoch_ms", "us": "epoch_us", "ns": "epoch_ns"}
+
+
 def output(column: dict[str, Any], sql: str) -> str:
-    """Reads exact numbers, dates and times as their text, which is how JSON writes them (§2.2). Strings get a leading
-    "." that `json_of` removes, as in the TypeScript test."""
-    if column["type"] == "timestamp" and column.get("unit") == "ns":
-        return f"epoch_ns({sql})"
+    """Reads exact numbers and times as their text, which is how JSON writes them (§2.2), and dates and timestamps as
+    counts from 1970-01-01, which `json_of` writes. Strings get a leading "." that `json_of` removes, as in the
+    TypeScript test."""
     kind = column["type"]
+    if kind == "date":
+        return f"({sql} - DATE '1970-01-01')"
+    if kind == "timestamp":
+        return f"CAST({_EPOCHS[column.get('unit') or 'us']}({sql}) AS BIGINT)"
+    if kind == "timestamptz":
+        return f"epoch_us({sql})"
     if kind == "string":
         return f"('.' || {sql})"
     if kind == "decimal":
         return text_sql(sql, column)
-    if kind in ("bigint", "date", "time", "timestamp", "timestamptz", "interval", "uuid"):
+    if kind in ("bigint", "time", "interval", "uuid"):
         return f"CAST({sql} AS VARCHAR)"
     if kind == "binary":
         return f"to_base64({sql})"
@@ -87,9 +101,13 @@ def output(column: dict[str, Any], sql: str) -> str:
 def json_of(value: Any, column: dict[str, Any]) -> Any:
     if value is None:
         return None
-    if column["type"] == "timestamp" and column.get("unit") == "ns":
-        return timestamp_text(int(value), "ns")
     kind = column["type"]
+    if kind == "date":
+        return date_text(int(value))
+    if kind == "timestamp":
+        return timestamp_text(int(value), column.get("unit") or "us")
+    if kind == "timestamptz":
+        return timestamp_text(int(value)) + "+00"
     if kind == "bigint":
         return value_of_text(js_string(value), column)
     if kind == "integer":

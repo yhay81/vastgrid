@@ -1,19 +1,25 @@
 export { BlockValueError, decimalJson, decodeBlock, encodeBlock, integerJson, UUID_EXTENSION } from "./block.js";
 export {
   civilFromDays,
+  compareTemporalText,
+  dateLength,
   dateText,
   daysFromCivil,
+  FIRST_DAY,
   type IntervalParts,
   intervalText,
+  LAST_DAY,
   normalizeInterval,
   parseDateText,
   parseIntervalText,
   parseTimestampText,
   parseTimeText,
+  temporalTextForm,
   timestampText,
   timeText,
   UNIT_DIGITS,
   UNIT_PER_SECOND,
+  yearOf,
 } from "./calendar.js";
 export {
   arithmeticType,

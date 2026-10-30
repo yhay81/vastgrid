@@ -173,10 +173,10 @@ test("values of an Arrow table that have no typed JSON fail to load when they ar
     utf8Type,
   );
   const bad: Record<string, ArrowTable> = {
-    // Text that is not UTF-8, a time beyond a day, a date after 9999-12-31 and a decimal of too many digits.
+    // Text that is not UTF-8, a time beyond a day, a date after +294247-01-10 and a decimal of too many digits.
     utf8: { arrow: oneColumn("x", malformed) },
     time: { arrow: oneColumn("x", columnFromValues([0n, 86_400_000_000n], timeMicrosecond())) },
-    date: { arrow: oneColumn("x", columnFromValues([0, 2_932_897 * DAY], dateDay())) },
+    date: { arrow: oneColumn("x", columnFromValues([0, 106_751_992 * DAY], dateDay())) },
     decimal: { arrow: oneColumn("x", columnFromValues([1n, 1_000_000n], decimal(6, 2, 128))) },
   };
   const client = new Client(bad);

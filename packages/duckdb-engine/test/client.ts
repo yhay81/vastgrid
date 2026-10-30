@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { DuckDBInstance } from "@duckdb/node-api";
 import { type Column, checkResponse, decodeBlock, type JsonValue, type Operation } from "vastgrid-spec";
-import { duckdbType, quoteIdentifier } from "vastgrid-sql";
+import { duckdbType, quoteIdentifier, temporalParam } from "vastgrid-sql";
 import { DuckDBEngine, type DuckDBEngineOptions } from "../src/index.ts";
 
 export type Json = Record<string, unknown>;
@@ -151,7 +151,8 @@ function input(value: JsonValue, column: Column, params: string[]): string {
   const type = duckdbType(column);
   if (value === null) return `CAST(NULL AS ${type})`;
   if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
-  params.push(Object.is(value, -0) ? "-0.0" : String(value));
+  const temporal = column.type === "date" || column.type === "timestamp" || column.type === "timestamptz";
+  params.push(Object.is(value, -0) ? "-0.0" : temporal ? temporalParam(String(value)) : String(value));
   return `CAST(CAST($${params.length} AS VARCHAR) AS ${type})`;
 }
 

@@ -36,8 +36,13 @@ const invalid: [ValueType, JsonValue][] = [
   [interval, "-2147483649 days"],
   [interval, "9007199254740993 years"],
   [interval, "not an interval"],
-  [{ type: "date" }, "0000-01-01"],
-  [{ type: "timestamp" }, "0000-01-01 00:00:00"],
+  [{ type: "date" }, "+002024-01-01"],
+  [{ type: "date" }, "-000000-01-01"],
+  [{ type: "date" }, "10000-01-01"],
+  [{ type: "date" }, "+294247-01-11"],
+  [{ type: "date" }, "-290308-12-21"],
+  [{ type: "timestamp" }, "+294247-01-11 00:00:00"],
+  [{ type: "timestamptz" }, "0001-01-01 (BC) 00:00:00+00"],
 ];
 
 test("typed JSON rejects values that Arrow cannot preserve", () => {
@@ -72,7 +77,13 @@ test("the limits themselves and valid Unicode survive blocks unchanged", () => {
     [interval, intervalText({ months: -2147483648, days: -2147483648, nanos: min64 })],
     [interval, intervalText({ months: 2147483647, days: 2147483647, nanos: max64 })],
     [{ type: "date" }, "0001-01-01"],
+    [{ type: "date" }, "0000-01-01"],
+    [{ type: "date" }, "-290308-12-22"],
+    [{ type: "date" }, "+294247-01-10"],
     [{ type: "timestamp" }, "9999-12-31 23:59:59.999999"],
+    [{ type: "timestamp" }, "+294247-01-10 04:00:54.775806"],
+    [{ type: "timestamp", unit: "s" }, "-290308-12-22 00:00:00"],
+    [{ type: "timestamptz" }, "-000001-03-01 12:00:00+00"],
   ];
   for (const [type, value] of valid) {
     assert.ok(isValueOf(value, type), JSON.stringify([type, value]));

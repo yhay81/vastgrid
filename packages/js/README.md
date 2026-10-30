@@ -74,7 +74,7 @@ The engine can also be called directly: `await engine.handle({ v: 2, id: 1, op: 
   floats, dates, decimals, timestamps and strings take 258 MB as Arrow against 494 MB as rows, the host's rows
   included, and sort by a date, a decimal or a timestamp in 50–70 ms against 170–250 ms. Bytes that are not
   Arrow, Arrow types that have no logical type (lists, structs, …) and names that two columns share fail with
-  `load_failed` at `/arrow`; values that have no typed JSON (text that is not UTF-8, dates after 9999-12-31)
+  `load_failed` at `/arrow`; values that have no typed JSON (text that is not UTF-8, dates after +294247-01-10)
   fail when they are read, at `/rows/{row}/{column}`. The code that reads Arrow loads with the first such table.
 - A table may also be a text file: `{ file, format }`, with `file` a `Blob` or a `File` of CSV, TSV or JSON Lines
   in UTF-8, in a Web Worker or the page, and `format` `csv`, `tsv` or `jsonl`, by default from the file's name
@@ -97,9 +97,10 @@ The engine can also be called directly: `await engine.handle({ v: 2, id: 1, op: 
   `/file`. The code that reads workbooks loads with the first such table.
 - A file's column has the first of these types that every value of it fits, and is a `string` otherwise:
   `boolean` (`true` and `false` in any case), `integer` and `bigint` by their range, `float` (with `nan`, `inf`
-  and `infinity`), `time` (`HH:MM:SS` with up to 6 fraction digits), `date` (`YYYY-MM-DD` of the years 0001 to
-  9999), `timestamp` (a date, a space or `T` and a time; dates fit too) and `timestamptz` (a timestamp with `Z`,
-  `+HH`, `+HH:MM` or `+HHMM`, kept in UTC). Text that is almost a value (`24:00:00`, ` 1`, `2023-02-29`) makes a
+  and `infinity`), `time` (`HH:MM:SS` with up to 6 fraction digits), `date` (`YYYY-MM-DD`, or `±YYYYYY-MM-DD`
+  for other years than 0000 to 9999, as §2.2 writes them; DuckDB's text `10000-01-01` and `0001-01-01 (BC)` is a
+  string), `timestamp` (a date, a space or `T` and a time; dates fit too) and `timestamptz` (a timestamp with
+  `Z`, `+HH`, `+HH:MM` or `+HHMM`, kept in UTC). Text that is almost a value (`24:00:00`, ` 1`, `2023-02-29`) makes a
   string column, which keeps every value as it is written.
 - CSV and TSV: the first line names the columns unless `header: false` (empty names are `column0`, `column1`, …,
   and a repeated name gets `_1`, `_2`, …). CSV's separator is `delimiter`, or the one of `,`, tab, `;` and `|` that

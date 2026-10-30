@@ -4,6 +4,12 @@
 
 ### New
 
+- `vastgrid-spec`, `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb` and the Python package `vastgrid`: dates are
+  the days from `-290308-12-22` to `+294247-01-10`, DuckDB's timestamps' dates, where they were the years 0001 to
+  9999 (§2.2). The years 0000 to 9999 keep four digits, others have a sign and six digits (`+010000-01-01`), and
+  year 0 is 1 BC. Their text form is DuckDB's: `10000-01-01`, `0001-12-31 (BC)` (§2.4), which typed text also
+  reads (§7.3). DuckDB's values in these years, which read as null, are values now; `infinity` still reads as
+  null. `vastgrid-js` reads the new forms from Arrow, Parquet, CSV, TSV and JSON Lines.
 - `vastgrid-js`: a text file larger than `previewBytes` (default 4 MiB) opens with the rows that end in its first
   `previewBytes`, as a table that is `loading` (§9), and is read whole after, with `progress`, `view` and (when the
   whole file has other column types) `changed` events. Meanwhile `rows` answers the plan `{}`, other plans fail with

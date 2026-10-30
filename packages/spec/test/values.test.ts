@@ -155,14 +155,17 @@ test("dates, times and timestamps read as the regular expressions of §2.2 read 
   // The forms as they were written before they were read character by character.
   const leap = (year: number) => (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
   const day = (year: number, month: number, date: number) =>
-    year >= 1 &&
     month >= 1 &&
     month <= 12 &&
     date >= 1 &&
     date <= [31, leap(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
   const dateForm = (text: string) => {
-    const match = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(text);
-    return match !== null && day(Number(match[1]), Number(match[2]), Number(match[3]));
+    const match = /^([0-9]{4}|[+-][0-9]{6})-([0-9]{2})-([0-9]{2})$/.exec(text);
+    if (match === null || match[1] === "-000000" || (match[1][0] === "+" && Number(match[1]) <= 9999)) return false;
+    const [year, month, date] = [Number(match[1]), Number(match[2]), Number(match[3])];
+    // From -290308-12-22 to +294247-01-10.
+    const order = year * 10_000 + month * 100 + date;
+    return day(year, month, date) && order >= -2_903_080_000 + 1222 && order <= 2_942_470_110;
   };
   const timeForm = (text: string, digits: number) => {
     const match = /^([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]*[1-9]))?$/.exec(text);
@@ -178,7 +181,7 @@ test("dates, times and timestamps read as the regular expressions of §2.2 read 
   const timestampForm = (text: string, unit: keyof typeof units) => {
     const space = text.indexOf(" ");
     return (
-      space === 10 &&
+      (space === 10 || space === 13) &&
       dateForm(text.slice(0, space)) &&
       timeForm(text.slice(space + 1), units[unit]) &&
       (unit !== "ns" || parseTimestampText(text, unit) !== null)
@@ -190,7 +193,20 @@ test("dates, times and timestamps read as the regular expressions of §2.2 read 
     "1900-02-29",
     "2000-02-29",
     "0000-01-01",
+    "0000-02-29",
     "9999-12-31",
+    "10000-01-01",
+    "+010000-01-01",
+    "+002024-01-01",
+    "-000000-01-01",
+    "-000001-02-29",
+    "-000004-02-29",
+    "+294247-01-10",
+    "+294247-01-11",
+    "-290308-12-22",
+    "-290308-12-21",
+    "-290308-12-22 00:00:00",
+    "+010000-01-01 12:00:00.5",
     "2024-13-01",
     "2024-00-10",
     "2024-01-00",

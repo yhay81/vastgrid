@@ -3,9 +3,9 @@
  * tests of this package.
  */
 import type { DuckDBConnection } from "@duckdb/node-api";
-import { type Column, type JsonValue, timestampText } from "vastgrid-spec";
+import { type Column, dateText, type JsonValue, timestampText } from "vastgrid-spec";
 import type { CorpusTable } from "vastgrid-spec/conformance";
-import { duckdbType, floatParam, quoteIdentifier, type SqlValue, textSql } from "../src/index.ts";
+import { duckdbType, floatParam, quoteIdentifier, type SqlValue, temporalParam, textSql } from "../src/index.ts";
 
 /** The column of row IDs in the tables of the corpus: the position of each row. */
 export const ROW_ID = "vg_corpus_row";
@@ -25,7 +25,14 @@ function input(value: JsonValue, column: Column, params: SqlValue[]): string {
     params.push(value);
     return `CAST($${params.length} AS ${type})`;
   }
-  params.push(typeof value === "number" && column.type === "float" ? floatParam(value) : String(value));
+  const temporal = column.type === "date" || column.type === "timestamp" || column.type === "timestamptz";
+  params.push(
+    typeof value === "number" && column.type === "float"
+      ? floatParam(value)
+      : temporal
+        ? temporalParam(String(value))
+        : String(value),
+  );
   if (column.type === "binary") return `from_base64(CAST($${params.length} AS VARCHAR))`;
   return `CAST(CAST($${params.length} AS VARCHAR) AS ${type})`;
 }
@@ -43,23 +50,27 @@ export async function createTable(connection: DuckDBConnection, name: string, ta
   }
 }
 
+const EPOCHS = { s: "epoch", ms: "epoch_ms", us: "epoch_us", ns: "epoch_ns" };
+
 /**
- * Reads exact numbers, dates and times as their text, which is how JSON writes them (§2.2). Strings get a
- * leading "." that `jsonOf` removes: `@duckdb/node-api` 2.0.0-r.1 decodes text with a `TextDecoder` that drops
- * a U+FEFF at the start of a value.
+ * Reads exact numbers and times as their text, which is how JSON writes them (§2.2), and dates and timestamps as
+ * counts from 1970-01-01, which `jsonOf` writes. Strings get a leading "." that `jsonOf` removes:
+ * `@duckdb/node-api` 2.0.0-r.1 decodes text with a `TextDecoder` that drops a U+FEFF at the start of a value.
  */
 export function output(column: Column, sql: string): string {
-  if (column.type === "timestamp" && column.unit === "ns") return `epoch_ns(${sql})`;
   switch (column.type) {
+    case "date":
+      return `(${sql} - DATE '1970-01-01')`;
+    case "timestamp":
+      return `CAST(${EPOCHS[column.unit ?? "us"]}(${sql}) AS BIGINT)`;
+    case "timestamptz":
+      return `epoch_us(${sql})`;
     case "string":
       return `('.' || ${sql})`;
     case "decimal":
       return textSql(sql, column);
     case "bigint":
-    case "date":
     case "time":
-    case "timestamp":
-    case "timestamptz":
     case "interval":
     case "uuid":
       return `CAST(${sql} AS VARCHAR)`;
@@ -72,8 +83,13 @@ export function output(column: Column, sql: string): string {
 
 export function jsonOf(value: unknown, column: Column): JsonValue {
   if (value === null || value === undefined) return null;
-  if (column.type === "timestamp" && column.unit === "ns") return timestampText(BigInt(String(value)), "ns");
   switch (column.type) {
+    case "date":
+      return dateText(Number(value));
+    case "timestamp":
+      return timestampText(BigInt(value as bigint), column.unit ?? "us");
+    case "timestamptz":
+      return `${timestampText(BigInt(value as bigint))}+00`;
     case "bigint": {
       const text = String(value);
       return Number.isSafeInteger(Number(text)) ? Number(text) : text;

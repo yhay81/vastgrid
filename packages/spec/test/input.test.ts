@@ -101,6 +101,16 @@ test("booleans, dates and times", () => {
     ["2024.12.31", ok("2024-12-31")],
     ["2023-02-29", no("date")],
     ["24-01-05", no("date")],
+    // Other years than 0000 to 9999 (§2.2), and the text form of §2.4 with its years BC.
+    ["+010000-01-01", ok("+010000-01-01")],
+    ["10000-1-1", ok("+010000-01-01")],
+    ["-000001-12-31", ok("-000001-12-31")],
+    ["0001-12-31 (BC)", ok("0000-12-31")],
+    ["0002-01-01 bc", ok("-000001-01-01")],
+    ["290309-12-22 (BC)", ok("-290308-12-22")],
+    ["290309-12-21 (BC)", no("date")],
+    ["0000-01-01 BC", no("date")],
+    ["-000001-01-01 BC", no("date")],
   ]);
   reads({ type: "time" }, [
     ["9:05", ok("09:05:00")],
@@ -118,6 +128,10 @@ test("timestamps keep the digits of their unit, and timestamptz is UTC", () => {
     ["2024-01-31 12:30:00.123456", ok("2024-01-31 12:30:00.123456")],
     ["2024-01-31 12:30:00.1234567", no("timestamp")],
     ["2024-01-31 12:30:00Z", no("timestamp")],
+  ]);
+  reads({ type: "timestamp" }, [
+    ["0001-01-01 (BC) 12:00", ok("0000-01-01 12:00:00")],
+    ["+010000-01-01T00:00:01", ok("+010000-01-01 00:00:01")],
   ]);
   reads({ type: "timestamp", unit: "ns" }, [["2024-01-31 12:30:00.123456789", ok("2024-01-31 12:30:00.123456789")]]);
   reads({ type: "timestamp", unit: "s" }, [["2024-01-31 12:30:00.5", no("timestamp")]]);
@@ -149,7 +163,13 @@ test("timestamptz text without an offset is the time of day in the format's time
   assert.equal(editText("2024-11-03 06:30:00+00", tz, { timeZone: "America/New_York" }), "2024-11-03 01:30:00-05");
   assert.equal(editText("2024-01-31 03:00:00+00", tz, { timeZone: "Not/AZone" }), "2024-01-31 03:00:00+00");
   // The text an editor starts with reads back as the same instant, on either side of a change of clocks.
-  for (const value of ["2024-11-03 05:30:00+00", "2024-11-03 06:30:00+00", "0001-01-01 00:00:00+00"]) {
+  for (const value of [
+    "2024-11-03 05:30:00+00",
+    "2024-11-03 06:30:00+00",
+    "0001-01-01 00:00:00+00",
+    "0000-01-01 00:00:00+00",
+    "+010000-01-01 00:00:00+00",
+  ]) {
     const text = editText(value, tz, { timeZone: "America/New_York" });
     assert.deepEqual(read(text, "America/New_York"), ok(value), text);
   }

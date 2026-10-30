@@ -139,8 +139,10 @@ test("text that is almost a value of a type is a string: times past a day, fract
     ["24:00:00", "12:00:00"],
     ["12:00:00.1234567", "12:00:00"],
     ["2024-13-01", "2024-01-01"],
-    ["0000-12-31", "2024-01-01"],
-    ["0001-01-01 00:00:00+01:00", "2024-01-01 00:00:00Z"],
+    ["+002024-01-01", "2024-01-01"],
+    ["+294247-01-11", "2024-01-01"],
+    ["+294247-01-10 04:00:54.775808", "2024-01-01 00:00:00"],
+    ["+294247-01-10 04:00:00-01:00", "2024-01-01 00:00:00Z"],
     [" 1", "2"],
     ["1_000", "2"],
     ["0x10", "2"],
@@ -154,6 +156,21 @@ test("text that is almost a value of a type is a string: times past a day, fract
       values.map((value) => [value]),
     );
   }
+});
+
+test("dates and timestamps of every year read as their text of §2.2", async () => {
+  const dates = ["0000-02-29", "+010000-01-01", "-000001-12-31", "-290308-12-22", "+294247-01-10"];
+  const date = await read(`x\n${dates.join("\n")}\n`);
+  assert.equal(date.columns[0].type, "date");
+  assert.deepEqual(
+    date.rows,
+    dates.map((value) => [value]),
+  );
+  const stamps = await read("x\n+010000-01-01T12:00:00\n-000001-01-01 00:00:00\n");
+  assert.equal(stamps.columns[0].type, "timestamp");
+  assert.deepEqual(stamps.rows, [["+010000-01-01 12:00:00"], ["-000001-01-01 00:00:00"]]);
+  // DuckDB's text form, as an export writes it, is not read back.
+  assert.equal((await read("x\n10000-01-01\n0001-01-01 (BC)\n")).columns[0].type, "string");
 });
 
 test("floats are what Number reads of their text", async () => {

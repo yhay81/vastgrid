@@ -10,8 +10,10 @@ import {
   type Column,
   dateText,
   daysFromCivil,
+  FIRST_DAY,
   floatJson,
   type JsonValue,
+  LAST_DAY,
   timestampText,
   timeText,
 } from "vastgrid-spec";
@@ -95,8 +97,8 @@ const FLOAT_WORDS = new Map<string, number>(
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
 const DAY_MICROS = 86_400_000_000;
-const FIRST_DAY = daysFromCivil(1, 1, 1);
-const LAST_DAY = daysFromCivil(9999, 12, 31);
+/** The microseconds of the last date's day that a timestamp holds, before 64 bits overflow. */
+const LAST_DAY_MICROS = Number(INT64_MAX - BigInt(LAST_DAY) * BigInt(DAY_MICROS));
 
 // The page, Web Workers and Node.js all have these; the package is typed without the DOM or Node.js.
 declare const TextDecoder: new (
@@ -823,8 +825,7 @@ function textFits(bytes: Uint8Array, start: number, end: number, wanted: number)
   }
   if (
     wanted & TEMPORAL &&
-    !signed &&
-    ((whole === 2 && next === COLON) || (whole === 4 && next === MINUS)) &&
+    (signed ? whole === 6 && next === MINUS : (whole === 2 && next === COLON) || (whole === 4 && next === MINUS)) &&
     end - start <= 40
   ) {
     return wanted & temporalFits(bytes, start, end);
@@ -881,10 +882,10 @@ function clockAt(bytes: Uint8Array, at: number, end: number): number {
 }
 
 /**
- * The type of the text of a time (`HH:MM:SS` with up to 6 fraction digits), a date (`YYYY-MM-DD` of the years 0001
- * to 9999, which also fits timestamps), a timestamp (a date, a space or `T`, and a time) or a timestamp with `Z` or
- * an offset (`+HH`, `+HH:MM` or `+HHMM`), which is an instant; 0 for other text. Keeps the value in `readDays` and
- * `readMicros`, in UTC for an instant.
+ * The type of the text of a time (`HH:MM:SS` with up to 6 fraction digits), a date (`YYYY-MM-DD`, or
+ * `±YYYYYY-MM-DD` for other years than 0000 to 9999, which also fits timestamps), a timestamp (a date, a space or
+ * `T`, and a time) or a timestamp with `Z` or an offset (`+HH`, `+HH:MM` or `+HHMM`), which is an instant; 0 for
+ * other text. Keeps the value in `readDays` and `readMicros`, in UTC for an instant.
  */
 function temporalFits(bytes: Uint8Array, start: number, end: number): number {
   if (bytes[start + 2] === COLON) {
@@ -893,27 +894,41 @@ function temporalFits(bytes: Uint8Array, start: number, end: number): number {
     readMicros = micros;
     return TIME;
   }
-  if (end - start < 10 || bytes[start + 4] !== MINUS || bytes[start + 7] !== MINUS) return 0;
-  const century = twoDigits(bytes, start);
-  const decade = twoDigits(bytes, start + 2);
-  const month = twoDigits(bytes, start + 5);
-  const day = twoDigits(bytes, start + 8);
+  // A signed year has six digits, which move the rest by three.
+  const signed = bytes[start] === PLUS || bytes[start] === MINUS;
+  const at = signed ? start + 3 : start;
+  if (end - at < 10 || bytes[at + 4] !== MINUS || bytes[at + 7] !== MINUS) return 0;
+  const century = twoDigits(bytes, at);
+  const decade = twoDigits(bytes, at + 2);
+  const month = twoDigits(bytes, at + 5);
+  const day = twoDigits(bytes, at + 8);
   if (century < 0 || decade < 0 || month < 1 || month > 12 || day < 1) return 0;
-  const year = century * 100 + decade;
+  let year = century * 100 + decade;
+  if (signed) {
+    // The first two of six digits; `century` and `decade` are the other four.
+    const high = twoDigits(bytes, start + 1);
+    if (high < 0) return 0;
+    year += high * 10_000;
+    if (bytes[start] === MINUS) year = -year;
+    // The years 0000 to 9999 have four digits only.
+    if (year >= 0 && year <= 9999) return 0;
+  }
   const leap = month === 2 && year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  if (year < 1 || day > MONTH_DAYS[month - 1] + (leap ? 1 : 0)) return 0;
+  if (day > MONTH_DAYS[month - 1] + (leap ? 1 : 0)) return 0;
   const days = daysFromCivil(year, month, day);
-  if (end - start === 10) {
+  if (days < FIRST_DAY || days > LAST_DAY) return 0;
+  if (end - at === 10) {
     readDays = days;
     readMicros = 0;
     return DATE | TIMESTAMP;
   }
-  const separator = bytes[start + 10];
+  const separator = bytes[at + 10];
   if (separator !== SPACE && separator !== UPPER_T) return 0;
-  let micros = clockAt(bytes, start + 11, end);
+  let micros = clockAt(bytes, at + 11, end);
   if (micros < 0) return 0;
   let index = clockEnd;
   if (index === end) {
+    if (days === LAST_DAY && micros > LAST_DAY_MICROS) return 0;
     readDays = days;
     readMicros = micros;
     return TIMESTAMP;
@@ -936,6 +951,7 @@ function temporalFits(bytes: Uint8Array, start: number, end: number): number {
   const shift = Math.floor(micros / DAY_MICROS);
   readDays = days + shift;
   readMicros = micros - shift * DAY_MICROS;
+  if (readDays === LAST_DAY && readMicros > LAST_DAY_MICROS) return 0;
   return readDays >= FIRST_DAY && readDays <= LAST_DAY ? TIMESTAMPTZ : 0;
 }
 

@@ -36,6 +36,49 @@
           ""
         ]
       ]
+    },
+    "eras": {
+      "columns": [
+        {
+          "name": "d",
+          "type": "date"
+        },
+        {
+          "name": "t",
+          "type": "timestamp"
+        },
+        {
+          "name": "z",
+          "type": "timestamptz"
+        }
+      ],
+      "rows": [
+        [
+          "+010000-01-01",
+          "+010000-01-01 12:00:00",
+          "+010000-01-01 00:00:00+00"
+        ],
+        [
+          "0000-02-29",
+          "0000-01-01 00:00:00",
+          "-000001-12-31 23:00:00+00"
+        ],
+        [
+          "-290308-12-22",
+          "-290308-12-22 00:00:00",
+          "-290308-12-22 00:00:00+00"
+        ],
+        [
+          "+294247-01-10",
+          "+294247-01-10 04:00:54.775806",
+          "2024-01-01 00:00:00+00"
+        ],
+        [
+          "1999-12-31",
+          "1999-12-31 23:59:59",
+          "1999-12-31 23:59:59+00"
+        ]
+      ]
     }
   },
   "cases": [
@@ -185,7 +228,7 @@
       }
     },
     {
-      "id": "bounds.reject-year-zero",
+      "id": "bounds.reject-date-beyond-range",
       "section": "2.2",
       "table": "bounds",
       "plan": {
@@ -193,7 +236,7 @@
           {
             "name": "bad",
             "expr": {
-              "lit": "0000-01-01",
+              "lit": "+294247-01-11",
               "type": "date"
             }
           }
@@ -205,6 +248,413 @@
           "reason": "literal",
           "path": "/derive/0/expr"
         }
+      }
+    },
+    {
+      "id": "bounds.reject-signed-four-digit-year",
+      "section": "2.2",
+      "table": "bounds",
+      "plan": {
+        "derive": [
+          {
+            "name": "bad",
+            "expr": {
+              "lit": "+002024-01-01",
+              "type": "date"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "error": {
+          "code": "invalid_plan",
+          "reason": "literal",
+          "path": "/derive/0/expr"
+        }
+      }
+    },
+    {
+      "id": "bounds.dates-of-every-year",
+      "section": "2.2",
+      "table": "eras",
+      "plan": {},
+      "read": {
+        "columns": [
+          "d",
+          "t",
+          "z"
+        ]
+      },
+      "expect": {
+        "rowCount": 5,
+        "rows": [
+          [
+            "+010000-01-01",
+            "+010000-01-01 12:00:00",
+            "+010000-01-01 00:00:00+00"
+          ],
+          [
+            "0000-02-29",
+            "0000-01-01 00:00:00",
+            "-000001-12-31 23:00:00+00"
+          ],
+          [
+            "-290308-12-22",
+            "-290308-12-22 00:00:00",
+            "-290308-12-22 00:00:00+00"
+          ],
+          [
+            "+294247-01-10",
+            "+294247-01-10 04:00:54.775806",
+            "2024-01-01 00:00:00+00"
+          ],
+          [
+            "1999-12-31",
+            "1999-12-31 23:59:59",
+            "1999-12-31 23:59:59+00"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bounds.dates-of-every-year-order",
+      "section": "3.3",
+      "table": "eras",
+      "plan": {
+        "sort": [
+          {
+            "column": "d",
+            "direction": "asc"
+          }
+        ]
+      },
+      "read": {
+        "columns": [
+          "d"
+        ]
+      },
+      "expect": {
+        "rowCount": 5,
+        "rowIds": [
+          2,
+          1,
+          4,
+          0,
+          3
+        ],
+        "rows": [
+          [
+            "-290308-12-22"
+          ],
+          [
+            "0000-02-29"
+          ],
+          [
+            "1999-12-31"
+          ],
+          [
+            "+010000-01-01"
+          ],
+          [
+            "+294247-01-10"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bounds.dates-of-every-year-compare",
+      "section": "3.1",
+      "table": "eras",
+      "plan": {
+        "where": {
+          "fn": "gt",
+          "args": [
+            {
+              "col": "t"
+            },
+            {
+              "lit": "9999-12-31",
+              "type": "date"
+            }
+          ]
+        }
+      },
+      "read": {
+        "columns": [
+          "d"
+        ]
+      },
+      "expect": {
+        "rowCount": 2,
+        "rowIds": [
+          0,
+          3
+        ],
+        "rows": [
+          [
+            "+010000-01-01"
+          ],
+          [
+            "+294247-01-10"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bounds.dates-of-every-year-parts",
+      "section": "4.4",
+      "table": "eras",
+      "plan": {
+        "derive": [
+          {
+            "name": "y",
+            "expr": {
+              "fn": "year",
+              "args": [
+                {
+                  "col": "d"
+                }
+              ]
+            }
+          },
+          {
+            "name": "m",
+            "expr": {
+              "fn": "month",
+              "args": [
+                {
+                  "col": "d"
+                }
+              ]
+            }
+          },
+          {
+            "name": "dd",
+            "expr": {
+              "fn": "day",
+              "args": [
+                {
+                  "col": "d"
+                }
+              ]
+            }
+          },
+          {
+            "name": "h",
+            "expr": {
+              "fn": "hour",
+              "args": [
+                {
+                  "col": "t"
+                }
+              ]
+            }
+          },
+          {
+            "name": "w",
+            "expr": {
+              "fn": "isodow",
+              "args": [
+                {
+                  "col": "d"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "read": {
+        "columns": [
+          "y",
+          "m",
+          "dd",
+          "h",
+          "w"
+        ]
+      },
+      "expect": {
+        "rowCount": 5,
+        "rows": [
+          [
+            10000,
+            1,
+            1,
+            12,
+            6
+          ],
+          [
+            0,
+            2,
+            29,
+            0,
+            2
+          ],
+          [
+            -290308,
+            12,
+            22,
+            0,
+            1
+          ],
+          [
+            294247,
+            1,
+            10,
+            4,
+            7
+          ],
+          [
+            1999,
+            12,
+            31,
+            23,
+            5
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bounds.dates-of-every-year-add-days",
+      "section": "4.4",
+      "table": "eras",
+      "plan": {
+        "derive": [
+          {
+            "name": "x",
+            "expr": {
+              "fn": "add_days",
+              "args": [
+                {
+                  "col": "d"
+                },
+                {
+                  "lit": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "y",
+            "expr": {
+              "fn": "add_days",
+              "args": [
+                {
+                  "col": "d"
+                },
+                {
+                  "lit": -1
+                }
+              ]
+            }
+          },
+          {
+            "name": "u",
+            "expr": {
+              "fn": "add_days",
+              "args": [
+                {
+                  "col": "t"
+                },
+                {
+                  "lit": -1
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "read": {
+        "columns": [
+          "x",
+          "y",
+          "u"
+        ]
+      },
+      "expect": {
+        "rowCount": 5,
+        "rows": [
+          [
+            "+010000-01-02",
+            "9999-12-31",
+            "9999-12-31 12:00:00"
+          ],
+          [
+            "0000-03-01",
+            "0000-02-28",
+            "-000001-12-31 00:00:00"
+          ],
+          [
+            "-290308-12-23",
+            null,
+            null
+          ],
+          [
+            null,
+            "+294247-01-09",
+            "+294247-01-09 04:00:54.775806"
+          ],
+          [
+            "2000-01-01",
+            "1999-12-30",
+            "1999-12-30 23:59:59"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bounds.dates-of-every-year-text-form",
+      "section": "3.5",
+      "table": "eras",
+      "plan": {
+        "where": {
+          "search": "(BC)"
+        }
+      },
+      "read": {
+        "columns": [
+          "d"
+        ]
+      },
+      "expect": {
+        "rowCount": 2,
+        "rowIds": [
+          1,
+          2
+        ],
+        "rows": [
+          [
+            "0000-02-29"
+          ],
+          [
+            "-290308-12-22"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bounds.dates-of-every-year-search",
+      "section": "3.5",
+      "table": "eras",
+      "plan": {
+        "where": {
+          "search": "10000-01-01"
+        }
+      },
+      "read": {
+        "columns": [
+          "d"
+        ]
+      },
+      "expect": {
+        "rowCount": 1,
+        "rowIds": [
+          0
+        ],
+        "rows": [
+          [
+            "+010000-01-01"
+          ]
+        ]
       }
     }
   ]

@@ -6,9 +6,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from ._calendar import parse_timestamp_text, timestamp_text
+from ._calendar import date_text, parse_timestamp_text, timestamp_text
 from ._json import MAX_SAFE_INTEGER, is_number, js_number
-from ._sql import duckdb_type, quote_identifier, text_sql
+from ._sql import FIRST_DATE, LAST_DATE, duckdb_type, quote_identifier, temporal_param, text_sql
 from ._values import float_json
 
 _INTEGERS = {"TINYINT", "SMALLINT", "INTEGER", "UTINYINT", "USMALLINT"}
@@ -66,25 +66,32 @@ def source_expression(name: str, sql_type: str, column: dict[str, Any]) -> str:
     return f"TRY_CAST({quoted} AS {target})" if column["type"] == "decimal" else f"CAST({quoted} AS {target})"
 
 
-def _in_years(sql: str) -> str:
-    """Years that the text forms of dates and timestamps write (§2.2)."""
-    return f"(isfinite({sql}) AND year({sql}) BETWEEN 1 AND 9999)"
+_EPOCHS = {
+    "s": "CAST(epoch({}) AS BIGINT)",
+    "ms": "epoch_ms({})",
+    "us": "epoch_us({})",
+    "ns": "epoch_ns({})",
+}
+"""The SQL of a timestamp's count of its unit since 1970-01-01 00:00:00."""
 
 
 def read_expression(column: dict[str, Any], sql: str, text_limit: int) -> str:
-    """The SQL that reads a value of a column for `read_value`: exact numbers, dates and times as their text forms
-    (§2.4), binary values as base64, and strings with a mark in front, `.` for a whole value and `+` for one cut at
-    `text_limit` code points. Dates and timestamps outside the years 0001 to 9999 read as null (§12)."""
+    """The SQL that reads a value of a column for `read_value`: exact numbers, times as their text forms (§2.4), dates
+    as days and timestamps as counts of their unit from 1970-01-01, binary values as base64, and strings with a mark
+    in front, `.` for a whole value and `+` for one cut at `text_limit` code points. Values that are not dates or
+    timestamps of §2.2 (`infinity`, and dates beyond the first and the last) read as null (§12)."""
     kind = column["type"]
-    # DuckDB's VARCHAR cast overflows near the negative TIMESTAMP_NS limit. Read its exact count instead.
-    if kind == "timestamp" and column.get("unit") == "ns":
-        return f"(CASE WHEN isfinite({sql}) THEN epoch_ns({sql}) END)"
     if kind in ("boolean", "integer", "bigint", "float"):
         return sql
     if kind == "string":
         return f"(CASE WHEN length({sql}) > {text_limit} THEN '+' || left({sql}, {text_limit}) ELSE '.' || {sql} END)"
-    if kind in ("date", "timestamp", "timestamptz"):
-        return f"(CASE WHEN {_in_years(sql)} THEN CAST({sql} AS VARCHAR) END)"
+    if kind == "date":
+        within = f"{sql} BETWEEN {FIRST_DATE} AND {LAST_DATE}"
+        return f"(CASE WHEN isfinite({sql}) AND {within} THEN {sql} - DATE '1970-01-01' END)"
+    if kind == "timestamp":
+        return f"(CASE WHEN isfinite({sql}) THEN {_EPOCHS[column.get('unit') or 'us'].format(sql)} END)"
+    if kind == "timestamptz":
+        return f"(CASE WHEN isfinite({sql}) THEN epoch_us({sql}) END)"
     if kind == "time":
         return f"(CASE WHEN {sql} < TIME '24:00:00' THEN CAST({sql} AS VARCHAR) END)"
     if kind == "binary":
@@ -97,8 +104,8 @@ def read_value(column: dict[str, Any], value: Any) -> tuple[Any, bool]:
     if value is None:
         return None, False
     kind = column["type"]
-    if kind == "timestamp" and column.get("unit") == "ns":
-        return timestamp_text(int(value), "ns"), False
+    if kind in ("date", "timestamp", "timestamptz"):
+        return _temporal_json(column, int(value)), False
     if kind == "boolean":
         return bool(value), False
     if kind == "integer":
@@ -114,6 +121,18 @@ def read_value(column: dict[str, Any], value: Any) -> tuple[Any, bool]:
     return str(value), False
 
 
+def _temporal_json(column: dict[str, Any], count: int) -> str | None:
+    """The text of a date or a timestamp (§2.2) from its count, or None for one beyond the dates."""
+    try:
+        if column["type"] == "date":
+            return date_text(count)
+        if column["type"] == "timestamptz":
+            return timestamp_text(count, "us") + "+00"
+        return timestamp_text(count, column.get("unit") or "us")
+    except ValueError:
+        return None
+
+
 def value_expression(value: Any, column: dict[str, Any], params: list[Any]) -> str:
     """The SQL of a typed JSON value of a column (§2.2), with its parameters: numbers as text, which DuckDB reads
     back exactly."""
@@ -126,8 +145,10 @@ def value_expression(value: Any, column: dict[str, Any], params: list[Any]) -> s
     at = len(params)
     if column["type"] == "binary":
         return f"from_base64(CAST(${at} AS VARCHAR))"
-    # DuckDB's VARCHAR cast overflows near the TIMESTAMP_NS limits, as in `read_expression`: give it the exact count.
+    # DuckDB's VARCHAR cast overflows near the TIMESTAMP_NS limits: give it the exact count.
     if column["type"] == "timestamp" and column.get("unit") == "ns":
         params[-1] = str(parse_timestamp_text(str(value), "ns"))
         return f"make_timestamp_ns(CAST(${at} AS BIGINT))"
+    if column["type"] in ("date", "timestamp", "timestamptz"):
+        params[-1] = temporal_param(str(value))
     return f"CAST(CAST(${at} AS VARCHAR) AS {target})"

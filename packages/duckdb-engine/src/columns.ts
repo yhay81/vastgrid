@@ -4,13 +4,15 @@
  */
 import {
   type Column,
+  dateText,
   floatJson,
   type JsonValue,
   parseTimestampText,
+  type TimestampUnit,
   timestampText,
   type ValueType,
 } from "vastgrid-spec";
-import { duckdbType, quoteIdentifier, textSql } from "vastgrid-sql";
+import { duckdbType, FIRST_DATE, LAST_DATE, quoteIdentifier, temporalParam, textSql } from "vastgrid-sql";
 
 /** A column of a source as DuckDB describes it. */
 export interface SourceColumn {
@@ -71,22 +73,22 @@ export function sourceExpression(source: SourceColumn, column: Column): string {
   return column.type === "decimal" ? `TRY_CAST(${name} AS ${target})` : `CAST(${name} AS ${target})`;
 }
 
-/** Years that the text forms of dates and timestamps write (§2.2). */
-function inYears(sql: string) {
-  return `(isfinite(${sql}) AND year(${sql}) BETWEEN 1 AND 9999)`;
-}
+/** The SQL of a timestamp's count of its unit since 1970-01-01 00:00:00. */
+const EPOCHS: Record<TimestampUnit, (sql: string) => string> = {
+  s: (sql) => `CAST(epoch(${sql}) AS BIGINT)`,
+  ms: (sql) => `epoch_ms(${sql})`,
+  us: (sql) => `epoch_us(${sql})`,
+  ns: (sql) => `epoch_ns(${sql})`,
+};
 
 /**
- * The SQL that reads a value of a column for `readValue`: exact numbers, dates and times as their text forms
- * (§2.4), binary values as base64, and strings with a mark in front, `.` for a whole value and `+` for one cut at
- * `textLimit` code points. The mark keeps a U+FEFF at the start of a string, which `@duckdb/node-api` would drop
- * (Appendix B). Dates and timestamps outside the years 0001 to 9999 read as null (§12).
+ * The SQL that reads a value of a column for `readValue`: exact numbers, times as their text forms (§2.4), dates
+ * as days and timestamps as counts of their unit from 1970-01-01, binary values as base64, and strings with a
+ * mark in front, `.` for a whole value and `+` for one cut at `textLimit` code points. The mark keeps a U+FEFF at
+ * the start of a string, which `@duckdb/node-api` would drop (Appendix B). Values that are not dates or
+ * timestamps of §2.2 (`infinity`, and dates beyond the first and the last) read as null (§12).
  */
 export function readExpression(column: Column, sql: string, textLimit: number): string {
-  // DuckDB's VARCHAR cast overflows near the negative TIMESTAMP_NS limit. Read its exact count instead.
-  if (column.type === "timestamp" && column.unit === "ns") {
-    return `(CASE WHEN isfinite(${sql}) THEN epoch_ns(${sql}) END)`;
-  }
   switch (column.type) {
     case "boolean":
     case "integer":
@@ -96,9 +98,11 @@ export function readExpression(column: Column, sql: string, textLimit: number): 
     case "string":
       return `(CASE WHEN length(${sql}) > ${textLimit} THEN '+' || left(${sql}, ${textLimit}) ELSE '.' || ${sql} END)`;
     case "date":
+      return `(CASE WHEN isfinite(${sql}) AND ${sql} BETWEEN ${FIRST_DATE} AND ${LAST_DATE} THEN ${sql} - DATE '1970-01-01' END)`;
     case "timestamp":
+      return `(CASE WHEN isfinite(${sql}) THEN ${EPOCHS[column.unit ?? "us"](sql)} END)`;
     case "timestamptz":
-      return `(CASE WHEN ${inYears(sql)} THEN CAST(${sql} AS VARCHAR) END)`;
+      return `(CASE WHEN isfinite(${sql}) THEN epoch_us(${sql}) END)`;
     case "time":
       return `(CASE WHEN ${sql} < TIME '24:00:00' THEN CAST(${sql} AS VARCHAR) END)`;
     case "binary":
@@ -111,9 +115,6 @@ export function readExpression(column: Column, sql: string, textLimit: number): 
 /** A value that `readExpression` read, as typed JSON (§2.2); `cut` is true for a string cut at the limit. */
 export function readValue(column: Column, value: unknown): { value: JsonValue; cut: boolean } {
   if (value === null || value === undefined) return { value: null, cut: false };
-  if (column.type === "timestamp" && column.unit === "ns") {
-    return { value: timestampText(BigInt(String(value)), "ns"), cut: false };
-  }
   switch (column.type) {
     case "boolean":
       return { value: Boolean(value), cut: false };
@@ -130,8 +131,24 @@ export function readValue(column: Column, value: unknown): { value: JsonValue; c
       const text = String(value);
       return { value: text.slice(1), cut: text[0] === "+" };
     }
+    case "date":
+    case "timestamp":
+    case "timestamptz":
+      return { value: temporalJson(column, value), cut: false };
     default:
       return { value: String(value), cut: false };
+  }
+}
+
+/** The text of a date or a timestamp (§2.2) from its count, or null for one beyond the dates. */
+function temporalJson(column: Column, value: unknown): string | null {
+  try {
+    if (column.type === "date") return dateText(Number(value));
+    const count = BigInt(value as bigint | number);
+    if (column.type === "timestamptz") return `${timestampText(count, "us")}+00`;
+    return timestampText(count, column.unit ?? "us");
+  } catch {
+    return null;
   }
 }
 
@@ -145,11 +162,13 @@ export function valueExpression(value: JsonValue, type: ValueType, params: unkno
   if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
   params.push(String(value));
   if (type.type === "binary") return `from_base64(CAST($${params.length} AS VARCHAR))`;
-  // DuckDB's VARCHAR cast overflows near the TIMESTAMP_NS limits, as in `readExpression`: give it the exact count.
+  // DuckDB's VARCHAR cast overflows near the TIMESTAMP_NS limits: give it the exact count.
   if (type.type === "timestamp" && type.unit === "ns") {
     params[params.length - 1] = String(parseTimestampText(String(value), "ns"));
     return `make_timestamp_ns(CAST($${params.length} AS BIGINT))`;
   }
-  if (type.type === "float") return `CAST(CAST($${params.length} AS VARCHAR) AS ${target})`;
+  if (type.type === "date" || type.type === "timestamp" || type.type === "timestamptz") {
+    params[params.length - 1] = temporalParam(String(value));
+  }
   return `CAST(CAST($${params.length} AS VARCHAR) AS ${target})`;
 }

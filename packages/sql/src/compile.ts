@@ -51,6 +51,9 @@ export interface SqlView {
 }
 
 const NUMBER_PATTERN = "[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?";
+/** The first and the last date (§2.2). */
+export const FIRST_DATE = "DATE '-290308-12-22'";
+export const LAST_DATE = "DATE '294247-01-10'";
 const DATE_PATTERN = "[0-9]{4}-[0-9]{2}-[0-9]{2}";
 const TIMESTAMP_PATTERN = "[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]{1,9})?)?";
 const FLOAT_TOKENS = new Map([
@@ -167,6 +170,11 @@ export function floatParam(value: number): string {
   return Object.is(value, -0) ? "-0.0" : String(value);
 }
 
+/** The text of a date or a timestamp (§2.2) as DuckDB reads it: years after 9999 without their `+`. */
+export function temporalParam(text: string): string {
+  return text.startsWith("+") ? text.slice(1) : text;
+}
+
 /** Null unless the number is finite (§3.6). */
 function finite(sql: string) {
   return `(CASE WHEN isfinite(${sql}) THEN ${sql} END)`;
@@ -218,6 +226,10 @@ class Compiler {
         return `CAST(${this.params.add(String(node.value))} AS VARCHAR)`;
       case "binary":
         return `from_base64(CAST(${this.params.add(String(node.value))} AS VARCHAR))`;
+      case "date":
+      case "timestamp":
+      case "timestamptz":
+        return cast(`CAST(${this.params.add(temporalParam(String(node.value)))} AS VARCHAR)`, type);
       default:
         return cast(`CAST(${this.params.add(String(node.value))} AS VARCHAR)`, type);
     }
@@ -401,9 +413,9 @@ class Compiler {
       case "add_days": {
         const days = `TRY_CAST(${arg(1)} AS INTEGER)`;
         const sum = type.type === "date" ? `TRY(${arg(0)} + ${days})` : `TRY(${arg(0)} + to_days(${days}))`;
-        // Years from 1 to 9999 (§2.2), as the JS engine gives them: DuckDB's dates go further, and a later date
-        // would sort as itself and read as null.
-        return `(CASE WHEN year(${sum}) BETWEEN 1 AND 9999 THEN ${sum} END)`;
+        // The dates of §2.2, as the JS engine gives them: DuckDB's dates go further, and its timestamps do not.
+        if (type.type !== "date") return sum;
+        return `(CASE WHEN ${sum} BETWEEN ${FIRST_DATE} AND ${LAST_DATE} THEN ${sum} END)`;
       }
     }
   }

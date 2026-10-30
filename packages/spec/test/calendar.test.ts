@@ -4,17 +4,20 @@ import {
   civilFromDays,
   dateText,
   daysFromCivil,
+  FIRST_DAY,
   intervalText,
+  LAST_DAY,
   parseDateText,
   parseIntervalText,
   parseTimestampText,
   parseTimeText,
+  temporalTextForm,
   timestampText,
   timeText,
 } from "../src/index.ts";
 
-test("days and dates agree over the years 0001 to 9999", () => {
-  for (let days = daysFromCivil(1, 1, 1); days <= daysFromCivil(9999, 12, 31); days += 997) {
+test("days and dates agree over every date (§2.2)", () => {
+  for (let days = FIRST_DAY; days <= LAST_DAY; days += 99_991) {
     const [year, month, day] = civilFromDays(days);
     assert.equal(daysFromCivil(year, month, day), days);
     assert.equal(parseDateText(dateText(days)), days);
@@ -22,9 +25,27 @@ test("days and dates agree over the years 0001 to 9999", () => {
   assert.equal(dateText(0), "1970-01-01");
   assert.equal(dateText(-1), "1969-12-31");
   assert.equal(dateText(daysFromCivil(2000, 2, 29)), "2000-02-29");
-  assert.throws(() => dateText(daysFromCivil(0, 12, 31)), RangeError);
+  assert.equal(dateText(daysFromCivil(0, 12, 31)), "0000-12-31");
+  assert.equal(dateText(daysFromCivil(-1, 1, 1)), "-000001-01-01");
+  assert.equal(dateText(daysFromCivil(10000, 1, 1)), "+010000-01-01");
+  assert.equal(dateText(FIRST_DAY), "-290308-12-22");
+  assert.equal(dateText(LAST_DAY), "+294247-01-10");
+  assert.throws(() => dateText(FIRST_DAY - 1), RangeError);
+  assert.throws(() => dateText(LAST_DAY + 1), RangeError);
   assert.equal(parseDateText("1900-02-29"), null);
-  assert.equal(parseDateText("0000-01-01"), null);
+  assert.equal(parseDateText("0000-01-01"), daysFromCivil(0, 1, 1));
+  // The years 0000 to 9999 have four digits only, and other years six.
+  for (const text of ["+002024-01-01", "-000000-01-01", "10000-01-01", "+10000-01-01", "-290308-12-21"])
+    assert.equal(parseDateText(text), null, text);
+});
+
+test("dates, timestamps and timestamptz have DuckDB's text form (§2.4)", () => {
+  assert.equal(temporalTextForm("2024-01-01"), "2024-01-01");
+  assert.equal(temporalTextForm("+010000-01-01"), "10000-01-01");
+  assert.equal(temporalTextForm("0000-12-31"), "0001-12-31 (BC)");
+  assert.equal(temporalTextForm("-000001-01-01 12:00:00"), "0002-01-01 (BC) 12:00:00");
+  assert.equal(temporalTextForm("-290308-12-22 00:00:00+00"), "290309-12-22 (BC) 00:00:00+00");
+  assert.equal(timestampText(parseTimestampText("+010000-01-01 00:00:01") as bigint), "+010000-01-01 00:00:01");
 });
 
 test("times and timestamps are written without trailing zeros (§2.2)", () => {

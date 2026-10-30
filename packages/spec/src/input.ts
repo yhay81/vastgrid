@@ -94,11 +94,22 @@ function clockText(text: string, digits: number): string | null {
   return `${pad(hour)}:${pad(minute)}:${pad(second)}${kept ? `.${kept}` : ""}`;
 }
 
-/** `YYYY-MM-DD` of a date with `-`, `/` or `.` between its parts, or null. */
+/**
+ * The text of a date (§2.2) with `-`, `/` or `.` between its parts, or null. Its year is four to six digits, a sign
+ * and six digits, or, followed by `BC` or `(BC)` as the text form writes it (§2.4), the number of a year BC.
+ */
 function dayText(text: string): string | null {
-  const match = /^([0-9]{4})[-/.]([0-9]{1,2})[-/.]([0-9]{1,2})$/.exec(text);
+  const match = /^([+-][0-9]{6}|[0-9]{4,6})[-/.]([0-9]{1,2})[-/.]([0-9]{1,2})( \(BC\)| BC)?$/i.exec(text);
   if (!match) return null;
-  const day = `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
+  let year = Number(match[1]);
+  if (match[4]) {
+    if (!/^[0-9]/.test(match[1]) || year < 1) return null;
+    year = 1 - year;
+  }
+  const digits = String(Math.abs(year));
+  const yearText =
+    year >= 0 && year <= 9999 ? digits.padStart(4, "0") : `${year < 0 ? "-" : "+"}${digits.padStart(6, "0")}`;
+  const day = `${yearText}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
   return parseDateText(day) === null ? null : day;
 }
 
@@ -144,7 +155,7 @@ function zonedInstant(local: bigint, timeZone: string): bigint {
 }
 
 const timestampInput =
-  /^([0-9]{4}[-/.][0-9]{1,2}[-/.][0-9]{1,2})(?:[ T]([0-9]{1,2}:[0-9]{2}(?::[0-9]{2}(?:\.[0-9]+)?)?)\s*(Z|[+-][0-9]{2}(?::?[0-9]{2})?)?)?$/i;
+  /^((?:[+-][0-9]{6}|[0-9]{4,6})[-/.][0-9]{1,2}[-/.][0-9]{1,2}(?: \(BC\)| BC)?)(?:[ T]([0-9]{1,2}:[0-9]{2}(?::[0-9]{2}(?:\.[0-9]+)?)?)\s*(Z|[+-][0-9]{2}(?::?[0-9]{2})?)?)?$/i;
 
 function readTimestamp(text: string, type: ValueType, timeZone: string | undefined): InputResult {
   const zoned = type.type === "timestamptz";

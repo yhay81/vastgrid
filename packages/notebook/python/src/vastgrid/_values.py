@@ -12,7 +12,7 @@ import struct
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Any
 
-from ._calendar import UNIT_DIGITS, parse_interval_text, parse_timestamp_text
+from ._calendar import UNIT_DIGITS, parse_date_text, parse_interval_text, parse_timestamp_text, temporal_text_form
 
 LOGICAL_TYPES: tuple[str, ...] = (
     "boolean",
@@ -41,9 +41,11 @@ _INTEGER_TEXT = re.compile(r"-?(0|[1-9][0-9]*)")
 _DECIMAL_TEXT = re.compile(r"-?(0|[1-9][0-9]*)(?:\.([0-9]+))?")
 _UUID_TEXT = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _BASE64_TEXT = re.compile(r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?")
-_DATE_TEXT = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
+_DATE_TEXT = re.compile(r"([0-9]{4}|[+-][0-9]{6})-([0-9]{2})-([0-9]{2})")
 _TIME_TEXT = re.compile(r"([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]+))?")
-_TIMESTAMP_TEXT = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2}) ([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]+))?")
+_TIMESTAMP_TEXT = re.compile(
+    r"([0-9]{4}|[+-][0-9]{6})-([0-9]{2})-([0-9]{2}) ([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]+))?"
+)
 _SURROGATE = re.compile(r"[\ud800-\udfff]")
 _ARRAY_INDEX = re.compile(r"0|[1-9][0-9]*")
 # Unicode category Zs, which `trim` removes (§4.4).
@@ -234,7 +236,10 @@ def _is_day(year: int, month: int, day: int) -> bool:
 
 
 def _is_date(year: str, month: str, day: str) -> bool:
-    return year != "0000" and _is_day(int(year), int(month), int(day))
+    # Signed years are rare: the calendar checks them, and their bounds.
+    if len(year) == 7:
+        return parse_date_text(f"{year}-{month}-{day}") is not None
+    return _is_day(int(year), int(month), int(day))
 
 
 def _is_time(hour: str, minute: str, second: str, fraction: str | None, digits: int) -> bool:
@@ -245,7 +250,7 @@ def _is_time(hour: str, minute: str, second: str, fraction: str | None, digits: 
 
 
 def is_date_text(text: str) -> bool:
-    """Whether the text is a date as §2.2 writes it: `YYYY-MM-DD`, naming a real day."""
+    """Whether the text is a date as §2.2 writes it (`YYYY-MM-DD` or `±YYYYYY-MM-DD`), naming a real day."""
     match = _DATE_TEXT.fullmatch(text)
     return match is not None and _is_date(*match.groups())
 
@@ -488,6 +493,8 @@ def text_of(value: Any, type: dict[str, Any]) -> str | None:
         return float_text(float_of(value), _get(type, "bits", 64))
     if kind == "binary":
         return _bytes_text(from_base64(js_string(value)))
+    if kind in ("date", "timestamp", "timestamptz"):
+        return temporal_text_form(js_string(value))
     return js_string(value)
 
 

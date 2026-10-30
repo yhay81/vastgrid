@@ -58,6 +58,10 @@ test("date patterns: text in quotes, two quotes as a quote, 12-hour clocks, frac
   assert.equal(show("ss.S", "2024-02-29 10:00:05.999"), "05.9");
   assert.equal(show("yy/M/d", "2009-01-05 00:00:00"), "09/1/5");
   assert.equal(show("yyyy-MM-dd", "0099-12-31", columns[4]), "0099-12-31");
+  assert.equal(show("yyyy-MM-dd EEE", "+010000-01-01 00:00:00"), "10000-01-01 Sat");
+  // Years BC, and years beyond JavaScript's dates, show their text form.
+  for (const value of ["0000-12-31 00:00:00", "-000001-01-01 00:00:00", "+294247-01-10 00:00:00"])
+    assert.equal(show("yyyy-MM-dd EEE", value), null, value);
 });
 
 test("style rules evaluate the conditions that the menus write, with nulls as §3.6 has them", () => {

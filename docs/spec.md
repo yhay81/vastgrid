@@ -88,7 +88,7 @@ type of their column or literal:
 | `decimal` | a string with exactly `scale` fraction digits (no point when the scale is 0), without an exponent, a `+` or leading zeros | `"12.50"`, `"-0.10"`, `"7"` |
 | `float` | a number, or one of the strings `"NaN"`, `"Infinity"`, `"-Infinity"` | `0.1`, `"NaN"` |
 | `string` | a string | |
-| `date` | `"YYYY-MM-DD"` | `"2024-01-31"` |
+| `date` | `"YYYY-MM-DD"`, or `"±YYYYYY-MM-DD"` for other years than 0000 to 9999 | `"2024-01-31"`, `"+010000-01-01"` |
 | `time` | `"HH:MM:SS"`, with a fraction of 1–6 digits without trailing zeros when it is not 0 | `"01:02:03.25"` |
 | `timestamp` | `"YYYY-MM-DD HH:MM:SS"`, with a fraction of 1–9 digits as for `time` | `"2024-01-31 12:00:00.5"` |
 | `timestamptz` | the instant in UTC as a timestamp, then `+00` | `"2024-01-31 03:00:00+00"` |
@@ -97,8 +97,12 @@ type of their column or literal:
 | `binary` | base64 (RFC 4648, with padding) | |
 | null | `null` | |
 
-Dates and timestamps are written for the years 0001 to 9999, which `YYYY` holds; how values outside them are
-written is an open question (§12).
+Dates are the days from `-290308-12-22` to `+294247-01-10`, whose midnights a signed 64-bit count of
+microseconds since the Unix epoch holds; they are also the dates of DuckDB's timestamps. Years count as ISO 8601
+and DuckDB's `year()` count them: year 0 is 1 BC, and year −1 is 2 BC. The years 0000 to 9999 are written with
+four digits, and other years with a sign and six digits, as RFC 9557 writes them (`+010000-01-01`,
+`-000001-12-31`). Other forms, such as `+002024-01-01` and `10000-01-01`, are not dates. The date of a
+`timestamp` or a `timestamptz` is such a date. DuckDB's `infinity` and `-infinity` are not values (§12).
 
 Typed JSON is already a value of its declared type, rather than text awaiting conversion:
 
@@ -108,8 +112,8 @@ Typed JSON is already a value of its declared type, rather than text awaiting co
 - A `string` MUST be well-formed Unicode text: paired UTF-16 surrogates are allowed, lone surrogates are
   not. Readers and writers MUST NOT silently replace invalid text with U+FFFD.
 - A `timestamp` MUST fit a signed 64-bit count of its unit since the Unix epoch. For `ns`, the inclusive
-  bounds are `1677-09-21 00:12:43.145224192` and `2262-04-11 23:47:16.854775807`. Other units remain
-  limited by the years above. Engines may have a narrower source range (for example reserved infinity values).
+  bounds are `1677-09-21 00:12:43.145224192` and `2262-04-11 23:47:16.854775807`. Other units are limited
+  by the dates above, and `us` ends at `+294247-01-10 04:00:54.775807`. Engines may have a narrower source range (for example reserved infinity values).
 - An `interval` has signed 32-bit months and days (−2^31 through 2^31 − 1) and signed 64-bit nanoseconds
   (−2^63 through 2^63 − 1). Its parsed totals MUST fit these ranges; blocks write the canonical text of
   those same three parts when read back.
@@ -134,9 +138,9 @@ UTC:
 | `decimal` | the digits with exactly `scale` fraction digits: `1.50`, `-0.10` |
 | `float` | §2.4.1 |
 | `string` | the string itself |
-| `date` | `YYYY-MM-DD` |
+| `date` | `YYYY-MM-DD` for the years 0001 to 9999; as DuckDB writes them, later years without a sign or leading zeros (`10000-01-01`), and earlier years by their number BC, then ` (BC)` (`0001-12-31 (BC)` for year 0) |
 | `time` | `HH:MM:SS`, then `.` and the fraction without trailing zeros when it is not 0 |
-| `timestamp` | the date, a space and the time, as above |
+| `timestamp` | the date, a space and the time, as above (`0002-01-01 (BC) 12:00:00`) |
 | `timestamptz` | the timestamp in UTC, then `+00` |
 | `uuid` | lowercase hex, `8-4-4-4-12` |
 | `interval`, `binary` | DuckDB's text form |
@@ -1113,7 +1117,7 @@ the text is removed first, except for strings. An empty text is null for every t
 | `decimal` | `[+-]?([0-9]+(\.[0-9]*)?\|\.[0-9]+)` | the value with exactly `scale` fraction digits | `scale` (more fraction digits than the scale, not counting trailing zeros), `precision` (more whole digits than `precision − scale`), `decimal` (an exponent), `number` |
 | `float` | a number as above with an optional exponent; `inf` or `infinity` with an optional sign, or `nan`, in any letter case | the float rounded to its declared bits, with −0 read as 0 | `range` (rounding overflows to infinity), `number` |
 | `boolean` | `true`, `false`, `1`, `0`, in any letter case | | `boolean` |
-| `date` | year, month and day separated by `-`, `/` or `.`, naming a real day | `YYYY-MM-DD` | `date` |
+| `date` | year, month and day separated by `-`, `/` or `.`, naming a real day; the year has four to six digits, or a sign and six digits, or is the number of a year BC followed by ` BC` or ` (BC)` as the text form writes it (§2.4) | §2.2 | `date` |
 | `time` | `H:MM`, `H:MM:SS` or `H:MM:SS.f` with 1 to 6 fraction digits | `HH:MM:SS`, with the fraction without trailing zeros | `time` |
 | `timestamp` | a date, then optionally a space or `T` and a time with as many fraction digits as the unit keeps | §2.2; midnight without a time | `timestamp`, `range` (outside the signed 64-bit count) |
 | `timestamptz` | a timestamp, then optionally `Z` or an offset `±HH`, `±HHMM` or `±HH:MM` | the instant in UTC (§2.2); without an offset, the time of day in the column's time zone (below), or UTC | `timestamp` |
@@ -1503,8 +1507,8 @@ comes with conformance cases checked against DuckDB, and the JS engine follows i
 - Native nested types (lists, structs, maps) instead of their text, and measures that give them, such as a
   `histogram` that gives the counts of all the bins in one value.
 - Collations and folding (reading order of Japanese, full-width and half-width forms) as capabilities.
-- Dates and timestamps outside the years 0001 to 9999 (DuckDB has dates from 5877642 BC), and the forms
-  that would write them (§2.2).
+- DuckDB's `infinity` and `-infinity` for dates and timestamps, which read as null, and its dates beyond those of
+  §2.2 (to 5877642 BC and 5881580 AD).
 
 ## Appendix A. From 0.1
 

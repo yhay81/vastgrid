@@ -1,7 +1,7 @@
 /**
  * Dates and times as integers and as text (docs/spec.md §2.2): days since 1970-01-01 in the proleptic
- * Gregorian calendar, and counts of seconds, milliseconds, microseconds or nanoseconds. Years are from 1 to
- * 9999, the years that the text of §2.2 writes.
+ * Gregorian calendar, and counts of seconds, milliseconds, microseconds or nanoseconds. Dates are the days from
+ * `-290308-12-22` to `+294247-01-10`, whose midnights a 64-bit count of microseconds holds; year 0 is 1 BC.
  */
 import type { TimestampUnit } from "./types.js";
 
@@ -12,6 +12,10 @@ export const UNIT_PER_SECOND: Record<TimestampUnit, bigint> = { s: 1n, ms: 1000n
 export const UNIT_DIGITS: Record<TimestampUnit, number> = { s: 0, ms: 3, us: 6, ns: 9 };
 
 const DAY_SECONDS = 86_400n;
+
+/** The first and the last day that a date may be (§2.2), as days from 1970-01-01. */
+export const FIRST_DAY = -106_751_991;
+export const LAST_DAY = 106_751_991;
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
 
@@ -48,22 +52,72 @@ function pad(value: number | bigint, length: number) {
   return String(value).padStart(length, "0");
 }
 
-/** `YYYY-MM-DD` of a count of days. Throws for years outside 1 to 9999. */
-export function dateText(days: number): string {
-  const [year, month, day] = civilFromDays(days);
-  if (year < 1 || year > 9999) throw new RangeError(`The year ${year} is outside 1 to 9999.`);
-  return `${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}`;
+/** The year of a date's text (§2.2): four digits from 0000 to 9999, and otherwise a sign and six digits. */
+function yearText(year: number): string {
+  if (year >= 0 && year <= 9999) return pad(year, 4);
+  return `${year < 0 ? "-" : "+"}${pad(Math.abs(year), 6)}`;
 }
 
-/** The count of days of `YYYY-MM-DD`, or null when the text is not a real day of the years 1 to 9999. */
+/** `YYYY-MM-DD` of a count of days, or `±YYYYYY-MM-DD` outside the years 0000 to 9999. Throws outside the dates. */
+export function dateText(days: number): string {
+  if (!(days >= FIRST_DAY && days <= LAST_DAY)) throw new RangeError(`${days} days from 1970-01-01 is not a date.`);
+  const [year, month, day] = civilFromDays(days);
+  return `${yearText(year)}-${pad(month, 2)}-${pad(day, 2)}`;
+}
+
+const DATE_TEXT = /^([0-9]{4}|[+-][0-9]{6})-([0-9]{2})-([0-9]{2})$/;
+
+/** The count of days of the text of a date (§2.2), or null when it is not a real day that a date may be. */
 export function parseDateText(text: string): number | null {
-  const match = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(text);
+  const match = DATE_TEXT.exec(text);
   if (!match) return null;
   const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
-  if (year < 1 || month < 1 || month > 12 || day < 1) return null;
+  // The years 0000 to 9999 are written with four digits only; -000000 is not a year.
+  if (match[1].length === 7 && year >= 0 && year <= 9999 && match[1][0] === "+") return null;
+  if (match[1] === "-000000" || month < 1 || month > 12 || day < 1) return null;
   const days = daysFromCivil(year, month, day);
   const [y, m, d] = civilFromDays(days);
-  return y === year && m === month && d === day ? days : null;
+  return y === year && m === month && d === day && days >= FIRST_DAY && days <= LAST_DAY ? days : null;
+}
+
+/** The length of the date at the start of the text of a date or a timestamp: 13 for a signed year, otherwise 10. */
+export function dateLength(text: string): number {
+  const first = text.charCodeAt(0);
+  return first === 43 || first === 45 ? 13 : 10;
+}
+
+/** The year of the text of a date or a timestamp (§2.2). */
+export function yearOf(text: string): number {
+  return Number(text.slice(0, dateLength(text) - 6));
+}
+
+/**
+ * How the texts of two dates, or of two timestamps, compare: negative, 0 or positive. Their years compare as
+ * numbers, and the rest of their texts as text, whose fields have fixed widths.
+ */
+export function compareTemporalText(x: string, y: string): number {
+  const a = dateLength(x);
+  const b = dateLength(y);
+  if (a === 10 && b === 10) return x < y ? -1 : x > y ? 1 : 0;
+  const years = yearOf(x) - yearOf(y);
+  if (years !== 0) return years;
+  const [p, q] = [x.slice(a - 6), y.slice(b - 6)];
+  return p < q ? -1 : p > q ? 1 : 0;
+}
+
+/**
+ * The text form (§2.4) of the text of a date, a timestamp or a timestamptz (§2.2), as DuckDB writes it: years after
+ * 9999 without a sign or leading zeros (`10000-01-01`), and the years before 1 by their number BC
+ * (`0001-12-31 (BC)` for year 0), before the time.
+ */
+export function temporalTextForm(text: string): string {
+  const first = text.charCodeAt(0);
+  // The years 0001 to 9999 are written the same.
+  if (first !== 43 && first !== 45 && !text.startsWith("0000")) return text;
+  const dash = text.indexOf("-", 1);
+  const year = Number(text.slice(0, dash));
+  const date = `${pad(year > 0 ? year : 1 - year, 4)}${text.slice(dash, dash + 6)}`;
+  return `${date}${year > 0 ? "" : " (BC)"}${text.slice(dash + 6)}`;
 }
 
 /** `HH:MM:SS`, then the fraction of a second without trailing zeros, of a count of a unit within a day. */
@@ -104,6 +158,7 @@ export function parseTimeText(text: string): bigint | null {
 
 /** The text of a timestamp (§2.2) from a count of its unit since 1970-01-01 00:00:00. */
 export function timestampText(count: bigint, unit: TimestampUnit = "us"): string {
+  // `dateText` throws for a timestamp whose date is not a date.
   const perDay = DAY_SECONDS * UNIT_PER_SECOND[unit];
   const days = floorDiv(count, perDay);
   return `${dateText(Number(days))} ${clock(count - days * perDay, unit)}`;
@@ -112,7 +167,7 @@ export function timestampText(count: bigint, unit: TimestampUnit = "us"): string
 /** The count of the unit since 1970-01-01 00:00:00 of the text of a timestamp (§2.2), or null. */
 export function parseTimestampText(text: string, unit: TimestampUnit = "us"): bigint | null {
   const space = text.indexOf(" ");
-  if (space !== 10) return null;
+  if (space !== 10 && space !== 13) return null;
   const days = parseDateText(text.slice(0, space));
   const time = parseClock(text.slice(space + 1), unit);
   if (days === null || time === null) return null;

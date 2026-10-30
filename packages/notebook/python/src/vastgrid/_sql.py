@@ -63,6 +63,10 @@ class SqlRead:
     columns: list[str]
 
 
+FIRST_DATE = "DATE '-290308-12-22'"
+"""The first date (§2.2)."""
+LAST_DATE = "DATE '294247-01-10'"
+"""The last date (§2.2)."""
 _NUMBER_PATTERN = r"[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?"
 _DATE_PATTERN = "[0-9]{4}-[0-9]{2}-[0-9]{2}"
 _TIMESTAMP_PATTERN = r"[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]{1,9})?)?"
@@ -140,6 +144,11 @@ def _at_least(sql: str, low: int) -> str:
     return f"(CASE WHEN {value} < {low} THEN {low} WHEN {value} > 4294967295 THEN 4294967295 ELSE {value} END)"
 
 
+def temporal_param(text: str) -> str:
+    """The text of a date or a timestamp (§2.2) as DuckDB reads it: years after 9999 without their `+`."""
+    return text[1:] if text.startswith("+") else text
+
+
 def _cast(sql: str, type: dict[str, Any]) -> str:
     return f"CAST({sql} AS {duckdb_type(type)})"
 
@@ -200,6 +209,8 @@ class _Compiler:
             return f"CAST({self.params.add(js_string(node.value))} AS VARCHAR)"
         if kind == "binary":
             return f"from_base64(CAST({self.params.add(js_string(node.value))} AS VARCHAR))"
+        if kind in ("date", "timestamp", "timestamptz"):
+            return _cast(f"CAST({self.params.add(temporal_param(js_string(node.value)))} AS VARCHAR)", type)
         return _cast(f"CAST({self.params.add(js_string(node.value))} AS VARCHAR)", type)
 
     def _number(self, node: TypedExpr) -> str:
@@ -367,9 +378,10 @@ class _Compiler:
         if fn == "add_days":
             days = f"TRY_CAST({arg(1)} AS INTEGER)"
             total = f"TRY({arg(0)} + {days})" if type["type"] == "date" else f"TRY({arg(0)} + to_days({days}))"
-            # Years from 1 to 9999 (§2.2), as the JS engine gives them: DuckDB's dates go further, and a later date
-            # would sort as itself and read as null.
-            return f"(CASE WHEN year({total}) BETWEEN 1 AND 9999 THEN {total} END)"
+            # The dates of §2.2, as the JS engine gives them: DuckDB's dates go further, and its timestamps do not.
+            if type["type"] != "date":
+                return total
+            return f"(CASE WHEN {total} BETWEEN {FIRST_DATE} AND {LAST_DATE} THEN {total} END)"
         raise ValueError(f"There is no function {fn}.")
 
     def unscaled_sum(self, measure: CheckedMeasure, where: str) -> str | None:

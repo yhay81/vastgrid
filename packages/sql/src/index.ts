@@ -2,7 +2,9 @@ export {
   compileView,
   countQuery,
   duckdbType,
+  FIRST_DATE,
   floatParam,
+  LAST_DATE,
   type PivotCombinations,
   pivotQuery,
   quoteIdentifier,
@@ -12,5 +14,6 @@ export {
   type SqlSource,
   type SqlValue,
   type SqlView,
+  temporalParam,
   textSql,
 } from "./compile.js";

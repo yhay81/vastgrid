@@ -7,15 +7,18 @@
  */
 import {
   type CallExpr,
+  compareTemporalText,
+  dateLength,
   dateText,
-  daysFromCivil,
   type ExprType,
+  FIRST_DAY,
   floatJson,
   floatOf,
   fromBase64,
   isDateText,
   isValueOf,
   type JsonValue,
+  LAST_DAY,
   normalizeInterval,
   parseDateText,
   parseTimestampText,
@@ -26,6 +29,7 @@ import {
   trimSpaces,
   UNIT_PER_SECOND,
   type ValueType,
+  yearOf,
 } from "vastgrid-spec";
 
 /** The value of an expression, or of a column, at a row ID. */
@@ -155,8 +159,8 @@ function asTimestampText(value: string, type: ValueType): string {
 }
 
 /**
- * How two values that are not null of comparable types compare (§3.1): negative, 0 or positive. Dates,
- * timestamps, times and UUIDs compare by their text, whose fields have fixed widths.
+ * How two values that are not null of comparable types compare (§3.1): negative, 0 or positive. Times and UUIDs
+ * compare by their text, whose fields have fixed widths, and dates and timestamps by their years, then the rest.
  */
 export function comparer(a: ValueType, b: ValueType): (x: JsonValue, y: JsonValue) => number {
   if (isExact(a) && isExact(b)) {
@@ -176,13 +180,13 @@ export function comparer(a: ValueType, b: ValueType): (x: JsonValue, y: JsonValu
       return (x, y) => Number(x) - Number(y);
     case "string":
     case "time":
-    case "timestamptz":
     case "uuid":
       return (x, y) => compareText(x as string, y as string);
     case "date":
     case "timestamp":
-      if (a.type === b.type) return (x, y) => compareText(x as string, y as string);
-      return (x, y) => compareText(asTimestampText(x as string, a), asTimestampText(y as string, b));
+    case "timestamptz":
+      if (a.type === b.type) return (x, y) => compareTemporalText(x as string, y as string);
+      return (x, y) => compareTemporalText(asTimestampText(x as string, a), asTimestampText(y as string, b));
     case "binary":
       return (x, y) => compareBytes(fromBase64(x as string), fromBase64(y as string));
     case "interval":
@@ -304,7 +308,7 @@ function toTimestamp(text: string): JsonValue {
 
 /** Days since 1970-01-01 of a date or of a timestamp's date. */
 function daysOf(value: string): number {
-  return parseDateText(value.slice(0, 10)) as number;
+  return parseDateText(value.slice(0, dateLength(value))) as number;
 }
 
 /** The type of an expression, which the checker has settled for every untyped null that has a place. */
@@ -642,22 +646,27 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
       };
     }
     case "to_date":
-      return string1(a, (text) => (isDateText(text) ? text : null));
+      // `YYYY-MM-DD` only, as DuckDB's engine reads it (§4.4).
+      return string1(a, (text) => (text.length === 10 && isDateText(text) ? text : null));
     case "to_timestamp":
       return string1(a, toTimestamp);
     case "year":
-      return string1(a, (text) => Number(text.slice(0, 4)));
+      return string1(a, yearOf);
     case "month":
-      return string1(a, (text) => Number(text.slice(5, 7)));
+      return string1(a, (text) => Number(text.slice(dateLength(text) - 5, dateLength(text) - 3)));
     case "day":
-      return string1(a, (text) => Number(text.slice(8, 10)));
+      return string1(a, (text) => Number(text.slice(dateLength(text) - 2, dateLength(text))));
     case "isodow":
       return string1(a, (text) => ((((daysOf(text) + 3) % 7) + 7) % 7) + 1);
     case "hour":
     case "minute":
     case "second": {
-      const at = (types[0].type === "time" ? 0 : 11) + { hour: 0, minute: 3, second: 6 }[expr.fn];
-      return string1(a, (text) => Number(text.slice(at, at + 2)));
+      const offset = { hour: 0, minute: 3, second: 6 }[expr.fn];
+      if (types[0].type === "time") return string1(a, (text) => Number(text.slice(offset, offset + 2)));
+      return string1(a, (text) => {
+        const at = dateLength(text) + 1 + offset;
+        return Number(text.slice(at, at + 2));
+      });
     }
     case "date_diff_days":
       return (row) => {
@@ -675,9 +684,9 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
         const count = whole(y);
         if (count < INT32_MIN || count > INT32_MAX) return null;
         const days = daysOf(x as string) + count;
-        // Years from 1 to 9999 (§2.2); a timestamp keeps its time of day, and its unit's range.
-        if (days < daysFromCivil(1, 1, 1) || days > daysFromCivil(9999, 12, 31)) return null;
-        const result = dateText(days) + (x as string).slice(10);
+        // The dates of §2.2; a timestamp keeps its time of day, and its unit's range.
+        if (days < FIRST_DAY || days > LAST_DAY) return null;
+        const result = dateText(days) + (x as string).slice(dateLength(x as string));
         return isValueOf(result, type) ? result : null;
       };
   }

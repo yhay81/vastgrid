@@ -1,6 +1,7 @@
 """Dates and times as integers and as text (docs/spec.md §2.2): days since 1970-01-01 in the proleptic Gregorian
-calendar, and counts of seconds, milliseconds, microseconds or nanoseconds. Years are from 1 to 9999, the years that
-the text of §2.2 writes. Python ints stand in for JavaScript's bigints."""
+calendar, and counts of seconds, milliseconds, microseconds or nanoseconds. Dates are the days from `-290308-12-22` to
+`+294247-01-10`, whose midnights a 64-bit count of microseconds holds; year 0 is 1 BC. Python ints stand in for
+JavaScript's bigints."""
 
 from __future__ import annotations
 
@@ -18,7 +19,12 @@ _INT64_MIN = -(2**63)
 _INT64_MAX = 2**63 - 1
 _NANOS_PER_DAY = 86_400_000_000_000
 
-_DATE = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
+FIRST_DAY = -106_751_991
+"""The first day that a date may be (§2.2), as days from 1970-01-01."""
+LAST_DAY = 106_751_991
+"""The last day that a date may be (§2.2), as days from 1970-01-01."""
+
+_DATE = re.compile(r"([0-9]{4}|[+-][0-9]{6})-([0-9]{2})-([0-9]{2})")
 _CLOCK = re.compile(r"([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]+))?")
 _INTERVAL = re.compile(
     r"(?:(-?[0-9]+) years?(?: |\Z))?(?:(-?[0-9]+) months?(?: |\Z))?(?:(-?[0-9]+) days?(?: |\Z))?"
@@ -64,24 +70,53 @@ def _pad(value: int, length: int) -> str:
     return str(value).rjust(length, "0")
 
 
+def _year_text(year: int) -> str:
+    """The year of a date's text (§2.2): four digits from 0000 to 9999, and otherwise a sign and six digits."""
+    if 0 <= year <= 9999:
+        return _pad(year, 4)
+    return ("-" if year < 0 else "+") + _pad(abs(year), 6)
+
+
 def date_text(days: int) -> str:
-    """`YYYY-MM-DD` of a count of days. Raises for years outside 1 to 9999."""
+    """`YYYY-MM-DD` of a count of days, or `±YYYYYY-MM-DD` outside the years 0000 to 9999. Raises outside the
+    dates."""
+    if not FIRST_DAY <= days <= LAST_DAY:
+        raise ValueError(f"{days} days from 1970-01-01 is not a date.")
     year, month, day = civil_from_days(days)
-    if year < 1 or year > 9999:
-        raise ValueError(f"The year {year} is outside 1 to 9999.")
-    return f"{_pad(year, 4)}-{_pad(month, 2)}-{_pad(day, 2)}"
+    return f"{_year_text(year)}-{_pad(month, 2)}-{_pad(day, 2)}"
 
 
 def parse_date_text(text: str) -> int | None:
-    """The count of days of `YYYY-MM-DD`, or None when the text is not a real day of the years 1 to 9999."""
+    """The count of days of the text of a date (§2.2), or None when it is not a real day that a date may be."""
     match = _DATE.fullmatch(text)
     if not match:
         return None
     year, month, day = int(match[1]), int(match[2]), int(match[3])
-    if year < 1 or month < 1 or month > 12 or day < 1:
+    # The years 0000 to 9999 are written with four digits only; -000000 is not a year.
+    if len(match[1]) == 7 and (match[1] == "-000000" or (match[1][0] == "+" and year <= 9999)):
+        return None
+    if month < 1 or month > 12 or day < 1:
         return None
     days = days_from_civil(year, month, day)
-    return days if civil_from_days(days) == (year, month, day) else None
+    return days if civil_from_days(days) == (year, month, day) and FIRST_DAY <= days <= LAST_DAY else None
+
+
+def date_length(text: str) -> int:
+    """The length of the date at the start of the text of a date or a timestamp: 13 for a signed year, otherwise
+    10."""
+    return 13 if text[:1] in ("+", "-") else 10
+
+
+def temporal_text_form(text: str) -> str:
+    """The text form (§2.4) of the text of a date, a timestamp or a timestamptz (§2.2), as DuckDB writes it: years
+    after 9999 without a sign or leading zeros (`10000-01-01`), and the years before 1 by their number BC
+    (`0001-12-31 (BC)` for year 0), before the time."""
+    if text[:1] not in ("+", "-") and not text.startswith("0000"):
+        return text
+    dash = text.index("-", 1)
+    year = int(text[:dash])
+    date = _pad(year if year > 0 else 1 - year, 4) + text[dash : dash + 6]
+    return date + ("" if year > 0 else " (BC)") + text[dash + 6 :]
 
 
 def _clock(count: int, unit: str) -> str:
@@ -132,10 +167,11 @@ def timestamp_text(count: int, unit: str = "us") -> str:
 
 def parse_timestamp_text(text: str, unit: str = "us") -> int | None:
     """The count of the unit since 1970-01-01 00:00:00 of the text of a timestamp (§2.2), or None."""
-    if text.find(" ") != 10:
+    space = text.find(" ")
+    if space not in (10, 13):
         return None
-    days = parse_date_text(text[:10])
-    time = _parse_clock(text[11:], unit)
+    days = parse_date_text(text[:space])
+    time = _parse_clock(text[space + 1 :], unit)
     if days is None or time is None:
         return None
     count = days * _DAY_SECONDS * UNIT_PER_SECOND[unit] + time

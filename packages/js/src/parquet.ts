@@ -19,12 +19,13 @@ import { compressors } from "hyparquet-compressors";
 import {
   type Column,
   dateText,
-  daysFromCivil,
   decimalJson,
+  FIRST_DAY,
   floatJson,
   integerJson,
   intervalText,
   type JsonValue,
+  LAST_DAY,
   type TimestampUnit,
   timestampText,
   timeText,
@@ -47,8 +48,6 @@ const MAX_DOWNLOAD = 16 * 1024 * 1024;
 const CACHE_BYTES = 32 * 1024 * 1024;
 /** Cells of row groups decoded for reading rows, kept for reading again. */
 const CACHE_CELLS = 4_000_000;
-const FIRST_DAY = daysFromCivil(1, 1, 1);
-const LAST_DAY = daysFromCivil(9999, 12, 31);
 
 const utf8 = new TextDecoder("utf-8", { fatal: true });
 
@@ -296,7 +295,7 @@ function untyped(column: Column, read: (value: unknown) => JsonValue): Kind {
   };
 }
 
-/** Whether a count of `perDay` per day falls in the years 0001 to 9999, which DuckDB's engine reads (§2.2). */
+/** Whether a count of `perDay` per day falls on a date (§2.2). */
 function inYears(count: bigint, perDay: bigint): boolean {
   let day = count / perDay;
   if (count % perDay < 0n) day--;

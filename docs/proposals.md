@@ -1,7 +1,7 @@
 # Proposals for the open questions
 
 The three questions that [§12 of the specification](spec.md#12-open-questions) leaves open, each with what holds
-today, what the sources give, the choices, and the one proposed. None of this is specified yet: each part becomes
+today, what the sources give, the choices, and the one proposed. Only the years of §3 are specified so far: each part becomes
 spec text, conformance cases and engine code only once it is chosen. Checked against DuckDB 2.0.0, Node.js 24
 (ICU 78.3, Unicode 17) and Python's DuckDB 2.0.0.
 
@@ -110,7 +110,11 @@ Split the question in two, and do the first part only.
 
 ## 3. Dates and timestamps outside the years 0001 to 9999
 
-### Today
+Done for the years, with the bound of DuckDB's timestamps (`-290308-12-22` to `+294247-01-10`) rather than six
+digits of year, so that a date always compares with a timestamp in DuckDB (§2.2, §2.4, §7.3). Infinities are
+still open (§12).
+
+### Before
 
 §2.2 writes dates and timestamps as `YYYY`. `vastgrid-duckdb` reads values outside 0001–9999, and DuckDB's
 `infinity` and `-infinity`, as null. The workbook reader keeps such dates as text, and `vastgrid-spec`'s calendar

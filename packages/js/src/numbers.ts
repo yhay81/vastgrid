@@ -2,19 +2,16 @@
  * The numbers that hold the values of typed columns (`Vector.numbers`): of tables given as Arrow or as text files,
  * read by the modules of those tables and loaded with them.
  */
-import { type Column, daysFromCivil, UNIT_PER_SECOND } from "vastgrid-spec";
+import { type Column, FIRST_DAY, LAST_DAY, UNIT_PER_SECOND } from "vastgrid-spec";
 import type { ColumnNumbers } from "vastgrid-spec/columns";
 import { HIGH, int32Word, LOW, type NumberWriter, SIGN, TWO_32, writeFloat, writeInt64 } from "./order.js";
 
-/** The first and the last day of the years 0001 to 9999, which dates and timestamps are written for (§2.2). */
-const FIRST_DAY = daysFromCivil(1, 1, 1);
-const LAST_DAY = daysFromCivil(9999, 12, 31);
 const DAY_SECONDS = 86_400n;
 
 /**
  * The first row of a column's numbers (`Vector.numbers`) whose value is not a value of the column's type
  * (§2.2), as `valueChecker` would find it in the value's JSON, or −1 when every value is: integers, bigints and
- * floats always are; dates and timestamps are within the years 0001 to 9999, times within a day, and decimals
+ * floats always are; dates and the dates of timestamps are within the dates, times within a day, and decimals
  * of no more digits than their precision.
  */
 export function firstInvalid(column: Column, numbers: ColumnNumbers, validity: Uint8Array | null): number {
