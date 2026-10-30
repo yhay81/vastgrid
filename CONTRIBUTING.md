@@ -105,7 +105,7 @@ Every package is released together, with one version, from one tag:
 | --- | --- |
 | `vastgrid-spec`, `vastgrid-sql`, `vastgrid-js`, `vastgrid`, `vastgrid-duckdb`, `vastgrid-cli`, `vastgrid-mcp` | npm, in that order, each depending on the others at exactly the same version |
 | `vastgrid` (Python, `packages/notebook/python`) | PyPI; a pre-release `0.2.0-next.3` is `0.2.0rc3` there |
-| `vastgrid-vscode` | the VS Code Marketplace, for versions that are not pre-releases; every version's `.vsix` files are on the GitHub release |
+| `vastgrid-vscode` | the VS Code Marketplace and Open VSX, for versions that are not pre-releases; every version's `.vsix` files are on the GitHub release |
 
 0.2 starts at 0.2.0, after 0.1.x. Pre-releases are `0.2.0-next.1`, `0.2.0-next.2`, …, published under npm's
 `next` tag, so that `npm install vastgrid` keeps giving the last stable version and `npm install vastgrid@next`
@@ -138,6 +138,11 @@ When Marketplace publishing is unavailable, set the repository variable `VSCODE_
 before tagging. The workflow then publishes npm, PyPI and the GitHub release with its VSIX files, and skips the
 Marketplace job. Document this in the release notes and installation instructions. This is the mode used for
 0.2.0; remove the variable or set it to `true` once the publisher and `VSCE_PAT` are configured.
+
+Open VSX is published only when the repository variable `OPEN_VSX_ENABLED` is `true`. It needs no secret: the
+`yhay81` namespace on [open-vsx.org](https://open-vsx.org), with its publisher agreement signed, lists this
+repository's `release.yml` in the `openvsx` environment as a trusted publisher, and `ovsx publish
+--trusted-publishing` exchanges the workflow's OIDC token for a short-lived one.
 
 ### From pre-releases to 0.2.0
 

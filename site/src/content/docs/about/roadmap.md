@@ -12,9 +12,9 @@ gave the grid's texts in nine languages, each its own import ([Languages and tex
 ## Next
 
 - **Marketplace publication.** vastgrid is on npm, PyPI and GitHub, with the VS Code extension installed from
-  GitHub's VSIX files; its Visual Studio Marketplace listing remains.
+  GitHub's VSIX files; its listings in the Visual Studio Marketplace and Open VSX remain, which the release
+  publishes to once they are set up.
 - **The memory engine.** The first rows of a large text file while it loads, as the DuckDB engine shows them.
-- **The apps.** The VS Code extension in Open VSX.
 - **The specification.** Its open questions
   ([§12](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#12-open-questions)): lists, structs and maps
   as their own types instead of their text, collations such as the reading order of Japanese, a `histogram`

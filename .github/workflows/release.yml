@@ -151,11 +151,39 @@ jobs:
           for package in "$RUNNER_TEMP"/vscode/*.vsix; do
             npx vsce publish --skip-duplicate --packagePath "$package"
           done
+  openvsx:
+    name: Publish to Open VSX
+    needs: build
+    # Open VSX, which VSCodium and other editors use, once its namespace has this workflow as a trusted publisher.
+    if: ${{ !contains(github.ref_name, '-') && vars.OPEN_VSX_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: openvsx
+    permissions:
+      # Trusted publishing: Open VSX exchanges the workflow's OIDC token for a short-lived one.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v8
+        with:
+          name: vscode
+          path: ${{ runner.temp }}/vscode
+      - name: Publish
+        run: |
+          npm ci --ignore-scripts
+          for package in "$RUNNER_TEMP"/vscode/*.vsix; do
+            npx ovsx publish --trusted-publishing --skip-duplicate --packagePath "$package"
+          done
   release:
     name: Create the GitHub release
-    needs: [npm, pypi, vscode]
+    needs: [npm, pypi, vscode, openvsx]
     # Require each enabled registry. Pre-releases and explicitly disabled Marketplace publishing use GitHub VSIX files.
-    if: ${{ always() && needs.npm.result == 'success' && needs.pypi.result == 'success' && (needs.vscode.result == 'success' || needs.vscode.result == 'skipped') }}
+    if: ${{ always() && needs.npm.result == 'success' && needs.pypi.result == 'success' && (needs.vscode.result == 'success' || needs.vscode.result == 'skipped') && (needs.openvsx.result == 'success' || needs.openvsx.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

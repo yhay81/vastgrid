@@ -118,7 +118,8 @@ artifacts.
 
 A release (CONTRIBUTING.md, "Releasing") makes packages for its configured targets and attaches them to the
 GitHub release; for a version that is not a pre-release with Marketplace publishing enabled, it publishes them with `vsce publish
---packagePath`, and the Marketplace serves each platform its package. To try a package of a release by hand:
+--packagePath`, and the Marketplace serves each platform its package. With `OPEN_VSX_ENABLED`, it publishes them to
+Open VSX as well, by trusted publishing (`ovsx publish --trusted-publishing --packagePath`). To try a package of a release by hand:
 `code --install-extension vastgrid-vscode-<version>-<target>.vsix`, and `VASTGRID_VSIX=<package>.vsix npm run
 test:vscode -w vastgrid-vscode` runs the suite on it.
 
@@ -140,5 +141,6 @@ x64/arm64, Alpine x64, macOS x64/arm64 and Windows x64/arm64. Its Marketplace li
 
 ## Not yet
 
-- The extension is not in Open VSX; pre-releases are only on the GitHub releases.
+- The extension is not in Open VSX yet: the release workflow publishes it there once the namespace has its trusted
+  publisher. Pre-releases are only on the GitHub releases.
 - Files of other schemes than `file:` (a remote file system of another extension, vscode.dev) do not open.

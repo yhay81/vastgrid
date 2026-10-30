@@ -7,9 +7,8 @@ description: vastgrid のバージョン 0.3 の後に予定していること�
 
 ## 次に行うこと
 
-- **Marketplace 掲載。** vastgrid は npm・PyPI・GitHub で提供し、VS Code 拡張は GitHub の VSIX から導入します。Visual Studio Marketplace への掲載が残っています。
+- **Marketplace 掲載。** vastgrid は npm・PyPI・GitHub で提供し、VS Code 拡張は GitHub の VSIX から導入します。Visual Studio Marketplace と Open VSX への掲載が残っています。どちらも、設定が済めばリリースが公開します。
 - **メモリエンジン。** DuckDB のエンジンと同じように、大きなテキストのファイルを読み込む間に最初の行を返します。
-- **アプリ。** Open VSX での VS Code の拡張機能です。
 - **仕様。** 未解決の問い（[§12](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#12-open-questions)）です。リスト・構造体・マップをテキストではなくそれ自身の型として扱うこと、日本語の読みの順のような照合順序、`histogram` の集計、0001〜9999 年の外の日付などがあります。
 
 ## 入れないもの

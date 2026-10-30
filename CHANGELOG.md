@@ -20,6 +20,8 @@
   `exportUrl` cannot, and the Export menu uses them first.
 - `vastgrid-cli`: the page keeps the view of each file and sheet (sorts, filters, column widths, selection and
   scroll) in the tab, and shows it again when it is loaded again and on the browser's back and forward.
+- `vastgrid-vscode`: the release workflow publishes the extension to Open VSX by trusted publishing, once the
+  repository variable `OPEN_VSX_ENABLED` is `true` and the namespace lists the workflow.
 
 ### Fixes
 
