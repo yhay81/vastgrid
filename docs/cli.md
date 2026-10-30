@@ -49,7 +49,8 @@ one.
 The page shows the first file, with the toolbar, the status bar and a check box for each row; a list above the grid
 chooses another file, and the sheets of a workbook are buttons. The address keeps the file and the sheet
 (`?file=…&sheet=…`), so that the browser's back and forward move between them and a page loaded again shows the same
-file. Its texts follow the browser's language (English, Japanese, Chinese, Korean, Spanish, Portuguese, French or
+file. The tab keeps the view of each of them, its sorts, filters, column widths, selection and scroll, and shows
+it again on the way back and when the page is loaded again (`sessionStorage`). Its texts follow the browser's language (English, Japanese, Chinese, Korean, Spanish, Portuguese, French or
 German).
 
 Everything the grid does on a server works: sorting, filtering, searching, grouping, formulas, statistics. Written
@@ -87,13 +88,13 @@ arguments.
   list of files, the files that open and those that do not, paths that cannot be opened, a port in use, and the
   temporary folder after stopping.
 - `e2e/cli.spec.ts` runs the built command on a folder with `--save` (`playwright.config.ts`): the printed address
-  opens the page, the list and the sheets move with the address, a page without the token opens nothing, and a
+  opens the page, the list and the sheets move with the address, a sort stays when the page is loaded again and
+  comes back with the browser's back, a page without the token opens nothing, and a
   written cell is saved into the CSV file with the keys and exported as CSV.
 
 ## Not yet
 
 - The server listens on 127.0.0.1 only: to use it from another computer, forward the port with the same number
   (`ssh -L 5185:127.0.0.1:5185`, with `--port 5185`).
-- The page does not keep the view (sorts, filters, column widths) when it is loaded again.
 - The page does not warn before it closes; written cells stay in the command until it stops, and are lost then
   unless saved.

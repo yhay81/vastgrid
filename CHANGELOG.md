@@ -18,6 +18,8 @@
   App's new tool `grid_export_file`, up to 64 MB; the menu says when the host does not download files.
 - `vastgrid`: `Transport.downloadExport` and `GridStore.downloadExport` download an export's file where a link to
   `exportUrl` cannot, and the Export menu uses them first.
+- `vastgrid-cli`: the page keeps the view of each file and sheet (sorts, filters, column widths, selection and
+  scroll) in the tab, and shows it again when it is loaded again and on the browser's back and forward.
 
 ### Fixes
 

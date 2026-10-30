@@ -69,6 +69,31 @@ test("the printed address opens the folder's files, and the address keeps the fi
   expect(problems).toEqual([]);
 });
 
+test("the page keeps the view of each entry of the history when it is loaded again or comes back", async ({ page }) => {
+  const problems = await openPrinted(page);
+  const header = page.getByRole("columnheader", { name: "price" });
+  // The header row is drawn on the canvas; the click goes to its place.
+  const cell = await header.boundingBox();
+  if (!cell) throw new Error("No header.");
+  await page.mouse.click(cell.x + 20, cell.y + cell.height / 2);
+  await page.mouse.click(cell.x + 20, cell.y + cell.height / 2);
+  await expect(header).toHaveAttribute("aria-sort", "descending");
+  await expect(gridCell(page, 0, 2)).toHaveText("30.0", { timeout: 30_000 });
+  await page.reload();
+  await expect(header).toHaveAttribute("aria-sort", "descending", { timeout: 30_000 });
+  await expect(gridCell(page, 0, 2)).toHaveText("30.0", { timeout: 30_000 });
+
+  // Another file starts from its own view, and going back shows the sorted one.
+  await page.getByRole("combobox", { name: "File" }).selectOption(".data/cli-e2e/sub/items.tsv");
+  await expect(page.getByRole("columnheader", { name: "name" })).not.toHaveAttribute("aria-sort", /./, {
+    timeout: 30_000,
+  });
+  await page.goBack();
+  await expect(header).toHaveAttribute("aria-sort", "descending", { timeout: 30_000 });
+  await expect(gridCell(page, 0, 2)).toHaveText("30.0", { timeout: 30_000 });
+  expect(problems).toEqual([]);
+});
+
 test("without the printed address, neither the page nor the files open", async ({ page }) => {
   const response = await page.goto(`${site}/`);
   expect(response?.status()).toBe(401);
