@@ -36,7 +36,7 @@ export const EDITING_HANDLERS = {
     run.writable([cell.column]);
     run.need([{ cells: [cell], keyed: true }]);
     const value = run.valueAt(cell);
-    const text = given ?? editText(value, run.typeOf(cell.column));
+    const text = given ?? editText(value, run.typeOf(cell.column), { timeZone: run.timeZoneOf(cell.column) });
     run.session.editor = { row: cell.row, column: cell.column, key: run.keyAt(cell.row), text, value };
   },
 
@@ -59,7 +59,7 @@ export const EDITING_HANDLERS = {
     const editor = run.session.editor;
     if (!editor) fail("", "no_editor", "No cell is being edited.");
     run.writable([editor.column]);
-    const read = readCellText(editor.text, run.typeOf(editor.column));
+    const read = readCellText(editor.text, run.typeOf(editor.column), { timeZone: run.timeZoneOf(editor.column) });
     if (!read.ok) {
       fail("", "invalid_value", `The text is not a value of "${editor.column}".`, {
         row: editor.row,
@@ -143,7 +143,10 @@ export const EDITING_HANDLERS = {
     }
     run.need([{ cells: targets, keyed: true }]);
     const updates = targets.map((cell) => {
-      const read = readCellText(cell.text, run.typeOf(cell.column), { grouping: true });
+      const read = readCellText(cell.text, run.typeOf(cell.column), {
+        grouping: true,
+        timeZone: run.timeZoneOf(cell.column),
+      });
       if (!read.ok) {
         fail("", "invalid_value", `"${cell.text}" is not a value of "${cell.column}".`, {
           row: cell.row,

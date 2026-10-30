@@ -182,6 +182,50 @@
         "rowCount": 1000,
         "rowIds": true
       }
+    },
+    "moments": {
+      "table": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "at",
+          "type": "timestamptz"
+        }
+      ],
+      "revision": "r1",
+      "view": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "at",
+            "type": "timestamptz"
+          }
+        ],
+        "rowCount": 1,
+        "rowIds": true
+      },
+      "rows": [
+        {
+          "start": 0,
+          "keys": [
+            {
+              "rowId": 0
+            }
+          ],
+          "values": [
+            [
+              1,
+              "2024-01-31 03:00:00+00"
+            ]
+          ]
+        }
+      ],
+      "page": 3
     }
   },
   "cases": [
@@ -3540,6 +3584,194 @@
                 "column": "qty",
                 "value": 3,
                 "previous": 4
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "editing.begin-time-zone",
+      "section": "7.3",
+      "description": "A timestamptz column whose date format has a timeZone starts its editor at the time of day there, with the offset.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "at",
+              "format": {
+                "date": {
+                  "timeZone": "Asia/Tokyo"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "context": "moments",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "at"
+        },
+        {
+          "command": "edit.begin"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "at",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "at"
+          },
+          "focus": {
+            "row": 0,
+            "column": "at"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "at"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 0,
+            "column": "at",
+            "key": {
+              "rowId": 0
+            },
+            "text": "2024-01-31 12:00:00+09",
+            "value": "2024-01-31 03:00:00+00"
+          }
+        },
+        "requests": []
+      }
+    },
+    {
+      "id": "editing.commit-time-zone",
+      "section": "7.3",
+      "description": "Typed text without an offset is the time of day in the format's timeZone.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "at",
+              "format": {
+                "date": {
+                  "timeZone": "Asia/Tokyo"
+                }
+              }
+            }
+          ]
+        },
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "at",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "at"
+          },
+          "focus": {
+            "row": 0,
+            "column": "at"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "at"
+              ]
+            }
+          ],
+          "editor": {
+            "row": 0,
+            "column": "at",
+            "key": {
+              "rowId": 0
+            },
+            "text": "2024-02-01 09:00",
+            "value": "2024-01-31 03:00:00+00"
+          }
+        }
+      },
+      "context": "moments",
+      "commands": [
+        {
+          "command": "edit.commit"
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "active": {
+            "row": 0,
+            "column": "at",
+            "key": {
+              "rowId": 0
+            }
+          },
+          "anchor": {
+            "row": 0,
+            "column": "at"
+          },
+          "focus": {
+            "row": 0,
+            "column": "at"
+          },
+          "selection": [
+            {
+              "rows": [
+                0,
+                1
+              ],
+              "columns": [
+                "at"
+              ]
+            }
+          ]
+        },
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 0
+                },
+                "column": "at",
+                "value": "2024-02-01 00:00:00+00",
+                "previous": "2024-01-31 03:00:00+00"
               }
             ]
           }

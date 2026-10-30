@@ -556,6 +556,11 @@ export class Run {
     return key;
   }
 
+  /** The time zone in which a column's typed text is read and its editor starts (§7.3), from its date format. */
+  timeZoneOf(name: string): string | undefined {
+    return this.document.columns?.find((setting) => setting.name === name)?.format?.date?.timeZone;
+  }
+
   typeOf(name: string): ValueType {
     const column = this.viewColumn(name) ?? this.context.table.find((item) => item.name === name);
     if (!column) throw new Error(`There is no column "${name}".`);

@@ -131,6 +131,30 @@ test("timestamps keep the digits of their unit, and timestamptz is UTC", () => {
   ]);
 });
 
+test("timestamptz text without an offset is the time of day in the format's time zone (§7.3)", () => {
+  const tz: ValueType = { type: "timestamptz" };
+  const read = (text: string, timeZone: string) => readCellText(text, tz, { timeZone });
+  assert.deepEqual(read("2024-01-31 12:00", "Asia/Tokyo"), ok("2024-01-31 03:00:00+00"));
+  assert.deepEqual(read("2024-07-01 12:00", "America/New_York"), ok("2024-07-01 16:00:00+00"));
+  assert.deepEqual(read("2024-01-31", "Asia/Kolkata"), ok("2024-01-30 18:30:00+00"));
+  // An offset wins over the zone.
+  assert.deepEqual(read("2024-01-31 12:00+01", "Asia/Tokyo"), ok("2024-01-31 11:00:00+00"));
+  // A time that clocks skip is read with the offset before the change, and one they repeat is the earlier.
+  assert.deepEqual(read("2024-03-10 02:30", "America/New_York"), ok("2024-03-10 07:30:00+00"));
+  assert.deepEqual(read("2024-11-03 01:30", "America/New_York"), ok("2024-11-03 05:30:00+00"));
+  assert.deepEqual(read("2024-01-31 12:00", "Not/AZone"), ok("2024-01-31 12:00:00+00"));
+
+  assert.equal(editText("2024-01-31 03:00:00+00", tz, { timeZone: "Asia/Tokyo" }), "2024-01-31 12:00:00+09");
+  assert.equal(editText("2024-01-31 03:00:00.5+00", tz, { timeZone: "Asia/Kolkata" }), "2024-01-31 08:30:00.5+05:30");
+  assert.equal(editText("2024-11-03 06:30:00+00", tz, { timeZone: "America/New_York" }), "2024-11-03 01:30:00-05");
+  assert.equal(editText("2024-01-31 03:00:00+00", tz, { timeZone: "Not/AZone" }), "2024-01-31 03:00:00+00");
+  // The text an editor starts with reads back as the same instant, on either side of a change of clocks.
+  for (const value of ["2024-11-03 05:30:00+00", "2024-11-03 06:30:00+00", "0001-01-01 00:00:00+00"]) {
+    const text = editText(value, tz, { timeZone: "America/New_York" });
+    assert.deepEqual(read(text, "America/New_York"), ok(value), text);
+  }
+});
+
 test("UUIDs are lowercase with dashes; intervals and binary values are not typed", () => {
   reads({ type: "uuid" }, [
     ["A0EEBC999C0B4EF8BB6D6BB9BD380A11", ok("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")],

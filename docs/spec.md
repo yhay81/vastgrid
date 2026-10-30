@@ -1111,13 +1111,21 @@ the text is removed first, except for strings. An empty text is null for every t
 | `date` | year, month and day separated by `-`, `/` or `.`, naming a real day | `YYYY-MM-DD` | `date` |
 | `time` | `H:MM`, `H:MM:SS` or `H:MM:SS.f` with 1 to 6 fraction digits | `HH:MM:SS`, with the fraction without trailing zeros | `time` |
 | `timestamp` | a date, then optionally a space or `T` and a time with as many fraction digits as the unit keeps | §2.2; midnight without a time | `timestamp`, `range` (outside the signed 64-bit count) |
-| `timestamptz` | a timestamp, then optionally `Z` or an offset `±HH`, `±HHMM` or `±HH:MM` | the instant in UTC (§2.2); without an offset, the time is UTC | `timestamp` |
+| `timestamptz` | a timestamp, then optionally `Z` or an offset `±HH`, `±HHMM` or `±HH:MM` | the instant in UTC (§2.2); without an offset, the time of day in the column's time zone (below), or UTC | `timestamp` |
 | `uuid` | 32 hex digits, with or without the dashes of `8-4-4-4-12`, in any letter case | lowercase with dashes | `uuid` |
 | `interval`, `binary` | nothing | | `type` |
 
 With **digit grouping** (pasting), numbers whose whole digits are grouped by commas in threes (`1,234.5`) are
 also read, without the commas. The text that an editor starts with for a value is its text form (§2.4), and
 the empty string for null.
+
+A `timestamptz` column whose `format.date` has a `timeZone` (an IANA name that Intl knows) reads text without an
+offset as the time of day in that zone, as the grid shows it. A time of day that the zone's clocks skip is read
+with the offset before the change (`2024-03-10 02:30` in `America/New_York` is `07:30` UTC), and one that they
+repeat is the earlier instant, as Temporal's `compatible` disambiguation does. Its editor starts with the time of
+day there and its offset (`2024-01-31 12:00:00+09` for `2024-01-31 03:00:00+00` in `Asia/Tokyo`, `+05:30` when
+the offset has minutes), which reads back as the same instant; an offset with seconds (local mean time before
+time zones) keeps the text form. Filters typed in the column menu read text in UTC.
 
 For `float(32)`, rounding is IEEE 754 round-to-nearest, ties-to-even (JavaScript `Math.fround`): typed
 `0.1` becomes `0.10000000149011612`. Subnormal values and underflow to zero follow that rule. Numeric
@@ -1484,7 +1492,6 @@ comes with conformance cases checked against DuckDB, and the JS engine follows i
 - Plans over a table that is still loading (`partialViews`): what `rowCount` and `where` mean there.
 - `copy` with `values: "formatted"` (§6.6): the display formatting of `number` and `date` formats, so that
   every core copies the same text.
-- Typed text in time zones other than UTC for `timestamptz` (§7.3).
 - Dates and timestamps outside the years 0001 to 9999 (DuckDB has dates from 5877642 BC), and the forms
   that would write them (§2.2).
 

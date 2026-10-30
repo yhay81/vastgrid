@@ -62,7 +62,7 @@ again and the status bar says why (see [When a write fails](#when-a-write-fails)
 | `date` | `2024-01-31`, `2024/1/31`, `2024.1.31`, naming a real day |
 | `time` | `9:05`, `09:05:30`, `09:05:30.25` (up to 6 fraction digits) |
 | `timestamp` | A date, then a space or `T` and a time |
-| `timestamptz` | A timestamp, then `Z` or an offset such as `+09:00`; without one, UTC |
+| `timestamptz` | A timestamp, then `Z` or an offset such as `+09:00`; without one, the time zone of the column's date format (`format.date.timeZone`), or UTC |
 | `uuid` | 32 hex digits, with or without dashes |
 | `interval`, `binary` | Not typed |
 

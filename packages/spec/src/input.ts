@@ -1,7 +1,14 @@
 /**
  * Reading typed text as a value of a column's type (docs/spec.md §7.3), and the text an editor starts with.
  */
-import { parseDateText, parseTimestampText, timestampText, UNIT_DIGITS, UNIT_PER_SECOND } from "./calendar.js";
+import {
+  daysFromCivil,
+  parseDateText,
+  parseTimestampText,
+  timestampText,
+  UNIT_DIGITS,
+  UNIT_PER_SECOND,
+} from "./calendar.js";
 import type { JsonValue, ValueType } from "./types.js";
 import { isValueOf, textOf } from "./values.js";
 
@@ -26,6 +33,11 @@ export type InputResult = { ok: true; value: JsonValue } | { ok: false; error: I
 export interface InputOptions {
   /** Read numbers whose whole digits are grouped by commas in threes (`1,234.5`), as pasting does. */
   grouping?: boolean;
+  /**
+   * The time zone (IANA) of a `timestamptz` column's `format.date.timeZone`: text without an offset is the time
+   * of day there. UTC without it, or when Intl does not know the zone.
+   */
+  timeZone?: string;
 }
 
 const whiteSpace = /^\p{White_Space}+|\p{White_Space}+$/gu;
@@ -90,10 +102,51 @@ function dayText(text: string): string | null {
   return parseDateText(day) === null ? null : day;
 }
 
+const DAY_MS = 86_400_000;
+const zoneFormats = new Map<string, Intl.DateTimeFormat>();
+
+/** How far the time of day in `timeZone` is ahead of UTC at an instant (ms since the epoch), in ms. */
+function zoneOffset(instant: number, timeZone: string): number {
+  let format = zoneFormats.get(timeZone);
+  if (!format) {
+    format = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      second: "numeric",
+    });
+    zoneFormats.set(timeZone, format);
+  }
+  const second = Math.floor(instant / 1000) * 1000;
+  const parts: Record<string, number> = {};
+  for (const part of format.formatToParts(second)) parts[part.type] = Number(part.value);
+  const local =
+    daysFromCivil(parts.year, parts.month, parts.day) * DAY_MS +
+    ((parts.hour * 60 + parts.minute) * 60 + parts.second) * 1000;
+  return local - second;
+}
+
+/**
+ * The instant (µs) whose time of day in `timeZone` is `local` (µs): the earlier of two when clocks are set back,
+ * and the one of the offset before the change when clocks skip it, as Temporal's `compatible` does.
+ */
+function zonedInstant(local: bigint, timeZone: string): bigint {
+  const ms = Number(local / 1000n);
+  const before = zoneOffset(ms - DAY_MS, timeZone);
+  const after = zoneOffset(ms + DAY_MS, timeZone);
+  const fitting = [before, after].filter((offset) => zoneOffset(ms - offset, timeZone) === offset);
+  const offset = fitting.length > 0 ? Math.max(...fitting) : before;
+  return local - BigInt(offset) * 1000n;
+}
+
 const timestampInput =
   /^([0-9]{4}[-/.][0-9]{1,2}[-/.][0-9]{1,2})(?:[ T]([0-9]{1,2}:[0-9]{2}(?::[0-9]{2}(?:\.[0-9]+)?)?)\s*(Z|[+-][0-9]{2}(?::?[0-9]{2})?)?)?$/i;
 
-function readTimestamp(text: string, type: ValueType): InputResult {
+function readTimestamp(text: string, type: ValueType, timeZone: string | undefined): InputResult {
   const zoned = type.type === "timestamptz";
   const unit = zoned ? "us" : (type.unit ?? "us");
   const match = timestampInput.exec(text);
@@ -114,7 +167,14 @@ function readTimestamp(text: string, type: ValueType): InputResult {
   }
   const local = parseTimestampText(`${day} ${clock}`, "us");
   if (local === null) return fail("timestamp");
-  const utc = local - BigInt(offsetMinutes) * 60n * UNIT_PER_SECOND.us;
+  let utc = local - BigInt(offsetMinutes) * 60n * UNIT_PER_SECOND.us;
+  if (!match[3] && timeZone) {
+    try {
+      utc = zonedInstant(local, timeZone);
+    } catch {
+      // A zone that Intl does not know: UTC, as the grid then shows the text form.
+    }
+  }
   try {
     return { ok: true, value: `${timestampText(utc, "us")}+00` };
   } catch {
@@ -160,7 +220,7 @@ export function readCellText(text: string, type: ValueType, options: InputOption
     }
     case "timestamp":
     case "timestamptz":
-      return readTimestamp(trimmed, type);
+      return readTimestamp(trimmed, type, options.timeZone);
     case "uuid":
       return /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(trimmed)
         ? {
@@ -174,7 +234,27 @@ export function readCellText(text: string, type: ValueType, options: InputOption
   }
 }
 
-/** The text an editor starts with for a value: its text form (§2.4), and the empty string for null. */
-export function editText(value: JsonValue, type: ValueType): string {
-  return textOf(value, type) ?? "";
+/**
+ * The text an editor starts with for a value: its text form (§2.4), and the empty string for null. With a
+ * `timeZone`, a `timestamptz` value is the time of day there with its offset (`2024-01-01 09:00:00+09`), which
+ * reads back as the same instant.
+ */
+export function editText(value: JsonValue, type: ValueType, options: { timeZone?: string } = {}): string {
+  const text = textOf(value, type) ?? "";
+  if (type.type !== "timestamptz" || !options.timeZone || value === null) return text;
+  const utc = parseTimestampText(text.slice(0, -3), "us");
+  if (utc === null) return text;
+  try {
+    const offset = zoneOffset(Number(utc / 1000n), options.timeZone);
+    // Offsets with seconds (local mean times before 1900) have no text that §7.3 reads.
+    if (offset % 60_000 !== 0) return text;
+    const local = timestampText(utc + BigInt(offset) * 1000n, "us");
+    if (parseTimestampText(local, "us") === null) return text;
+    const minutes = Math.abs(offset / 60_000);
+    const pad = (count: number) => String(count).padStart(2, "0");
+    const hours = `${offset < 0 ? "-" : "+"}${pad(Math.floor(minutes / 60))}`;
+    return `${local}${hours}${minutes % 60 === 0 ? "" : `:${pad(minutes % 60)}`}`;
+  } catch {
+    return text;
+  }
 }

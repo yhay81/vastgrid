@@ -9,6 +9,10 @@
   microseconds, rounded to the nearest one with halves away from zero, as a timestamp for dates and timestamps.
   The median of `2024-01-01` and `2024-01-02` is `2024-01-01 12:00:00`. `vastgrid`'s column statistics show the
   median of such columns.
+- `vastgrid-spec` and `vastgrid`: a `timestamptz` column whose date format has a `timeZone` reads typed and pasted
+  text without an offset as the time of day there (§7.3), and its editor starts with that time of day and its
+  offset (`2024-01-31 12:00:00+09`). A time that the clocks skip or repeat is read as Temporal's `compatible`
+  does.
 - The Python package `vastgrid`: `.xlsm` workbooks open, as `.xlsx` ones do.
 - `vastgrid-spec`: the specification settles what `vastgrid-js` answered as open questions: intervals compare by
   their length (§3.1); `locate` finds values equal by §3.1, at their first position; `summarize` MAY sum exact
