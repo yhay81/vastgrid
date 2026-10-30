@@ -1498,6 +1498,8 @@ comes with conformance cases checked against DuckDB, and the JS engine follows i
 
 ## 12. Open questions
 
+[proposals.md](proposals.md) proposes an answer to each.
+
 - Native nested types (lists, structs, maps) instead of their text, and measures that give them, such as a
   `histogram` that gives the counts of all the bins in one value.
 - Collations and folding (reading order of Japanese, full-width and half-width forms) as capabilities.

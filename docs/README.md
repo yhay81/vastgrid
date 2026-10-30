@@ -13,6 +13,8 @@ the code is checked against and how it was measured.
   [benchmarks/memory-engine.md](benchmarks/memory-engine.md): the memory engine. Both give the commands that
   measure again.
 - **[Migrating from 0.1](migrating-from-0.1.md)**: every feature of 0.1 and its place in 0.2.
+- **[Proposals](proposals.md)** for the open questions of the specification (§12): nested types, folding and
+  collations, and dates outside the years 0001 to 9999.
 
 The research and the design notes that led to 0.2 (in Japanese) were removed after 0.2.0-next.1; they stay in git
 at [507862d](https://github.com/yhay81/vastgrid/tree/507862d/docs).
