@@ -14,6 +14,7 @@ import {
   type WorkerLike,
   workerTransport,
 } from "vastgrid";
+import { messagesFor } from "vastgrid/locales";
 import "vastgrid/styles.css";
 import "./editor.css";
 import type { GridDocument, GridSession } from "vastgrid-spec";
@@ -42,7 +43,8 @@ const vscode = acquireVsCodeApi();
 const element = document.getElementById("root");
 if (!element) throw new Error("There is no #root.");
 const ref = element.dataset.ref ?? "";
-const locale = element.dataset.locale === "ja" ? "ja" : "en";
+const locale = element.dataset.locale || "en";
+const messages = messagesFor(locale);
 let saved: Saved = (vscode.getState() as Saved | undefined) ?? {};
 
 function keep(next: Partial<Saved>) {
@@ -182,7 +184,7 @@ function Editor({ sheet, onSheet }: { sheet: string | undefined; onSheet: (sheet
   return (
     <div className="vastgrid-editor">
       {sheets.sheets.length > 1 && (
-        <nav className="vastgrid-sheets" aria-label={locale === "ja" ? "シート" : "Sheets"}>
+        <nav className="vastgrid-sheets" aria-label={locale.toLowerCase().startsWith("ja") ? "シート" : "Sheets"}>
           {sheets.sheets.map((item) => (
             <button
               key={item.name}
@@ -195,7 +197,16 @@ function Editor({ sheet, onSheet }: { sheet: string | undefined; onSheet: (sheet
           ))}
         </nav>
       )}
-      <DataGrid store={store} toolbar statusBar checkboxes locale={locale} aria-label={ref} className="vastgrid-grid" />
+      <DataGrid
+        store={store}
+        toolbar
+        statusBar
+        checkboxes
+        locale={locale}
+        messages={messages}
+        aria-label={ref}
+        className="vastgrid-grid"
+      />
     </div>
   );
 }

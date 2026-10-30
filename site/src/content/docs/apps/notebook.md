@@ -34,7 +34,7 @@ grid
 | --- | --- | --- |
 | `sheet` | the first sheet | the sheet of a workbook |
 | `height` | 480 | the grid's height in pixels |
-| `locale` | `"en"` | the grid's texts and numbers: `"en"` or `"ja"` |
+| `locale` | `"en"` | the grid's texts and numbers, a BCP 47 tag: `"ja"`, `"zh-CN"`, `"zh-TW"`, `"ko"`, `"es"`, `"pt-BR"`, `"fr"`, `"de"`; texts are English for other languages |
 | `name` | the file's name, or `"table"` | the table's name, which screen readers say |
 | `workers` | 4 | the threads that answer the grid's requests side by side |
 

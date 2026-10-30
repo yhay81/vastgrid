@@ -5,6 +5,7 @@ import { renderToString } from "react-dom/server";
 import { prerender } from "react-dom/static";
 import { createGridStore, localTransport } from "../src/core.ts";
 import { DataGrid } from "../src/index.ts";
+import { ja } from "../src/locales/ja.ts";
 import { readInitialView } from "../src/server.ts";
 import { fakeEngine, numbers } from "./fake-engine.ts";
 
@@ -27,7 +28,7 @@ test("on the server, the canvas is left out and the first rows of `initial` are 
 
 test("without `initial`, the server sends a busy body of the same size", () => {
   const store = createGridStore({ transport: localTransport(fakeEngine(numbers(5))), table: "numbers" });
-  const markup = renderToString(createElement(DataGrid, { store, locale: "ja" }));
+  const markup = renderToString(createElement(DataGrid, { store, locale: "ja", messages: ja }));
   assert.match(markup, /<div class="vg-body" aria-busy="true"><\/div>/);
   assert.match(markup, /読み込み中…/);
 });

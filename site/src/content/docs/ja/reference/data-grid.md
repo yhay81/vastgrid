@@ -79,8 +79,8 @@ export function Orders() {
 
 | props | 型 | 既定値 | 説明 |
 | --- | --- | --- | --- |
-| `locale` | `string` | ブラウザーの言語 | UI のテキストと数値の BCP 47 タグ。英語と日本語を内蔵しています。 |
-| `messages` | `Partial<GridMessages>` | | `locale` のメッセージのうち置き換えるテキスト。 |
+| `locale` | `string` | ブラウザーの言語 | 数値と日付の書式の BCP 47 タグ。 |
+| `messages` | `Partial<GridMessages>` | 英語 | 英語の文言に重ねる UI の文言。`vastgrid/locales/<tag>` の組か、独自の文言。 |
 
 [ローカライズ](/ja/guides/localization/)を見てください。
 
@@ -308,5 +308,5 @@ function CheckedCount() {
 
 ## メッセージとキー
 
-- `messagesFor(locale)` はロケールの内蔵テキストを返します。`ja` で始まるタグなら日本語、それ以外は英語です。`GridMessages` はその型で、テキストごとの文字列（`grid`、`loading`、`search`、`save` など）、数を含むテキストの関数（`rows(count)`）、一覧のレコード（`operators`、`exportFormats`、`measureNames`、`statisticNames`、`numberStyles`、`alignments`、`pinned`）からなります。`messages` はメンバーを丸ごと置き換えます。
+- `vastgrid/locales/<tag>` は 1 つの言語のテキストを返します。`en`、`ja`、`zh-Hans`（`zhHans`）、`zh-Hant`（`zhHant`）、`ko`、`es`、`pt-BR`（`ptBR`）、`fr`、`de` があります。`vastgrid/locales` はそのすべてと、タグの言語の組を返す `messagesFor(locale)` を返します（`zh-Hant`・`zh-TW`・`zh-HK`・`zh-MO` は繁体字、組のない言語は英語）。`GridMessages` はその型で、テキストごとの文字列（`grid`、`loading`、`search`、`save` など）、数を含むテキストの関数（`rows(count)`）、一覧のレコード（`operators`、`exportFormats`、`measureNames`、`statisticNames`、`numberStyles`、`alignments`、`pinned`）からなります。`messages` はメンバーを丸ごと置き換えます。
 - `keyCommand(event, apple)` はキー操作がグリッドで意味するコマンドか null を返し、`isApple()` はプラットフォームの主な修飾キーが ⌘ かどうかを返します。

@@ -36,8 +36,9 @@ deletes its temporary files.
 ## The page
 
 The page shows the first file with the toolbar, the status bar and a check box for each row; a list above the grid
-chooses another file, and the sheets of a workbook are buttons. The address keeps the file and the sheet, so that
-the browser's back and forward move between them. The page follows the browser's language (English or Japanese).
+chooses another file, and the sheets of a workbook are buttons. The address keeps the file and the sheet, so that the
+browser's back and forward move between them. The page follows the browser's language (English, Japanese, Chinese,
+Korean, Spanish, Portuguese, French or German).
 
 Edited cells are kept by DuckDB until the command stops. With `--save`, ⌘S or Ctrl+S (or the toolbar's Save)
 writes them into the CSV or TSV file they came from, rewriting only the edited fields; without it, the command never

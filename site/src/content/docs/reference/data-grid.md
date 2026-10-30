@@ -86,8 +86,8 @@ The CSS variables of `vastgrid/styles.css` set the colors, fonts and sizes ([The
 
 | Prop | Type | Default | Description |
 | --- | --- | --- | --- |
-| `locale` | `string` | the browser's language | A BCP 47 tag for the UI's texts and numbers. English and Japanese are built in. |
-| `messages` | `Partial<GridMessages>` | | Texts that replace those of `locale`'s messages. |
+| `locale` | `string` | the browser's language | A BCP 47 tag for the formats of numbers and dates. |
+| `messages` | `Partial<GridMessages>` | English | The UI's texts, over the English ones: a set from `vastgrid/locales/<tag>`, or texts of your own. |
 
 See [Localization](/guides/localization/).
 
@@ -332,8 +332,10 @@ once all are checked (`check.clear`). Rows whose state is unknown show a dash.
 
 ## Messages and keys
 
-- `messagesFor(locale)` gives the built-in texts of a locale: Japanese for tags that start with `ja`, English
-  otherwise. `GridMessages` is their type: a string for each text (`grid`, `loading`, `search`, `save`, …),
+- `vastgrid/locales/<tag>` gives the texts of one language: `en`, `ja`, `zh-Hans` (`zhHans`), `zh-Hant` (`zhHant`),
+  `ko`, `es`, `pt-BR` (`ptBR`), `fr` and `de`. `vastgrid/locales` gives all of them, and `messagesFor(locale)`, the
+  set of a tag's language (traditional characters for `zh-Hant`, `zh-TW`, `zh-HK` and `zh-MO`; English for a language
+  without a set). `GridMessages` is their type: a string for each text (`grid`, `loading`, `search`, `save`, …),
   functions for texts with numbers (`rows(count)`), and records for lists (`operators`, `exportFormats`,
   `measureNames`, `statisticNames`, `numberStyles`, `alignments`, `pinned`). `messages` replaces members whole.
 - `keyCommand(event, apple)` gives the command that a key press means in the grid, or null, and `isApple()` tells

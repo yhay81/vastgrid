@@ -25,8 +25,9 @@ comes as a command, a VS Code extension, an MCP App and a Jupyter widget.
   the person is), controlled or not. Every change is a command that a toolbar, a host or an AI agent can dispatch.
 - **Engines you choose.** `vastgrid-js` in memory, in the page or a Web Worker; `vastgrid-duckdb` on Node.js; or
   your own, through a small set of messages.
-- **English and Japanese** built in, light and dark themes through CSS variables, ARIA grid semantics and full
-  keyboard operation.
+- **Nine languages** (English, Japanese, Chinese in simplified and traditional characters, Korean, Spanish,
+  Brazilian Portuguese, French and German), each its own import (`vastgrid/locales/ja`); light and dark themes
+  through CSS variables, ARIA grid semantics and full keyboard operation.
 
 ## Where to use it
 

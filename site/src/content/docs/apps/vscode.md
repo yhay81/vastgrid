@@ -36,7 +36,8 @@ the explorer.
 | Parquet | `.parquet`, `.pq` | read, by default |
 | Excel | `.xlsx`, `.xlsm` | read, by default; a bar above the grid, or "vastgrid: Choose Sheet", chooses the sheet |
 
-The grid takes VS Code's theme colors and font, and its language (English or Japanese).
+The grid takes VS Code's theme colors and font, and its language (English, Japanese, Chinese, Korean, Spanish,
+Portuguese, French or German).
 
 ## Editing and saving
 

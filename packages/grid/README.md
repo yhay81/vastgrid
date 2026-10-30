@@ -115,7 +115,8 @@ serveEngine(engine, self as unknown as WorkerLike);
 | `cellText`, `cellStyle`, `drawCell`, `cellAction`, `onCellAction` | the text, colors, drawing and actions (links, buttons) of cells |
 | `detailPanel` | your own content of the detail panel of the active row |
 | `rowHeight`, `headerHeight` | sizes in CSS pixels |
-| `locale`, `messages` | the language of the UI (English and Japanese built in) and any of its texts |
+| `locale` | the locale of numbers and dates (the browser's by default) |
+| `messages` | the UI's texts over the English ones: a set from `vastgrid/locales/<tag>` (`ja`, `zh-Hans`, `zh-Hant`, `ko`, `es`, `pt-BR`, `fr`, `de`), or texts of your own |
 | `onError` | failures that belong to no command |
 | `ref` | `{ store, dispatch, focus }` |
 | `className`, `style`, `aria-label` | on the root element |

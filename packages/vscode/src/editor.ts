@@ -131,7 +131,7 @@ export class TableEditorProvider implements vscode.CustomEditorProvider<TableDoc
       `font-src ${source}`,
       `script-src 'nonce-${nonce}'`,
     ].join("; ");
-    const locale = vscode.env.language.toLowerCase().startsWith("ja") ? "ja" : "en";
+    const locale = escapeHtml(vscode.env.language);
     return `<!doctype html>
 <html lang="${locale}">
   <head>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type ColumnGroup, DataGrid, type DataGridHandle, type GridDocument } from "vastgrid";
+import { ja } from "vastgrid/locales/ja";
 import "vastgrid/styles.css";
 import { localTransport } from "vastgrid/core";
 import { memoryEngine } from "vastgrid-js";
@@ -159,6 +160,7 @@ export default function DemoApp({ language: pageLanguage }: { language: Language
           table="orders"
           defaultDocument={pinned}
           locale={language}
+          messages={language === "ja" ? ja : undefined}
           toolbar
           statusBar
           checkboxes

@@ -22,4 +22,4 @@ export {
   useGridSelector,
   useGridStore,
 } from "./react/hooks.js";
-export { type GridMessages, messagesFor } from "./react/messages.js";
+export type { GridMessages } from "./react/messages.js";

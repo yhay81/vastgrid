@@ -38,6 +38,8 @@ rows, server rendering (§7) and the checks of §10 and §11.
 | `vastgrid` | the components and hooks, marked `"use client"` | yes |
 | `vastgrid/core` | the store, the client of the messages (§8 of the specification) and the transports | no |
 | `vastgrid/server` | what a Server Component or a server render calls: reading the first rows for `initial` (§7) | no |
+| `vastgrid/locales/<tag>` | the UI's texts in one language, for `messages`: `ja`, `zh-Hans`, `zh-Hant`, `ko`, `es`, `pt-BR`, `fr`, `de` and `en` (§5.1) | no |
+| `vastgrid/locales` | all of them, and `messagesFor(locale)`, which chooses one by a tag's language | no |
 | `vastgrid/styles.css` | the styles, themed by CSS custom properties | — |
 
 `react` and `react-dom` `^19.3.0` are peer dependencies. Engines are other packages:
@@ -229,7 +231,8 @@ export function Orders() {
 | `cellText`, `cellStyle`, `drawCell`, `cellAction`, `onCellAction` | functions | the text, colors, drawing and actions of cells (§6.12) |
 | `detailPanel` | a component of `DetailPanelProps` | the detail panel's content (§6.11) |
 | `rowHeight`, `headerHeight` | CSS pixels | instead of `--vg-row-height` and `--vg-header-height` |
-| `locale`, `messages` | a BCP 47 tag, texts | the language of the UI; English and Japanese are built in |
+| `locale` | a BCP 47 tag (default: the browser's) | the locale of numbers and dates |
+| `messages` | texts | the UI's texts over the English ones: a set of `vastgrid/locales`, so that a page bundles only the languages it shows, or texts of your own |
 | `onError` | `(error: GridError) => void` | failures that belong to no command (§4.2) |
 | `ref` | a ref | the handle (§5.5) |
 | `className`, `style`, `aria-label` | | on the root element |

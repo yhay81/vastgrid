@@ -65,10 +65,10 @@ scroll back to it) gets the whole state of the grid again.
 
 ## The page
 
-The App is one HTML file with its script and styles inside, the menus and panels included: the host serves it as
-a UI resource, and it loads nothing. It declares no domains, so hosts give it their default Content Security
-Policy. The page is 1.2 MB, 330 KB with gzip; most of it is the MCP client of ext-apps and zod, then React and
-the grid. It takes the host's theme and locale (English or Japanese).
+The App is one HTML file with its script and styles inside, the menus and panels included: the host serves it as a UI
+resource, and it loads nothing. It declares no domains, so hosts give it their default Content Security Policy. The
+page is 1.2 MB, 330 KB with gzip; most of it is the MCP client of ext-apps and zod, then React and the grid. It takes
+the host's theme and locale (English, Japanese, Chinese, Korean, Spanish, Portuguese, French or German).
 
 ## Not yet
 

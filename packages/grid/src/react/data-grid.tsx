@@ -22,7 +22,7 @@ import type { GridError, InitialView, OpenOptions } from "../core/types.js";
 import { GridContext, LocaleContext, SaveContext } from "./context.js";
 import type { DetailPanelProps } from "./detail-panel.js";
 import { type CellActionEvent, GridBody } from "./grid-body.js";
-import { type GridMessages, messagesFor } from "./messages.js";
+import { en, type GridMessages } from "./messages.js";
 import { useSaveAction } from "./save.js";
 import { StaticRows } from "./static-rows.js";
 import { StatusBar } from "./status-bar.js";
@@ -82,8 +82,9 @@ export interface DataGridProps {
   detailPanel?: ComponentType<DetailPanelProps>;
   rowHeight?: number;
   headerHeight?: number;
-  /** The language of the UI, a BCP 47 tag; the browser's by default. */
+  /** The locale of numbers and dates, a BCP 47 tag; the browser's by default. */
   locale?: string;
+  /** The UI's texts, over the English ones: a set of `vastgrid/locales`, or some texts of your own. */
   messages?: Partial<GridMessages>;
   /** Failures that belong to no command (§4.2). */
   onError?: (error: GridError) => void;
@@ -201,8 +202,7 @@ function Frame({
 }: DataGridProps & { store: GridStore }) {
   const detected = useSyncExternalStore(noSubscription, browserLocale, serverLocale);
   const locale = given ?? detected;
-  const base = messagesFor(locale);
-  const messages = replaced ? { ...base, ...replaced } : base;
+  const messages = replaced ? { ...en, ...replaced } : en;
   const language = { messages, locale, number: new Intl.NumberFormat(locale) };
   const label = ariaLabel ?? messages.grid;
   const scrollerRef = useRef<HTMLDivElement>(null);

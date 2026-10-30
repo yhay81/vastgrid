@@ -5,6 +5,7 @@
  */
 import { createRoot } from "react-dom/client";
 import { createGridStore, DataGrid, type WorkerLike, workerTransport } from "vastgrid";
+import { messagesFor } from "vastgrid/locales";
 import "vastgrid/styles.css";
 import "./notebook.css";
 import type { GridDocument } from "vastgrid-spec";
@@ -81,7 +82,7 @@ function render({ model, el }: { model: Model; el: HTMLElement }) {
     ...(document === undefined ? {} : { document }),
   });
   const disconnect = store.connect();
-  const locale = model.get("locale") === "ja" ? "ja" : "en";
+  const locale = (model.get("locale") as string | undefined) || "en";
   el.classList.add("vastgrid-notebook");
   // The grid's keys are its own. Notebook 7 handles keys before the page does (JupyterLab after it), and its keys of
   // command mode (A adds a cell, the arrows move between cells) skip a notebook marked `jp-mod-readWrite`, as it is
@@ -95,6 +96,7 @@ function render({ model, el }: { model: Model; el: HTMLElement }) {
     <DataGrid
       store={store}
       locale={locale}
+      messages={messagesFor(locale)}
       style={{ height: `${model.get("height") as number}px` }}
       aria-label={model.get("name") as string}
       // The notebook reads the plan and the columns' settings of the grid (`Grid.document`).

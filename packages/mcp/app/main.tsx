@@ -7,6 +7,7 @@ import { App, applyDocumentTheme, type McpUiHostContext } from "@modelcontextpro
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { DataGrid } from "vastgrid";
+import { messagesFor } from "vastgrid/locales";
 import "vastgrid/styles.css";
 import "./app.css";
 import type { GridDocument, GridSession } from "vastgrid-spec";
@@ -117,7 +118,7 @@ function GridApp({ app, opened, host, onReopen }: GridAppProps) {
     };
   }, [app, link, transport, opened.file, onReopen]);
 
-  const locale = host?.locale?.toLowerCase().startsWith("ja") ? "ja" : "en";
+  const locale = host?.locale ?? "en";
   return (
     <div className="vastgrid-app">
       <DataGrid
@@ -141,6 +142,7 @@ function GridApp({ app, opened, host, onReopen }: GridAppProps) {
         statusBar
         checkboxes
         locale={locale}
+        messages={messagesFor(locale)}
         aria-label={opened.file}
         style={{ height: "100%" }}
       />

@@ -88,8 +88,9 @@ a file open in vastgrid (its active editor, or the first), as the person's keys 
 - The extension opens files on disk only (`file:` URIs; in a remote window, the remote's disk, where the extension
   runs). The engine reads the file where it really is, links followed.
 - The page is `dist/webview.js` and `dist/webview.css` of the extension, the only files it may load. Its CSP is
-  `default-src 'none'`, scripts with a nonce, styles, images and fonts from the extension: no network, no
-  WebAssembly, no workers. The grid takes VS Code's theme colors and font, and its language (English or Japanese).
+  `default-src 'none'`, scripts with a nonce, styles, images and fonts from the extension: no network, no WebAssembly,
+  no workers. The grid takes VS Code's theme colors and font, and its language (English, Japanese, Chinese, Korean,
+  Spanish, Portuguese, French or German).
 
 ## Platforms and packaging
 

@@ -1,5 +1,6 @@
 import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createGridStore, DataGrid, GridProvider, type Transport, useGridSelector, workerTransport } from "vastgrid";
+import { ja } from "vastgrid/locales/ja";
 import "vastgrid/styles.css";
 
 type Theme = "auto" | "light" | "dark";
@@ -229,6 +230,7 @@ export default function OpenApp({ language: pageLanguage }: { language: Language
           <DataGrid
             store={store}
             locale={language}
+            messages={language === "ja" ? ja : undefined}
             style={{ height: "100%", colorScheme: theme === "auto" ? "light dark" : theme }}
             aria-label={opened.name}
           />

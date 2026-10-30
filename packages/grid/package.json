@@ -43,6 +43,16 @@
       "types": "./dist/server.d.ts",
       "default": "./dist/server.js"
     },
+    "./locales": {
+      "vastgrid-source": "./src/locales/index.ts",
+      "types": "./dist/locales/index.d.ts",
+      "default": "./dist/locales/index.js"
+    },
+    "./locales/*": {
+      "vastgrid-source": "./src/locales/*.ts",
+      "types": "./dist/locales/*.d.ts",
+      "default": "./dist/locales/*.js"
+    },
     "./styles.css": {
       "vastgrid-source": "./src/styles.css",
       "default": "./dist/styles.css"

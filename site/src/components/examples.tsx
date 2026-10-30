@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { DataGrid, type GridDocument, GridProvider, useCreateGridStore, useGridRows, useGridSelector } from "vastgrid";
+import { ja } from "vastgrid/locales/ja";
 import "vastgrid/styles.css";
 import { localTransport } from "vastgrid/core";
 import { memoryEngine } from "vastgrid-js";
@@ -28,6 +29,7 @@ export function HeroGrid({ locale = "en" }: ExampleProps) {
         table="orders"
         defaultDocument={pinned}
         locale={locale}
+        messages={locale === "ja" ? ja : undefined}
         statusBar
         aria-label="orders"
       />
@@ -61,6 +63,7 @@ export function ThemedGrid({ locale = "en" }: ExampleProps) {
           transport={transport}
           table="orders"
           locale={locale}
+          messages={locale === "ja" ? ja : undefined}
           className={`theme-${theme.name}`}
           rowHeight={theme.rowHeight}
           aria-label="orders"
@@ -89,7 +92,13 @@ export function ChartGrid({ locale = "en" }: ExampleProps) {
       <GridProvider store={store}>
         <Bars />
         <div className="example-grid">
-          <DataGrid store={store} locale={locale} toolbar aria-label="orders" />
+          <DataGrid
+            store={store}
+            locale={locale}
+            messages={locale === "ja" ? ja : undefined}
+            toolbar
+            aria-label="orders"
+          />
         </div>
       </GridProvider>
     </div>

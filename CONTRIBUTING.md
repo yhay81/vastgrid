@@ -86,7 +86,8 @@ engine and compares their answers. After a change to either engine or to `vastgr
 - `vastgrid-spec`, `vastgrid-js` and `vastgrid/core` use neither React nor Node.js APIs; keep it that way.
 - In `vastgrid-sql` and `vastgrid-duckdb`, SQL is generated and values are always parameters, and files are
   allowed by their real location (links followed). Keep both.
-- New texts in the grid go into `packages/grid/src/react/messages.ts` in both English and Japanese.
+- New texts in the grid go into `packages/grid/src/react/messages.ts` in English and into every set of
+  `packages/grid/src/locales/`, which TypeScript refuses without them.
 - Changes that users notice get a line under "Unreleased" in [CHANGELOG.md](CHANGELOG.md), starting with
   the package name.
 - Changes to the API or the features update both [README.md](README.md) and [README.ja.md](README.ja.md), the

@@ -53,8 +53,9 @@ Writing a cell is the person's sequence: `select`, `edit.begin` with the text, `
 `history.redo` undo and redo the agent's writes and the person's alike. A command that fails changes nothing and
 says why.
 
-The App is one HTML file, plain JavaScript and canvas with no WebAssembly, no workers and no network of its own, so
-it runs under the hosts' default CSP. It takes the host's theme and locale (English or Japanese).
+The App is one HTML file, plain JavaScript and canvas with no WebAssembly, no workers and no network of its own, so it
+runs under the hosts' default CSP. It takes the host's theme and locale (English, Japanese, Chinese, Korean, Spanish,
+Portuguese, French or German).
 
 It needs Node.js 20 or later on a platform that DuckDB ships a binary for: Linux (x64, arm64; glibc and musl), macOS
 (x64, arm64) or Windows (x64, arm64).

@@ -58,10 +58,11 @@ command that was killed are deleted by the next one.
 
 ## The page
 
-The page shows the first file with the toolbar, the status bar and a check box for each row. A list above the
-grid chooses another file, and the sheets of a workbook are buttons. The address keeps the file and the sheet
-(`?file=…&sheet=…`), so that the browser's back and forward move between them and a page loaded again shows the
-same file. Its texts follow the browser's language, English or Japanese.
+The page shows the first file with the toolbar, the status bar and a check box for each row. A list above the grid
+chooses another file, and the sheets of a workbook are buttons. The address keeps the file and the sheet
+(`?file=…&sheet=…`), so that the browser's back and forward move between them and a page loaded again shows the same
+file. Its texts follow the browser's language: English, Japanese, Chinese, Korean, Spanish, Portuguese, French or
+German.
 
 Everything the grid does with an engine works: sorting, filtering, searching, grouping, pivots, formulas,
 statistics, editing cells. Written cells are kept by DuckDB until the command stops, also when the page is loaded

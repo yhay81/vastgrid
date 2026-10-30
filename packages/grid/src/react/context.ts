@@ -1,6 +1,6 @@
 import { createContext } from "react";
 import type { GridStore } from "../core/store.js";
-import { type GridMessages, messagesFor } from "./messages.js";
+import { en, type GridMessages } from "./messages.js";
 
 /** The store of the nearest `DataGrid` or `GridProvider`. */
 export const GridContext = createContext<GridStore | null>(null);
@@ -13,7 +13,7 @@ export interface GridLocale {
 }
 
 export const LocaleContext = createContext<GridLocale>({
-  messages: messagesFor(undefined),
+  messages: en,
   locale: undefined,
   number: new Intl.NumberFormat("en"),
 });

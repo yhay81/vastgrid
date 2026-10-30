@@ -6,6 +6,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { DataGrid, type GridStore, httpTransport, useCreateGridStore } from "vastgrid";
+import { messagesFor } from "vastgrid/locales";
 import "vastgrid/styles.css";
 import "./app.css";
 
@@ -23,6 +24,7 @@ interface Place {
 
 const transport = httpTransport("/api", { events: "/api/events" });
 const ja = navigator.language.startsWith("ja");
+const messages = messagesFor(navigator.language);
 
 function readPlace(): Place {
   const params = new URLSearchParams(location.search);
@@ -61,7 +63,15 @@ function Grid({ file, sheet, onSheet }: { file: string; sheet: string | null; on
           ))}
         </nav>
       )}
-      <DataGrid store={store} toolbar statusBar checkboxes aria-label={file} className="vastgrid-grid" />
+      <DataGrid
+        store={store}
+        toolbar
+        statusBar
+        checkboxes
+        messages={messages}
+        aria-label={file}
+        className="vastgrid-grid"
+      />
     </>
   );
 }

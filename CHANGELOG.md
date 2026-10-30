@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- `vastgrid`: the grid's texts are English unless `messages` gives others, and each other language is its own
+  import, so that a page bundles only the languages it shows: `<DataGrid locale="ja" messages={ja} />` with
+  `import { ja } from "vastgrid/locales/ja"`. `locale` sets the formats of numbers and dates alone; a `locale` or a
+  browser language of `ja` no longer shows Japanese texts by itself. `messagesFor` moved from `vastgrid` to
+  `vastgrid/locales`, which gives every set. The first load of a page that shows English is 9.5 KB smaller (2.4 KB
+  with gzip).
+
+### New
+
+- `vastgrid`: texts in Chinese in simplified and traditional characters (`vastgrid/locales/zh-Hans`, `zh-Hant`),
+  Korean (`ko`), Spanish (`es`), Brazilian Portuguese (`pt-BR`), French (`fr`) and German (`de`), besides Japanese
+  (`ja`) and English (`en`). `messagesFor(locale)` of `vastgrid/locales` chooses one by a tag's language.
+- `vastgrid-cli`, `vastgrid-mcp`, `vastgrid-vscode` and the Python package `vastgrid`: the grid follows the
+  browser's, host's or VS Code's language, or the notebook's `locale`, in all nine languages.
+
 ### Release
 
 - `vastgrid-vscode`: the extension's script is minified, 417 KB instead of 921 KB (113 KB instead of 165 KB with

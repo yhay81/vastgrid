@@ -3,19 +3,35 @@ title: Languages and texts
 description: Choose the grid's language and its number and date formats, and replace its texts.
 ---
 
-The grid has its texts in English and Japanese. The `locale` prop chooses them, and the locale of number and
-date formats:
+The grid shows English texts. The texts of another language are each their own import, given to `messages`, so
+that a page bundles only the languages it shows; `locale` chooses the locale of number and date formats:
 
 ```tsx
-<DataGrid transport={transport} table="orders" locale="ja" />
+import { ja } from "vastgrid/locales/ja";
+
+<DataGrid transport={transport} table="orders" locale="ja" messages={ja} />;
 ```
 
-- A locale that starts with `ja` shows the Japanese texts; any other shows the English ones.
-- Without `locale`, the grid uses the browser's language (`navigator.language`). On a server it has none, and
-  renders English: when you render the grid on the server, pass the `locale` of the request, so that the texts do
-  not change when the page hydrates.
-- The counts, sums and averages of the status bar follow the locale's rules: `locale="de"` shows `1.234.567,5`
-  with English texts.
+| Import | Language |
+| --- | --- |
+| `import { ja } from "vastgrid/locales/ja"` | Japanese |
+| `import { zhHans } from "vastgrid/locales/zh-Hans"` | Chinese, simplified characters |
+| `import { zhHant } from "vastgrid/locales/zh-Hant"` | Chinese, traditional characters |
+| `import { ko } from "vastgrid/locales/ko"` | Korean |
+| `import { es } from "vastgrid/locales/es"` | Spanish |
+| `import { ptBR } from "vastgrid/locales/pt-BR"` | Brazilian Portuguese |
+| `import { fr } from "vastgrid/locales/fr"` | French |
+| `import { de } from "vastgrid/locales/de"` | German |
+| `import { en } from "vastgrid/locales/en"` | English, the default |
+
+- To follow the user's language, `vastgrid/locales` gives every set and `messagesFor(locale)`, which chooses one by
+  a tag's language: `messages={messagesFor(navigator.language)}`. Traditional characters are for `zh-Hant`,
+  `zh-TW`, `zh-HK` and `zh-MO`, simplified ones for any other `zh`, and English for a language without a set. The
+  page then bundles all nine sets, about 50 KB minified.
+- Without `locale`, numbers and dates use the browser's language (`navigator.language`). On a server it has none:
+  when you render the grid on the server, pass the `locale` of the request, and the same `messages`, so that
+  nothing changes when the page hydrates.
+- The counts, sums and averages of the status bar follow the locale's rules: `locale="de"` shows `1.234.567,5`.
 
 Cells show values in their text form (`1234567.5`, `2024-01-31 12:00:00`) until a column has a format. A
 number format (number, percent or currency, with decimal places and digit grouping) and a date pattern such as
@@ -41,42 +57,42 @@ functions, which receive them already formatted:
 
 `messages` is merged over the built-in set member by member. The groups `exportFormats`, `operators`,
 `statisticNames`, `measureNames`, `pinned`, `alignments` and `numberStyles` are replaced as a whole, so to change
-one text in a group, start from the built-in group with `messagesFor`:
+one text in a group, start from the group of a set:
 
 ```tsx
-import { DataGrid, messagesFor } from "vastgrid";
-
-const built = messagesFor("en");
+import { DataGrid } from "vastgrid";
+import { en } from "vastgrid/locales/en";
 
 <DataGrid
   transport={transport}
   table="orders"
-  messages={{ measureNames: { ...built.measureNames, avg: "Mean" } }}
+  messages={{ measureNames: { ...en.measureNames, avg: "Mean" } }}
 />;
 ```
 
 ## Another language
 
-For a language the grid does not have, start from the English set and translate every text, then pass the
+For a language that vastgrid does not have, start from the English set and translate every text, then pass the
 result with the locale of the language for its formats:
 
 ```tsx
-import { DataGrid, type GridMessages, messagesFor } from "vastgrid";
+import { DataGrid, type GridMessages } from "vastgrid";
+import { en } from "vastgrid/locales/en";
 
-const fr: GridMessages = {
-  ...messagesFor("en"),
-  grid: "Tableau de données",
-  loading: "Chargement…",
-  rows: (count) => `${count} lignes`,
+const it: GridMessages = {
+  ...en,
+  grid: "Tabella dei dati",
+  loading: "Caricamento…",
+  rows: (count) => `${count} righe`,
   // …every other text
 };
 
-<DataGrid transport={transport} table="orders" locale="fr" messages={fr} />;
+<DataGrid transport={transport} table="orders" locale="it" messages={it} />;
 ```
 
-`GridMessages` is the type of the whole set, and `messagesFor(locale)` gives a built-in one;
-[`messages.ts`](https://github.com/yhay81/vastgrid/blob/main/packages/grid/src/react/messages.ts) has both. Make
-`fr` once, outside the component. Translations into more languages are welcome as pull requests.
+`GridMessages` is the type of the whole set. The sets are in
+[`locales/`](https://github.com/yhay81/vastgrid/tree/main/packages/grid/src/locales). Make `it` once, outside the
+component. Translations into more languages, and corrections of these, are welcome as pull requests.
 
 ## Names for screen readers
 

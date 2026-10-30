@@ -91,7 +91,7 @@ empty `connectDomains` and `resourceDomains`), so hosts give it their default CS
 run. The page is 1.2 MB, 330 KB with gzip; most of it is ext-apps' MCP client and zod (600 KB), then React and the
 grid.
 
-The App takes the host's theme and locale (English or Japanese).
+The App takes the host's theme and locale (English, Japanese, Chinese, Korean, Spanish, Portuguese, French or German).
 
 ## Testing
 
