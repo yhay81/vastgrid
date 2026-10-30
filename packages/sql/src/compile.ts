@@ -330,6 +330,15 @@ class Compiler {
         if (type.type === "float") return finite(`${node.fn}(${this.number(args[0])})`);
         if (type.type === "decimal") return cast(`${node.fn}(${arg(0)})`, type);
         return arg(0);
+      case "bin": {
+        // The greatest multiple of the width that is not above the number (§4.4); a remainder below zero is moved
+        // up by the width, which cannot overflow.
+        const width = Number((args[1] as LiteralExpr).value);
+        if (type.type === "float") return finite(`(floor(${this.double(args[0])} / ${width}) * ${width})`);
+        const step = cast(String(width), type);
+        const rest = `(${arg(0)} % ${step})`;
+        return `TRY(${cast(`(${arg(0)} - (CASE WHEN ${rest} < 0 THEN ${rest} + ${step} ELSE ${rest} END))`, type)})`;
+      }
       case "sqrt":
       case "exp":
       case "ln":

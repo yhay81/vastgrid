@@ -43,7 +43,7 @@ description: 行ごとに式で計算する列、式の書き方と関数、コ�
 | 種類 | 関数 |
 | --- | --- |
 | 論理 | `IF(条件, a, b)`、`COALESCE`、`IN(x, 'a', 'b', …)`、`IS_NULL`、`IS_BLANK`、`LEAST`、`GREATEST`、`NOT` |
-| 数値 | `ABS`、`ROUND(x, 桁)`（桁は −18〜18、0.5 は 0 から遠い方へ）、`FLOOR`、`CEIL`、`SQRT`、`EXP`、`LN`、`LOG10`、`POWER`、`SIGN`、`TO_NUMBER(文字列)` |
+| 数値 | `ABS`、`ROUND(x, 桁)`（桁は −18〜18、0.5 は 0 から遠い方へ）、`FLOOR`、`CEIL`、`BIN(x, 幅)`（x の入る区間の下端。`BIN(-0.1, 0.25)` は −0.25）、`SQRT`、`EXP`、`LN`、`LOG10`、`POWER`、`SIGN`、`TO_NUMBER(文字列)` |
 | 文字列 | `LENGTH`、`LOWER`、`UPPER`、`TRIM`、`LEFT`、`RIGHT`、`SUBSTR(s, 開始, 長さ)`（1 から数える）、`REPLACE`、`CONTAINS`、`STARTS_WITH`、`ENDS_WITH`、`TEXT(x)`、`CONCAT` |
 | 日付 | `TO_DATE(文字列)`、`TO_TIMESTAMP(文字列)`、`YEAR`、`MONTH`、`DAY`、`HOUR`、`MINUTE`、`SECOND`、`ISODOW`（月曜が 1）、`DATE_DIFF_DAYS(開始, 終了)`、`ADD_DAYS(d, n)` |
 

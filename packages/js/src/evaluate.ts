@@ -523,6 +523,20 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
         return x === null ? null : exactJson(floorOrCeil(unscaled(x, types[0]), scale, up), type);
       };
     }
+    case "bin": {
+      // The greatest multiple of the width that is not above the number (§4.4).
+      const width = (expr.args[1] as { value: number }).value;
+      if (type.type === "float") return float1(a, types[0], (x) => Math.floor(x / width) * width);
+      const [whole, fraction = ""] = String(width).split(".");
+      const step = BigInt(whole + fraction.padEnd(scaleOf(types[0]), "0"));
+      return (row) => {
+        const x = a(row);
+        if (x === null) return null;
+        const value = unscaled(x, types[0]);
+        const rest = value % step;
+        return exactJson(value - (rest < 0n ? rest + step : rest), type);
+      };
+    }
     case "sqrt":
       return float1(a, types[0], Math.sqrt);
     case "exp":

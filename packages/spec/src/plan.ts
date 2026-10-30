@@ -33,6 +33,7 @@ export const FUNCTIONS = [
   "round",
   "floor",
   "ceil",
+  "bin",
   "sqrt",
   "exp",
   "ln",

@@ -56,7 +56,7 @@ that fails for a row, such as a division by zero or `SQRT(-1)`, gives null for t
 | Kind | Functions |
 | --- | --- |
 | Logic | `IF(cond, a, b)`, `COALESCE`, `IN(x, 'a', 'b', …)`, `IS_NULL`, `IS_BLANK`, `LEAST`, `GREATEST`, `NOT` |
-| Numbers | `ABS`, `ROUND(x, digits)` (digits from −18 to 18, halves away from zero), `FLOOR`, `CEIL`, `SQRT`, `EXP`, `LN`, `LOG10`, `POWER`, `SIGN`, `TO_NUMBER(text)` |
+| Numbers | `ABS`, `ROUND(x, digits)` (digits from −18 to 18, halves away from zero), `FLOOR`, `CEIL`, `BIN(x, width)` (the lower bound of x's bin: `BIN(-0.1, 0.25)` is −0.25), `SQRT`, `EXP`, `LN`, `LOG10`, `POWER`, `SIGN`, `TO_NUMBER(text)` |
 | Text | `LENGTH`, `LOWER`, `UPPER`, `TRIM`, `LEFT`, `RIGHT`, `SUBSTR(s, start, n)` (from 1), `REPLACE`, `CONTAINS`, `STARTS_WITH`, `ENDS_WITH`, `TEXT(x)`, `CONCAT` |
 | Dates | `TO_DATE(text)`, `TO_TIMESTAMP(text)`, `YEAR`, `MONTH`, `DAY`, `HOUR`, `MINUTE`, `SECOND`, `ISODOW` (Monday is 1), `DATE_DIFF_DAYS(start, end)`, `ADD_DAYS(d, n)` |
 

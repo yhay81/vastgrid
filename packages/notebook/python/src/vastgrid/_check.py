@@ -23,6 +23,7 @@ from ._values import (
     js_float,
     js_keys,
     json_text,
+    number_text,
     same_type,
     trim_spaces,
     type_name,
@@ -209,6 +210,20 @@ def _decimal_shape(type: ValueType) -> tuple[int, int]:
     if type["type"] == "bigint":
         return 19, 0
     return _member(type, "precision", 38), _member(type, "scale", 0)
+
+
+def _holds_exact(type: ValueType, value: float) -> bool:
+    """Whether an exact type holds a number: its digits (as `String` writes them) fit its scale and range."""
+    text = number_text(value)
+    if "e" in text.lower():
+        return False
+    whole, _, fraction = text.partition(".")
+    if type["type"] == "integer":
+        return fraction == "" and value <= 2147483647
+    if type["type"] == "bigint":
+        return fraction == "" and int(whole) <= 9223372036854775807
+    precision, scale = _decimal_shape(type)
+    return len(fraction) <= scale and len(whole.lstrip("0")) <= precision - scale
 
 
 def arithmetic_type(fn: str, a: ValueType, b: ValueType) -> ValueType:
@@ -555,6 +570,16 @@ class _Checker:
             if type["type"] == "decimal":
                 return _decimal(_member(type, "precision", 38), 0)
             return value_type(type)
+        if fn == "bin":
+            arity(2)
+            type = number(0)
+            width = args[1]
+            if not isinstance(width, LiteralExpr) or not is_number(width.value) or not js_float(width.value) > 0:
+                _fail(at(1), "type", "bin's width is a positive number literal.")
+            value = js_float(width.value)
+            if not math.isfinite(value) or (type["type"] != "float" and not _holds_exact(type, value)):
+                _fail(at(1), "type", "bin's width is a value of the number's type.")
+            return FLOAT if type["type"] == "float" else value_type(type)
         if fn in ("sqrt", "exp", "ln", "log10"):
             arity(1)
             number(0)

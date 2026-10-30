@@ -4,6 +4,10 @@
 
 ### New
 
+- `vastgrid-spec`, `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb` and the Python package `vastgrid`: a `bin`
+  function (§4.4), the lower bound of a number's bin of a given width, in the number's type and exact for integers,
+  bigints and decimals: `bin(price, 10)` in `derive`, then `count` grouped by it, is a histogram. Formulas have it
+  as `BIN(x, width)`.
 - `vastgrid-spec`, `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb` and the Python package `vastgrid`: `quantile`
   measures dates, times, timestamps and `timestamptz` values (§3.8), as DuckDB's `quantile_cont` does: in
   microseconds, rounded to the nearest one with halves away from zero, as a timestamp for dates and timestamps.

@@ -93,6 +93,7 @@
             "round",
             "floor",
             "ceil",
+            "bin",
             "sqrt",
             "exp",
             "ln",

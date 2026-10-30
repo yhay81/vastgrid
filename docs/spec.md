@@ -388,6 +388,7 @@ Arithmetic and numbers (§3.6, §3.7):
 | `neg`, `abs` | a number | §3.7 |
 | `round` | a number, and optionally `digits`, an integer literal from −18 to 18 (default 0) | integers and bigints keep their type; a decimal(p, s) becomes a decimal(p, min(s, max(digits, 0))); floats stay floats. Halves round away from zero: `round(2.5)` is 3 and `round(-2.5)` is −3 |
 | `floor`, `ceil` | a number | integers and bigints keep their type; a decimal(p, s) becomes a decimal(p, 0); floats stay floats |
+| `bin` | a number, and `width`: a positive number literal that the number's type holds (a whole number for integers and bigints, at most s places for a decimal(p, s)) | the number's type, floats stay floats: the greatest multiple of `width` not above the number, so `bin(-0.1, 0.25)` is −0.25. Null when that is outside the type. Exact types bin exactly, without going through floats |
 | `sqrt`, `exp`, `ln`, `log10` | a number | float |
 | `power` | 2 numbers | float |
 | `sign` | a number | integer: −1, 0 or 1 |
@@ -1490,9 +1491,9 @@ comes with conformance cases checked against DuckDB, and the JS engine follows i
 
 ## 12. Open questions
 
-- Native nested types (lists, structs, maps) instead of their text.
+- Native nested types (lists, structs, maps) instead of their text, and measures that give them, such as a
+  `histogram` that gives the counts of all the bins in one value.
 - Collations and folding (reading order of Japanese, full-width and half-width forms) as capabilities.
-- A `histogram` measure instead of `derive` then `aggregate`.
 - Plans over a table that is still loading (`partialViews`): what `rowCount` and `where` mean there.
 - Dates and timestamps outside the years 0001 to 9999 (DuckDB has dates from 5877642 BC), and the forms
   that would write them (§2.2).
@@ -1509,7 +1510,7 @@ comes with conformance cases checked against DuckDB, and the JS engine follows i
 | `formulas` (the formula language) | `plan.derive`, written as formulas (§4.11) |
 | `group`, `pivot`, the totals row | `plan.aggregate` and `pivot`; totals are `aggregate` without keys |
 | `GroupedSource` (sorting and filtering groups) | `having` and `sort` of an aggregated plan |
-| `columnStats` | plans with `count`, `count_distinct`, `min`, `max`, `avg`, `stddev` and `quantile`; the histogram is a bin made with `derive`, then `aggregate` |
+| `columnStats` | plans with `count`, `count_distinct`, `min`, `max`, `avg`, `stddev` and `quantile`; the histogram is `bin` in `derive`, then `count` in `aggregate` grouped by it |
 | `distinctValues` | `aggregate` by the column with `count`, `sort`, then `rows` of the first n |
 | `aggregate` (the selection summary) | `summarize` |
 | `find` | `find` |

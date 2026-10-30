@@ -175,6 +175,17 @@ function decimal(precision: number, scale: number): ValueType {
   return { type: "decimal", precision, scale };
 }
 
+/** Whether an exact type holds a number: its digits (as `String` writes them) fit its scale and range. */
+function holdsExact(type: ValueType, value: number): boolean {
+  const text = String(value);
+  if (/e/i.test(text)) return false;
+  const [whole, fraction = ""] = text.split(".");
+  if (type.type === "integer") return fraction === "" && value <= 2147483647;
+  if (type.type === "bigint") return fraction === "" && BigInt(whole) <= 9223372036854775807n;
+  const { p, s } = decimalShape(type);
+  return fraction.length <= s && whole.replace(/^0+/, "").length <= p - s;
+}
+
 /** Precision and scale of an exact number when it meets a decimal (§3.7). */
 function decimalShape(type: ValueType): { p: number; s: number } {
   if (type.type === "integer") return { p: 10, s: 0 };
@@ -552,6 +563,19 @@ class Checker {
         if (type.type === "float") return FLOAT;
         if (type.type === "decimal") return decimal(type.precision ?? 38, 0);
         return valueType(type);
+      }
+      case "bin": {
+        arity(2);
+        this.want(args[0], at(0), isNumber, "a number", FLOAT);
+        const type = args[0].type as ValueType;
+        const width = args[1];
+        if (width.kind !== "literal" || typeof width.value !== "number" || !(width.value > 0)) {
+          fail(at(1), "type", "bin's width is a positive number literal.");
+        }
+        if (!Number.isFinite(width.value) || (type.type !== "float" && !holdsExact(type, width.value))) {
+          fail(at(1), "type", "bin's width is a value of the number's type.");
+        }
+        return type.type === "float" ? FLOAT : valueType(type);
       }
       case "sqrt":
       case "exp":

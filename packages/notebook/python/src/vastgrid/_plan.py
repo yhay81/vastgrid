@@ -35,6 +35,7 @@ FUNCTIONS: tuple[str, ...] = (
     "round",
     "floor",
     "ceil",
+    "bin",
     "sqrt",
     "exp",
     "ln",

@@ -235,6 +235,78 @@
       "expect": { "columns": [{ "name": "x", "type": "bigint" }], "rowCount": 4, "rows": [[null], [0], [0], [0]] }
     },
     {
+      "id": "eval.bin",
+      "section": "4.4",
+      "description": "bin gives the lower bound of the value's bin in its type, rounding down below zero; floats that are not finite give null.",
+      "table": "nums",
+      "plan": {
+        "derive": [
+          { "name": "i5", "expr": { "fn": "bin", "args": [{ "col": "i" }, { "lit": 5 }] } },
+          { "name": "d25", "expr": { "fn": "bin", "args": [{ "col": "d" }, { "lit": 0.25 }] } },
+          { "name": "e5", "expr": { "fn": "bin", "args": [{ "col": "e" }, { "lit": 0.5 }] } },
+          { "name": "f2", "expr": { "fn": "bin", "args": [{ "col": "f" }, { "lit": 2 }] } }
+        ]
+      },
+      "read": { "columns": ["i5", "d25", "e5", "f2"] },
+      "expect": {
+        "columns": [
+          { "name": "i5", "type": "integer" },
+          { "name": "d25", "type": "decimal", "precision": 10, "scale": 2 },
+          { "name": "e5", "type": "decimal", "precision": 5, "scale": 3 },
+          { "name": "f2", "type": "float" }
+        ],
+        "rowCount": 4,
+        "rows": [[5, "1.25", "1.500", 2], [-10, "-0.25", "0.000", null], [null, "0.00", null, null], [0, "10.00", "2.000", 0]]
+      }
+    },
+    {
+      "id": "eval.bin-overflow",
+      "section": "4.4",
+      "description": "A bin below the type's range is null.",
+      "table": "nums",
+      "plan": {
+        "derive": [
+          { "name": "x", "expr": { "fn": "bin", "args": [{ "fn": "neg", "args": [{ "col": "b" }] }, { "lit": 10 }] } }
+        ]
+      },
+      "read": { "columns": ["x"] },
+      "expect": { "columns": [{ "name": "x", "type": "bigint" }], "rowCount": 4, "rows": [[null], [0], [0], [-10]] }
+    },
+    {
+      "id": "eval.bin-histogram",
+      "section": "4.4",
+      "description": "A histogram is bins made with derive, then counted with aggregate.",
+      "table": "nums",
+      "plan": {
+        "derive": [{ "name": "bin", "expr": { "fn": "bin", "args": [{ "col": "d" }, { "lit": 5 }] } }],
+        "aggregate": { "keys": ["bin"], "measures": [{ "name": "n", "fn": "count" }] }
+      },
+      "expect": {
+        "columns": [
+          { "name": "bin", "type": "decimal", "precision": 10, "scale": 2 },
+          { "name": "n", "type": "bigint" }
+        ],
+        "rowCount": 3,
+        "rows": [["-5.00", 1], ["0.00", 2], ["10.00", 1]]
+      }
+    },
+    {
+      "id": "eval.bin-width-finer-than-type",
+      "section": "4.4",
+      "description": "bin's width is a value of the number's type: a decimal(10, 2) has no 0.001.",
+      "table": "nums",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "bin", "args": [{ "col": "d" }, { "lit": 0.001 }] } }] },
+      "expect": { "error": { "code": "invalid_plan", "reason": "type", "path": "/derive/0/expr/args/1" } }
+    },
+    {
+      "id": "eval.bin-width-not-positive",
+      "section": "4.4",
+      "description": "bin's width is a positive literal.",
+      "table": "nums",
+      "plan": { "derive": [{ "name": "x", "expr": { "fn": "bin", "args": [{ "col": "f" }, { "lit": 0 }] } }] },
+      "expect": { "error": { "code": "invalid_plan", "reason": "type", "path": "/derive/0/expr/args/1" } }
+    },
+    {
       "id": "eval.if-null-condition",
       "section": "3.6",
       "description": "A null condition takes the second value.",

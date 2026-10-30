@@ -306,6 +306,15 @@ class _Compiler:
             if type["type"] == "decimal":
                 return _cast(f"{fn}({arg(0)})", type)
             return arg(0)
+        if fn == "bin":
+            # The greatest multiple of the width that is not above the number (§4.4); a remainder below zero is
+            # moved up by the width, which cannot overflow.
+            width = number_text(js_float(args[1].value))
+            if type["type"] == "float":
+                return _finite(f"(floor({self._double(args[0])} / {width}) * {width})")
+            step = _cast(width, type)
+            rest = f"({arg(0)} % {step})"
+            return f"TRY({_cast(f'({arg(0)} - (CASE WHEN {rest} < 0 THEN {rest} + {step} ELSE {rest} END))', type)})"
         if fn in ("sqrt", "exp", "ln", "log10"):
             return _finite(f"TRY({fn}({self._double(args[0])}))")
         if fn == "power":
