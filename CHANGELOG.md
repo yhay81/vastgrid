@@ -13,6 +13,10 @@
   text without an offset as the time of day there (§7.3), and its editor starts with that time of day and its
   offset (`2024-01-31 12:00:00+09`). A time that the clocks skip or repeat is read as Temporal's `compatible`
   does.
+- `vastgrid-spec` and `vastgrid`: `copy` with `values: "formatted"` copies the text of the columns' `number` and
+  `date` formats and their labels, in the context's `locale` (§6.6), where it answered `unsupported`; without
+  `values`, each column copies as its `format.copy` says. The grid copies in its `locale`, and its formatter is
+  `formatterFor` of `vastgrid-spec`.
 - The Python package `vastgrid`: `.xlsm` workbooks open, as `.xlsx` ones do.
 - `vastgrid-spec`: the specification settles what `vastgrid-js` answered as open questions: intervals compare by
   their length (§3.1); `locate` finds values equal by §3.1, at their first position; `summarize` MAY sum exact

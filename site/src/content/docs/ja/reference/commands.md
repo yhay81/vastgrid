@@ -133,7 +133,7 @@ const outcome = await grid.current?.dispatch({ command: "search.set", text: "Tok
 
 | コマンド | 引数 | 効果 |
 | --- | --- | --- |
-| `copy` | `headers`：真偽値、`values`：`raw`（既定）か `formatted` | 選択したセルを `{ tsv, html, markdown }` で返します。 |
+| `copy` | `headers`：真偽値、`values`：`raw` か `formatted`（省くと列ごとの `format.copy`、既定は `raw`） | 選択したセルを `{ tsv, html, markdown }` で返します。テキスト表記と列名か、書式を付けた文字と表示名です。 |
 | `export` | `format`、`columns`：`displayed`（既定）か `all`、`rows`：`view`（既定）か `table`、`target` | ビュー（または書き込んだ値を含む表全体）を、エンジンの `export.formats` にある形式で書き出します。 |
 | `save` | | エンジンが対応していれば、書き込んだセルを表のファイルに保存します。 |
 

@@ -56,15 +56,17 @@ The keys that write do so only where cells are writable. Where the engine does n
 
 ⌘/Ctrl + C copies the selected cells as tab-separated text and as an HTML table, so pasting into a spreadsheet or
 a document keeps the cells. Copies hold whole values in their text form (`2024-01-31`, numbers with all their
-digits), not the formatted text on screen, and no column names. Cells that are not read yet are read first. Up to
-1,000,000 cells are copied at once.
+digits), not the formatted text on screen, and no column names; a column whose format has `copy: "formatted"`
+copies the text on screen instead. Cells that are not read yet are read first. Up to 1,000,000 cells are copied at
+once.
 
 Several ranges are placed as spreadsheets place them: ranges with the same rows side by side, ranges with the same
 columns one below the other, in the grid's order and without the cells between them. Other combinations are not
 copied, and the grid says so (`copy_layout`).
 
 From code, `dispatch({ command: "copy", headers: true })` gives `{ tsv, html, markdown }` of the selection with
-the column names.
+the column names. With `values: "formatted"`, every column copies its formatted text and its label, in the
+`locale` of the dispatch's options (`dispatch(command, { locale: "ja-JP" })`).
 
 ## Sorting
 

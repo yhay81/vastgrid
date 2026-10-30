@@ -54,6 +54,8 @@ export interface CommandContext {
   capabilities?: Capabilities;
   /** What `edit.paste` pastes. */
   clipboard?: { text?: string; html?: string };
+  /** The locale of formatted values (`copy`, §6.6), a BCP 47 tag; Intl's default when absent. */
+  locale?: string;
 }
 
 /** A command (§6): its name and its arguments. */

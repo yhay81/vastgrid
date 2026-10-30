@@ -74,6 +74,8 @@ export interface GridStoreOptions {
 export interface DispatchOptions {
   /** What `edit.paste` pastes. */
   clipboard?: { text?: string; html?: string };
+  /** The locale of formatted values (`copy` of columns that copy them, §6.6); Intl's default when absent. */
+  locale?: string;
 }
 
 type Part = "document" | "session";
@@ -762,6 +764,7 @@ export class GridStore {
     }
     const context = this.contextFor(view, table);
     if (options.clipboard) context.clipboard = options.clipboard;
+    if (options.locale) context.locale = options.locale;
     const started = now();
     try {
       const result = applyCommand({ document: this.base("document"), session: this.base("session") }, command, context);

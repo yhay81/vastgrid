@@ -1,6 +1,5 @@
 import { type ComponentType, use } from "react";
-import { type Column, type JsonValue, type RowKey, textOf } from "vastgrid-spec";
-import { formatterFor } from "../core/format.js";
+import { type Column, formatterFor, type JsonValue, type RowKey, textOf } from "vastgrid-spec";
 import { LocaleContext } from "./context.js";
 import { useGridRows, useGridSelector, useGridStore } from "./hooks.js";
 

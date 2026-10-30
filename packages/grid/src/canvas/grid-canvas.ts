@@ -1,7 +1,14 @@
-import { type Column, columnsOf, type DisplayedColumn, type JsonValue, partsOf, textOf } from "vastgrid-spec";
+import {
+  type Column,
+  columnsOf,
+  type DisplayedColumn,
+  formatterFor,
+  type JsonValue,
+  partsOf,
+  textOf,
+} from "vastgrid-spec";
 import { allState, checkState } from "../core/checked.js";
 import { compileRule, type Rule } from "../core/evaluate.js";
-import { formatterFor } from "../core/format.js";
 import type { GridStore } from "../core/store.js";
 import { now, track } from "../core/trace.js";
 import type { GridSnapshot } from "../core/types.js";

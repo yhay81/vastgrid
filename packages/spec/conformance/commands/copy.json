@@ -658,19 +658,182 @@
     {
       "id": "copy.formatted",
       "section": "6.6",
-      "state": {},
-      "context": "orders",
+      "description": "`formatted` copies every column as its format shows it, in the context's locale, with the labels.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "price",
+              "format": {
+                "label": "Price",
+                "number": {
+                  "style": "currency",
+                  "currency": "USD"
+                }
+              }
+            },
+            {
+              "name": "shipped",
+              "format": {
+                "label": "Shipped",
+                "date": {
+                  "pattern": "yyyy/MM/dd"
+                },
+                "copy": "formatted"
+              }
+            }
+          ]
+        }
+      },
+      "context": {
+        "extends": "orders",
+        "locale": "en-US"
+      },
       "commands": [
         {
+          "command": "select",
+          "row": 0,
+          "column": "price"
+        },
+        {
+          "command": "select",
+          "row": 1,
+          "column": "shipped",
+          "mode": "extend"
+        },
+        {
           "command": "copy",
+          "headers": true,
           "values": "formatted"
         }
       ],
       "expect": {
-        "error": {
-          "code": "invalid_command",
-          "reason": "unsupported",
-          "path": "/values"
+        "output": {
+          "tsv": "Price\tShipped\n$12.50\t2024/01/31\n$8.00\t2024/02/01",
+          "html": "<meta charset=\"utf-8\"><table><tr><th>Price</th><th>Shipped</th></tr><tr><td>$12.50</td><td>2024/01/31</td></tr><tr><td>$8.00</td><td>2024/02/01</td></tr></table>",
+          "markdown": "| Price | Shipped |\n| --- | --- |\n| $12.50 | 2024/01/31 |\n| $8.00 | 2024/02/01 |"
+        }
+      }
+    },
+    {
+      "id": "copy.formatted-by-column",
+      "section": "6.6",
+      "description": "Without `values`, each column copies as its `format.copy` says: raw by default.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "price",
+              "format": {
+                "label": "Price",
+                "number": {
+                  "style": "currency",
+                  "currency": "USD"
+                }
+              }
+            },
+            {
+              "name": "shipped",
+              "format": {
+                "label": "Shipped",
+                "date": {
+                  "pattern": "yyyy/MM/dd"
+                },
+                "copy": "formatted"
+              }
+            }
+          ]
+        }
+      },
+      "context": {
+        "extends": "orders",
+        "locale": "en-US"
+      },
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "price"
+        },
+        {
+          "command": "select",
+          "row": 1,
+          "column": "shipped",
+          "mode": "extend"
+        },
+        {
+          "command": "copy",
+          "headers": true
+        }
+      ],
+      "expect": {
+        "output": {
+          "tsv": "price\tShipped\n12.50\t2024/01/31\n8.00\t2024/02/01",
+          "html": "<meta charset=\"utf-8\"><table><tr><th>price</th><th>Shipped</th></tr><tr><td>12.50</td><td>2024/01/31</td></tr><tr><td>8.00</td><td>2024/02/01</td></tr></table>",
+          "markdown": "| price | Shipped |\n| --- | --- |\n| 12.50 | 2024/01/31 |\n| 8.00 | 2024/02/01 |"
+        }
+      }
+    },
+    {
+      "id": "copy.raw",
+      "section": "6.6",
+      "description": "`raw` copies text forms and names, whatever the formats.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "columns": [
+            {
+              "name": "price",
+              "format": {
+                "label": "Price",
+                "number": {
+                  "style": "currency",
+                  "currency": "USD"
+                }
+              }
+            },
+            {
+              "name": "shipped",
+              "format": {
+                "label": "Shipped",
+                "date": {
+                  "pattern": "yyyy/MM/dd"
+                },
+                "copy": "formatted"
+              }
+            }
+          ]
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "select",
+          "row": 0,
+          "column": "price"
+        },
+        {
+          "command": "select",
+          "row": 1,
+          "column": "shipped",
+          "mode": "extend"
+        },
+        {
+          "command": "copy",
+          "headers": true,
+          "values": "raw"
+        }
+      ],
+      "expect": {
+        "output": {
+          "tsv": "price\tshipped\n12.50\t2024-01-31\n8.00\t2024-02-01",
+          "html": "<meta charset=\"utf-8\"><table><tr><th>price</th><th>shipped</th></tr><tr><td>12.50</td><td>2024-01-31</td></tr><tr><td>8.00</td><td>2024-02-01</td></tr></table>",
+          "markdown": "| price | shipped |\n| --- | --- |\n| 12.50 | 2024-01-31 |\n| 8.00 | 2024-02-01 |"
         }
       }
     },

@@ -1,7 +1,8 @@
 /** The commands of copying and exporting (docs/spec.md §6.6): copy, export and save. */
 import { toHtmlTable, toMarkdownTable, toTsv } from "../clipboard.js";
 import { excelNumberFormat } from "../excel.js";
-import type { LogicalType } from "../types.js";
+import { formatterFor } from "../format.js";
+import type { JsonValue, LogicalType } from "../types.js";
 import { textOf } from "../values.js";
 import {
   booleanArgument,
@@ -51,9 +52,10 @@ export const COPYING_HANDLERS = {
   copy(run, command) {
     takes(command, ["headers", "values"]);
     const headers = booleanArgument(command, "headers");
-    if (choice(command, "values", ["raw", "formatted"] as const, "raw") === "formatted") {
-      fail("/values", "unsupported", "The reference implementation copies raw values only (§6.6).");
-    }
+    const values =
+      command.values === undefined || command.values === null
+        ? null
+        : choice(command, "values", ["raw", "formatted"] as const);
     const grid = run.grid();
     const layout = copyLayout(run, grid);
     if (!layout) fail("", "copy_layout", "These ranges cannot be copied together.");
@@ -62,14 +64,25 @@ export const COPYING_HANDLERS = {
       fail("", "too_many_cells", "A copy holds at most 1,000,000 cells.");
     const names = layout.cols.map((col) => grid.columns[col]);
     run.need([{ cells: rows.flatMap((row) => names.map((column) => ({ row, column }))), keyed: false }]);
-    const body = rows.map((row) =>
-      names.map((column) => textOf(run.valueAt({ row, column }), run.typeOf(column)) ?? ""),
-    );
-    const table = headers ? [names, ...body] : body;
+    // Without `values`, each column copies as its `format.copy` says.
+    const settings = new Map((run.document.columns ?? []).map((setting) => [setting.name, setting]));
+    const columns = names.map((name) => {
+      const format = settings.get(name)?.format;
+      const type = run.typeOf(name);
+      const formatted = (values ?? format?.copy ?? "raw") === "formatted";
+      const shown = formatted ? formatterFor(type, format, run.context.locale) : null;
+      return {
+        header: formatted ? (format?.label ?? name) : name,
+        text: (value: JsonValue) => shown?.(value) ?? textOf(value, type) ?? "",
+      };
+    });
+    const body = rows.map((row) => names.map((column, index) => columns[index].text(run.valueAt({ row, column }))));
+    const labels = columns.map((column) => column.header);
+    const table = headers ? [labels, ...body] : body;
     run.output = {
       tsv: toTsv(table),
       html: toHtmlTable(table, headers ? 1 : 0),
-      markdown: toMarkdownTable(headers ? names : names.map(() => ""), body),
+      markdown: toMarkdownTable(headers ? labels : labels.map(() => ""), body),
     };
   },
 

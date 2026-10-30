@@ -85,7 +85,7 @@ async function writeClipboardLater(output: unknown) {
 
 /** Copies the selection: at once when its rows are read, after reading them otherwise. */
 function useClipboard(store: GridStore, scroller: RefObject<HTMLDivElement | null>, announce: (text: string) => void) {
-  const { messages, number } = use(LocaleContext);
+  const { messages, locale, number } = use(LocaleContext);
   const report = useEffectEvent((output: unknown, failure: string | null) => {
     announce(failure === null ? messages.copied(number.format(countCells(output))) : messages.failed(failure));
   });
@@ -99,7 +99,7 @@ function useClipboard(store: GridStore, scroller: RefObject<HTMLDivElement | nul
     const onCopy = (event: ClipboardEvent) => {
       if (document.activeElement !== element || !event.clipboardData) return;
       event.preventDefault();
-      const outcome = store.dispatchSync({ command: "copy" });
+      const outcome = store.dispatchSync({ command: "copy" }, { locale });
       if (outcome.ok) {
         writeClipboard(event.clipboardData, outcome.output);
         report(outcome.output, null);
@@ -110,7 +110,7 @@ function useClipboard(store: GridStore, scroller: RefObject<HTMLDivElement | nul
         return;
       }
       // The rows are read first; the clipboard is then written through the asynchronous API.
-      void store.dispatch({ command: "copy" }).then(async (later) => {
+      void store.dispatch({ command: "copy" }, { locale }).then(async (later) => {
         if (!later.ok) {
           report(null, later.error.message);
           return;
@@ -138,7 +138,7 @@ function useClipboard(store: GridStore, scroller: RefObject<HTMLDivElement | nul
       document.removeEventListener("copy", onCopy);
       document.removeEventListener("paste", onPaste);
     };
-  }, [store, scroller]);
+  }, [store, scroller, locale]);
 }
 
 /** The cells of a copy: its TSV's fields. */
@@ -561,7 +561,7 @@ export function GridBody({
 
   /** Copies the selection from a menu, through the asynchronous clipboard. */
   const copySelection = () => {
-    void store.dispatch({ command: "copy" }).then(async (outcome) => {
+    void store.dispatch({ command: "copy" }, { locale }).then(async (outcome) => {
       if (!outcome.ok) {
         announce(messages.failed(outcome.error.message));
         return;

@@ -57,6 +57,7 @@ export {
   WRITE_LIMIT,
 } from "./commands.js";
 export { excelNumberFormat } from "./excel.js";
+export { formatterFor, isNumeric } from "./format.js";
 export {
   compileFormula,
   FormulaError,

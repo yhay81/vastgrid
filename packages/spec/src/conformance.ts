@@ -258,6 +258,7 @@ export function caseContext(file: CommandFile, context: string | CommandCaseCont
     ...(resolved.rows ? { rows: resolved.rows } : {}),
     ...(resolved.capabilities ? { capabilities: resolved.capabilities } : {}),
     ...(resolved.clipboard ? { clipboard: resolved.clipboard } : {}),
+    ...(resolved.locale ? { locale: resolved.locale } : {}),
   };
 }
 

@@ -6,6 +6,7 @@ import {
   columnsOf,
   type Expr,
   formulaText,
+  isNumeric,
   joinParts,
   type NumberFormat,
   partsOf,
@@ -20,7 +21,6 @@ import {
   readFilter,
   takesNoValue,
 } from "../core/filters.js";
-import { isNumeric } from "../core/format.js";
 import { LocaleContext } from "./context.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 

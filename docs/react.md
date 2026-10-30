@@ -143,7 +143,8 @@ interface GridSnapshot {
 
 `dispatch` applies a command with `applyCommand` (§6.1 of the specification) and a context made by the store:
 the table, the view on screen and the rows of it in the cache, the rows of a page of the viewport, the
-engine's capabilities, and the clipboard given in `options` for `edit.paste`. Then:
+engine's capabilities, and the clipboard given in `options` for `edit.paste` and the `locale` for `copy`'s formatted
+values (the grid gives its own). Then:
 
 1. The snapshot changes at once and subscribers are told, so that a key press shows in the same frame.
 2. The requests that the command gives are sent; the commands of §6.7 are applied as their answers arrive.

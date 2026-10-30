@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Column, Expr, JsonValue } from "vastgrid-spec";
+import { type Column, type Expr, formatterFor, type JsonValue } from "vastgrid-spec";
 import { compileRule } from "../src/core/evaluate.ts";
 import { filterParts } from "../src/core/filters.ts";
-import { formatterFor } from "../src/core/format.ts";
 
 const columns: Column[] = [
   { name: "city", type: "string" },

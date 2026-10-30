@@ -152,7 +152,7 @@ See [Editing](/guides/editing/).
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
-| `copy` | `headers`: boolean; `values`: `raw` (default) or `formatted` | Gives the selected cells as `{ tsv, html, markdown }`. |
+| `copy` | `headers`: boolean; `values`: `raw` or `formatted` (each column's `format.copy` when absent, `raw` by default) | Gives the selected cells as `{ tsv, html, markdown }`: text forms and names, or the formatted text and labels. |
 | `export` | `format`; `columns`: `displayed` (default) or `all`; `rows`: `view` (default) or `table`; `target` | Exports the view (or the whole table, with written values) in a format of the engine's `export.formats`. |
 | `save` | | Saves written cells into the table's file, when the engine can. |
 

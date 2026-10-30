@@ -844,6 +844,7 @@ The **context** is what the core knows when it applies the command:
 | `page` | a positive integer | rows on a page, for Page Up and Page Down |
 | `capabilities` | §4.10, optional | what the engine offers; everything when absent |
 | `clipboard` | `{ "text"?, "html"? }`, optional | what `edit.paste` pastes |
+| `locale` | a BCP 47 tag, optional | the locale of formatted values (`copy`, §6.6) |
 
 In `capabilities`, absent `functions` and `measures` are all of them and an absent member of `plan` is
 true; the other members are false when they are absent.
@@ -1025,16 +1026,19 @@ range:
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
-| `copy` | `headers`: boolean; `values`: `raw` (default) or `formatted` | `output` is `{ "tsv", "html", "markdown" }` of the selected cells |
+| `copy` | `headers`: boolean; `values`: `raw` or `formatted`, each column's `format.copy` (`raw` by default) when absent | `output` is `{ "tsv", "html", "markdown" }` of the selected cells |
 | `export` | `format`; `columns`: `displayed` (default) or `all`; `rows`: `view` (default) or `table`; `target` | an `export` request (§8.2) of the view: the displayed columns in display order (with `all`, then the other columns of the view in view order) and their labels (`format.label`, or the name) as `headers`; for `xlsx`, the Excel codes of the columns' `format.number` and `format.date` as `numberFormats`, when one has a code. With `rows: table`, the request is of the plan `{}` (every row of the table, with the written values) and its columns are the table's: the displayed ones in display order, all of them when none is displayed. `unsupported` when the engine does not export the format |
 | `save` | | a `save` request; `unsupported` when the engine does not save |
 
 `copy` places the ranges as spreadsheets do: ranges with the same rows side by side, ranges with the same
 columns one below the other (their rows merged where they overlap or touch), in display order and without
 the cells between them; other combinations fail with `copy_layout`. The values of the cells MUST be in
-`context.rows`. `raw` copies text forms (§2.4) and column names; `formatted` copies the text and the labels
-the grid shows, which only the screen's formatting knows, so the reference implementation answers it with
-`unsupported`. Null is the empty string.
+`context.rows`. `raw` copies text forms (§2.4) and column names. `formatted` copies the text that the column's
+`format.number` or `format.date` gives and its `format.label`: Intl's `NumberFormat` and `DateFormat` in the
+context's `locale` (Intl's default without it), with decimals formatted from their exact digits, date patterns
+such as `yyyy/MM/dd`, and `timestamptz` values moved to `format.date.timeZone`; a value that the format does not
+cover, or a format that Intl refuses, gives the text form. The text depends on the Unicode CLDR data of the
+core's Intl, so cores with the same data copy the same text. Null is the empty string.
 
 - **TSV**: fields joined by tabs and rows by line feeds; a field with a tab, a line break or a quote is quoted
   with `"`, and its quotes are doubled. A last row of one empty field is followed by a line feed, as pasting
@@ -1490,8 +1494,6 @@ comes with conformance cases checked against DuckDB, and the JS engine follows i
 - Collations and folding (reading order of Japanese, full-width and half-width forms) as capabilities.
 - A `histogram` measure instead of `derive` then `aggregate`.
 - Plans over a table that is still loading (`partialViews`): what `rowCount` and `where` mean there.
-- `copy` with `values: "formatted"` (§6.6): the display formatting of `number` and `date` formats, so that
-  every core copies the same text.
 - Dates and timestamps outside the years 0001 to 9999 (DuckDB has dates from 5877642 BC), and the forms
   that would write them (§2.2).
 

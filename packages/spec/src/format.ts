@@ -1,9 +1,11 @@
 /**
- * How cells show their values with the `number` and `date` of a column's format (§5.1 of the specification): 0.1's
+ * How cells show their values with the `number` and `date` of a column's format (docs/spec.md §5.1): 0.1's
  * `NumberFormat` and `DateFormat`, ported from `vastgrid-core` (Intl formats, with the exact digits of decimals,
- * and date patterns such as `yyyy/MM/dd`).
+ * and date patterns such as `yyyy/MM/dd`). The grid draws cells with it, and `copy` with `formatted` values
+ * copies its text (§6.6).
  */
-import type { Column, ColumnFormat, DateFormat, JsonValue, NumberFormat } from "vastgrid-spec";
+import type { ColumnFormat, DateFormat, NumberFormat } from "./state.js";
+import type { JsonValue, ValueType } from "./types.js";
 
 const decimalLiteral = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
 
@@ -269,7 +271,7 @@ function dateFormatter(locale: string | undefined, format: DateFormat) {
 }
 
 /** Whether a column holds numbers. */
-export function isNumeric(column: Column) {
+export function isNumeric(column: ValueType) {
   return column.type === "integer" || column.type === "bigint" || column.type === "decimal" || column.type === "float";
 }
 
@@ -280,7 +282,7 @@ const TEMPORAL = new Set(["date", "time", "timestamp", "timestamptz"]);
  * shows its text form, §2.4). Formats that Intl refuses (an unknown currency or time zone) give null for every value.
  */
 export function formatterFor(
-  column: Column,
+  column: ValueType,
   format: ColumnFormat | undefined,
   locale: string | undefined,
 ): ((value: JsonValue) => string | null) | null {
