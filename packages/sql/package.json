@@ -1,6 +1,6 @@
 {
   "name": "vastgrid-sql",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "vastgrid's plans as DuckDB SQL: the meaning of the specification in SQL, with every value as a parameter.",
   "keywords": [
     "duckdb",
@@ -37,7 +37,7 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "vastgrid-spec": "0.2.2"
+    "vastgrid-spec": "0.3.0"
   },
   "devDependencies": {
     "@duckdb/node-api": "2.0.0-r.1"

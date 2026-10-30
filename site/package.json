@@ -11,8 +11,8 @@
   "dependencies": {
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "vastgrid": "0.2.2",
-    "vastgrid-js": "0.2.2"
+    "vastgrid": "0.3.0",
+    "vastgrid-js": "0.3.0"
   },
   "devDependencies": {
     "@astrojs/react": "7.1.1",
