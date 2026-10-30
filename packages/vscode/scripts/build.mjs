@@ -17,6 +17,7 @@ await build({
   format: "cjs",
   target: "node20",
   external: ["vscode", "@duckdb/node-bindings"],
+  minify: true,
   sourcemap: true,
   legalComments: "none",
   logLevel: "warning",

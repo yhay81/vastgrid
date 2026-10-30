@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Release
+
+- `vastgrid-vscode`: the extension's script is minified, 417 KB instead of 921 KB (113 KB instead of 165 KB with
+  gzip), so that VS Code loads it faster.
+
 ## 0.2.2 — 2026-10-29
 
 ### Fixes
