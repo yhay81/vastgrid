@@ -30,6 +30,8 @@ type Json = Record<string, unknown>;
 /** The engine that the grids read: its requests and its events (§8), as `DuckDBEngine` has them. */
 export interface GridEngine extends Handler {
   subscribe(listener: (event: Json) => void): () => void;
+  /** The file of an `export` without a target, by the `target` of its answer, or null when it is gone. */
+  exportFile?(name: string): { path: string; fileName: string; mediaType: string; size: number } | null;
 }
 
 export interface GridsOptions {
@@ -42,7 +44,10 @@ export interface GridsOptions {
   idle?: number;
 }
 
-/** Why a tool of the server failed, for the agent or the App: a code of §8.7, `grid_not_found` or `invalid_command`. */
+/**
+ * Why a tool of the server failed, for the agent or the App: a code of §8.7, `grid_not_found`, `invalid_command` or
+ * `export_not_found`.
+ */
 export class ToolError extends Error {
   constructor(
     readonly code: string,

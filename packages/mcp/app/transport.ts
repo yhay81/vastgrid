@@ -37,7 +37,10 @@ export interface GridLink {
   readonly client: string;
 }
 
-/** The transport of an App's `DataGrid`: requests through `vastgrid_message`, events from `grid_sync`. */
+/**
+ * The transport of an App's `DataGrid`: requests through `vastgrid_message`, events from `grid_sync`, and the files
+ * of exports from `grid_export_file`, which the host downloads (the App's frame cannot).
+ */
 export interface McpTransport extends Transport {
   /** Gives events that `grid_sync` brought to the grid's store. */
   deliver(events: readonly unknown[]): void;
@@ -55,6 +58,24 @@ export function mcpTransport(app: App, link: GridLink): McpTransport {
     },
     deliver(events) {
       for (const event of events) for (const listener of listeners) listener(event);
+    },
+    async downloadExport(target) {
+      if (!app.getHostCapabilities()?.downloadFile) {
+        throw new ToolCallError(
+          "not_allowed",
+          "The host does not download files: ask the agent to export into a folder.",
+        );
+      }
+      const answer = await app.callServerTool({ name: "grid_export_file", arguments: { target } });
+      const file = answer.content?.find((item) => item.type === "resource");
+      if (answer.isError || !file) {
+        const error = ((answer.structuredContent ?? {}) as Json).error as
+          | { code?: string; message?: string }
+          | undefined;
+        throw new ToolCallError(error?.code ?? "internal", error?.message ?? "The export could not be read.");
+      }
+      // The host asks the person where to save it; a refusal is theirs, and not a failure.
+      await app.downloadFile({ contents: [file] });
     },
   };
 }

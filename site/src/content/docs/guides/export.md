@@ -77,8 +77,8 @@ under a temporary name that it renames once the file is complete, and keeps noth
 target; code does (below). Without `resolveTarget`, an export that names a target is refused.
 
 The [apps](/apps/overview/) handle exports their own way: the command line's browser downloads them, VS Code
-writes them where a save dialog says, a notebook's grid saves the bytes in the browser, and an MCP App cannot
-download them yet.
+writes them where a save dialog says, a notebook's grid saves the bytes in the browser, and an MCP App asks
+its host to download them (up to 64 MB).
 
 ## Exporting from code
 

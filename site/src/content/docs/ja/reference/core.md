@@ -61,6 +61,7 @@ const disconnect = store.connect();
 | `discardWrite()` | 失敗した書き込みを忘れます。セルはエンジンが持つ値に戻ります。 |
 | `reload()` | 書き込んだセルがある間にディスク上で変わったファイル（`fileChanged`）を、今の内容で読み直します。 |
 | `exportUrl(target)` | target なしの書き出しのファイルをダウンロードする URL（トランスポートが決めます）か null。 |
+| `downloadExport(target)` | そのファイルをトランスポートでダウンロードします（`Transport.downloadExport`）。トランスポートになければ false。 |
 | `exportName(format)` | データで返る書き出しのファイル名。表の名前に形式の拡張子を付けたもの。 |
 
 ## スナップショット
@@ -174,6 +175,7 @@ interface Transport {
   subscribe?(listener: (event: unknown) => void): () => void;
   cancels?: "message" | "signal"; // リクエストの取り消し方：`cancel` メッセージ（既定）か signal
   exportUrl?(target: string): string;
+  downloadExport?(target: string): Promise<void>; // exportUrl のリンクでダウンロードできないところ（MCP App）で使う
 }
 
 interface Engine {

@@ -48,6 +48,7 @@ calls `open_grid`, and the host shows the grid under its answer.
 | `grid_command` | agent | applies a command of the grid (sort, filter, group, select, edit, undo, save, export, …) and gives the new state |
 | `vastgrid_message` | App | carries the grid's requests to the engine |
 | `grid_sync` | App | keeps the App's view and selection in step with the agent's |
+| `grid_export_file` | App | the file of an export from the Export menu, for the host to download |
 
 Writing a cell is the person's sequence: `select`, `edit.begin` with the text, `edit.commit`; `history.undo` and
 `history.redo` undo and redo the agent's writes and the person's alike. A command that fails changes nothing and

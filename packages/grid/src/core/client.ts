@@ -21,6 +21,11 @@ export interface Transport {
    * HTTP transport's `<url>/exports/<target>`. Absent when the transport has no such place.
    */
   exportUrl?(target: string): string;
+  /**
+   * Downloads the file of an `export` without a target, by the `target` of its answer, where a link to `exportUrl`
+   * cannot: an MCP App, whose host downloads the file. Resolves once the download is handed over.
+   */
+  downloadExport?(target: string): Promise<void>;
 }
 
 function cancelled(op: Operation) {

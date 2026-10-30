@@ -23,8 +23,11 @@ let outside: string;
 let engine: DuckDBEngine;
 let grids: Grids;
 let client: Client;
-/** The host's side for an App: tool calls of the server, as `App.callServerTool` makes them. */
+/** The host's side for an App: tool calls of the server, as `App.callServerTool` makes them, and downloads. */
 let app: App;
+/** What the App asked the host to download (`App.downloadFile`); a host that downloads nothing when false. */
+const downloads: unknown[] = [];
+let hostDownloads = true;
 
 before(async () => {
   folder = await mkdtemp(path.join(os.tmpdir(), "vastgrid-mcp-"));
@@ -47,7 +50,14 @@ before(async () => {
   await server.connect(serverSide);
   client = new Client({ name: "test", version: "0.0.0" });
   await client.connect(clientSide);
-  app = { callServerTool: (params, options) => client.callTool(params, options) } as App;
+  app = {
+    callServerTool: (params, options) => client.callTool(params, options),
+    getHostCapabilities: () => (hostDownloads ? { downloadFile: {} } : {}),
+    downloadFile: async (params) => {
+      downloads.push(params);
+      return {};
+    },
+  } as App;
 });
 
 after(async () => {
@@ -390,6 +400,28 @@ test("App requests keep their ids apart from the grid's, and invalid messages ar
   })) as Json;
   // The revision is the table's, so the request fails; the answer still carries the App's id.
   assert.deepEqual([rows.id, (rows.error as Json | undefined)?.code ?? "ok"], [3, "revision_changed"]);
+});
+
+test("the App downloads an export through the host, which carries the file from grid_export_file", async () => {
+  const opened = await open();
+  const { store, stop } = await appGrid(opened.grid, opened.document);
+  const outcome = await store.dispatch({ command: "export", format: "csv" });
+  assert.equal(outcome.ok, true);
+  const { target } = outcome.output as { target: string };
+  assert.equal(await store.downloadExport(target), true);
+  const { contents } = downloads.pop() as { contents: { type: string; resource: Json }[] };
+  assert.equal(contents[0].type, "resource");
+  assert.deepEqual(
+    [contents[0].resource.uri, contents[0].resource.mimeType],
+    ["file:///orders.csv", "text/csv; charset=utf-8"],
+  );
+  assert.match(Buffer.from(String(contents[0].resource.blob), "base64").toString("utf8"), /^id,region,price\n1,EU,/);
+  const gone = await call("grid_export_file", { target: "nothing.csv" });
+  assert.deepEqual([gone.error, (gone.content.error as Json).code], [true, "export_not_found"]);
+  hostDownloads = false;
+  await assert.rejects(store.downloadExport(target), /does not download files/);
+  hostDownloads = true;
+  stop();
 });
 
 test("the agent saves written cells into the CSV file, with the grid's `save` command (§7.5)", async () => {

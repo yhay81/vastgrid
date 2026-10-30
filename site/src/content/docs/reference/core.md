@@ -69,6 +69,7 @@ makes one when it is not given one.
 | `discardWrite()` | Forgets the failed write: its cells show what the engine holds. |
 | `reload()` | Reads the table's file as it is now, for a file that changed on disk while it had written cells (`fileChanged`). |
 | `exportUrl(target)` | Where the file of an export without a target is downloaded, from the transport, or null. |
+| `downloadExport(target)` | Downloads that file through the transport (`Transport.downloadExport`); false when it has none. |
 | `exportName(format)` | A file name for an export answered as data: the table's name with the format's extension. |
 
 ## Snapshots
@@ -198,6 +199,7 @@ interface Transport {
   subscribe?(listener: (event: unknown) => void): () => void;
   cancels?: "message" | "signal"; // how a request is cancelled: a `cancel` message (default) or the signal
   exportUrl?(target: string): string;
+  downloadExport?(target: string): Promise<void>; // where a link to exportUrl cannot download, as in an MCP App
 }
 
 interface Engine {

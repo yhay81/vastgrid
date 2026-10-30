@@ -11,6 +11,9 @@ import { COMMANDS, toTextEncoding } from "vastgrid-spec";
 import { z } from "zod";
 import { type Grid, type GridEngine, Grids, ROWS_LIMIT, ToolError } from "./grids.js";
 
+/** The largest export that the App downloads through the host, which carries it in a tool's answer, in base64. */
+export const DOWNLOAD_LIMIT = 64 * 1024 * 1024;
+
 /** The URI of the App's page. */
 export const APP_URI = "ui://vastgrid/grid.html";
 
@@ -218,6 +221,41 @@ export function registerVastgrid(server: McpServer, options: VastgridToolsOption
         return {
           content: [{ type: "text", text: "vastgrid response" }],
           structuredContent: toTextEncoding(answer as never),
+        };
+      }),
+  );
+
+  registerAppTool(
+    server,
+    "grid_export_file",
+    {
+      title: "Download an export",
+      description:
+        "Gives the file of an export that the App made without a target, by its answer's target, as a resource " +
+        "that the App asks the host to download.",
+      inputSchema: z.object({ target: z.string().min(1).max(256) }),
+      _meta: { ui: appOnly },
+    },
+    async ({ target }) =>
+      guarded(async () => {
+        const kept = options.engine.exportFile?.(target) ?? null;
+        if (!kept) throw new ToolError("export_not_found", "The export is gone: export the view again.");
+        if (kept.size > DOWNLOAD_LIMIT) {
+          throw new ToolError(
+            "export_too_large",
+            `The file has ${kept.size} bytes, more than the App downloads (${DOWNLOAD_LIMIT}): ask the agent to ` +
+              "export it into a folder with grid_command.",
+          );
+        }
+        const blob = (await readFile(kept.path)).toString("base64");
+        return {
+          content: [
+            {
+              type: "resource",
+              resource: { uri: `file:///${encodeURIComponent(kept.fileName)}`, mimeType: kept.mediaType, blob },
+            },
+          ],
+          structuredContent: { fileName: kept.fileName, mediaType: kept.mediaType, size: kept.size },
         };
       }),
   );

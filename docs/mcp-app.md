@@ -43,11 +43,18 @@ calls `open_grid`, and the host shows the grid under its answer.
 | `grid_command` | agent | applies a command of §6 as the person's keys and menus do, and gives the new state |
 | `vastgrid_message` | App | carries a request of §8 to the engine (§8.8) |
 | `grid_sync` | App | keeps the App's document and session in step with the grid's, and brings the engine's events |
+| `grid_export_file` | App | the file of an export without a target, for the host to download |
 
 The commands that only the core applies (§6.7: `view.update`, `history.push`, `history.undone`, `history.redone`)
 are refused. A command that fails changes nothing and gives `invalid_command` with its reason and path (§6.1).
 Writing a cell is the person's sequence: `select`, `edit.begin` with the text, `edit.commit`; `history.undo` and
 `history.redo` undo and redo the agent's writes and the person's alike.
+
+The App's Export menu exports without a target, so the engine keeps the file (§8.2 of the specification). The App
+calls `grid_export_file` with the export's `target`, which gives the file as an embedded resource (`file:///<name>`
+with its media type and its bytes in base64), and hands it to the host's `downloadFile`. A file over 64 MB gives
+`export_too_large`, and one the engine no longer keeps `export_not_found`; a host without `downloadFile` gets
+`not_allowed`, and the menu says so. The agent exports into a folder with `grid_command` instead.
 
 ## One state for both
 
@@ -113,8 +120,6 @@ The App takes the host's theme and locale (English, Japanese, Chinese, Korean, S
 
 ## Not yet
 
-- Exports: the export menu writes the file on the server, where the person cannot download it yet (ext-apps'
-  `downloadFile` would carry it).
 - The App is 520 pixels high and does not ask for the full screen.
 - The App does not tell the agent what the person did (`updateModelContext`); the agent reads it with
   `grid_state`.

@@ -84,6 +84,7 @@ interface GridStore {
   retryWrite(): Promise<CommandOutcome>;
   discardWrite(): void;
   exportUrl(target: string): string | null;
+  downloadExport(target: string): Promise<boolean>;
   values(
     column: string,
     options?: { search?: string; limit?: number },
@@ -101,7 +102,8 @@ interface GridStore {
 without keys; it fails for a plan that groups rows.
 
 `exportUrl` gives where the file of an `export` without a target can be downloaded, from the transport
-(`Transport.exportUrl`; `httpTransport` gives `<url>/exports/<target>`), or null.
+(`Transport.exportUrl`; `httpTransport` gives `<url>/exports/<target>`), or null. `downloadExport` downloads it
+through `Transport.downloadExport`, and gives false when the transport has none.
 
 `retryWrite` sends the last write that failed (`failedWrite` of the snapshot) again, and `discardWrite` forgets it
 (§6.6).
@@ -183,8 +185,13 @@ A transport carries messages (§8 of the specification) to an engine:
 interface Transport {
   send(request: Request, options: { signal?: AbortSignal }): Promise<Response>;
   subscribe?(listener: (event: Event) => void): () => void;
+  exportUrl?(target: string): string;
+  downloadExport?(target: string): Promise<void>;
 }
 ```
+
+`exportUrl` and `downloadExport` carry the file of an `export` without a target: a URL to download it
+from, or a download that the transport makes itself where a link cannot, as in an MCP App.
 
 | Transport | Engine | Blocks (§8.8) |
 | --- | --- | --- |
@@ -379,7 +386,7 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   are kept, and the toolbar's "Discard edits and reload" button calls `reload`.
 - When the engine exports (`capabilities.export`), the toolbar has an Export menu: the rows of the view or the
   whole table, with the hidden columns or not, in each format the engine offers. The export runs as an Action;
-  its file is downloaded from `exportUrl`, and the rows exported are announced.
+  its file is downloaded by `downloadExport`, or else from `exportUrl`, and the rows exported are announced.
 - When the engine derives columns (`capabilities.plan.derive`), the toolbar has a Formulas menu: a row per derived
   column with its name and its expression written as a formula (§4.11 of the specification), and a row for a new
   one. A formula compiles against the columns before it; one that does not compile is not dispatched, and its error

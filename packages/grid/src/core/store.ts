@@ -895,6 +895,17 @@ export class GridStore {
     return this.options.transport.exportUrl?.(target) ?? null;
   }
 
+  /**
+   * Downloads the file of an export without a target through the transport (`Transport.downloadExport`): false
+   * when the transport does not, and the file is downloaded from `exportUrl`.
+   */
+  async downloadExport(target: string): Promise<boolean> {
+    const download = this.options.transport.downloadExport;
+    if (!download) return false;
+    await download.call(this.options.transport, target);
+    return true;
+  }
+
   /** A name for the file of an export that an engine answers as data: the table's name with the format's extension. */
   exportName(format: string): string {
     const name = this.options.table.split(/[\\/]/).pop() ?? "";

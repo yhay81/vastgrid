@@ -26,9 +26,9 @@ function download(url: string, name = "") {
 /**
  * The toolbar's export menu (§6.6 of the specification): the rows of the view or the whole table, with the hidden
  * columns or not, in one of the formats the engine exports. It runs as an Action: the button shows that it runs, and
- * the outcome is announced. An export without a target is downloaded from where the transport gives it
- * (`Transport.exportUrl`), or, from an engine that answers the file's bytes (`delivery` `data`), as a file made of
- * them.
+ * the outcome is announced. An export without a target is downloaded by the transport (`Transport.downloadExport`)
+ * or from where it gives it (`Transport.exportUrl`), or, from an engine that answers the file's bytes (`delivery`
+ * `data`), as a file made of them.
  */
 export function ExportMenu({ announce }: { announce: (text: string) => void }) {
   const store = useGridStore();
@@ -73,9 +73,16 @@ export function ExportMenu({ announce }: { announce: (text: string) => void }) {
         download(url, store.exportName(format));
         // The link has started the download; the browser keeps the file's bytes until it is done.
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      } else {
-        const url = result.target === null ? null : store.exportUrl(result.target);
-        if (url) download(url);
+      } else if (result.target !== null) {
+        try {
+          if (!(await store.downloadExport(result.target))) {
+            const url = store.exportUrl(result.target);
+            if (url) download(url);
+          }
+        } catch (error) {
+          announce(messages.failed(error instanceof Error ? error.message : String(error)));
+          return;
+        }
       }
       announce(messages.exported(number.format(result.rows)));
     });

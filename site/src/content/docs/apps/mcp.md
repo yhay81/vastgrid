@@ -45,6 +45,7 @@ calls `open_grid`, and the host shows the grid under its answer.
 | `grid_command` | agent | applies a command as the person's keys and menus do, and gives the new state |
 | `vastgrid_message` | App | carries a request of the grid to the engine |
 | `grid_sync` | App | keeps the App's document and session in step with the grid's, and brings the engine's events |
+| `grid_export_file` | App | the file of an export without a target, for the host to download |
 
 The commands that only the grid applies when data arrives (`view.update`, `history.push`, `history.undone`,
 `history.redone`) are refused. A command that fails changes nothing and gives `invalid_command` with its reason
@@ -72,7 +73,6 @@ the host's theme and locale (English, Japanese, Chinese, Korean, Spanish, Portug
 
 ## Not yet
 
-- Exports: the Export menu writes the file on the server, where you cannot download it yet.
 - The App is 520 pixels high and does not ask for the full screen.
 - The App does not tell the agent what the person did; the agent reads it with `grid_state`.
 - Grids live as long as the server: 16 at most, the least recently used going first.
