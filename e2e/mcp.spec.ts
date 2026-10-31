@@ -160,3 +160,16 @@ test("an App whose server started again opens the file again, as the person saw 
   };
   expect(old.isError).toBe(true);
 });
+
+test("the App asks the host for the full screen, fills it, and comes back", async ({ page }) => {
+  await openApp(page);
+  const app = page.frameLocator("iframe");
+  const grid = app.locator(".vastgrid-app");
+  await expect(grid).toHaveCSS("height", "520px");
+  await app.getByRole("button", { name: "Full screen" }).click();
+  await expect(page.locator("iframe")).toHaveClass(/fullscreen/);
+  const window = page.viewportSize();
+  await expect(grid).toHaveCSS("height", `${window?.height}px`);
+  await app.getByRole("button", { name: "Exit full screen" }).click();
+  await expect(grid).toHaveCSS("height", "520px");
+});

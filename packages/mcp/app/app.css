@@ -5,9 +5,35 @@ body {
   color-scheme: light dark;
 }
 
+/* Its height comes from the host (`heightOf` in main.tsx). */
 .vastgrid-app {
   position: relative;
-  height: 520px;
+}
+
+/* The full screen button, over the right end of the toolbar, which leaves it room. */
+.vastgrid-app--modes .vg-toolbar {
+  padding-right: 44px;
+}
+
+.vastgrid-app-mode {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: light-dark(#1f2328, #e6e6eb);
+  background: light-dark(#ffffff, #1e1e24);
+  border: 1px solid light-dark(#d0d7de, #3a3a44);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.vastgrid-app-mode:focus-visible {
+  outline: 2px solid light-dark(#0b57d0, #8ab4f8);
+  outline-offset: 1px;
 }
 
 .vastgrid-app-status {

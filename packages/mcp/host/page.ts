@@ -3,7 +3,7 @@
  * as hosts connect it. Its tool calls go to the server through `/tool`; `?file=` names the file that the "agent"
  * opens first, and `window.host` lets a test act as the agent.
  */
-import { AppBridge, PostMessageTransport } from "@modelcontextprotocol/ext-apps/app-bridge";
+import { AppBridge, type McpUiHostContext, PostMessageTransport } from "@modelcontextprotocol/ext-apps/app-bridge";
 
 declare global {
   interface Window {
@@ -27,12 +27,25 @@ const file = new URLSearchParams(location.search).get("file") ?? "orders.csv";
 const frame = document.querySelector("iframe") as HTMLIFrameElement;
 
 async function connect() {
+  const context: McpUiHostContext = {
+    theme: "light",
+    locale: "en-US",
+    displayMode: "inline",
+    availableDisplayModes: ["inline", "fullscreen"],
+  };
   const bridge = new AppBridge(
     null,
     { name: "vastgrid-test-host", version: "0.0.0" },
     { serverTools: {}, openLinks: {} },
-    { hostContext: { theme: "light", locale: "en-US", displayMode: "inline" } },
+    { hostContext: context },
   );
+  // Full screen is the frame over the whole window.
+  bridge.onrequestdisplaymode = async ({ mode }) => {
+    const shown = mode === "pip" ? "inline" : mode;
+    frame.classList.toggle("fullscreen", shown === "fullscreen");
+    bridge.setHostContext({ ...context, displayMode: shown });
+    return { mode: shown };
+  };
   bridge.oncalltool = async (params) => {
     window.host.calls.push(params.name);
     return call(params.name, params.arguments ?? {});

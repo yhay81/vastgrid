@@ -45,7 +45,8 @@ const script = await build({
   logLevel: "warning",
 });
 const hostPage = `<!doctype html><html><head><meta charset="utf-8"><title>vastgrid test host</title>
-<style>body{margin:0;font-family:system-ui}iframe{width:100%;height:560px;border:0}</style></head>
+<style>body{margin:0;font-family:system-ui}iframe{width:100%;height:560px;border:0}
+iframe.fullscreen{position:fixed;inset:0;height:100vh}</style></head>
 <body><iframe sandbox="allow-scripts" title="vastgrid"></iframe>
 <script type="module">${script.outputFiles[0].text}</script></body></html>`;
 

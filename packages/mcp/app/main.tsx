@@ -3,7 +3,7 @@
  * rows come through the host's tool calls; the person's changes go to the grid on the server, and the agent's
  * come back, so that both see one state. Plain JavaScript and canvas: no WebAssembly, no workers, no network.
  */
-import { App, applyDocumentTheme, type McpUiHostContext } from "@modelcontextprotocol/ext-apps";
+import { App, applyDocumentTheme, type McpUiDisplayMode, type McpUiHostContext } from "@modelcontextprotocol/ext-apps";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { DataGrid } from "vastgrid";
@@ -25,10 +25,23 @@ interface Opened {
 /** Milliseconds that the person's changes wait to go out together, and between retries after a failure. */
 const PUSH_DELAY = 250;
 const RETRY_DELAY = 2000;
+/** Pixels of the App's height in the conversation, unless the host allows less. */
+const INLINE_HEIGHT = 520;
+/** The icons of the full screen button: four corners out, and four corners in. */
+const ENTER_FULLSCREEN = "M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4";
+const EXIT_FULLSCREEN = "M6 2v4H2M14 6h-4V2M10 14v-4h4M2 10h4v4";
 
 function isOpened(value: unknown): value is Opened {
   const opened = value as Partial<Opened> | null;
   return typeof opened?.grid === "string" && typeof opened.file === "string" && typeof opened.version === "number";
+}
+
+/** The App's height: its frame's in full screen or when the host fixes it, else 520 pixels or the host's most. */
+function heightOf(host: McpUiHostContext | undefined): string {
+  const size = host?.containerDimensions;
+  if ((host?.displayMode ?? "inline") !== "inline" || (size && "height" in size)) return "100vh";
+  const most = size && "maxHeight" in size ? size.maxHeight : undefined;
+  return `${Math.min(INLINE_HEIGHT, most ?? INLINE_HEIGHT)}px`;
 }
 
 function delay(ms: number, signal: AbortSignal) {
@@ -47,9 +60,11 @@ interface GridAppProps {
   host: McpUiHostContext | undefined;
   /** Shows the grid that `open_grid` gave again, for a server that lost this one. */
   onReopen: (opened: Opened) => void;
+  /** Takes the display mode that the host set. */
+  onDisplayMode: (mode: McpUiDisplayMode) => void;
 }
 
-function GridApp({ app, opened, host, onReopen }: GridAppProps) {
+function GridApp({ app, opened, host, onReopen, onDisplayMode }: GridAppProps) {
   const link = useMemo<GridLink>(() => ({ grid: opened.grid, client: crypto.randomUUID() }), [opened.grid]);
   const transport = useMemo(() => mcpTransport(app, link), [app, link]);
   const [document, setDocument] = useState(opened.document);
@@ -119,8 +134,16 @@ function GridApp({ app, opened, host, onReopen }: GridAppProps) {
   }, [app, link, transport, opened.file, onReopen]);
 
   const locale = host?.locale ?? "en";
+  const fullscreen = host?.displayMode === "fullscreen";
+  const toggles = host?.availableDisplayModes?.includes(fullscreen ? "inline" : "fullscreen") === true;
+  const toggle = () => {
+    app.requestDisplayMode({ mode: fullscreen ? "inline" : "fullscreen" }).then(
+      (result) => onDisplayMode(result.mode),
+      () => {},
+    );
+  };
   return (
-    <div className="vastgrid-app">
+    <div className={toggles ? "vastgrid-app vastgrid-app--modes" : "vastgrid-app"} style={{ height: heightOf(host) }}>
       <DataGrid
         transport={transport}
         table={opened.file}
@@ -146,6 +169,24 @@ function GridApp({ app, opened, host, onReopen }: GridAppProps) {
         aria-label={opened.file}
         style={{ height: "100%" }}
       />
+      {toggles && (
+        <button
+          type="button"
+          className="vastgrid-app-mode"
+          aria-label={fullscreen ? "Exit full screen" : "Full screen"}
+          title={fullscreen ? "Exit full screen" : "Full screen"}
+          onClick={toggle}
+        >
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path
+              d={fullscreen ? EXIT_FULLSCREEN : ENTER_FULLSCREEN}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+          </svg>
+        </button>
+      )}
       {status && (
         <p className="vastgrid-app-status" role="status">
           {status}
@@ -158,7 +199,10 @@ function GridApp({ app, opened, host, onReopen }: GridAppProps) {
 const element = document.getElementById("root");
 if (!element) throw new Error("There is no #root.");
 const root: Root = createRoot(element);
-const app = new App({ name: "vastgrid", version: VASTGRID_VERSION }, {});
+const app = new App(
+  { name: "vastgrid", version: VASTGRID_VERSION },
+  { availableDisplayModes: ["inline", "fullscreen"] },
+);
 let host: McpUiHostContext | undefined;
 let opened: Opened | null = null;
 
@@ -167,10 +211,15 @@ function reopened(again: Opened) {
   render();
 }
 
+function displayed(mode: McpUiDisplayMode) {
+  host = { ...host, displayMode: mode };
+  render();
+}
+
 function render() {
   root.render(
     opened ? (
-      <GridApp key={opened.grid} app={app} opened={opened} host={host} onReopen={reopened} />
+      <GridApp key={opened.grid} app={app} opened={opened} host={host} onReopen={reopened} onDisplayMode={displayed} />
     ) : (
       <p className="vastgrid-app-status">Opening the file…</p>
     ),

@@ -45,6 +45,9 @@
   their length (§3.1); `locate` finds values equal by §3.1, at their first position; `summarize` MAY sum exact
   numbers exactly; an operation that the capabilities leave out is `unknown_op` (§8.7); and `planHash` needs a
   secure page (§4.8).
+- `vastgrid-mcp`: where the host offers the full screen, a button at the right end of the App's toolbar asks for it
+  and back. The App fills a frame whose height the host fixes, and stays under the host's `maxHeight`, where it was
+  520 pixels high in every case.
 - `vastgrid-mcp`: the App's Export menu downloads its file through the host (ext-apps' `downloadFile`), from the
   App's new tool `grid_export_file`, up to 64 MB; the menu says when the host does not download files.
 - `vastgrid`: `Transport.downloadExport` and `GridStore.downloadExport` download an export's file where a link to

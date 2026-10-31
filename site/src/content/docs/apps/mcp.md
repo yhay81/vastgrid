@@ -69,11 +69,12 @@ scroll back to it) gets the whole state of the grid again.
 The App is one HTML file with its script and styles inside, the menus and panels included: the host serves it as a UI
 resource, and it loads nothing. It declares no domains, so hosts give it their default Content Security Policy. The
 page is 1.2 MB, 330 KB with gzip; most of it is the MCP client of ext-apps and zod, then React and the grid. It takes
-the host's theme and locale (English, Japanese, Chinese, Korean, Spanish, Portuguese, French or German).
+the host's theme and locale (English, Japanese, Chinese, Korean, Spanish, Portuguese, French or German). It is 520
+pixels high in the conversation, less when the host allows less, and fills its frame when the host fixes its height;
+where the host offers the full screen, a button at the right end of the toolbar asks for it and back.
 
 ## Not yet
 
-- The App is 520 pixels high and does not ask for the full screen.
 - The App does not tell the agent what the person did; the agent reads it with `grid_state`.
 - Grids live as long as the server: 16 at most, the least recently used going first.
 

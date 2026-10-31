@@ -99,6 +99,11 @@ run. The page is 1.2 MB, 330 KB with gzip; most of it is ext-apps' MCP client an
 grid.
 
 The App takes the host's theme and locale (English, Japanese, Chinese, Korean, Spanish, Portuguese, French or German).
+It is 520 pixels high in the conversation, or the host's `maxHeight` when that is less, and as high as its frame
+when the host fixes the height (`containerDimensions`) or shows it in full screen. It declares the display modes
+`inline` and `fullscreen`; where the host offers the full screen (`availableDisplayModes`), a button at the right end
+of the toolbar asks for it (`requestDisplayMode`) and back. The width is the frame's: the margins around the frame
+are the host's.
 
 ## Testing
 
@@ -109,9 +114,9 @@ The App takes the host's theme and locale (English, Japanese, Chinese, Korean, S
   `cancel` stops its own request only, and that the tables of Apps that stopped asking are closed.
 - `e2e/mcp.spec.ts` runs the built server over stdio behind a test host (`packages/mcp/host/serve.ts`), which
   serves the page in a frame with `sandbox="allow-scripts"` and MCP Apps' default CSP and connects it with
-  ext-apps' `AppBridge`, as hosts do; `POST /restart` starts the server again, and the App opens the file again as
-  the person saw it. `node --import tsx packages/mcp/host/serve.ts <folder> [port]` starts it by hand:
-  `http://127.0.0.1:5184/?file=orders.csv`.
+  ext-apps' `AppBridge`, as hosts do, and offers the full screen; `POST /restart` starts the server again, and the
+  App opens the file again as the person saw it. `node --import tsx packages/mcp/host/serve.ts <folder> [port]`
+  starts it by hand: `http://127.0.0.1:5184/?file=orders.csv`.
 - By hand in VS Code 1.142.0, with the server in a folder's `.vscode/mcp.json` (`"servers": { "vastgrid": { "type":
   "stdio", "command": "node", "args": ["/path/to/vastgrid/packages/mcp/dist/cli.js", "--save",
   "${workspaceFolder}"] } }`) and the chat's Local agent: a CSV file of 100,000 rows opens in the App under VS Code's
@@ -120,7 +125,6 @@ The App takes the host's theme and locale (English, Japanese, Chinese, Korean, S
 
 ## Not yet
 
-- The App is 520 pixels high and does not ask for the full screen.
 - The App does not tell the agent what the person did (`updateModelContext`); the agent reads it with
   `grid_state`.
 - Grids live as long as the server: 16 at most, the least recently used going first.
