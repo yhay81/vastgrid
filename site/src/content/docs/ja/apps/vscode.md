@@ -7,15 +7,13 @@ description: どんな大きさの CSV・TSV・Parquet・JSON Lines・Excel の�
 
 ## インストール
 
-[GitHub Release](https://github.com/yhay81/vastgrid/releases/tag/v0.3.0) から OS と CPU に合う
-`vastgrid-vscode-0.3.0-<target>.vsix` をダウンロードし、VS Code の **Extensions: Install from VSIX…**
-で選択します。ターミナルからも導入できます。次は Apple シリコンの例です。
+VS Code の拡張機能ビューで [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=yhay81.vastgrid-vscode) の **vastgrid** を導入します。ターミナルからも導入できます。
 
 ```sh
-code --install-extension vastgrid-vscode-0.3.0-darwin-arm64.vsix
+code --install-extension yhay81.vastgrid-vscode
 ```
 
-0.3.0 の Marketplace 掲載は後日対応します。VS Code 1.100 以降が必要です。macOS（Apple シリコン・Intel）、Linux（x64・arm64、Alpine は x64）、Windows（x64・arm64）にそれぞれのパッケージがあります。バインディングが動かない vscode.dev と 32 ビットの Arm の Linux では動きません。
+VSCodium などのエディターは [Open VSX](https://open-vsx.org/extension/yhay81/vastgrid-vscode) から導入します。各バージョンの `vastgrid-vscode-<version>-<target>.vsix` は GitHub Release にもあり、**Extensions: Install from VSIX…** で導入できます。VS Code 1.100 以降が必要です。macOS（Apple シリコン・Intel）、Linux（x64・arm64、Alpine は x64）、Windows（x64・arm64）にそれぞれのパッケージがあります。バインディングが動かない vscode.dev と 32 ビットの Arm の Linux では動きません。
 
 ## ファイルを開く
 
@@ -65,7 +63,6 @@ await api?.dispatch(uri, { command: "sort.set", keys: [{ column: "price", direct
 
 ## まだできないこと
 
-- Open VSX にはありません。
 - `file:` 以外のスキームのファイル（ほかの拡張機能のリモートのファイルシステム、vscode.dev）は開きません。
 
 詳しくは GitHub の [vscode.md](https://github.com/yhay81/vastgrid/blob/main/docs/vscode.md)（英語）にあり、ページと拡張機能の間のメッセージ、パッケージの作り方、試験の方法も書いています。

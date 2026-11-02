@@ -96,7 +96,7 @@ DuckDB エンジンは CSV をカンマ区切り・二重引用符で読みま�
 | [`vastgrid-sql`](packages/sql) | プランを DuckDB の SQL に |
 | [`vastgrid-cli`](packages/cli) | `npx vastgrid-cli <ファイル>`: このコンピューターの DuckDB で読んだファイルをブラウザーのグリッドで |
 | [`vastgrid-mcp`](packages/mcp) | MCP App つきの MCP サーバー |
-| [`vastgrid-vscode`](packages/vscode) | VS Code の拡張機能。0.3.0 は [GitHub Release](https://github.com/yhay81/vastgrid/releases/tag/v0.3.0) の VSIX から導入 |
+| [`vastgrid-vscode`](packages/vscode) | VS Code の拡張機能。[Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=yhay81.vastgrid-vscode) と [Open VSX](https://open-vsx.org/extension/yhay81/vastgrid-vscode) にあります |
 | [`vastgrid`（Python）](packages/notebook/python) | Jupyter のウィジェット（PyPI） |
 
 npm のパッケージは同じ版でそろえて公開します。`vastgrid` には React 19.3 以降（省略できる peer 依存で、サーバーは React なしで

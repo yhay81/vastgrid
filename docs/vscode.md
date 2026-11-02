@@ -123,8 +123,8 @@ Open VSX as well, by trusted publishing (`ovsx publish --trusted-publishing --pa
 `code --install-extension vastgrid-vscode-<version>-<target>.vsix`, and `VASTGRID_VSIX=<package>.vsix npm run
 test:vscode -w vastgrid-vscode` runs the suite on it.
 
-Version 0.2.0 ships seven VSIX files on [GitHub](https://github.com/yhay81/vastgrid/releases/tag/v0.2.0): Linux
-x64/arm64, Alpine x64, macOS x64/arm64 and Windows x64/arm64. Its Marketplace listing is deferred.
+Releases ship seven VSIX files: Linux x64/arm64, Alpine x64, macOS x64/arm64 and Windows x64/arm64. From 0.3.0
+they are on the Marketplace and Open VSX as `yhay81.vastgrid-vscode`; 0.2.x is only on the GitHub releases.
 
 ## Testing
 
@@ -141,6 +141,5 @@ x64/arm64, Alpine x64, macOS x64/arm64 and Windows x64/arm64. Its Marketplace li
 
 ## Not yet
 
-- The extension is not in Open VSX yet: the release workflow publishes it there once the namespace has its trusted
-  publisher. Pre-releases are only on the GitHub releases.
+- Pre-releases are only on the GitHub releases.
 - Files of other schemes than `file:` (a remote file system of another extension, vscode.dev) do not open.

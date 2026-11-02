@@ -10,15 +10,15 @@ with VS Code's own Save, with the bytes that were not edited kept as they are.
 
 ## Installing
 
-Download `vastgrid-vscode-0.3.0-<target>.vsix` for your OS and architecture from the
-[GitHub release](https://github.com/yhay81/vastgrid/releases/tag/v0.3.0), then choose **Extensions: Install from
-VSIX…** in VS Code, or install the downloaded file from a terminal (this example is for Apple silicon):
+Install **vastgrid** from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=yhay81.vastgrid-vscode) in VS Code's Extensions view, or from a terminal:
 
 ```sh
-code --install-extension vastgrid-vscode-0.3.0-darwin-arm64.vsix
+code --install-extension yhay81.vastgrid-vscode
 ```
 
-Marketplace publication is deferred for 0.3.0. It needs VS Code 1.100 or later, on macOS (Apple silicon or Intel), Linux (x64 or arm64; Alpine x64) or Windows
+VSCodium and other editors get it from [Open VSX](https://open-vsx.org/extension/yhay81/vastgrid-vscode). Each version's
+`vastgrid-vscode-<version>-<target>.vsix` files are also on its GitHub release, for **Extensions: Install from
+VSIX…**. It needs VS Code 1.100 or later, on macOS (Apple silicon or Intel), Linux (x64 or arm64; Alpine x64) or Windows
 (x64 or arm64): the platforms of DuckDB's Node.js bindings, each with a package of its own. It does not run in
 vscode.dev or on 32-bit Arm Linux, where the bindings do not run.
 
@@ -88,7 +88,6 @@ await api?.dispatch(uri, { command: "sort.set", keys: [{ column: "price", direct
 
 ## Not yet
 
-- The extension is not in Open VSX.
 - Files of other schemes than `file:` (a remote file system of another extension, vscode.dev) do not open.
 
 [vscode.md](https://github.com/yhay81/vastgrid/blob/main/docs/vscode.md) on GitHub has the details: the messages

@@ -100,7 +100,7 @@ no header. See the [engine's reading options](packages/duckdb-engine#what-it-doe
 | [`vastgrid-sql`](packages/sql) | Plans as DuckDB SQL. |
 | [`vastgrid-cli`](packages/cli) | `npx vastgrid-cli <file>`: a file in a grid in the browser, read by DuckDB on this computer. |
 | [`vastgrid-mcp`](packages/mcp) | An MCP server with an MCP App. |
-| [`vastgrid-vscode`](packages/vscode) | The VS Code extension; install 0.3.0's VSIX from the [GitHub release](https://github.com/yhay81/vastgrid/releases/tag/v0.3.0). |
+| [`vastgrid-vscode`](packages/vscode) | The VS Code extension, on the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=yhay81.vastgrid-vscode) and [Open VSX](https://open-vsx.org/extension/yhay81/vastgrid-vscode). |
 | [`vastgrid` (Python)](packages/notebook/python) | The Jupyter widget, on PyPI. |
 
 The npm packages are released together at one version. `vastgrid` needs React 19.3 or later (an optional peer
