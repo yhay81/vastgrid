@@ -56,6 +56,8 @@
   scroll) in the tab, and shows it again when it is loaded again and on the browser's back and forward.
 - `vastgrid-vscode`: the release workflow publishes the extension to Open VSX by trusted publishing, once the
   repository variable `OPEN_VSX_ENABLED` is `true` and the namespace lists the workflow.
+- `vastgrid-vscode`: the release workflow publishes the extension to the VS Code Marketplace by trusted publishing
+  (`vsce publish --oidc`) instead of the `VSCE_PAT` secret.
 
 ### Fixes
 

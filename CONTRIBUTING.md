@@ -136,8 +136,10 @@ half-way, run it again: versions already published are skipped.
 
 When Marketplace publishing is unavailable, set the repository variable `VSCODE_MARKETPLACE_ENABLED` to `false`
 before tagging. The workflow then publishes npm, PyPI and the GitHub release with its VSIX files, and skips the
-Marketplace job. Document this in the release notes and installation instructions. This is the mode used for
-0.2.0; remove the variable or set it to `true` once the publisher and `VSCE_PAT` are configured.
+Marketplace job. Document this in the release notes and installation instructions. This was the mode for 0.2.0
+to 0.3.0. The Marketplace needs no secret either: the publisher `yhay81` has a trusted publishing policy for
+this repository's `release.yml` in the `vscode` environment, and `vsce publish --oidc` publishes with the
+workflow's OIDC token.
 
 Open VSX is published only when the repository variable `OPEN_VSX_ENABLED` is `true`. It needs no secret: the
 `yhay81` namespace on [open-vsx.org](https://open-vsx.org), with its publisher agreement signed, lists this
@@ -180,10 +182,12 @@ Only the Release workflow can publish, and npm and PyPI need no token:
   versions that are already on npm, so it can then be run again for the others.
 - On PyPI, add a pending trusted publisher for the project `vastgrid`: the repository `yhay81/vastgrid`, the
   workflow `release.yml` and the environment `pypi`.
-- On the VS Code Marketplace, the publisher `yhay81`; a Personal Access Token of Azure DevOps with the
-  Marketplace's Manage scope goes in the `VSCE_PAT` secret of the `vscode` environment.
-- On GitHub, in Settings → Environments, create `npm`, `pypi` and `vscode`, and limit their deployments to tags
-  matching `v*`. Required reviewers there make each release wait for an approval.
+- On the VS Code Marketplace, the publisher `yhay81`, with a trusted publishing policy: GitHub Actions, the
+  repository `yhay81/vastgrid`, the workflow `release.yml` and the environment `vscode`.
+- On open-vsx.org, the namespace `yhay81`, with a trusted publisher: the repository `yhay81/vastgrid`, the
+  workflow `release.yml` and the environment `openvsx`.
+- On GitHub, in Settings → Environments, create `npm`, `pypi`, `vscode` and `openvsx`, and limit their
+  deployments to tags matching `v*`. Required reviewers there make each release wait for an approval.
 
 ## The site
 

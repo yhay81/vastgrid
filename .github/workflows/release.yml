@@ -1,6 +1,7 @@
 name: Release
 # A tag v<version> releases every package at that version: the npm packages, the Python package on PyPI and, for
-# versions that are not pre-releases, the VS Code extension on the Marketplace. See "Releasing" in CONTRIBUTING.md.
+# versions that are not pre-releases, the VS Code extension on the Marketplace and Open VSX. See "Releasing" in
+# CONTRIBUTING.md.
 on:
   push:
     tags: ["v*"]
@@ -132,6 +133,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: vscode
+    permissions:
+      # Trusted publishing: the publisher's policy on the Marketplace accepts the workflow's OIDC token.
+      id-token: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -144,12 +148,10 @@ jobs:
           name: vscode
           path: ${{ runner.temp }}/vscode
       - name: Publish
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
           npm ci --ignore-scripts
           for package in "$RUNNER_TEMP"/vscode/*.vsix; do
-            npx vsce publish --skip-duplicate --packagePath "$package"
+            npx vsce publish --oidc --skip-duplicate --packagePath "$package"
           done
   openvsx:
     name: Publish to Open VSX
