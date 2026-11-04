@@ -667,7 +667,7 @@ test("a large generated file answers sorts, filters, groups and summaries as the
   // With a byte less than its columns take, the file is read by blocks: each plan opens it again, so that it reads
   // whole only the columns that it names, and answers the same; a search, which names every column, fails.
   let lazyBytes = 0;
-  for (let high = 2 ** 30; high - lazyBytes > 1; ) {
+  for (let high = 2 ** 30; high - lazyBytes > 1;) {
     const middle = Math.floor((lazyBytes + high) / 2);
     if ((await readFile({ file, format: "csv", maxBytes: middle })).reader) lazyBytes = middle;
     else high = middle;

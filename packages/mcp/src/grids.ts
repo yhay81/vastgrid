@@ -258,7 +258,7 @@ export class Grid {
     }
     if (!outcome.ok) {
       const error = outcome.error as CommandError | GridError;
-      const details: Json = { ...(error.details ?? {}) };
+      const details: Json = { ...error.details };
       if ("reason" in error && error.reason !== undefined) details.reason = error.reason;
       if ("path" in error && error.path !== undefined) details.path = error.path;
       throw new ToolError(error.code, error.message, details);

@@ -55,6 +55,7 @@ function OpenDetail({ Custom, onClosed }: { Custom?: ComponentType<DetailPanelPr
     onClosed();
   };
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Escape bubbles from its controls.
     <aside
       className="vg-detail"
       aria-label={title}

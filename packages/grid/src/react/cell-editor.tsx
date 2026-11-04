@@ -92,7 +92,7 @@ export function CellEditor({ canvas, scrollerRef, announce, ref }: CellEditorPro
   );
 
   // Over its cell, and again at every frame the canvas draws (scrolling, resizing).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the editor's row and column are the triggers.
+  // The editor's row and column, which it does not read, place it again when it moves to another cell.
   useLayoutEffect(() => {
     if (!open) return;
     const box = boxRef.current;

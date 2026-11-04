@@ -78,7 +78,7 @@ export async function rows(table: Table, request: Json, running: Running) {
   }
   // The values read are checked, of the table's columns not checked whole (§2.2).
   const cells = await Promise.all(
-    sources.map((source) => (source.values ? null : cellsOf(table, source.index, rowIds))),
+    sources.map(async (source) => (source.values ? null : cellsOf(table, source.index, rowIds))),
   );
   const values: JsonValue[][] = [];
   // By name in a Map: a column may be named "__proto__".

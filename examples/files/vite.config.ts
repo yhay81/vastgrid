@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import react from "@vitejs/plugin-react";
 import { createHttpHandler, DuckDBEngine } from "vastgrid-duckdb";
-import { defineConfig, type Plugin, type PreviewServer, type ViteDevServer } from "vite";
+import { defineConfig, type Plugin, type PreviewServer, type ViteDevServer } from "vite-plus";
 
 /** The folder whose files the page opens: `VASTGRID_DATA`, or the benches' data (`.data/bench`). */
 const data = path.resolve(process.env.VASTGRID_DATA ?? path.join(import.meta.dirname, "..", "..", ".data", "bench"));

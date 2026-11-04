@@ -46,7 +46,7 @@ so edits to them apply without building. `npm run bench` writes the large files 
 CI runs these on every pull request; run them before you push:
 
 ```sh
-npm run lint        # Biome; npm run format fixes what it can
+npm run lint        # Oxfmt and Oxlint (vp check); npm run format fixes what they can
 npm run typecheck
 npm test
 npm run test:performance  # isolated, sequential performance budgets; no other tests or benchmarks running

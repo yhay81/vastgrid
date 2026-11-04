@@ -149,7 +149,7 @@ function escapeXml(text: string) {
 
 /** Lone surrogates and control characters other than tab, line feed and carriage return. */
 const notXml =
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what this replaces.
+  // oxlint-disable-next-line no-control-regex -- control characters are what this replaces.
   /[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
 /**
@@ -333,7 +333,7 @@ const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
 
 function sheetNameOf(name: string | undefined) {
   const cleaned = (name ?? "")
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are not allowed in sheet names.
+    // oxlint-disable-next-line no-control-regex -- control characters are not allowed in sheet names.
     .replace(/[[\]:*?/\\\u0000-\u001f]/g, "_")
     .replace(/^'+|'+$/g, "")
     .slice(0, 31);

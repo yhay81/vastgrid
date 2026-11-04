@@ -4,9 +4,9 @@
   "type": "module",
   "description": "0.2's grid on files of a folder, read by the DuckDB engine over HTTP: `?file=sales-100000000.parquet`.",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "vp dev",
+    "build": "vp build",
+    "preview": "vp preview"
   },
   "dependencies": {
     "react": "catalog:",
@@ -16,6 +16,6 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "catalog:",
-    "vite": "catalog:"
+    "vite-plus": "catalog:"
   }
 }

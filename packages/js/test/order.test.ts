@@ -173,6 +173,7 @@ test("strings compare by code point, not by UTF-16 unit (§3.1)", async () => {
     asc: [13, 4, 14, 7, 6, 9, 2, 1, 3, 0, 5, 10, 8, 11, 12],
   });
   // JavaScript's < answers the other way for these: the emoji's high surrogate is below U+FF61.
+  // oxlint-disable-next-line no-constant-binary-expression -- what JavaScript answers is the point.
   assert.ok("😀" < "｡");
   // Without surrogates, and with only surrogates, the UTF-16 order is already the code point order.
   await checkOrder(single({ type: "string" }, ["｡", "", "a", "￿", "퟿", "ア", "ｱ"]));

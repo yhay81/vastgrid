@@ -460,6 +460,7 @@ export function ColumnMenu({ target, onClose }: { target: MenuTarget | null; onC
       ) : panel === "total" ? (
         <>
           {back}
+          {/* oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- focus moves among its items. */}
           <div role="menu" aria-label={messages.total} onKeyDown={moveFocus}>
             <MenuItem
               radio
@@ -481,6 +482,7 @@ export function ColumnMenu({ target, onClose }: { target: MenuTarget | null; onC
           </div>
         </>
       ) : (
+        // oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- focus moves among its items.
         <div role="menu" aria-label={messages.columnMenu(column.name)} onKeyDown={moveFocus}>
           {sorts && (
             <>

@@ -18,6 +18,7 @@ export function LiveGrid({ locale = "en", rows = 100_000 }: Props) {
     const worker = new Worker(new URL("./orders-worker.ts", import.meta.url), { type: "module" });
     worker.postMessage({ rows });
     const opened = workerTransport(worker);
+    // oxlint-disable-next-line react/set-state-in-effect -- the transport is the Worker's, made and closed with it.
     setTransport(opened);
     return () => {
       opened.close();

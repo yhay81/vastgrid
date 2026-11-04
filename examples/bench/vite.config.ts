@@ -1,5 +1,5 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig } from "vite-plus";
 
 // The bench measures what ships: the packages' builds (`pnpm run build`), in a production build of the page, with
 // React's profiling build so that `<Profiler>` reports commits.

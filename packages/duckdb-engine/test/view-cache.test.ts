@@ -34,7 +34,7 @@ function building() {
     get builds() {
       return builds;
     },
-    make(s: AbortSignal): Build<number> {
+    make: (s: AbortSignal): Build<number> => {
       builds++;
       signal = s;
       s.addEventListener("abort", () => {

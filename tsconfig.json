@@ -5,7 +5,9 @@
     "noEmit": true,
     "composite": false,
     "declaration": false,
-    "declarationMap": false
+    "declarationMap": false,
+    "types": ["node"],
+    "allowImportingTsExtensions": true
   },
   "include": [
     "packages/*/src",

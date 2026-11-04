@@ -38,7 +38,7 @@ export const suites = {
     server: {
       // Vite keeps the built site's preview in the foreground.
       command:
-        "pnpm --filter vastgrid-site build && pnpm --filter vastgrid-site exec vite preview --outDir dist --host 127.0.0.1 --port 5187 --strictPort",
+        "pnpm --filter vastgrid-site build && pnpm --filter vastgrid-site exec vp preview --outDir dist --host 127.0.0.1 --port 5187 --strictPort",
       url: "http://127.0.0.1:5187/open/",
     },
   },

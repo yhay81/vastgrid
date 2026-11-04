@@ -136,7 +136,7 @@ export abstract class FileColumns {
           this.used -= total;
         });
       }
-      await Promise.all(wanted.map((index) => this.reading.get(index)));
+      await Promise.all(wanted.map((index) => this.reading.get(index)).filter((reading) => reading !== undefined));
       for (const index of wanted) this.touch(index);
       return release;
     } catch (error) {

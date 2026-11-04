@@ -7,7 +7,7 @@
     "noEmit": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "types": ["vite/client", "node"],
+    "types": ["vite-plus/client", "node"],
     "allowImportingTsExtensions": true
   },
   "include": ["src", "vite.config.ts"]

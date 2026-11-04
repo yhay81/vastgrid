@@ -270,7 +270,7 @@ interface Kind {
   /** The number that holds a value, or null for null and for values that DuckDB reads as null; of `array` kinds. */
   number(value: unknown): number | bigint | null;
   /** The JSON of a number that `number` gave. */
-  json(value: number | bigint): JsonValue;
+  json: (value: number | bigint) => JsonValue;
   /** The JSON of a value from hyparquet. */
   read(value: unknown): JsonValue;
 }

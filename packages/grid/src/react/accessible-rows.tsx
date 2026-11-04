@@ -4,6 +4,9 @@ import type { GridCanvas, Settled } from "../canvas/grid-canvas.js";
 import type { GridStore } from "../core/store.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 
+// WAI-ARIA's grid pattern over the canvas, which has no table elements. Focus stays on the grid, which names the
+// active cell with `aria-activedescendant`; a cell's link or button is drawn on the canvas, and its element names it.
+
 /** Rows and columns that the accessibility tree holds at most. */
 const MAX_ROWS = 200;
 const MAX_COLUMNS = 60;
@@ -122,12 +125,8 @@ const style = (box: Box) => ({ left: box.left, top: box.top, width: box.width, h
 function AccessibleRow({ id, row, selected }: { id: string; row: ShownRow; selected: string }) {
   const marked = new Set(selected === "" ? [] : selected.split(",").map(Number));
   return (
-    // biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas.
-    // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
     <div role="row" aria-rowindex={row.row + 2}>
       {row.cells.map((cell) => (
-        // biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas.
-        // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
         <div
           key={cell.name}
           id={cellId(id, row.row, cell.column)}
@@ -138,14 +137,10 @@ function AccessibleRow({ id, row, selected }: { id: string; row: ShownRow; selec
           style={style(cell)}
         >
           {cell.action?.kind === "link" ? (
-            // biome-ignore lint/a11y/useSemanticElements: the cell's link is drawn on the canvas; this names it.
-            // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
             <span role="link" aria-label={cell.action.label}>
               {cell.text}
             </span>
           ) : cell.action?.kind === "button" ? (
-            // biome-ignore lint/a11y/useSemanticElements: the cell's button is drawn on the canvas; this names it.
-            // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
             <span role="button" aria-label={cell.action.label}>
               {cell.text}
             </span>
@@ -186,14 +181,9 @@ export function AccessibleRows({ canvas, id }: { canvas: GridCanvas; id: string 
       : null;
   const rows = elsewhere ? [...screen.rows, elsewhere].sort((a, b) => a.row - b.row) : screen.rows;
   return (
-    // biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas.
     <div className="vg-a11y" role="rowgroup">
-      {/* biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas. */}
-      {/* biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant). */}
       <div role="row" aria-rowindex={1}>
         {screen.header.map((cell) => (
-          // biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas.
-          // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
           <div
             key={cell.name}
             role="columnheader"
@@ -211,15 +201,11 @@ export function AccessibleRows({ canvas, id }: { canvas: GridCanvas; id: string 
       ))}
       {geometry.footer > 0 && (
         // The totals row (§5.1 of the specification), after the rows.
-        // biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas.
-        // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
         <div role="row" aria-rowindex={geometry.rowCount + 2}>
           {screen.header.map((cell) => {
             const value = totals?.values[cell.name];
             const type = totals?.columns[cell.name];
             return (
-              // biome-ignore lint/a11y/useSemanticElements: ARIA grid pattern over a canvas.
-              // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the grid (aria-activedescendant).
               <div
                 key={cell.name}
                 role="gridcell"

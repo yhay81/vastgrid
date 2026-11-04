@@ -160,7 +160,7 @@ export default function OpenApp({ language: pageLanguage }: { language: Language
   };
 
   const page = (
-    // biome-ignore lint/a11y/noStaticElementInteractions: a file can be dropped anywhere on the page; buttons open one too.
+    // A file can be dropped anywhere on the page; buttons open one too.
     <div
       className="demo"
       onDragOver={(event) => {

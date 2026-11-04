@@ -40,7 +40,6 @@ export function StaticRows({ label }: { label: string }) {
         <tbody>
           {rows.map((values, row) => (
             // Rows of a view have no other identity here: the server renders them once.
-            // biome-ignore lint/suspicious/noArrayIndexKey: the rows are the view's first rows, in order.
             <tr key={row}>
               {values.map((value, index) => {
                 const column = columns[index].column;

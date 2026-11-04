@@ -24,7 +24,7 @@ test("every text of the extension is in Japanese, and no other", () => {
   const texts = readdirSync(source)
     .filter((name) => name.endsWith(".ts"))
     .flatMap((name) => [...readFileSync(path.join(source, name), "utf8").matchAll(/l10n\.t\(\s*("(?:[^"\\]|\\.)*")/g)])
-    .map((match) => JSON.parse(match[1]));
+    .map((match): string => JSON.parse(match[1]));
   assert.ok(texts.length > 0);
   assert.equal(manifest.l10n, "./l10n");
   assert.deepEqual(Object.keys(json("l10n/bundle.l10n.ja.json")).sort(), [...new Set(texts)].sort());

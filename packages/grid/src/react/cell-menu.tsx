@@ -126,6 +126,7 @@ export function CellMenu({
           </button>
         </section>
       ) : (
+        // oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- focus moves among its items.
         <div role="menu" aria-label={messages.cellMenu} onKeyDown={moveFocus}>
           <button
             type="button"

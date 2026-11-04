@@ -66,6 +66,7 @@ export function FindBar({
 
   if (!finds) return null;
   return (
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- the keys bubble from its controls.
     <search className="vg-find" aria-label={messages.find} onKeyDown={onKeyDown}>
       <input
         ref={inputRef}

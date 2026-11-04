@@ -19,7 +19,10 @@ catalog:
   "@vitejs/plugin-react": 6.2.1
   react: 19.3.1
   react-dom: 19.3.1
-  vite: 8.3.5
+  # Vite+ (vp): Oxlint, Oxfmt, Vitest, Rolldown and Vite Task. Its core is Vite 8 with Rolldown, which also takes the
+  # place of Vite (`vite@*` below), so that the examples, Astro, the React plugin and Vitest share one Vite.
+  vite: npm:@voidzero-dev/vite-plus-core@1.4.0
+  vite-plus: 1.4.0
 
 # Dependencies are pinned to exact versions (CONTRIBUTING.md).
 savePrefix: ""
@@ -27,6 +30,14 @@ savePrefix: ""
 overrides:
   # Patched against globparts amplification.
   minimatch: 11.0.4
+  vite@*: "catalog:"
+
+# The core's version is Vite+'s (1.x), outside the Vite 8 ranges of the packages that need Vite.
+peerDependencyRules:
+  allowAny:
+    - vite
+  allowedVersions:
+    vite: "*"
 
 # pnpm does not switch itself to the version of packageManager: Vite+ (vp env), mise or corepack does. pnpm then
 # writes the lockfile as one YAML document, which GitHub's dependency graph and Dependabot's alerts read.

@@ -26,8 +26,8 @@ rows, server rendering (§7) and the checks of §10 and §11.
    TypeScript. The built-in UI dispatches the same commands that a host, an agent or a custom toolbar does.
 4. **The latest React, and nothing it discourages.** The package requires React 19.3 and uses its features
    where they fit (§3). Every component and hook follows the Rules of React: it compiles with React
-   Compiler 1.0 without bailing out and passes `eslint-plugin-react-hooks` `recommended-latest`, and the
-   package ships compiled (§11).
+   Compiler 1.0 without bailing out and passes React Compiler's lint rules, and the package ships compiled
+   (§11).
 5. **Wherever React runs.** Client rendering, streaming server rendering, Server Components, Strict Mode and
    concurrent rendering, in Vite, Next.js, React Router and Astro.
 
@@ -607,8 +607,9 @@ Appendix A gives what was measured.
   [`scripts/compile-react.mjs`](../scripts/compile-react.mjs)), so that every app gets its memoization without
   configuring anything; tsc writes only the types. The build fails when the compiler gives up on a function.
 - The tests compile every file of the package with React Compiler and fail on any function that it does not
-  compile. ESLint runs `eslint-plugin-react-hooks` `recommended-latest` on the package, parsing TypeScript with
-  `@babel/eslint-parser` (`typescript-eslint` does not support TypeScript 7 yet); Biome lints everything else.
+  compile. Oxlint, through Vite+ (`vp check`, [`vite.config.ts`](../vite.config.ts)), runs React Compiler's rules
+  on the package (`react/purity`, `react/refs`, `react/immutability` and the others it has natively), and its
+  correctness rules, with the types, on the whole workspace.
 - Unit tests run on the sources; the bench and the end-to-end tests run on the build.
 
 ## Appendix A. Measurements
