@@ -1,6 +1,6 @@
 # vastgrid
 
-A canvas data grid for tables of any size: an npm workspace in TypeScript on Node.js 24. CONTRIBUTING.md has
+A canvas data grid for tables of any size: an npm workspace in TypeScript on Node.js 26. CONTRIBUTING.md has
 the checks and the rules for a change (protocol, messages, CHANGELOG, both READMEs); read its Guidelines
 before such a change.
 

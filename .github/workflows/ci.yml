@@ -39,9 +39,9 @@ jobs:
         include:
           # DuckDB is a native module, and file access depends on the platform's paths and links.
           - os: macos-latest
-            node: 24
+            node: 26
           - os: windows-latest
-            node: 24
+            node: 26
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -61,7 +61,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       # The Python package and its tests; the TypeScript tests of packages/notebook run it with uv.
-      - uses: astral-sh/setup-uv@v10.3.2
+      - uses: astral-sh/setup-uv@v10.3.3
       - run: npm ci
       # The grid's module that the package carries (static/widget.js).
       - run: npm run build
