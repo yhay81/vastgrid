@@ -3,7 +3,7 @@ title: サーバーのファイル
 description: どんな大きさの CSV・TSV・Parquet・JSON Lines のファイルと Excel のブックも、vastgrid-duckdb の DuckDB エンジンで Node.js から配信します。
 ---
 
-`vastgrid-duckdb` は、表のファイルを Node.js の DuckDB で開き、グリッドのメッセージに答えます。行、並べ替え・絞り込みしたビュー、グループ化とピボット、集計、検索、書き込み、保存、書き出しです。ページが受け取るのは、表示する行だけです。Node.js 20 以降が必要で、DuckDB の Node.js バインディングが対応するプラットフォームで動きます。
+`vastgrid-duckdb` は、表のファイルを Node.js の DuckDB で開き、グリッドのメッセージに答えます。行、並べ替え・絞り込みしたビュー、グループ化とピボット、集計、検索、書き込み、保存、書き出しです。ページが受け取るのは、表示する行だけです。Node.js 22.18 以降が必要で、DuckDB の Node.js バインディングが対応するプラットフォームで動きます。
 
 ```bash
 npm install vastgrid vastgrid-duckdb

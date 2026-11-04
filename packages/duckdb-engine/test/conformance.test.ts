@@ -4,9 +4,9 @@
  */
 import assert from "node:assert/strict";
 import path from "node:path";
-import { after, before, describe, test } from "node:test";
 import type { Column } from "vastgrid-spec";
 import { compareResult, isFailure, readCorpus } from "vastgrid-spec/conformance";
+import { afterAll, beforeAll, describe, test } from "vite-plus/test";
 import { type Client, setUp, type TableInfo, writeParquet } from "./client.ts";
 
 for (const materializeRows of [0, 20_000_000])
@@ -14,32 +14,34 @@ for (const materializeRows of [0, 20_000_000])
     let context: Awaited<ReturnType<typeof setUp>>;
     let client: Client;
 
-    before(async () => {
+    beforeAll(async () => {
       context = await setUp({ materializeRows });
       client = context.client;
     });
 
-    after(async () => {
+    afterAll(async () => {
       await context.tearDown();
     });
 
     for (const file of readCorpus()) {
-      test(`plan corpus through the engine: ${file.file}`, async (t) => {
+      describe(`plan corpus through the engine: ${file.file}`, () => {
         const tables = new Map<string, TableInfo>();
-        for (const [name, table] of Object.entries(file.tables)) {
-          const parquet = path.join(context.workspace, `${path.basename(file.file, ".json")}-${name}.parquet`);
-          await writeParquet(parquet, table);
-          const info = await client.open(parquet);
-          assert.equal(info.status, "ready", info.error);
-          assert.deepEqual(
-            info.columns.map(({ sourceType: _sourceType, ...column }) => column),
-            table.columns,
-            `the table ${name} reads with its own types`,
-          );
-          tables.set(name, info);
-        }
+        beforeAll(async () => {
+          for (const [name, table] of Object.entries(file.tables)) {
+            const parquet = path.join(context.workspace, `${path.basename(file.file, ".json")}-${name}.parquet`);
+            await writeParquet(parquet, table);
+            const info = await client.open(parquet);
+            assert.equal(info.status, "ready", info.error);
+            assert.deepEqual(
+              info.columns.map(({ sourceType: _sourceType, ...column }) => column),
+              table.columns,
+              `the table ${name} reads with its own types`,
+            );
+            tables.set(name, info);
+          }
+        });
         for (const item of file.cases) {
-          await t.test(item.id, async () => {
+          test(item.id, async () => {
             const info = tables.get(item.table) as TableInfo;
             const plan = item.plan as Record<string, unknown>;
             const start = item.read?.start ?? 0;

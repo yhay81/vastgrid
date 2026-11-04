@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import { decodeBlock, encodeBlock, type GridDocument, type GridSession } from "vastgrid-spec";
+import { test } from "vite-plus/test";
 import type { RowsResult } from "../src/core/types.js";
 import { createGridStore, type GridStore, localTransport } from "../src/core.ts";
 import { CAPABILITIES, fakeEngine, numbers, settle } from "./fake-engine.ts";
@@ -353,7 +353,9 @@ test("a plan chosen while the table loads waits until ready when partialViews is
 });
 
 for (const initialPlan of [false, true]) {
-  test(`a loading table's ready event before its open response unblocks ${initialPlan ? "the initial plan" : "later sorting"}`, async (t) => {
+  test(`a loading table's ready event before its open response unblocks ${initialPlan ? "the initial plan" : "later sorting"}`, async ({
+    onTestFinished,
+  }) => {
     const engine = fakeEngine(numbers(100));
     const original = engine.handle.bind(engine);
     engine.handle = async (message, options) => {
@@ -380,7 +382,7 @@ for (const initialPlan of [false, true]) {
       table: "numbers",
       ...(initialPlan ? { document: { plan: { sort: keys } } } : {}),
     });
-    t.after(store.connect());
+    onTestFinished(store.connect());
     store.setViewport({ top: 0, rows: 20, columns: ["id"] });
     if (!initialPlan) {
       await until(store, (snapshot) => snapshot.view !== null);

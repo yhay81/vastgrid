@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import type { Expr } from "vastgrid-spec";
+import { test } from "vite-plus/test";
 import { allState, checkedCount, checkState } from "../src/core/checked.ts";
 
 const tokyo: Expr = { fn: "eq", args: [{ col: "city" }, { lit: "Tokyo" }] };

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "vite-plus/test";
 import { columnLetters, excelNumberFormat, MAX_SERIAL, serialOf, serialTime } from "../src/excel.ts";
 
 test("maps column settings onto Excel number formats", () => {

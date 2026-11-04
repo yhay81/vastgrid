@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import { type Column, type Expr, joinParts } from "vastgrid-spec";
+import { test } from "vite-plus/test";
 import {
   type ColumnFilter,
   conditionsOf,

@@ -6,8 +6,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { after, before, test } from "node:test";
 import { type GridSnapshot, GridStore, type WorkerLike, workerTransport } from "vastgrid/core";
+import { afterAll, beforeAll, test } from "vite-plus/test";
 import { newSteps } from "../src/history.ts";
 import type { HostMessage } from "../src/messages.ts";
 import { type FileKey, type FileView, type KeptFile, TableFile, type TableFileOptions } from "../src/table-file.ts";
@@ -16,12 +16,12 @@ let folder: string;
 let temp: string;
 const CSV = 'id,region,price\r\n1,EU,10.5\r\n2,"US, east",30\r\n3,EU,20\r\n';
 
-before(async () => {
+beforeAll(async () => {
   folder = await mkdtemp(path.join(os.tmpdir(), "vastgrid-vscode-"));
   temp = path.join(folder, ".tmp");
 });
 
-after(async () => {
+afterAll(async () => {
   await rm(folder, { recursive: true, force: true });
 });
 

@@ -10,7 +10,7 @@ blocks, over HTTP or in the same process.
 npm install vastgrid-duckdb
 ```
 
-It needs Node.js 20 or later on a platform that DuckDB ships a binary for: Linux (x64, arm64; glibc and musl), macOS
+It needs Node.js 22.18 or later on a platform that DuckDB ships a binary for: Linux (x64, arm64; glibc and musl), macOS
 (x64, arm64) or Windows (x64, arm64).
 
 ```ts
@@ -122,7 +122,7 @@ temporary folder.
 | Parquet, JSON | none; columns keep their names (headers are not used) |
 | Excel (`.xlsx`) | 1,048,575 rows and 16,384 columns (`export_too_large`), 32,767 characters a cell, 4 GB; text is never written as a formula |
 
-`node --conditions=vastgrid-source --import tsx packages/duckdb-engine/bench/open.ts` measures opening and
+`pnpm exec vpx --conditions=vastgrid-source packages/duckdb-engine/bench/open.ts` measures opening and
 reading the files of the benches; [`examples/files`](https://github.com/yhay81/vastgrid/tree/main/examples/files)
 shows them in the grid.
 

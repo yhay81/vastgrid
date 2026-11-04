@@ -42,8 +42,8 @@ The end-to-end tests fail when the grid goes over one of these, so they hold for
 | What a page loads first of `DataGrid` with a table in memory, minified with gzip | under 200 KB |
 
 On 2026-10-27, a page loaded 100.9 KB with gzip first, and 133.2 KB in all: the column and cell menus, the
-toolbar's menus, the find bar and the detail panel load when they first open. `npm run size` measures it, after
-`npm run build`.
+toolbar's menus, the find bar and the detail panel load when they first open. `pnpm run size` measures it, after
+`pnpm run build`.
 
 ## The DuckDB engine
 

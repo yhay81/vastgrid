@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
 import { type Column, checkPlan, PlanError, SpecError } from "vastgrid-spec";
 import {
@@ -10,6 +9,7 @@ import {
   isFailure,
   readCorpus,
 } from "vastgrid-spec/conformance";
+import { afterAll, beforeAll, describe, test } from "vite-plus/test";
 import {
   compileView,
   countQuery,
@@ -58,35 +58,38 @@ async function answer(connection: DuckDBConnection, file: CorpusFile, item: Corp
 }
 
 for (const file of readCorpus()) {
-  test(`conformance: ${file.file}`, async (t) => {
-    const instance = await DuckDBInstance.create(":memory:");
-    const connection = await instance.connect();
-    try {
+  describe(`conformance: ${file.file}`, () => {
+    let instance: DuckDBInstance | undefined;
+    let connection: DuckDBConnection;
+    beforeAll(async () => {
+      instance = await DuckDBInstance.create(":memory:");
+      connection = await instance.connect();
       await connection.run("SET TimeZone = 'UTC'");
       for (const [name, table] of Object.entries(file.tables)) await createTable(connection, name, table);
-      for (const item of file.cases) {
-        await t.test(item.id, async () => {
-          const got = await answer(connection, file, item);
-          if (isFailure(item.expect)) {
-            assert.ok("error" in got, `expected the error ${item.expect.error.code}, got rows`);
-            const { code, reason, path } = item.expect.error;
-            assert.deepEqual(
-              {
-                code: got.error.code,
-                reason: reason === undefined ? undefined : got.error.reason,
-                path: path === undefined ? undefined : got.error.path,
-              },
-              { code, reason, path },
-            );
-            return;
-          }
-          assert.ok("result" in got, `expected rows, got the error ${"error" in got ? JSON.stringify(got.error) : ""}`);
-          assert.deepEqual(compareResult(item.expect, got.result), []);
-        });
-      }
-    } finally {
-      connection.closeSync();
-      instance.closeSync();
+    });
+    afterAll(() => {
+      connection?.closeSync();
+      instance?.closeSync();
+    });
+    for (const item of file.cases) {
+      test(item.id, async () => {
+        const got = await answer(connection, file, item);
+        if (isFailure(item.expect)) {
+          assert.ok("error" in got, `expected the error ${item.expect.error.code}, got rows`);
+          const { code, reason, path } = item.expect.error;
+          assert.deepEqual(
+            {
+              code: got.error.code,
+              reason: reason === undefined ? undefined : got.error.reason,
+              path: path === undefined ? undefined : got.error.path,
+            },
+            { code, reason, path },
+          );
+          return;
+        }
+        assert.ok("result" in got, `expected rows, got the error ${"error" in got ? JSON.stringify(got.error) : ""}`);
+        assert.deepEqual(compareResult(item.expect, got.result), []);
+      });
     }
   });
 }

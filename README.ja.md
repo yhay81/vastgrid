@@ -101,7 +101,7 @@ DuckDB エンジンは CSV をカンマ区切り・二重引用符で読みま�
 
 npm のパッケージは同じ版でそろえて公開します。`vastgrid` には React 19.3 以降（省略できる peer 依存で、サーバーは React なしで
 `vastgrid/core` を使えます）と、CSS の `light-dark()` に対応したブラウザー（Chrome・Edge 123、Firefox 120、Safari 17.5 以降）が
-要ります。エンジンには Node.js 20 以降が要り、DuckDB は Linux（x64・arm64、glibc・musl）、macOS（x64・arm64）、Windows（x64・arm64）
+要ります。エンジンには Node.js 22.18 以降が要り、DuckDB は Linux（x64・arm64、glibc・musl）、macOS（x64・arm64）、Windows（x64・arm64）
 で動きます。
 
 ## 性能
@@ -121,10 +121,10 @@ Apple M2 Pro で測りました。メモリーエンジンの 100 万行を示�
 ## 開発に参加する
 
 ```sh
-npm install
-npm run build      # すべてのパッケージ、CLI のページ、MCP App、拡張機能
-npm test           # 単体テスト（ソースのまま）
-npm run dev        # examples/files: DuckDB エンジンの上のグリッド http://127.0.0.1:5182
+pnpm install
+pnpm run build     # すべてのパッケージ、CLI のページ、MCP App、拡張機能
+pnpm test          # 単体テスト（ソースのまま、Vitest）
+pnpm run dev       # examples/files: DuckDB エンジンの上のグリッド http://127.0.0.1:5182
 ```
 
 確認の方法と変更の決まりは [CONTRIBUTING.md](CONTRIBUTING.md)、脆弱性の報告は [SECURITY.md](SECURITY.md) にあります。

@@ -4,9 +4,8 @@ import { fileURLToPath } from "node:url";
 import { buildPage, printSizes } from "../../../scripts/build-page.mjs";
 
 const root = new URL("..", import.meta.url);
-const result = await buildPage({
-  entryPoints: { widget: fileURLToPath(new URL("widget/main.tsx", root)) },
-  outdir: fileURLToPath(new URL("python/src/vastgrid/static", root)),
-  metafile: true,
+const files = await buildPage({
+  input: { widget: fileURLToPath(new URL("widget/main.tsx", root)) },
+  outDir: fileURLToPath(new URL("python/src/vastgrid/static", root)),
 });
-printSizes(result, "static");
+printSizes(files, "static");

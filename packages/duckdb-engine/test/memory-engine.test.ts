@@ -16,10 +16,10 @@ import { readFile } from "node:fs/promises";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
-import { after, before, test } from "node:test";
 import { DuckDBInstance } from "@duckdb/node-api";
 import { memoryEngine } from "vastgrid-js";
 import { type Column, decodeBlock } from "vastgrid-spec";
+import { afterAll, beforeAll, test } from "vite-plus/test";
 import { setUp, type TableInfo, writeParquet } from "./client.ts";
 import {
   answer,
@@ -52,7 +52,7 @@ let memoryTable: { table: string; revision: string };
 let parquetSend: Send;
 let parquetTable: { table: string; revision: string; columns: Column[] };
 
-before(async () => {
+beforeAll(async () => {
   context = await setUp();
   const table = generateTable(generator(SEED));
   const file = path.join(context.workspace, "generated.parquet");
@@ -67,7 +67,7 @@ before(async () => {
   parquetTable = opened.result as typeof parquetTable;
 });
 
-after(async () => {
+afterAll(async () => {
   await context.tearDown();
 });
 
@@ -82,7 +82,7 @@ test("the generated table reads with the same columns and values in both engines
   assert.deepEqual(differences(await answer(parquetSend, parquetTable, {}), duckdb), []);
 });
 
-test(`${PLANS} generated plans give the same answers in both engines (seed ${SEED})`, async (t) => {
+test(`${PLANS} generated plans give the same answers in both engines (seed ${SEED})`, async () => {
   const failures: string[] = [];
   const outcomes = { rows: 0, errors: 0, known: 0 };
   const only = process.env.VASTGRID_ONLY;
@@ -98,13 +98,13 @@ test(`${PLANS} generated plans give the same answers in both engines (seed ${SEE
     const problems = differences(memory, duckdb);
     const parquet = differences(await answer(parquetSend, parquetTable, plan), duckdb);
     if (parquet.length > 0 && parquet[0] !== "known") problems.push(...parquet.map((problem) => `parquet: ${problem}`));
-    if (only) t.diagnostic(JSON.stringify({ plan, memory, duckdb }));
+    if (only) console.log(JSON.stringify({ plan, memory, duckdb }));
     if (problems[0] === "known") outcomes.known++;
     else if (problems.length > 0) {
       failures.push(`plan ${seed}: ${JSON.stringify(plan)}\n  ${problems.join("\n  ")}`);
     }
   }
-  t.diagnostic(
+  console.log(
     `${outcomes.rows} plans answered with rows, ${outcomes.errors} with errors; ${outcomes.known} differ as KNOWN says`,
   );
   assert.equal(failures.length, 0, `${failures.length} plans differ:\n${failures.slice(0, 10).join("\n")}`);
@@ -234,7 +234,9 @@ async function page(
   return { rowIds: result.rowIds, rows: decodeBlock(result.block.bytes).rows };
 }
 
-test("reads a Parquet file over HTTP by range requests, the row groups of the rows it shows", async (t) => {
+test("reads a Parquet file over HTTP by range requests, the row groups of the rows it shows", async ({
+  onTestFinished,
+}) => {
   const file = path.join(context.workspace, "groups.parquet");
   const instance = await DuckDBInstance.create(":memory:");
   const connection = await instance.connect();
@@ -269,7 +271,7 @@ test("reads a Parquet file over HTTP by range requests, the row groups of the ro
     response.end(bytes.subarray(start, end));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  t.after(() => server.close());
+  onTestFinished(() => server.close());
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/groups.parquet`;
   const send = sender(memoryEngine({ tables: { groups: { parquet: url, editable: true } } }));
   const opened = await send("open", { ref: "groups" });

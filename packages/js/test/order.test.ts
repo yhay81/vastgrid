@@ -5,7 +5,6 @@
  * fixed width are ranked from the numbers that hold them.
  */
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import {
   type Column,
   dateText,
@@ -24,6 +23,7 @@ import {
   timeText,
   toBase64,
 } from "vastgrid-spec";
+import { test } from "vite-plus/test";
 import type { MemoryTable } from "../src/index.ts";
 import { Client, random, single } from "./client.ts";
 

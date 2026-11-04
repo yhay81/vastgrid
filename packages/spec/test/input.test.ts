@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "vite-plus/test";
 import { editText, type InputResult, readCellText, type ValueType } from "../src/index.ts";
 
 const ok = (value: unknown): InputResult => ({ ok: true, value: value as never });

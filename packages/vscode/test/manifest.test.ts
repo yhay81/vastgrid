@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { test } from "vite-plus/test";
 
 // The manifest's texts are in package.nls.json and package.nls.ja.json, the extension's in l10n/, and its files
 // are in the package: these keep them from drifting apart.

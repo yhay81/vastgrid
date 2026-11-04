@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { test } from "node:test";
 import { checkEvent } from "vastgrid-spec";
+import { test } from "vite-plus/test";
 import { setUp } from "./client.ts";
 
 for (const materializeRows of [0, 100_000]) {

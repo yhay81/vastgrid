@@ -36,7 +36,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         # From the oldest version in "engines" to the newest release.
-        node: [20, 22, 24, 26]
+        node: [22, 24, 26]
         include:
           # DuckDB is a native module, and file access depends on the platform's paths and links.
           - os: macos-latest
@@ -66,7 +66,7 @@ jobs:
       - run: pnpm run build
       - run: uv run --frozen ruff check && uv run --frozen ruff format --check && uv run --frozen pytest
         working-directory: packages/notebook/python
-      - run: node --conditions=vastgrid-source --import tsx --test packages/notebook/test/*.test.ts
+      - run: pnpm test packages/notebook/test
   e2e:
     name: Functional end-to-end tests
     runs-on: ubuntu-latest

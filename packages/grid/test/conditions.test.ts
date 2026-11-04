@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import type { Column, Expr } from "vastgrid-spec";
+import { test } from "vite-plus/test";
 import { ConditionError, readConditions, writeConditions } from "../src/core/conditions.ts";
 
 const columns: Column[] = [

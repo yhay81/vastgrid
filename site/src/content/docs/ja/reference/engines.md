@@ -144,7 +144,7 @@ const engine = await DuckDBEngine.create({ allowedDirectories: ["/srv/data"], te
 createServer(createHttpHandler(engine, { path: "/api" })).listen(8080);
 ```
 
-Node.js 20 以降と、DuckDB（`@duckdb/node-api`）のバイナリがあるプラットフォームが必要です。Linux（x64・arm64、glibc・musl）、macOS（x64・arm64）、Windows（x64・arm64）です。[サーバー上のファイル](/ja/guides/server/)も見てください。
+Node.js 22.18 以降と、DuckDB（`@duckdb/node-api`）のバイナリがあるプラットフォームが必要です。Linux（x64・arm64、glibc・musl）、macOS（x64・arm64）、Windows（x64・arm64）です。[サーバー上のファイル](/ja/guides/server/)も見てください。
 
 ### `DuckDBEngine.create(options)`
 

@@ -25,7 +25,7 @@ Install the packages of the engine you use with the grid, all at the same versio
 `npm install vastgrid vastgrid-js` installs the current grid and memory engine.
 
 The grid needs React 19.3 or later (0.1: React 18 or later), as an optional peer: servers use `vastgrid/core`
-and the engines without React. The packages need Node.js 20 or later.
+and the engines without React. The packages need Node.js 22.18 or later.
 
 ### Sources become engines and transports
 

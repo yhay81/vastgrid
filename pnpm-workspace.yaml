@@ -15,6 +15,8 @@ packages:
 # Versions that several packages share. Publishing replaces `catalog:` and `workspace:*` with the versions.
 catalog:
   "@duckdb/node-api": 2.0.0-r.1
+  # The bindings of that DuckDB, at its version: the VS Code extension loads them itself.
+  "@duckdb/node-bindings": 2.0.0-r.1
   "@uwdata/flechette": 2.7.1
   "@vitejs/plugin-react": 6.2.1
   react: 19.3.1
@@ -47,4 +49,3 @@ pmOnFail: ignore
 allowBuilds:
   # Copies the platform's binary of vsce's signing tool, as the VS Code extension's packaging and publishing use it.
   "@vscode/vsce-sign": true
-  esbuild: true

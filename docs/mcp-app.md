@@ -23,7 +23,7 @@ Add the server to a host that shows MCP Apps (Claude Desktop, VS Code, ChatGPT, 
 }
 ```
 
-From this repository, `npm install` and `npm run build`, then the command `node` with the arguments `/path/to/vastgrid/packages/mcp/dist/cli.js /path/to/data`.
+From this repository, `pnpm install` and `pnpm run build`, then the command `node` with the arguments `/path/to/vastgrid/packages/mcp/dist/cli.js /path/to/data`.
 
 `vastgrid-mcp [--save] <folder>…` opens the files of the folders it is given (the current folder by default) and no
 others: their real location, links followed, must be inside one. `--save` lets the grids save written cells into
@@ -91,12 +91,12 @@ engine are closed; so are those of every App of a grid that closes (the least re
 
 ## The page
 
-`npm run build -w vastgrid-mcp` bundles the App (`packages/mcp/app`) with esbuild into one HTML file,
+`pnpm --filter vastgrid-mcp build` bundles the App (`packages/mcp/app`) with Vite into one HTML file,
 `dist/app.html`, with its script and styles inside, the menus and panels that the grid loads when they open
 included: a host serves the page as a UI resource and the page loads nothing. It declares no domains (`csp` with
 empty `connectDomains` and `resourceDomains`), so hosts give it their default CSP, in which WebAssembly does not
-run. The page is 1.2 MB, 330 KB with gzip; most of it is ext-apps' MCP client and zod (600 KB), then React and the
-grid.
+run. The page is 838 KB, 251 KB with gzip: React and the grid, as in the command line's page (605 KB), then
+ext-apps' MCP client and zod.
 
 The App takes the host's theme and locale (English, Japanese, Chinese, Korean, Spanish, Portuguese, French or German).
 It is 520 pixels high in the conversation, or the host's `maxHeight` when that is less, and as high as its frame
@@ -115,7 +115,7 @@ are the host's.
 - `e2e/mcp.spec.ts` runs the built server over stdio behind a test host (`packages/mcp/host/serve.ts`), which
   serves the page in a frame with `sandbox="allow-scripts"` and MCP Apps' default CSP and connects it with
   ext-apps' `AppBridge`, as hosts do, and offers the full screen; `POST /restart` starts the server again, and the
-  App opens the file again as the person saw it. `node --import tsx packages/mcp/host/serve.ts <folder> [port]`
+  App opens the file again as the person saw it. `pnpm exec vpx packages/mcp/host/serve.ts <folder> [port]`
   starts it by hand: `http://127.0.0.1:5184/?file=orders.csv`.
 - By hand in VS Code 1.142.0, with the server in a folder's `.vscode/mcp.json` (`"servers": { "vastgrid": { "type":
   "stdio", "command": "node", "args": ["/path/to/vastgrid/packages/mcp/dist/cli.js", "--save",

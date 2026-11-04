@@ -2,7 +2,7 @@
  * Opens large files with the engine and reads blocks from their start to their end, as scrolling does, and prints a
  * Markdown report. Every time is a wall-clock time in this process, with the messages but without HTTP.
  *
- *   node --conditions=vastgrid-source --import tsx packages/duckdb-engine/bench/open.ts [--dir=.data/bench]
+ *   pnpm exec vpx --conditions=vastgrid-source packages/duckdb-engine/bench/open.ts [--dir=.data/bench]
  *     [--csv-rows=10000000] [--parquet-rows=100000000]
  *
  * `pnpm run bench` runs it. The files are generated here when they are missing (`files.ts`).

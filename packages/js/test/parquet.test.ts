@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "vite-plus/test";
 import { memoryEngine } from "../src/index.ts";
 
 // Parquet files themselves are read in packages/duckdb-engine/test/memory-engine.test.ts, which writes them with

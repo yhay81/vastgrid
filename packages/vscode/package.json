@@ -235,6 +235,7 @@
     "test:vscode": "node scripts/test-vscode.mjs"
   },
   "dependencies": {
+    "@duckdb/node-bindings": "catalog:",
     "vastgrid": "workspace:*",
     "vastgrid-duckdb": "workspace:*",
     "vastgrid-spec": "workspace:*"

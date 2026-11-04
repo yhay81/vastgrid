@@ -1,7 +1,7 @@
 // The extension's CHANGELOG.md (scripts/changelog.mjs): the repository's items about the extension, by version.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { test } from "node:test";
+import { test } from "vite-plus/test";
 import { extensionChangelog } from "../scripts/changelog.mjs";
 
 test("the extension's changelog keeps the items about vastgrid-vscode, without its name when it is the only one", () => {

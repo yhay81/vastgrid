@@ -15,7 +15,7 @@ npx vastgrid-cli --save data/
 ```
 
 Installed with `npm install --global vastgrid-cli`, the command is `vastgrid`. In this repository,
-`npm run build` and then `node packages/cli/dist/cli.js`.
+`pnpm run build` and then `node packages/cli/dist/cli.js`.
 
 ```text
 Usage: vastgrid [options] [<file or folder>…]
@@ -62,8 +62,8 @@ from, keeping every byte that holds no edited field (§7.5). Without it the comm
 JSON Lines and Excel files are not saved. A file changed on disk is read again, or, when it has written cells, the
 grid says so and keeps them until they are discarded (§7.6).
 
-`npm run build -w vastgrid-cli` bundles the page (`packages/cli/app`) with esbuild into one HTML file,
-`dist/app.html`, with its script and styles inside: 550 KB, 180 KB with gzip.
+`pnpm --filter vastgrid-cli build` bundles the page (`packages/cli/app`) with Vite into one HTML file,
+`dist/app.html`, with its script and styles inside: 605 KB, 192 KB with gzip.
 
 ## The address and its token
 

@@ -181,9 +181,9 @@ so that late answers never replace the current view.
   VS Code, an MCP App and a notebook.
 - [docs/migrating-from-0.1.md](https://github.com/yhay81/vastgrid/blob/main/docs/migrating-from-0.1.md): from vastgrid 0.1.x.
 
-The tests run on the sources (`npm test`); the end-to-end tests run the bench of
+The tests run on the sources (`pnpm test`); the end-to-end tests run the bench of
 [`examples/bench`](https://github.com/yhay81/vastgrid/tree/main/examples/bench) in Chromium against the build
-(`npm run build && npm run e2e`).
+(`pnpm run build && pnpm run e2e`).
 
 ## License
 

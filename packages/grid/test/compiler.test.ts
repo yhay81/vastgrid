@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { relative } from "node:path";
-import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { transformSync } from "@babel/core";
 // @ts-expect-error The scripts are JavaScript without declarations.
+import { test } from "vite-plus/test";
 import { compiled, compilerOptions, failures, sources } from "../../../scripts/react-compiler.mjs";
 
 const folder = fileURLToPath(new URL("../src", import.meta.url));

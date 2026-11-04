@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
-import { after, before, test } from "node:test";
 import { inflateRawSync } from "node:zlib";
 import { createGridStore, localTransport } from "vastgrid/core";
 import { XLSX_MAX_ROWS } from "vastgrid-spec/xlsx";
+import { afterAll, beforeAll, test } from "vite-plus/test";
 import { createHttpHandler } from "../src/index.ts";
 import { type Client, type Json, setUp, type TableInfo, writeParquet } from "./client.ts";
 
@@ -22,7 +22,7 @@ const csv = [
   "5,Elderberry,3.75,2023-12-31,2023-12-31 00:00:01,false,5",
 ].join("\n");
 
-before(async () => {
+beforeAll(async () => {
   context = await setUp({
     resolveTarget: (target) => {
       if (target.startsWith("refuse")) throw new Error("Not there.");
@@ -35,7 +35,7 @@ before(async () => {
   await writeFile(path.join(workspace, "fruit.csv"), csv);
 });
 
-after(async () => {
+afterAll(async () => {
   await context.tearDown();
 });
 

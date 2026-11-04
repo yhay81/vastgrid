@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import {
   Column as ArrowColumn,
   Batch,
@@ -22,6 +21,7 @@ import {
   utf8View,
   Version,
 } from "@uwdata/flechette";
+import { test } from "vite-plus/test";
 import { decodeColumns } from "../src/columns.ts";
 import { type Column, decodeBlock, encodeBlock, type JsonValue, UUID_EXTENSION } from "../src/index.ts";
 

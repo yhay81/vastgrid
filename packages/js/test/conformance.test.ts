@@ -5,7 +5,6 @@
  * as Arrow, whose columns the engine keeps typed.
  */
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import {
   BlockValueError,
   type Column,
@@ -16,6 +15,7 @@ import {
   type Operation,
 } from "vastgrid-spec";
 import { type CaseResult, type CorpusCase, compareResult, isFailure, readCorpus } from "vastgrid-spec/conformance";
+import { describe, test } from "vite-plus/test";
 import { type ArrowTable, MEMORY_CAPABILITIES, type MemoryTable, memoryEngine } from "../src/index.ts";
 
 type Json = Record<string, unknown>;
@@ -52,7 +52,7 @@ function asArrow(tables: Record<string, MemoryTable>): Record<string, MemoryTabl
 const counts = { run: 0, skipped: 0 };
 
 for (const [form, file] of readCorpus().flatMap((file) => [["rows", file] as const, ["Arrow", file] as const])) {
-  test(`conformance: ${file.file}, tables as ${form}`, async (t) => {
+  describe(`conformance: ${file.file}, tables as ${form}`, () => {
     const engine = memoryEngine({ tables: form === "rows" ? file.tables : asArrow(file.tables) });
     let id = 0;
     const send = async (op: Operation, members: Json) => {
@@ -62,7 +62,7 @@ for (const [form, file] of readCorpus().flatMap((file) => [["rows", file] as con
       return response;
     };
     for (const item of file.cases) {
-      await t.test(item.id, async () => {
+      test(item.id, async () => {
         const opened = (await send("open", { ref: item.table })).result as { table: string; revision: string };
         const start = item.read?.start ?? 0;
         // By default, every column of the view, which a read of no columns gives first. A case that reads no
@@ -127,9 +127,9 @@ for (const [form, file] of readCorpus().flatMap((file) => [["rows", file] as con
   });
 }
 
-test("every case of the corpus is run or skipped, and the cases that fit are the ones run", (t) => {
+test("every case of the corpus is run or skipped, and the cases that fit are the ones run", () => {
   const cases = readCorpus().flatMap((file) => file.cases);
-  t.diagnostic(`${counts.run} cases run, ${counts.skipped} skipped: their plans use what the engine does not offer`);
+  console.log(`${counts.run} cases run, ${counts.skipped} skipped: their plans use what the engine does not offer`);
   assert.equal(counts.run + counts.skipped, 2 * cases.length);
   assert.equal(counts.run, 2 * cases.filter(fits).length);
   assert.ok(counts.run >= 232, `${counts.run} cases run`);

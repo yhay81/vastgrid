@@ -4,7 +4,7 @@
  * `cancel` of a long request, and `close`; with the memory that the engine takes against the size of the file.
  * Prints a Markdown report.
  *
- *   node --expose-gc --conditions=vastgrid-source --import tsx packages/duckdb-engine/bench/memory-engine.ts
+ *   pnpm exec vpx --expose-gc --conditions=vastgrid-source packages/duckdb-engine/bench/memory-engine.ts
  *     [--rows=1000000] [--max-bytes=268435456]
  *
  * The files are those of `pnpm run bench`, generated here when missing. They are given to the engine as files on

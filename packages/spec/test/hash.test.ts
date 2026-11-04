@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { test } from "node:test";
+import { test } from "vite-plus/test";
 import { canonicalJson, normalizePlan, type Plan, planHash } from "../src/index.ts";
 
 test("the normal form leaves out empty derive and sort, and keeps everything else (§4.8)", () => {

@@ -59,7 +59,7 @@ runs under the hosts' default CSP. It takes the host's theme and locale (English
 Portuguese, French or German), and its height: 520 pixels in the conversation, and the full screen from a button at
 the right of the toolbar where the host offers it.
 
-It needs Node.js 20 or later on a platform that DuckDB ships a binary for: Linux (x64, arm64; glibc and musl), macOS
+It needs Node.js 22.18 or later on a platform that DuckDB ships a binary for: Linux (x64, arm64; glibc and musl), macOS
 (x64, arm64) or Windows (x64, arm64).
 
 ## Links

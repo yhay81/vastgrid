@@ -3,8 +3,8 @@ import { writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { type AddressInfo, connect } from "node:net";
 import path from "node:path";
-import { after, before, test } from "node:test";
 import { ARROW_MEDIA_TYPE, checkEvent, checkResponse, decodeBlock, fromBase64, readAttached } from "vastgrid-spec";
+import { afterAll, beforeAll, test } from "vite-plus/test";
 import { createHttpHandler } from "../src/index.ts";
 import { setUp } from "./client.ts";
 
@@ -13,7 +13,7 @@ let server: Server;
 let base: string;
 let id = 0;
 
-before(async () => {
+beforeAll(async () => {
   context = await setUp();
   await writeFile(path.join(context.workspace, "fruit.csv"), "id,name\n1,Apple\n2,Banana\n3,Cherry\n");
   const handler = createHttpHandler(context.engine, { path: "/api" });
@@ -22,7 +22,7 @@ before(async () => {
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 
-after(async () => {
+afterAll(async () => {
   server.closeAllConnections();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await context.tearDown();
@@ -58,35 +58,39 @@ test("malformed export URLs return 400 and leave the HTTP server running", { tim
   assert.ok((await open()).table);
 });
 
-test("disconnecting during a POST body leaves the HTTP server running", { timeout: 10_000 }, async (t) => {
-  // Create the listener inside this test so node:test attributes an unhandled rejection to this regression.
-  const interrupted = createServer(createHttpHandler(context.engine, { path: "/api" }));
-  t.after(async () => {
-    interrupted.closeAllConnections();
-    await new Promise<void>((resolve) => interrupted.close(() => resolve()));
-  });
-  await new Promise<void>((resolve) => interrupted.listen(0, "127.0.0.1", resolve));
-  const received = new Promise<void>((resolve) => {
-    interrupted.once("request", (request) => request.once("data", () => resolve()));
-  });
-  const closed = new Promise<void>((resolve) => {
-    interrupted.once("request", (request) => request.once("close", () => resolve()));
-  });
-  const port = (interrupted.address() as AddressInfo).port;
-  const socket = connect(port, "127.0.0.1", () => {
-    socket.write("POST /api HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100000\r\n\r\n{");
-  });
-  t.after(() => socket.destroy());
-  await received;
-  socket.destroy();
-  await closed;
-  const response = await fetch(`http://127.0.0.1:${port}/api`, {
-    method: "POST",
-    body: JSON.stringify({ v: 2, id: ++id, op: "open", ref: "fruit.csv" }),
-  });
-  assert.equal(response.status, 200);
-  checkResponse(await response.json(), "open");
-});
+test(
+  "disconnecting during a POST body leaves the HTTP server running",
+  { timeout: 10_000 },
+  async ({ onTestFinished }) => {
+    // Create the listener inside this test so that an unhandled rejection is reported for this regression.
+    const interrupted = createServer(createHttpHandler(context.engine, { path: "/api" }));
+    onTestFinished(async () => {
+      interrupted.closeAllConnections();
+      await new Promise<void>((resolve) => interrupted.close(() => resolve()));
+    });
+    await new Promise<void>((resolve) => interrupted.listen(0, "127.0.0.1", resolve));
+    const received = new Promise<void>((resolve) => {
+      interrupted.once("request", (request) => request.once("data", () => resolve()));
+    });
+    const closed = new Promise<void>((resolve) => {
+      interrupted.once("request", (request) => request.once("close", () => resolve()));
+    });
+    const port = (interrupted.address() as AddressInfo).port;
+    const socket = connect(port, "127.0.0.1", () => {
+      socket.write("POST /api HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100000\r\n\r\n{");
+    });
+    onTestFinished(() => socket.destroy());
+    await received;
+    socket.destroy();
+    await closed;
+    const response = await fetch(`http://127.0.0.1:${port}/api`, {
+      method: "POST",
+      body: JSON.stringify({ v: 2, id: ++id, op: "open", ref: "fruit.csv" }),
+    });
+    assert.equal(response.status, 200);
+    checkResponse(await response.json(), "open");
+  },
+);
 
 test("a request is a POST of its JSON, and blocks are base64 in JSON responses (§8.8)", async () => {
   const table = await open();

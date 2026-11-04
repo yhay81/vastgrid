@@ -1,7 +1,7 @@
 /**
  * A host for testing the App (docs/mcp-app.md): it starts the built server (`dist/cli.js`) over stdio as an MCP
  * client, serves the App's page with MCP Apps' default CSP in a sandboxed frame, and carries the frame's tool calls
- * to the server; `POST /restart` starts the server again. `node --import tsx packages/mcp/host/serve.ts <folder> [port]`;
+ * to the server; `POST /restart` starts the server again. `pnpm exec vpx packages/mcp/host/serve.ts <folder> [port]`;
  * e2e/mcp.spec.ts uses it.
  */
 import { mkdirSync } from "node:fs";
@@ -10,7 +10,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
-import { build } from "esbuild";
+import { build } from "vite/rolldown";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const folder = path.resolve(process.argv[2] ?? ".");
@@ -36,19 +36,19 @@ async function connect() {
 }
 
 let client = await connect();
-const script = await build({
-  entryPoints: [path.join(here, "page.ts")],
-  bundle: true,
+const { output } = await build({
+  input: path.join(here, "page.ts"),
+  platform: "browser",
   write: false,
-  format: "esm",
-  target: "es2022",
-  logLevel: "warning",
+  transform: { target: "es2022" },
+  logLevel: "warn",
+  output: { format: "esm", codeSplitting: false },
 });
 const hostPage = `<!doctype html><html><head><meta charset="utf-8"><title>vastgrid test host</title>
 <style>body{margin:0;font-family:system-ui}iframe{width:100%;height:560px;border:0}
 iframe.fullscreen{position:fixed;inset:0;height:100vh}</style></head>
 <body><iframe sandbox="allow-scripts" title="vastgrid"></iframe>
-<script type="module">${script.outputFiles[0].text}</script></body></html>`;
+<script type="module">${output[0].code}</script></body></html>`;
 
 createServer(async (request, response) => {
   try {

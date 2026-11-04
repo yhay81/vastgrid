@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { after, before, test } from "node:test";
 import { gzipSync } from "node:zlib";
+import { afterAll, beforeAll, test } from "vite-plus/test";
 import { type Json, setUp, type TableInfo } from "./client.ts";
 
 let context: Awaited<ReturnType<typeof setUp>>;
 
-before(async () => {
+beforeAll(async () => {
   context = await setUp({ previewRows: 2, saveFiles: true, watchFiles: false });
 });
 
-after(async () => context.tearDown());
+afterAll(async () => context.tearDown());
 
 async function opened(name: string, content: string | Buffer, read?: Json): Promise<TableInfo> {
   const file = path.join(context.workspace, name);

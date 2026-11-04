@@ -4,9 +4,9 @@
  */
 import assert from "node:assert/strict";
 import path from "node:path";
-import { after, before, test } from "node:test";
 import { DuckDBInstance } from "@duckdb/node-api";
 import { type Column, compileFormula, FormulaError, type JsonValue, migrateGridState } from "vastgrid-spec";
+import { afterAll, beforeAll, test } from "vite-plus/test";
 import { type Client, setUp, type TableInfo } from "./client.ts";
 
 let context: Awaited<ReturnType<typeof setUp>>;
@@ -14,7 +14,7 @@ let client: Client;
 let info: TableInfo;
 
 // 0.1's test row, as a Parquet file.
-before(async () => {
+beforeAll(async () => {
   context = await setUp();
   client = context.client;
   const file = path.join(context.workspace, "formulas.parquet");
@@ -34,7 +34,7 @@ before(async () => {
   assert.equal(info.status, "ready", info.error);
 });
 
-after(async () => {
+afterAll(async () => {
   await context.tearDown();
 });
 

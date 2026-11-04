@@ -5,7 +5,7 @@ description: Serve CSV, TSV, Parquet, JSON Lines and Excel files of any size fro
 
 `vastgrid-duckdb` opens table files with DuckDB in Node.js and answers the grid's messages: rows, sorted and
 filtered views, groups and pivots, summaries, find, writes, saves and exports. The page receives only the rows it
-shows. It needs Node.js 20 or later, on the platforms that DuckDB's Node.js bindings support.
+shows. It needs Node.js 22.18 or later, on the platforms that DuckDB's Node.js bindings support.
 
 ```bash
 npm install vastgrid vastgrid-duckdb

@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { test } from "node:test";
+import { test } from "vite-plus/test";
 import { setUp } from "../test/client.ts";
 
-test("saving two edits in 200,000 rows keeps every other byte and takes less than 10 seconds", async (t) => {
+test("saving two edits in 200,000 rows keeps every other byte and takes less than 10 seconds", async ({
+  onTestFinished,
+}) => {
   const context = await setUp({ saveFiles: true });
-  t.after(() => context.tearDown());
+  onTestFinished(() => context.tearDown());
   const file = path.join(context.workspace, "large.csv");
   const client = context.client;
   const lines = ["id,name,amount"];
@@ -30,6 +32,6 @@ test("saving two edits in 200,000 rows keeps every other byte and takes less tha
     .replace('\n5,"name 5",6.25\n', "\n5,five,6.25\n")
     .replace('\n150000,"name 150000",187500.00\n', '\n150000,"name 150000",1.0\n');
   assert.ok((await readFile(file)).equals(Buffer.from(expected)), "only the two fields differ");
-  t.diagnostic(`saving: ${Math.round(elapsed)} ms`);
+  console.log(`saving: ${Math.round(elapsed)} ms`);
   assert.ok(elapsed < 10_000, `saving took ${Math.round(elapsed)} ms`);
 });

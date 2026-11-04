@@ -29,7 +29,7 @@ Add the server to a host that shows MCP Apps (Claude Desktop, VS Code, ChatGPT, 
 `vastgrid-mcp [--save] <folder>…` opens the files of the folders it is given (the current folder by default) and
 no others: their real location, links followed, must be inside one. `--save` lets the grids save written cells
 into CSV and TSV files, keeping the bytes that were not edited; without it, written cells stay apart from the files
-until the server stops. It needs Node.js 20 or later, on a platform that DuckDB's Node.js bindings support.
+until the server stops. It needs Node.js 22.18 or later, on a platform that DuckDB's Node.js bindings support.
 
 In the chat, ask for a file: "open sales.parquet in vastgrid and show the 20 largest orders of 2025". The agent
 calls `open_grid`, and the host shows the grid under its answer.

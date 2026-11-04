@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import { DuckDBInstance } from "@duckdb/node-api";
 import { BlockValueError, type Column, encodeBlock } from "vastgrid-spec";
+import { test } from "vite-plus/test";
 import { readExpression, readValue } from "../src/columns.ts";
 
 test("DuckDB intervals wider than Arrow fail with their position instead of wrapping", async () => {

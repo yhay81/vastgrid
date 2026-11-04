@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import type { Column } from "vastgrid-spec";
+import { test } from "vite-plus/test";
 import { type Answer, differences, same, sameSummary } from "./generated.ts";
 
 const column: Column = { name: "average", type: "float", bits: 64 };

@@ -11,8 +11,8 @@ the specification).
 Build the packages, then start VS Code with the extension:
 
 ```sh
-npm install
-npm run build
+pnpm install
+pnpm run build
 code --extensionDevelopmentPath="$PWD/packages/vscode" /path/to/data
 ```
 
@@ -94,9 +94,9 @@ a file open in vastgrid (its active editor, or the first), as the person's keys 
 
 ## Platforms and packaging
 
-The extension needs VS Code 1.100 or later, on the platforms of DuckDB's Node.js bindings. `npm run build -w
-vastgrid-vscode` bundles `dist/extension.cjs` with esbuild and leaves `@duckdb/node-bindings` outside, and `npm run
-package -w vastgrid-vscode -- <target>` (`scripts/package.mjs`) makes the package of one platform,
+The extension needs VS Code 1.100 or later, on the platforms of DuckDB's Node.js bindings. `pnpm --filter
+vastgrid-vscode build` bundles `dist/extension.cjs` with Rolldown and leaves `@duckdb/node-bindings` outside, and
+`pnpm --filter vastgrid-vscode run package <target>` (`scripts/package.mjs`) makes the package of one platform,
 `dist/vastgrid-vscode-<version>-<target>.vsix`, with the bindings of that platform in `dist/node_modules`
 (`@duckdb/node-bindings`, `@duckdb/node-bindings-<platform>` and `detect-libc`): those installed, or fetched from
 npm at the version installed for another platform. Without a target, it is this machine's.
@@ -120,8 +120,8 @@ A release (CONTRIBUTING.md, "Releasing") makes packages for its configured targe
 GitHub release; for a version that is not a pre-release with Marketplace publishing enabled, it publishes them with `vsce publish
 --packagePath`, and the Marketplace serves each platform its package. With `OPEN_VSX_ENABLED`, it publishes them to
 Open VSX as well, by trusted publishing (`ovsx publish --trusted-publishing --packagePath`). To try a package of a release by hand:
-`code --install-extension vastgrid-vscode-<version>-<target>.vsix`, and `VASTGRID_VSIX=<package>.vsix npm run
-test:vscode -w vastgrid-vscode` runs the suite on it.
+`code --install-extension vastgrid-vscode-<version>-<target>.vsix`, and `VASTGRID_VSIX=<package>.vsix pnpm
+--filter vastgrid-vscode run test:vscode` runs the suite on it.
 
 Releases ship seven VSIX files: Linux x64/arm64, Alpine x64, macOS x64/arm64 and Windows x64/arm64. From 0.3.0
 they are on the Marketplace and Open VSX as `yhay81.vastgrid-vscode`; 0.2.x is only on the GitHub releases.
@@ -137,7 +137,7 @@ they are on the Marketplace and Open VSX as `yhay81.vastgrid-vscode`; 0.2.x is o
 - The walkthrough "Get Started with vastgrid" (`contributes.walkthroughs`) shows on VS Code's Welcome page, and opens
   when the extension is installed.
 - `node scripts/icons.mjs` at the root draws the icon, and the site's logo and favicon, from
-  `docs/images/logo.svg`. `node packages/vscode/scripts/screenshots.mjs` (after `npm run build`) opens the bench's
+  `docs/images/logo.svg`. `node packages/vscode/scripts/screenshots.mjs` (after `pnpm run build`) opens the bench's
   files in VS Code (`VSCODE_PATH`, or one that @vscode/test-electron downloads) and takes the README's screenshot,
   `docs/images/vscode.png`, and the walkthrough's, `media/walkthrough/`. `node scripts/og-image.mjs` then draws
   the image that links to the site show, `docs/images/og.jpg`, from the logo and that screenshot.
@@ -148,7 +148,7 @@ they are on the Marketplace and Open VSX as `yhay81.vastgrid-vscode`; 0.2.x is o
   through messages as the page does. Two editors reading and writing one file, VS Code's undo and redo, saving, a
   file changed on disk, Save As, revert, backups, trust, read-only files, exports, the extension's commands, and the
   engine's lifetime.
-- `npm run test:vscode -w vastgrid-vscode` runs the built extension in VS Code (`VSCODE_PATH`, or a stable VS Code
+- `pnpm --filter vastgrid-vscode run test:vscode` runs the built extension in VS Code (`VSCODE_PATH`, or a stable VS Code
   that @vscode/test-electron downloads), in a window and a profile of its own: open, edit, save, VS Code's Undo and
   Redo with the dirty state, a file changed on disk that is not saved over, open again, revert, two editors of one
   file, TSV saved, JSON Lines, Parquet and Excel read-only, a sheet chosen in a workbook and its last row of

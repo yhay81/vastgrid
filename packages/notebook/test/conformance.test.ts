@@ -4,29 +4,31 @@
  * Python process of its own (`kernel.ts`); without uv, the tests are skipped.
  */
 import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
 import { type Column, decodeBlock, encodeBlock, MESSAGE_LIMITS } from "vastgrid-spec";
 import { type CaseResult, compareResult, isFailure, readCorpus } from "vastgrid-spec/conformance";
+import { afterAll, beforeAll, describe, test } from "vite-plus/test";
 import { Kernel, skip } from "./kernel.ts";
 
 let kernel: Kernel;
-before(() => {
+beforeAll(() => {
   if (!skip) kernel = new Kernel();
 });
-after(() => kernel?.close());
+afterAll(() => kernel?.close());
 
 let run = 0;
 
 for (const file of readCorpus()) {
-  test(`conformance through the notebook's engine: ${file.file}`, { skip }, async (t) => {
+  describe(`conformance through the notebook's engine: ${file.file}`, { skip }, () => {
     // As blocks: JSON would not carry all of the values (`-0` is `0` in it).
-    await kernel.add(
-      Object.fromEntries(
-        Object.entries(file.tables).map(([ref, table]) => [ref, encodeBlock(table.columns, table.rows)]),
+    beforeAll(() =>
+      kernel.add(
+        Object.fromEntries(
+          Object.entries(file.tables).map(([ref, table]) => [ref, encodeBlock(table.columns, table.rows)]),
+        ),
       ),
     );
     for (const item of file.cases) {
-      await t.test(item.id, async () => {
+      test(item.id, async () => {
         const opened = await kernel.send("open", { ref: item.table });
         assert.ok(!opened.error, `the table ${item.table} opens: ${JSON.stringify(opened.error)}`);
         const info = opened.result as { table: string; revision: string; columns: Column[] };

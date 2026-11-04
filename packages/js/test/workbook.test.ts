@@ -4,7 +4,7 @@
  * the same workbooks (packages/duckdb-engine/test/memory-engine.test.ts).
  */
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "vite-plus/test";
 import type { FileTable, MemoryTable } from "../src/index.ts";
 import { Client, type TableInfo } from "./client.ts";
 

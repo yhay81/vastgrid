@@ -1,8 +1,8 @@
-import { defineConfig } from "vite-plus";
+import { defaultServerConditions, defineConfig } from "vite-plus";
 
 // Vite+'s settings for the whole workspace: Oxfmt (`vp fmt`) and Oxlint (`vp lint`), which `vp check` runs one after
-// the other (`pnpm run lint`; `pnpm run format` fixes what they can). The examples and the site have their own
-// vite.config.ts for their pages.
+// the other (`pnpm run lint`; `pnpm run format` fixes what they can), and Vitest (`vp test`). The examples and the
+// site have their own vite.config.ts for their pages.
 export default defineConfig({
   fmt: {
     printWidth: 120,
@@ -39,11 +39,6 @@ export default defineConfig({
       "jsx-a11y/role-supports-aria-props": "off",
     },
     overrides: [
-      // node:test's test() returns a promise that the runner awaits.
-      {
-        files: ["packages/*/test/**", "packages/*/perf/**", "scripts/test/**"],
-        rules: { "typescript/no-floating-promises": "off" },
-      },
       // React Compiler's rules for the grid, which React Compiler compiles (react.md §11).
       {
         files: ["packages/grid/src/**/*.{ts,tsx}"],
@@ -65,6 +60,19 @@ export default defineConfig({
           "react/unsupported-syntax": "warn",
         },
       },
+    ],
+  },
+  // The tests import the packages' sources through the `vastgrid-source` condition of their exports, so they need no
+  // build.
+  ssr: { resolve: { conditions: ["vastgrid-source", ...defaultServerConditions] } },
+  test: {
+    // The engines' tests read and write whole files: a test or a hook is stopped after a minute, not five seconds.
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
+    projects: [
+      { extends: true, test: { name: "unit", include: ["packages/*/test/*.test.ts", "scripts/test/*.test.ts"] } },
+      // The performance budgets (`pnpm run test:performance`): one file at a time, with nothing else running.
+      { extends: true, test: { name: "performance", include: ["packages/*/perf/*.test.ts"], fileParallelism: false } },
     ],
   },
 });

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "vite-plus/test";
 import { Geometry } from "../src/canvas/geometry.ts";
 import { ColumnLayout, fitFrozen } from "../src/canvas/layout.ts";
 import { ScrollAxis } from "../src/canvas/scroll.ts";

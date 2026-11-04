@@ -19,7 +19,7 @@ npm install -g vastgrid-cli
 vastgrid sales.parquet
 ```
 
-Node.js 20 以降と、DuckDB の Node.js バインディングがある環境（Linux の x64・arm64 の glibc・musl、macOS の x64・arm64、Windows の x64・arm64）が必要です。
+Node.js 22.18 以降と、DuckDB の Node.js バインディングがある環境（Linux の x64・arm64 の glibc・musl、macOS の x64・arm64、Windows の x64・arm64）が必要です。
 
 ```text
 Usage: vastgrid [options] [<file or folder>…]

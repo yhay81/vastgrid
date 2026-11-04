@@ -12,7 +12,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { build } from "esbuild";
+import { build } from "vite-plus";
 
 const PACKAGES = [
   "packages/spec",
@@ -136,18 +136,13 @@ try {
   writeFileSync(path.join(app, "check.mjs"), CHECK);
   execFileSync(process.execPath, ["check.mjs"], { cwd: app, stdio: "inherit" });
 
-  step("DataGrid bundled for a browser, with its styles and the parts it loads later");
+  step("DataGrid bundled for a browser by Vite, with its styles and the parts it loads later");
   writeFileSync(path.join(app, "page.jsx"), PAGE);
   await build({
-    absWorkingDir: app,
-    entryPoints: ["page.jsx"],
-    bundle: true,
-    splitting: true,
-    format: "esm",
-    outdir: path.join(root, "out"),
-    jsx: "automatic",
-    define: { "process.env.NODE_ENV": '"production"' },
+    root: app,
+    configFile: false,
     logLevel: "error",
+    build: { outDir: path.join(root, "out"), rolldownOptions: { input: path.join(app, "page.jsx") } },
   });
 
   step("vastgrid-cli serves its page");

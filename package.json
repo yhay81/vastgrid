@@ -4,21 +4,21 @@
   "type": "module",
   "packageManager": "pnpm@12.16.1",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.18"
   },
   "scripts": {
     "build": "tsc -b packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp packages/vscode packages/cli && node scripts/copy-assets.mjs && node scripts/compile-react.mjs packages/grid && pnpm --filter vastgrid-mcp build && node packages/vscode/scripts/build.mjs && node packages/cli/scripts/build-app.mjs && node packages/notebook/scripts/build.mjs",
     "clean": "rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo",
     "typecheck": "tsc -b packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp packages/vscode packages/cli && tsc -p packages/mcp/app && tsc -p packages/mcp/host && tsc -p packages/vscode/webview && tsc -p packages/cli/app && tsc -p packages/notebook/widget && tsc -p examples/bench --noEmit && tsc -p examples/files --noEmit && tsc -p site --noEmit",
-    "test": "node --conditions=vastgrid-source --import tsx --test packages/*/test/*.test.ts scripts/test/*.test.ts",
+    "test": "vp test run --project unit",
     "lint": "vp check",
     "format": "vp check --fix",
     "dev": "pnpm --filter vastgrid-files-example dev",
-    "bench": "node --conditions=vastgrid-source --import tsx packages/duckdb-engine/bench/open.ts",
-    "e2e": "node --import tsx scripts/e2e.ts",
+    "bench": "vpx --conditions=vastgrid-source packages/duckdb-engine/bench/open.ts",
+    "e2e": "vpx scripts/e2e.ts",
     "size": "node scripts/bundle-size.mjs",
     "pack-check": "node scripts/pack-check.mjs",
-    "test:performance": "node --conditions=vastgrid-source --import tsx --test --test-concurrency=1 packages/*/perf/*.test.ts",
+    "test:performance": "vp test run --project performance",
     "e2e:performance": "pnpm run e2e performance",
     "e2e:large": "pnpm run e2e large"
   },
@@ -32,13 +32,12 @@
     "@types/react-dom": "19.3.0",
     "ajv": "8.20.0",
     "babel-plugin-react-compiler": "1.0.0",
-    "esbuild": "0.28.2",
     "react": "catalog:",
     "react-dom": "catalog:",
-    "tsx": "4.23.15",
     "typescript": "7.0.2",
     "vastgrid": "workspace:*",
     "vastgrid-js": "workspace:*",
+    "vite": "catalog:",
     "vite-plus": "catalog:"
   }
 }

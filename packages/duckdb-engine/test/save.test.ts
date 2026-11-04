@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { appendFile, chmod, mkdir, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { after, before, test } from "node:test";
 import { createGridStore, localTransport } from "vastgrid/core";
+import { afterAll, beforeAll, test } from "vite-plus/test";
 import { type Client, type Json, setUp, type TableInfo } from "./client.ts";
 
 let context: Awaited<ReturnType<typeof setUp>>;
@@ -10,14 +10,14 @@ let client: Client;
 let workspace: string;
 const events: Json[] = [];
 
-before(async () => {
+beforeAll(async () => {
   context = await setUp({ saveFiles: true });
   client = context.client;
   workspace = context.workspace;
   context.engine.subscribe((event) => events.push(event));
 });
 
-after(async () => {
+afterAll(async () => {
   await context.tearDown();
 });
 

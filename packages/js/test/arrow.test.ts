@@ -4,7 +4,6 @@
  * they are read, and writes leave the host's bytes as they were.
  */
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import {
   Column as ArrowColumn,
   Batch,
@@ -26,6 +25,7 @@ import {
   Version,
 } from "@uwdata/flechette";
 import { decodeBlock, encodeBlock } from "vastgrid-spec";
+import { test } from "vite-plus/test";
 import type { ArrowTable, MemoryTable } from "../src/index.ts";
 import { Client, type Json } from "./client.ts";
 

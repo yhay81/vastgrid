@@ -53,7 +53,7 @@ whose `Host` is not `127.0.0.1` or `localhost` are refused too, and the page may
 `VASTGRID_TOKEN` (16 or more letters, digits, `-` and `_`) fixes the token, for an address that stays the same. To
 use it from another computer, forward the port: `ssh -L 5185:127.0.0.1:5185`, with `--port 5185`.
 
-It needs Node.js 20 or later on a platform that DuckDB ships a binary for: Linux (x64, arm64; glibc and musl), macOS
+It needs Node.js 22.18 or later on a platform that DuckDB ships a binary for: Linux (x64, arm64; glibc and musl), macOS
 (x64, arm64) or Windows (x64, arm64).
 
 ## Links

@@ -2,7 +2,6 @@
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { after, before, test } from "node:test";
 import {
   applyCommand,
   type Column,
@@ -18,6 +17,7 @@ import {
   toTextEncoding,
 } from "vastgrid-spec";
 import type { CorpusTable } from "vastgrid-spec/conformance";
+import { afterAll, beforeAll, test } from "vite-plus/test";
 import { type Json, setUp, writeParquet } from "./client.ts";
 
 const ORDERS: CorpusTable = {
@@ -40,7 +40,7 @@ let context: Awaited<ReturnType<typeof setUp>>;
 let engine: Awaited<ReturnType<typeof setUp>>["engine"];
 let revision: string | null;
 
-before(async () => {
+beforeAll(async () => {
   context = await setUp();
   engine = context.engine;
   await writeParquet(path.join(context.workspace, "orders.parquet"), ORDERS);
@@ -49,7 +49,7 @@ before(async () => {
   assert.equal(info.status, "ready");
   revision = info.revision;
 });
-after(async () => context.tearDown());
+afterAll(async () => context.tearDown());
 
 /** Check the response after it crosses a JSON transport, as an MCP App receives it. */
 async function send(op: Operation, members: Json = {}): Promise<Json> {

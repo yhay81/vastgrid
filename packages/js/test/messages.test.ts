@@ -3,8 +3,8 @@
  * each operation answers as §8.2 says, or with the error of §8.7.
  */
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import { checkResponse, FUNCTIONS, MEASURES, MESSAGE_LIMITS, planHash } from "vastgrid-spec";
+import { test } from "vite-plus/test";
 import { MEMORY_CAPABILITIES, type MemoryTable, memoryEngine } from "../src/index.ts";
 import { Client, type Json, single } from "./client.ts";
 

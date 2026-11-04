@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "vite-plus/test";
 import { memoryEngine } from "vastgrid-js";
 import { createGridStore, localTransport, serveEngine, workerTransport } from "../src/core.ts";
 import { settle } from "./fake-engine.ts";
@@ -39,14 +39,14 @@ async function until(done: () => boolean) {
   assert.ok(done());
 }
 
-test("grids sharing a worker read and edit their own tables", async (t) => {
+test("grids sharing a worker read and edit their own tables", async ({ onTestFinished }) => {
   const engine = memoryEngine({ tables: { first: table(), second: { ...table(), rows: [[9, "Kyoto", 7]] } } });
   const channel = new MessageChannel();
   const stop = serveEngine(engine, channel.port2 as never);
   const transport = workerTransport(channel.port1 as never);
   const stores = ["first", "second"].map((ref) => createGridStore({ transport, table: ref }));
   const disconnects = stores.map((store) => store.connect());
-  t.after(() => {
+  onTestFinished(() => {
     for (const disconnect of disconnects) disconnect();
     stop();
     transport.close();
@@ -68,7 +68,7 @@ test("grids sharing a worker read and edit their own tables", async (t) => {
   const readers = ["first", "second"].map((ref) => createGridStore({ transport: localTransport(engine), table: ref }));
   for (const reader of readers) {
     const disconnect = reader.connect();
-    t.after(disconnect);
+    onTestFinished(disconnect);
     reader.setViewport({ top: 0, rows: 10, columns: ["city"] });
   }
   await until(() => readers.every((reader) => reader.cell(0, "city") !== undefined));

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import type { Column, GridDocument } from "vastgrid-spec";
+import { test } from "vite-plus/test";
 import { measureName, measuresPlan, statisticsOf, totalMeasures } from "../src/core/measures.ts";
 import { createGridStore, localTransport } from "../src/core.ts";
 import { readInitialView } from "../src/server.ts";

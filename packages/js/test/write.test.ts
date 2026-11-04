@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import { readCellText, type ValueType } from "vastgrid-spec";
+import { test } from "vite-plus/test";
 import type { MemoryTable } from "../src/index.ts";
 import { Client } from "./client.ts";
 

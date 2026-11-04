@@ -3,8 +3,8 @@
  * waits for the file, and the columns that the whole file has replace those of its first rows.
  */
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import { memoryEngine, type TextFile } from "vastgrid-js";
+import { test } from "vite-plus/test";
 import { createGridStore, localTransport } from "../src/core.ts";
 import { settle } from "./fake-engine.ts";
 
@@ -13,7 +13,9 @@ async function until(done: () => boolean) {
   assert.ok(done());
 }
 
-test("the grid shows the first rows of a file while the memory engine loads it, and the whole file after", async (t) => {
+test("the grid shows the first rows of a file while the memory engine loads it, and the whole file after", async ({
+  onTestFinished,
+}) => {
   // The last `v` is text, which the first rows do not have: the whole file has other columns.
   const lines = Array.from({ length: 100 }, (_, row) => `${row},${row === 99 ? "x" : row * 2}`);
   const blob = new Blob([`id,v\n${lines.join("\n")}\n`]);
@@ -33,7 +35,7 @@ test("the grid shows the first rows of a file while the memory engine loads it, 
   };
   const engine = memoryEngine({ tables: { t: { file } }, previewBytes: 64 });
   const store = createGridStore({ transport: localTransport(engine), table: "t" });
-  t.after(store.connect());
+  onTestFinished(store.connect());
   store.setViewport({ top: 0, rows: 20, columns: ["id", "v"] });
   await until(() => store.cell(10, "v") === 20);
   assert.equal(store.getSnapshot().table?.status, "loading");

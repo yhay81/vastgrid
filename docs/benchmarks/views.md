@@ -61,7 +61,7 @@ three runs, in milliseconds. The READMEs and the site show the 2.0 column.
 | 735 MB CSV / sort | 54 | 55 | 3.5 | 4.0 | 1,145 | 869 |
 | 735 MB CSV / filter | 192 | 124 | 3.0 | 3.0 | | |
 
-`npm run bench` (`bench/open.ts`) gave, for the CSV file on 1.5.6 and 2.0: its first rows in 68 and 52 ms, the whole
+`pnpm run bench` (`bench/open.ts`) gave, for the CSV file on 1.5.6 and 2.0: its first rows in 68 and 52 ms, the whole
 load in 3.7 and 1.8 s, and a block at a random place in 3.3 and 2.8 ms (Parquet: 23 and 19 ms). Peaks were 2.62 GB
 of RSS and 0.83 GB in the session folder on 1.5.6, 2.74 GB and 0.84 GB on 2.0.
 
@@ -81,13 +81,13 @@ Before these changes, DuckDB 2.0 read the CSV file more slowly in every run (its
 Generate the files with `bench/open.ts` if needed, then run:
 
 ```sh
-node --conditions=vastgrid-source --import tsx packages/duckdb-engine/bench/views.ts --dir=/data/bench
+pnpm exec vpx --conditions=vastgrid-source packages/duckdb-engine/bench/views.ts --dir=/data/bench
 ```
 
 To compare an installed checkout of the baseline without changing the working branch:
 
 ```sh
-node --conditions=vastgrid-source --import tsx packages/duckdb-engine/bench/views.ts --dir=/data/bench --engine=/path/to/baseline/packages/duckdb-engine/src/index.ts
+pnpm exec vpx --conditions=vastgrid-source packages/duckdb-engine/bench/views.ts --dir=/data/bench --engine=/path/to/baseline/packages/duckdb-engine/src/index.ts
 ```
 
 The benchmark emits JSON lines. The test corpus exercises both full-column and row-order storage. Native engine

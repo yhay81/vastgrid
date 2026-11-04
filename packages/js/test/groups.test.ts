@@ -3,8 +3,8 @@
  * summarizing groups, the names of a pivot's columns, sums beyond their type, writes, and generated rows.
  */
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import type { JsonValue } from "vastgrid-spec";
+import { test } from "vite-plus/test";
 import type { MemoryTable } from "../src/index.ts";
 import { Client } from "./client.ts";
 import { groupRows } from "./workloads.ts";

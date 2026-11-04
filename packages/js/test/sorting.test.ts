@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test } from "vite-plus/test";
 import { sortFloats } from "./workloads.ts";
 
 for (const form of ["rows", "Arrow"] as const) {

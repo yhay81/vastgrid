@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { request } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { after, before, test } from "node:test";
+import { afterAll, beforeAll, test } from "vite-plus/test";
 import { type Served, serve } from "../src/index.ts";
 
 const TOKEN = "test-token-0123456789";
@@ -67,7 +67,7 @@ async function post(body: Record<string, unknown>, server = served, given = cook
   return { status: answer.status, json: JSON.parse(answer.body) as Answer };
 }
 
-before(async () => {
+beforeAll(async () => {
   root = await mkdtemp(path.join(os.tmpdir(), "vastgrid-cli-test-"));
   data = path.join(root, "data");
   temp = path.join(root, "temp");
@@ -83,7 +83,7 @@ before(async () => {
   cookie = `vastgrid-${served.port}=${TOKEN}`;
 });
 
-after(async () => {
+afterAll(async () => {
   await served.close();
   await rm(root, { recursive: true, force: true });
 });

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "vite-plus/test";
 import { arithmeticType, type Column, checkPlan, type Expr, PlanError } from "../src/index.ts";
 
 const columns: Column[] = [

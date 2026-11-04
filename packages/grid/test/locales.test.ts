@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
+import { test } from "vite-plus/test";
 import { createGridStore, localTransport } from "../src/core.ts";
 import { DataGrid } from "../src/index.ts";
 import { de, en, es, fr, ja, ko, messagesFor, ptBR, zhHans, zhHant } from "../src/locales/index.ts";

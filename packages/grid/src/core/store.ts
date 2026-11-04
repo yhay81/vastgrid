@@ -903,9 +903,9 @@ export class GridStore {
    * when the transport does not, and the file is downloaded from `exportUrl`.
    */
   async downloadExport(target: string): Promise<boolean> {
-    const download = this.options.transport.downloadExport;
-    if (!download) return false;
-    await download.call(this.options.transport, target);
+    const transport = this.options.transport;
+    if (!transport.downloadExport) return false;
+    await transport.downloadExport(target);
     return true;
   }
 

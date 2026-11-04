@@ -168,7 +168,7 @@ const engine = await DuckDBEngine.create({ allowedDirectories: ["/srv/data"], te
 createServer(createHttpHandler(engine, { path: "/api" })).listen(8080);
 ```
 
-It needs Node.js 20 or later on a platform DuckDB ships a binary for (`@duckdb/node-api`): Linux (x64 or arm64,
+It needs Node.js 22.18 or later on a platform DuckDB ships a binary for (`@duckdb/node-api`): Linux (x64 or arm64,
 glibc or musl), macOS (x64 or arm64) or Windows (x64 or arm64). See [Files on a server](/guides/server/).
 
 ### `DuckDBEngine.create(options)`

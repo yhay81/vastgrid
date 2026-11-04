@@ -105,7 +105,7 @@ no header. See the [engine's reading options](packages/duckdb-engine#what-it-doe
 
 The npm packages are released together at one version. `vastgrid` needs React 19.3 or later (an optional peer
 dependency: servers use `vastgrid/core` without React) and a browser with CSS `light-dark()`: Chrome and Edge 123,
-Firefox 120, Safari 17.5 or later. The engines need Node.js 20 or later; DuckDB runs on Linux (x64, arm64; glibc
+Firefox 120, Safari 17.5 or later. The engines need Node.js 22.18 or later; DuckDB runs on Linux (x64, arm64; glibc
 and musl), macOS (x64, arm64) and Windows (x64, arm64).
 
 ## Performance
@@ -127,10 +127,10 @@ them.
 ## Contributing
 
 ```sh
-npm install
-npm run build      # every package, the CLI's page, the MCP App and the extension
-npm test           # the unit tests, on the sources
-npm run dev        # examples/files: the grid on the DuckDB engine, at http://127.0.0.1:5182
+pnpm install
+pnpm run build     # every package, the CLI's page, the MCP App and the extension
+pnpm test          # the unit tests, on the sources (Vitest)
+pnpm run dev       # examples/files: the grid on the DuckDB engine, at http://127.0.0.1:5182
 ```
 
 [CONTRIBUTING.md](CONTRIBUTING.md) has the checks and the guidelines for a change, and

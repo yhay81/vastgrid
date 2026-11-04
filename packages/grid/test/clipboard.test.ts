@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "vite-plus/test";
 import { countCells } from "../src/react/grid-body.tsx";
 
 test("the cells of a copy are the fields of its TSV, quoted ones and a last empty row too (§6.6)", () => {

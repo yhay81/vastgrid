@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import { type Column, type Expr, formatterFor, type JsonValue } from "vastgrid-spec";
+import { test } from "vite-plus/test";
 import { compileRule } from "../src/core/evaluate.ts";
 import { filterParts } from "../src/core/filters.ts";
 

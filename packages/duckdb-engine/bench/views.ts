@@ -1,6 +1,6 @@
 /**
  * Reproduce the large-view measurements (docs/benchmarks/views.md).
- * node --conditions=vastgrid-source --import tsx packages/duckdb-engine/bench/views.ts [--dir=.data/bench]
+ * pnpm exec vpx --conditions=vastgrid-source packages/duckdb-engine/bench/views.ts [--dir=.data/bench]
  * Optional --engine=/absolute/path/to/packages/duckdb-engine/src/index.ts measures another checkout.
  * JSON lines are written to stdout; resource peaks are sampled every 250 ms across the entire run.
  */

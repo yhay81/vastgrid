@@ -6,13 +6,13 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { after, before, test } from "node:test";
 import { Client } from "@modelcontextprotocol/client";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import { InMemoryTransport, McpServer } from "@modelcontextprotocol/server";
 import { GridStore } from "vastgrid/core";
 import { DuckDBEngine } from "vastgrid-duckdb";
 import type { GridDocument, GridSession } from "vastgrid-spec";
+import { afterAll, beforeAll, test } from "vite-plus/test";
 import { callTool, mcpTransport, sync } from "../app/transport.ts";
 import { APP_URI, type Grids, registerVastgrid } from "../src/index.ts";
 
@@ -29,7 +29,7 @@ let app: App;
 const downloads: unknown[] = [];
 let hostDownloads = true;
 
-before(async () => {
+beforeAll(async () => {
   folder = await mkdtemp(path.join(os.tmpdir(), "vastgrid-mcp-"));
   outside = await mkdtemp(path.join(os.tmpdir(), "vastgrid-mcp-outside-"));
   await writeFile(path.join(folder, "orders.csv"), "id,region,price\n1,EU,10.5\n2,US,30\n3,EU,20\n4,JP,5\n");
@@ -60,7 +60,7 @@ before(async () => {
   } as App;
 });
 
-after(async () => {
+afterAll(async () => {
   await client.close();
   grids.dispose();
   await engine.dispose();

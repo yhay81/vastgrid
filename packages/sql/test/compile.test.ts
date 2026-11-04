@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import { type Column, checkPlan } from "vastgrid-spec";
+import { test } from "vite-plus/test";
 import { compileView, countQuery, quoteIdentifier, rowsQuery } from "../src/index.ts";
 
 const columns: Column[] = [

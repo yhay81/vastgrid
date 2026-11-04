@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import { memoryEngine } from "vastgrid-js";
 import { encodeBlock, frameAttached, type GridCommand } from "vastgrid-spec";
+import { test } from "vite-plus/test";
 import { keyCommand } from "../src/canvas/keys.ts";
 import { BLOCK_ROWS, ViewCache } from "../src/core/cache.ts";
 import { GridClient, GridError, httpTransport, localTransport, serveEngine, workerTransport } from "../src/core.ts";

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { after, before, test } from "node:test";
 import { formatDateStyle, serialDate } from "vastgrid-spec/workbook";
+import { afterAll, beforeAll, test } from "vite-plus/test";
 import { tableFormatOf } from "../src/index.ts";
 import { type Client, type Json, setUp } from "./client.ts";
 import { cell, type FixtureWorkbook, row, writeWorkbook } from "./xlsx-fixture.ts";
@@ -11,13 +11,13 @@ let context: Awaited<ReturnType<typeof setUp>>;
 let client: Client;
 let workspace: string;
 
-before(async () => {
+beforeAll(async () => {
   context = await setUp({ maxTables: 16 });
   client = context.client;
   workspace = context.workspace;
 });
 
-after(async () => {
+afterAll(async () => {
   await context.tearDown();
 });
 

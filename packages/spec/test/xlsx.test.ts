@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import { inflateRawSync } from "node:zlib";
+import { test } from "vite-plus/test";
 import { SpecError } from "../src/plan.ts";
 import type { JsonValue } from "../src/types.ts";
 import { checkXlsxSize, type ExportColumn, excelSerial, webDeflate, writeXlsx, XLSX_MAX_ROWS } from "../src/xlsx.ts";

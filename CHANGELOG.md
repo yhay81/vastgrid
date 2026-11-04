@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- `vastgrid-spec`, `vastgrid-sql`, `vastgrid-js`, `vastgrid-duckdb`, `vastgrid`, `vastgrid-cli` and `vastgrid-mcp`:
+  they need Node.js 22.18 or later. Node.js 20 reached its end of life on 2026-04-30, and the tests no longer run
+  on it.
+
 ### New
 
 - `vastgrid-spec`, `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb` and the Python package `vastgrid`: dates are
@@ -77,6 +83,12 @@
   rows short.
 - `vastgrid-vscode`: selected cells show their values in themes whose selection color is opaque, such as Dark
   Modern and Light Modern, where they looked empty: the grid lays the theme's color over the cells at 40%.
+
+### Release
+
+- `vastgrid-mcp` and `vastgrid-cli`: their pages are bundled with Vite (Rolldown) instead of esbuild, and are smaller:
+  the App's 838 KB instead of 1,277 KB (251 KB instead of 343 KB with gzip), the command line's 605 KB instead of
+  622 KB (192 KB instead of 197 KB).
 
 ## 0.3.0 — 2026-10-30
 

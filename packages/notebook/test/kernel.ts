@@ -13,8 +13,8 @@ export type Json = Record<string, unknown>;
 
 const folder = fileURLToPath(new URL("../python/", import.meta.url));
 
-/** Why the tests of the engine are skipped, or false when they run. */
-export const skip = spawnSync("uv", ["--version"]).status === 0 ? false : "uv is not installed";
+/** Whether the tests of the engine are skipped: they need uv, which runs the Python package. */
+export const skip = spawnSync("uv", ["--version"]).status !== 0;
 
 /** Bytes that the engine wrote as `{ "base64" }`, as the client reads them. */
 function decoded(value: unknown): unknown {

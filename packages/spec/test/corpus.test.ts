@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "vite-plus/test";
 import { isFailure, readCorpus } from "../src/conformance.ts";
 import { checkPlan, isValueOf, LOGICAL_TYPES, PlanError } from "../src/index.ts";
 

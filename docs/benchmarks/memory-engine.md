@@ -6,7 +6,7 @@ runs in the page or in a Web Worker, measured on the CSV and Parquet files of th
 ## Method
 
 Apple M2 Pro, Node.js 24.22.1. `packages/duckdb-engine/bench/memory-engine.ts` generates the files of
-`npm run bench` when they are missing (eight columns: id, name, city, price, quantity, sold_at, member, note;
+`pnpm run bench` when they are missing (eight columns: id, name, city, price, quantity, sold_at, member, note;
 DuckDB writes the Parquet file, in row groups of 122,880 rows compressed with ZSTD) and gives each to an engine as
 a file on disk (`openAsBlob`), as a page gives it a `File`. Each request goes through `engine.handle` with its
 messages checked, without a worker, a page or drawing; times are wall-clock milliseconds of one run. Memory is the
@@ -95,11 +95,11 @@ With the engine in a worker, the page draws and scrolls while the worker sorts, 
 ## Reproduce
 
 ```bash
-node --expose-gc --max-old-space-size=8192 --conditions=vastgrid-source --import tsx packages/duckdb-engine/bench/memory-engine.ts
+pnpm exec vpx --expose-gc --max-old-space-size=8192 --conditions=vastgrid-source packages/duckdb-engine/bench/memory-engine.ts
 ```
 
 `--rows=10000000` measures 10 million rows, and `--max-bytes=268435456` gives the engines a `maxBytes` of 256 MiB.
-The page's numbers come from `npm run e2e:performance`, which prints them. Run it after `npm run build`,
+The page's numbers come from `pnpm run e2e:performance`, which prints them. Run it after `pnpm run build`,
 with no other tests or benchmarks running.
 
 ## 日本語での要点

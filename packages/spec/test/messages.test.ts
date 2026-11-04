@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { describe, test } from "vite-plus/test";
 import { readMessageCorpus, runMessageCase } from "../src/conformance.ts";
 import {
   ARROW_MEDIA_TYPE,
@@ -21,9 +21,9 @@ import { schemaProblems } from "./schemas.ts";
 const files = readMessageCorpus();
 
 for (const file of files) {
-  test(`messages: ${file.file}`, async (t) => {
+  describe(`messages: ${file.file}`, () => {
     for (const item of file.cases) {
-      await t.test(item.id, () => {
+      test(item.id, () => {
         assert.deepEqual(runMessageCase(item), []);
       });
     }

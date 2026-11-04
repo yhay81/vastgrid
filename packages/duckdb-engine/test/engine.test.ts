@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { mkdir, readdir, symlink, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { after, before, test } from "node:test";
 import { DuckDBInstance } from "@duckdb/node-api";
 import { checkResponse, MESSAGE_LIMITS, planHash } from "vastgrid-spec";
+import { afterAll, beforeAll, test } from "vite-plus/test";
 import { DuckDBEngine, tableFormatOf } from "../src/index.ts";
 import { type Client, type Json, setUp, type TableInfo } from "./client.ts";
 
@@ -21,7 +21,7 @@ const fruit = [
   "5,Elderberry,3.75,2023-12-31,false,dark",
 ].join("\n");
 
-before(async () => {
+beforeAll(async () => {
   context = await setUp({ previewRows: 2 });
   client = context.client;
   workspace = context.workspace;
@@ -29,7 +29,7 @@ before(async () => {
   await writeFile(path.join(workspace, "fruit.csv"), fruit);
 });
 
-after(async () => {
+afterAll(async () => {
   await context.tearDown();
 });
 

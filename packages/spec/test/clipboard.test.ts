@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "vite-plus/test";
 import { parseHtmlTable, parseTsv, toHtmlTable, toMarkdownTable, toTsv } from "../src/index.ts";
 
 test("TSV quotes fields with tabs, line breaks and quotes (§6.6)", () => {

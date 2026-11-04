@@ -6,8 +6,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { after, before, test } from "node:test";
 import { DuckDBEngine } from "vastgrid-duckdb";
+import { afterAll, beforeAll, test } from "vite-plus/test";
 import { type GridEngine, Grids } from "../src/index.ts";
 
 type Json = Record<string, unknown>;
@@ -16,14 +16,14 @@ let folder: string;
 let file: string;
 let duckdb: DuckDBEngine;
 
-before(async () => {
+beforeAll(async () => {
   folder = await mkdtemp(path.join(os.tmpdir(), "vastgrid-mcp-grids-"));
   file = path.join(folder, "orders.csv");
   await writeFile(file, "id,region,price\n1,EU,10.5\n2,US,30\n3,EU,20\n4,JP,5\n");
   duckdb = await DuckDBEngine.create({ allowedDirectories: [folder], tempDirectory: path.join(folder, ".tmp") });
 });
 
-after(async () => {
+afterAll(async () => {
   await duckdb.dispose();
   await rm(folder, { recursive: true, force: true });
 });

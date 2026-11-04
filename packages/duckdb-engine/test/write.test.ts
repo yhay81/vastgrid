@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { after, before, test } from "node:test";
 import { DuckDBInstance } from "@duckdb/node-api";
 import { createGridStore, localTransport } from "vastgrid/core";
+import { afterAll, beforeAll, test } from "vite-plus/test";
 import { type Client, type Json, setUp, type TableInfo } from "./client.ts";
 
 let context: Awaited<ReturnType<typeof setUp>>;
@@ -13,14 +13,14 @@ const events: Json[] = [];
 
 const people = ["id,name,age,joined", "1,Ann,31,2024-01-03", "2,Bob,45,2023-05-01", "3,Cy,,2022-11-20"].join("\n");
 
-before(async () => {
+beforeAll(async () => {
   context = await setUp();
   client = context.client;
   workspace = context.workspace;
   context.engine.subscribe((event) => events.push(event));
 });
 
-after(async () => {
+afterAll(async () => {
   await context.tearDown();
 });
 

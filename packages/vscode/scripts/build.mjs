@@ -1,31 +1,22 @@
 // Builds the extension (docs/vscode.md): `dist/extension.cjs`, which VS Code loads in the extension's process, and
 // the webview's page, `dist/webview.js` and `dist/webview.css` (scripts/build-page.mjs at the root). DuckDB's native
 // bindings stay outside, as `require`s of `@duckdb/node-bindings`, which a package of the extension carries
-// (scripts/package.mjs).
+// (scripts/package.mjs) and which, run from this folder (`test:vscode`, F5), the extension finds as its dependency.
 import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
+import { build } from "vite/rolldown";
 import { buildPage, printSizes } from "../../../scripts/build-page.mjs";
 
 const root = new URL("..", import.meta.url);
 const file = (name) => fileURLToPath(new URL(name, root));
 
+// With Rolldown, Vite's bundler, for the Node.js of VS Code: 20 in VS Code 1.100, the oldest that the extension takes.
 await build({
-  entryPoints: [file("src/extension.ts")],
-  outfile: file("dist/extension.cjs"),
-  bundle: true,
+  input: file("src/extension.ts"),
   platform: "node",
-  format: "cjs",
-  target: "node20",
-  external: ["vscode", "@duckdb/node-bindings"],
-  minify: true,
-  sourcemap: true,
-  legalComments: "none",
-  logLevel: "warning",
+  external: ["vscode", /^@duckdb\/node-bindings/],
+  transform: { target: "node20" },
+  logLevel: "warn",
+  output: { file: file("dist/extension.cjs"), format: "cjs", minify: true, sourcemap: true, comments: false },
 });
 
-const page = await buildPage({
-  entryPoints: { webview: file("webview/main.tsx") },
-  outdir: file("dist"),
-  metafile: true,
-});
-printSizes(page, "dist");
+printSizes(await buildPage({ input: { webview: file("webview/main.tsx") }, outDir: file("dist") }), "dist");

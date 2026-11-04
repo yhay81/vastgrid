@@ -4,7 +4,6 @@
  * a large generated file that answers as the same table given as rows.
  */
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import {
   type Column,
   dateText,
@@ -14,6 +13,7 @@ import {
   timestampText,
   timeText,
 } from "vastgrid-spec";
+import { test } from "vite-plus/test";
 import type { FileTable, MemoryTable, TextFile } from "../src/index.ts";
 import { readFile } from "../src/text.ts";
 import { Client, random } from "./client.ts";

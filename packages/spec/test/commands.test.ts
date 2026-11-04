@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { describe, test } from "vite-plus/test";
 import { caseState, isCommandFailure, readCommandCorpus, runCommandCase } from "../src/conformance.ts";
 import {
   applyCommand,
@@ -17,9 +17,9 @@ import { schemaProblems } from "./schemas.ts";
 const files = readCommandCorpus();
 
 for (const file of files) {
-  test(`commands: ${file.file}`, async (t) => {
+  describe(`commands: ${file.file}`, () => {
     for (const item of file.cases) {
-      await t.test(item.id, () => {
+      test(item.id, () => {
         assert.deepEqual(runCommandCase(file, item), []);
       });
     }
@@ -157,7 +157,7 @@ function deepFreeze<T>(value: T): T {
 }
 
 for (const file of files) {
-  test(`commands change nothing they are given: ${file.file}`, async (t) => {
+  describe(`commands change nothing they are given: ${file.file}`, () => {
     // Results share what a command does not change with the state it was given (§4.1 of react.md), so a
     // command must copy before it changes: every case runs again on frozen states, commands and contexts.
     const frozen = (state: GridState, command: unknown, context: CommandContext) =>
@@ -167,7 +167,7 @@ for (const file of files) {
         deepFreeze(structuredClone(context)),
       );
     for (const item of file.cases) {
-      await t.test(item.id, () => {
+      test(item.id, () => {
         assert.deepEqual(runCommandCase(file, item, frozen), []);
       });
     }

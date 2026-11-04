@@ -20,7 +20,7 @@ export const suites = {
   mcp: {
     tests: ["mcp"],
     server: {
-      command: "pnpm --filter vastgrid-mcp build && node --import tsx packages/mcp/host/serve.ts .data/mcp-e2e 5184",
+      command: "pnpm --filter vastgrid-mcp build && vpx packages/mcp/host/serve.ts .data/mcp-e2e 5184",
       url: "http://127.0.0.1:5184",
     },
   },

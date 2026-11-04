@@ -13,18 +13,19 @@ follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Setup
 
-You need Node.js 20 or later and npm. CI checks with the version in `.nvmrc`. The notebook's Python package
-needs [uv](https://docs.astral.sh/uv/).
+You need Node.js 22.18 or later and pnpm 12, the version in `packageManager` (Vite+'s `vp env`, mise or corepack
+installs it). CI checks with the Node.js of `.node-version`. The notebook's Python package needs
+[uv](https://docs.astral.sh/uv/).
 
 ```sh
-npm install
-npm run dev                       # the grid on the files of .data/bench at http://127.0.0.1:5182 (examples/files)
-npm run dev -w vastgrid-site      # documentation and demo at http://localhost:4321
-npm run dev -w vastgrid-bench     # the bench of the budgets at http://127.0.0.1:5180/?rows=1000000
+pnpm install
+pnpm run dev                      # the grid on the files of .data/bench at http://127.0.0.1:5182 (examples/files)
+pnpm --filter vastgrid-site dev   # documentation and demo at http://localhost:4321
+pnpm --filter vastgrid-bench dev  # the bench of the budgets at http://127.0.0.1:5180/?rows=1000000
 ```
 
 The examples and the site run the packages from their TypeScript sources (the `vastgrid-source` export condition),
-so edits to them apply without building. `npm run bench` writes the large files of `.data/bench` the first time.
+so edits to them apply without building. `pnpm run bench` writes the large files of `.data/bench` the first time.
 
 | Folder | Contents |
 | --- | --- |
@@ -46,32 +47,34 @@ so edits to them apply without building. `npm run bench` writes the large files 
 CI runs these on every pull request; run them before you push:
 
 ```sh
-npm run lint        # Oxfmt and Oxlint (vp check); npm run format fixes what they can
-npm run typecheck
-npm test
-npm run test:performance  # isolated, sequential performance budgets; no other tests or benchmarks running
-npm run build
-npm run size        # after the build: what a page loads first of the grid, within 200 KB with gzip
-npm run pack-check  # after the build: the packages installed from their tarballs run the READMEs' examples
-npm run e2e         # functional Playwright suites, when the grid or an entry point changed
-npm run e2e:performance  # browser performance budgets, run on their own
-npm run e2e:large    # 100-million-row Parquet and 10-million-row CSV checks
-npm run build -w vastgrid-site   # when you changed the site, docs/ or the grid
+pnpm run lint        # Oxfmt and Oxlint (vp check); pnpm run format fixes what they can
+pnpm run typecheck
+pnpm test            # Vitest (vp test), on the sources
+pnpm run test:performance  # isolated, sequential performance budgets; no other tests or benchmarks running
+pnpm run build
+pnpm run size        # after the build: what a page loads first of the grid, within 200 KB with gzip
+pnpm run pack-check  # after the build: the packages installed from their tarballs run the READMEs' examples
+pnpm run e2e         # functional Playwright suites, when the grid or an entry point changed
+pnpm run e2e:performance  # browser performance budgets, run on their own
+pnpm run e2e:large   # 100-million-row Parquet and 10-million-row CSV checks
+pnpm --filter vastgrid-site build  # when you changed the site, docs/ or the grid
 ```
 
-Tests use `node:test` and live in `packages/*/test/*.test.ts` and `scripts/test/*.test.ts`. A bug fix comes with a test that fails
-without it, where the bug can be reproduced outside a browser. For changes to the DuckDB engine that may
-affect speed, run `npm run bench` before and after and put both results in the pull request.
+Tests use Vitest, through Vite+ (`vite-plus/test`), and live in `packages/*/test/*.test.ts` and
+`scripts/test/*.test.ts`: `pnpm test packages/spec/test/formula.test.ts` runs one file, and `-t '…'` the tests of
+a name. A bug fix comes with a test that fails without it, where the bug can be reproduced outside a browser. For
+changes to the DuckDB engine that may affect speed, run `pnpm run bench` before and after and put both results in
+the pull request.
 
 Functional tests have no wall-clock performance assertions. `packages/*/perf/*.test.ts` holds those budgets,
-run sequentially by `npm run test:performance` on a dedicated CI runner. Shared JS workloads check correctness
-on smaller tables in `npm test` and on a million rows in the performance suite.
+run sequentially by `pnpm run test:performance` on a dedicated CI runner. Shared JS workloads check correctness
+on smaller tables in `pnpm test` and on a million rows in the performance suite.
 
-E2E suites start just their own server. After `npm run build`, use `npm run e2e -- grid grid.spec.ts` for one file,
-or `npm run e2e -- cli` for the CLI. The functional suites are `grid`, `strict` (the grid in Strict Mode, on Vite's
+E2E suites start just their own server. After `pnpm run build`, use `pnpm run e2e grid grid.spec.ts` for one file,
+or `pnpm run e2e cli` for the CLI. The functional suites are `grid`, `strict` (the grid in Strict Mode, on Vite's
 development server), `files` (menus and panels), `mcp`, `cli` and `open`; without a suite name, they all run in
 turn. Further arguments go to Playwright, for example
-`npm run e2e -- files --grep "column menu"`. Direct `npx playwright test` defaults to `grid`. Browser performance
+`pnpm run e2e files --grep "column menu"`. Direct `pnpm exec playwright test` defaults to `grid`. Browser performance
 (`performance`) and large files (`large`) have separate commands and CI jobs; both keep their full-size fixtures.
 
 `packages/duckdb-engine/test/memory-engine.test.ts` sends 300 generated plans to the memory engine and the DuckDB
@@ -121,9 +124,9 @@ git tag -s v0.2.0-next.1 -m "vastgrid 0.2.0-next.1"
 git push origin main v0.2.0-next.1
 ```
 
-The first command sets the version of every package (the npm packages, the extension, the Python package) and of
-the vastgrid packages that the packages, the examples and the site depend on, turns "Unreleased" in
-[CHANGELOG.md](CHANGELOG.md) into the version and today's date, and updates `package-lock.json`. Look over the
+The first command sets the version of every package (the npm packages, the extension, the Python package and
+its `uv.lock`) and turns "Unreleased" in [CHANGELOG.md](CHANGELOG.md) into the version and today's date. The
+packages depend on each other through `workspace:*`, which `pnpm pack` replaces with that version. Look over the
 diff and run the checks before you commit.
 
 The tag starts the [Release workflow](.github/workflows/release.yml). It checks that the packages and
@@ -197,8 +200,8 @@ API token in the `CLOUDFLARE_API_TOKEN` secret, made from Cloudflare's "Edit Clo
 with `yhay81.com` in its zone resources. To deploy by hand:
 
 ```sh
-npm run build -w vastgrid-site
-npm run deploy -w vastgrid-site   # wrangler deploy; sign in with `npx wrangler login` first
+pnpm --filter vastgrid-site build
+pnpm --filter vastgrid-site run deploy  # wrangler deploy; sign in with `pnpm dlx wrangler@4.157.0 login` first
 ```
 
 ## License

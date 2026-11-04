@@ -1,17 +1,17 @@
 /** DuckDB is the independent reference for the specification's date, time and interval text forms. */
 import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
 import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
 import { dateText, intervalText, timestampText, timeText } from "vastgrid-spec";
+import { afterAll, beforeAll, test } from "vite-plus/test";
 
 let instance: DuckDBInstance;
 let connection: DuckDBConnection;
-before(async () => {
+beforeAll(async () => {
   instance = await DuckDBInstance.create(":memory:");
   connection = await instance.connect();
   await connection.run("SET TimeZone = 'UTC'");
 });
-after(() => {
+afterAll(() => {
   connection.closeSync();
   instance.closeSync();
 });

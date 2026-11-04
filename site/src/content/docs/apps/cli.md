@@ -22,7 +22,7 @@ npm install -g vastgrid-cli
 vastgrid sales.parquet
 ```
 
-It needs Node.js 20 or later, on a platform that DuckDB's Node.js bindings support: Linux (x64 or arm64, glibc or
+It needs Node.js 22.18 or later, on a platform that DuckDB's Node.js bindings support: Linux (x64 or arm64, glibc or
 musl), macOS (x64 or arm64) or Windows (x64 or arm64).
 
 ```text

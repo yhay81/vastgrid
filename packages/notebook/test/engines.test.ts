@@ -6,9 +6,9 @@
  * default) and `VASTGRID_SEED` the seed; a difference names the plan's seed and shows the plan.
  */
 import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
 import { memoryEngine } from "vastgrid-js";
 import { type Column, encodeBlock, type JsonValue } from "vastgrid-spec";
+import { afterAll, beforeAll, test } from "vite-plus/test";
 import {
   answer,
   COLUMNS,
@@ -59,7 +59,7 @@ const at = (ref: string, engine: "python" | "memory") => ({
   revision: opened[ref][engine].revision,
 });
 
-before(async () => {
+beforeAll(async () => {
   if (skip) return;
   kernel = new Kernel();
   const block = encodeBlock(table.columns, table.rows);
@@ -71,7 +71,7 @@ before(async () => {
   await open("edited");
 });
 
-after(() => kernel?.close());
+afterAll(() => kernel?.close());
 
 test("the generated table reads with the same columns and values in both engines", { skip }, async () => {
   const strip = ({ sourceType: _sourceType, ...column }: Column) => column;
@@ -80,7 +80,7 @@ test("the generated table reads with the same columns and values in both engines
   assert.deepEqual(differences(theirs, await answer(python, at("generated", "python"), {})), []);
 });
 
-test(`${PLANS} generated plans give the same answers in both engines (seed ${SEED})`, { skip }, async (t) => {
+test(`${PLANS} generated plans give the same answers in both engines (seed ${SEED})`, { skip }, async () => {
   const failures: string[] = [];
   const outcomes = { rows: 0, errors: 0, known: 0 };
   for (let index = 0; index < PLANS; index++) {
@@ -93,7 +93,7 @@ test(`${PLANS} generated plans give the same answers in both engines (seed ${SEE
     if (problems[0] === "known") outcomes.known++;
     else if (problems.length > 0) failures.push(`plan ${seed}: ${JSON.stringify(plan)}\n  ${problems.join("\n  ")}`);
   }
-  t.diagnostic(
+  console.log(
     `${outcomes.rows} plans answered with rows, ${outcomes.errors} with errors; ${outcomes.known} differ as KNOWN says`,
   );
   assert.equal(failures.length, 0, `${failures.length} plans differ:\n${failures.slice(0, 10).join("\n")}`);

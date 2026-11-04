@@ -1,6 +1,6 @@
 /**
  * The size of 0.2's `DataGrid` with an in-memory table (react.md §10 and Appendix A): bundled from the packages'
- * builds with esbuild, minified, React left out, code split where the grid loads parts when they are needed. Prints
+ * builds with Rolldown, minified, React left out, code split where the grid loads parts when they are needed. Prints
  * the size of what a page loads first and of everything, minified and with gzip, and fails over the budget.
  * Run after `pnpm run build`: `pnpm run size`. CI runs it.
  */
@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
-import { build } from "esbuild";
+import { build } from "vite/rolldown";
 
 /** The first load's budget, with gzip (react.md §10). */
 const BUDGET = 200 * 1024;
@@ -19,40 +19,37 @@ writeFileSync(
   'import { DataGrid, localTransport } from "vastgrid";\nimport { memoryEngine } from "vastgrid-js";\nexport { DataGrid, localTransport, memoryEngine };\n',
 );
 try {
-  const result = await build({
-    entryPoints: [entry],
-    bundle: true,
-    minify: true,
-    splitting: true,
-    format: "esm",
+  const { output } = await build({
+    input: entry,
+    platform: "browser",
     write: false,
-    outdir: path.join(directory, "out"),
-    nodePaths: [path.resolve("node_modules")],
+    // The entry is outside the workspace, which has the packages.
+    resolve: { modules: [path.resolve("node_modules"), "node_modules"] },
     external: ["react", "react-dom", "react/jsx-runtime", "react/compiler-runtime"],
-    metafile: true,
-    logLevel: "error",
+    // The grid's "use client", for React Server Components, means nothing in a page.
+    checks: { moduleLevelDirective: false },
+    logLevel: "warn",
+    output: { dir: path.join(directory, "out"), format: "esm", minify: true },
   });
-  const outputs = result.outputFiles.filter((file) => file.path.endsWith(".js"));
-  const first = outputs.find((file) => path.basename(file.path) === "entry.js");
+  const chunks = output.filter((file) => file.type === "chunk");
   const size = (files) => {
-    const bytes = files.reduce((sum, file) => sum + file.contents.length, 0);
-    const gzip = files.reduce((sum, file) => sum + gzipSync(file.contents).length, 0);
+    const bytes = files.reduce((sum, file) => sum + Buffer.byteLength(file.code), 0);
+    const gzip = files.reduce((sum, file) => sum + gzipSync(file.code).length, 0);
     return `${(bytes / 1024).toFixed(1)} KB, ${(gzip / 1024).toFixed(1)} KB with gzip`;
   };
   // What a page loads first: the entry and the chunks it imports statically.
-  const meta = result.metafile.outputs;
+  const byName = new Map(chunks.map((chunk) => [chunk.fileName, chunk]));
   const loaded = new Set();
-  const visit = (file) => {
-    if (loaded.has(file)) return;
-    loaded.add(file);
-    for (const item of meta[file]?.imports ?? []) if (item.kind === "import-statement") visit(item.path);
+  const visit = (name) => {
+    if (loaded.has(name)) return;
+    loaded.add(name);
+    for (const imported of byName.get(name)?.imports ?? []) visit(imported);
   };
-  const relative = (file) => path.relative(process.cwd(), file);
-  visit(relative(first.path));
-  const initial = outputs.filter((file) => loaded.has(relative(file.path)));
-  const initialGzip = initial.reduce((sum, file) => sum + gzipSync(file.contents).length, 0);
+  visit(chunks.find((chunk) => chunk.isEntry).fileName);
+  const initial = chunks.filter((chunk) => loaded.has(chunk.fileName));
+  const initialGzip = initial.reduce((sum, chunk) => sum + gzipSync(chunk.code).length, 0);
   console.log(`first load: ${size(initial)}`);
-  console.log(`everything: ${size(outputs)} in ${outputs.length} files`);
+  console.log(`everything: ${size(chunks)} in ${chunks.length} files`);
   if (initialGzip > BUDGET) {
     console.error(`Over the budget of ${BUDGET / 1024} KB with gzip.`);
     process.exitCode = 1;

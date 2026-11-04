@@ -580,7 +580,7 @@ where a bundler turns `light-dark()` into variables for older browsers (Lightnin
 
 The bench ([`examples/bench`](../examples/bench)) mounts the grid on a generated table, with the memory engine in
 the page or in a Web Worker, built for production with React's profiling build, and the end-to-end tests ([`e2e`](../e2e)) measure it in Chromium with
-Playwright (`npm run e2e:performance`, after `npm run build`, with no other tests or benchmarks running).
+Playwright (`pnpm run e2e:performance`, after `pnpm run build`, with no other tests or benchmarks running).
 CI runs these in the dedicated performance job, separately from functional and large-file E2E. The tests fail
 when 0.2 exceeds a budget:
 
@@ -593,8 +593,8 @@ when 0.2 exceeds a budget:
 | From mount to the first rows on screen (1,000,000 rows in memory) | under 300 ms |
 
 Counts of commits are exact; times allow for the machine. What a page loads first of `DataGrid` with an in-memory
-table and their dependencies, minified and compressed with gzip, stays under 200 KB, measured with esbuild as in
-Appendix A by `npm run size` ([`scripts/bundle-size.mjs`](../scripts/bundle-size.mjs), after `npm run build`),
+table and their dependencies, minified and compressed with gzip, stays under 200 KB, measured with Rolldown as in
+Appendix A by `pnpm run size` ([`scripts/bundle-size.mjs`](../scripts/bundle-size.mjs), after `pnpm run build`),
 which CI runs and which fails over the budget. The column and cell menus, the toolbar's menus, the find bar and the
 detail panel load when they first open, so that the first load is the grid itself. The budget was 60 KB until
 2026-10-26, set before editing, saving, exports and formulas, and 100 KB until 2026-10-27, when the first load had
@@ -626,7 +626,7 @@ main at `a925cb3`, when the bench mounted both (0.1 was removed later, at 0.2.0)
 | `eslint-plugin-react-hooks` `recommended-latest` | 51 problems: `refs` 20, `immutability` 17, `preserve-manual-memoization` 9, `exhaustive-deps` 3, `set-state-in-effect` 2 | none |
 | How the state reaches React | a mutable `GridController` with a version counter: every change renders all of `DataGrid` (63 hooks); 13 effects copy props into the controller after render | immutable snapshots and selectors (§4) |
 | API | `forwardRef`; the handle has getters | `ref` as a prop; typed commands |
-| `DataGrid` and an in-memory table, minified (esbuild) | 300.9 KB, 92.6 KB with gzip, all of it whatever is used | On 2026-10-24, before editing, saving, exports, formulas and the panels: 170.7 KB, 57.0 KB with gzip. On 2026-10-26: 289.9 KB and 98.7 KB with gzip loaded first, 350.9 KB and 123.0 KB in all; the menus and panels (61 KB minified) load when they open. On 2026-10-27, with the memory engine's expressions and groups: 291.7 KB and 99.9 KB with gzip loaded first, 368.3 KB and 129.9 KB in all; the code of plans other than sorts (17 KB minified) loads with the first such plan. Then, with tables as Arrow kept in typed columns: 293.0 KB and 100.9 KB with gzip loaded first, 374.9 KB and 133.2 KB in all; the code that reads Arrow loads with the first such table. Of the first load, `vastgrid-spec` is one chunk of 181 KB minified (esbuild keeps a package's files together when they are shared, so its formula compiler comes too), the canvas, the store and the grid's body 59 KB, and Flechette 31 KB |
+| `DataGrid` and an in-memory table, minified (esbuild; Rolldown from 2026-11-04) | 300.9 KB, 92.6 KB with gzip, all of it whatever is used | On 2026-10-24, before editing, saving, exports, formulas and the panels: 170.7 KB, 57.0 KB with gzip. On 2026-10-26: 289.9 KB and 98.7 KB with gzip loaded first, 350.9 KB and 123.0 KB in all; the menus and panels (61 KB minified) load when they open. On 2026-10-27, with the memory engine's expressions and groups: 291.7 KB and 99.9 KB with gzip loaded first, 368.3 KB and 129.9 KB in all; the code of plans other than sorts (17 KB minified) loads with the first such plan. Then, with tables as Arrow kept in typed columns: 293.0 KB and 100.9 KB with gzip loaded first, 374.9 KB and 133.2 KB in all; the code that reads Arrow loads with the first such table. Of the first load, `vastgrid-spec` is one chunk of 181 KB minified (esbuild keeps a package's files together when they are shared, so its formula compiler comes too), the canvas, the store and the grid's body 59 KB, and Flechette 31 KB. On 2026-11-04, with Rolldown, Vite's bundler: 308.1 KB and 106.3 KB with gzip loaded first, 622.5 KB and 253.5 KB in all (esbuild: 322.6 KB and 112.0 KB first, 621.3 KB and 256.0 KB in all) |
 | Server rendering | an empty canvas and "Loading…", with `aria-rowcount="1"`, also for a table in memory | the first rows as an HTML table, streamed when `initial` is a promise |
 
 ### A.2 In the browser
