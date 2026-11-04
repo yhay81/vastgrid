@@ -21,7 +21,11 @@ jobs:
         with:
           node-version-file: .node-version
           cache: true
-      - run: pnpm run lint
+      # Type-aware lint must resolve workspace types without declarations left over from a build.
+      - name: Lint from a clean checkout
+        run: |
+          pnpm run clean
+          pnpm run lint
       - run: pnpm run typecheck
       - run: pnpm run build
       - run: pnpm run size
