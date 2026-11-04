@@ -1,0 +1,228 @@
+---
+// The home pages below the hero: the numbers, where the grid runs, what it does, the code and the way out.
+
+import { Picture } from "astro:assets";
+import { Code, TabItem, Tabs } from "@astrojs/starlight/components";
+import screenshot from "../../../../docs/images/vscode.png";
+import Command from "./Command.astro";
+import Icon from "./Icon.astro";
+import { type Language, texts } from "./texts.ts";
+import "../../styles/landing.css";
+
+interface Props {
+  lang: Language;
+}
+
+const t = texts[Astro.props.lang];
+const vscode = t.apps.vscode;
+
+const memory = `import { DataGrid, localTransport } from "vastgrid";
+import "vastgrid/styles.css";
+import { memoryEngine } from "vastgrid-js";
+
+const transport = localTransport(
+  memoryEngine({
+    tables: {
+      people: {
+        columns: [
+          { name: "name", type: "string" },
+          { name: "born", type: "integer" },
+          { name: "field", type: "string" },
+        ],
+        rows: [
+          ["Ada Lovelace", 1815, "Mathematics"],
+          ["Grace Hopper", 1906, "Computer science"],
+        ],
+      },
+    },
+  }),
+);
+
+export function App() {
+  return (
+    <DataGrid
+      transport={transport}
+      table="people"
+      style={{ height: 600 }}
+    />
+  );
+}`;
+
+const server = `import { createServer } from "node:http";
+import { createHttpHandler, DuckDBEngine } from "vastgrid-duckdb";
+
+const engine = await DuckDBEngine.create({
+  allowedDirectories: ["/srv/data"],
+  tempDirectory: "/tmp/vastgrid",
+});
+
+const handler = createHttpHandler(engine, { path: "/api/table" });
+createServer(handler).listen(8080);`;
+
+const page = `import { DataGrid, httpTransport } from "vastgrid";
+import "vastgrid/styles.css";
+
+const transport = httpTransport("/api/table", {
+  events: "/api/table/events",
+});
+
+export function Sales() {
+  return (
+    <DataGrid
+      transport={transport}
+      table="sales/2025.parquet"
+      style={{ height: 600 }}
+    />
+  );
+}`;
+---
+
+<div class="lp-landing not-content">
+  <section class="lp-stats lp-reveal" aria-label={t.statsLabel}>
+    <ul class="lp-stats__list">
+      {
+        t.stats.map((stat) => (
+          <li>
+            <strong>{stat.value}</strong>
+            <span>{stat.label}</span>
+          </li>
+        ))
+      }
+    </ul>
+    <p class="lp-built">
+      <span class="lp-built__label">{t.builtOn.label}</span>
+      {t.builtOn.items.map((item) => <span class="lp-chip">{item}</span>)}
+    </p>
+  </section>
+
+  <section class="lp-section" aria-labelledby="lp-apps">
+    <header class="lp-section__head lp-reveal">
+      <h2 id="lp-apps">{t.apps.heading}</h2>
+      <p>{t.apps.text}</p>
+    </header>
+    <div class="lp-bento">
+      <article class="lp-tile lp-tile--wide lp-reveal">
+        <div class="lp-tile__copy">
+          <h3><Icon name={vscode.icon} />{vscode.title}</h3>
+          <p>{vscode.text}</p>
+          {vscode.code && <Command command={vscode.code} copy={t.install.copy} copied={t.install.copied} />}
+          <p class="lp-tile__links">
+            {
+              vscode.stores.map((store) => (
+                <a class="lp-pill" href={store.href}>
+                  {store.text}
+                </a>
+              ))
+            }
+            <a class="lp-more" href={vscode.link.href}>{vscode.link.text}<Icon name="arrow" size={16} /></a>
+          </p>
+        </div>
+        <Picture
+          class="lp-tile__shot"
+          src={screenshot}
+          formats={["avif", "webp"]}
+          widths={[640, 960, 1280, 1920]}
+          sizes="(min-width: 72rem) 46rem, 100vw"
+          alt={vscode.image}
+          loading="lazy"
+          decoding="async"
+        />
+      </article>
+      {
+        t.apps.others.map((app) => (
+          <article class="lp-tile lp-reveal">
+            <h3>
+              <Icon name={app.icon} />
+              {app.title}
+            </h3>
+            <p>{app.text}</p>
+            {app.code && <Command command={app.code} copy={t.install.copy} copied={t.install.copied} />}
+            <a class="lp-more" href={app.link.href}>
+              {app.link.text}
+              <Icon name="arrow" size={16} />
+            </a>
+          </article>
+        ))
+      }
+    </div>
+  </section>
+
+  <section class="lp-section" aria-labelledby="lp-features">
+    <header class="lp-section__head lp-reveal">
+      <h2 id="lp-features">{t.features.heading}</h2>
+      <p>{t.features.text}</p>
+    </header>
+    <ul class="lp-features">
+      {
+        t.features.items.map((item) => (
+          <li class="lp-feature lp-reveal">
+            <span class="lp-feature__icon">
+              <Icon name={item.icon} />
+            </span>
+            <h3>{item.title}</h3>
+            <p>{item.text}</p>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+
+  <section class="lp-section lp-code" aria-labelledby="lp-code">
+    <div class="lp-code__copy lp-reveal">
+      <h2 id="lp-code">{t.code.heading}</h2>
+      <p>{t.code.text}</p>
+      <ul class="lp-code__links">
+        {
+          t.code.links.map((link) => (
+            <li>
+              <a href={link.href}>
+                {link.text}
+                <Icon name="arrow" size={16} />
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+    <div class="lp-code__sample lp-reveal">
+      <Tabs syncKey="lp-landing-code">
+        <TabItem label={t.code.tabs.memory}>
+          <Code code={memory} lang="tsx" title="App.tsx" />
+        </TabItem>
+        <TabItem label={t.code.tabs.server}>
+          <Code code={server} lang="ts" title="server.ts" />
+          <Code code={page} lang="tsx" title="Sales.tsx" />
+        </TabItem>
+      </Tabs>
+    </div>
+  </section>
+
+  <section class="lp-end lp-reveal" aria-labelledby="lp-end">
+    <h2 id="lp-end">{t.end.heading}</h2>
+    <p>{t.end.text}</p>
+    <div class="lp-actions">
+      <a class="lp-button lp-button--primary" href={t.end.demo.href}>
+        {t.end.demo.text}
+        <Icon name="arrow" size={18} />
+      </a>
+      <a class="lp-button" href={t.end.open.href}>{t.end.open.text}</a>
+      <a class="lp-button lp-button--ghost" href={t.end.github.href}>{t.end.github.text}</a>
+    </div>
+    <p class="lp-end__note">
+      {t.end.note[0]}<a href={t.end.note[1].href}>{t.end.note[1].text}</a>{t.end.note[2]}<a href={t.end.note[3].href}
+        >{t.end.note[3].text}</a
+      >{t.end.note[4]}
+    </p>
+  </section>
+</div>
+
+<script>
+  // A light that follows the pointer over the tiles, through two custom properties.
+  for (const tile of document.querySelectorAll<HTMLElement>(".lp-tile, .lp-feature")) {
+    tile.addEventListener("pointermove", (event) => {
+      const box = tile.getBoundingClientRect();
+      tile.style.setProperty("--x", `${event.clientX - box.left}px`);
+      tile.style.setProperty("--y", `${event.clientY - box.top}px`);
+    });
+  }
+</script>

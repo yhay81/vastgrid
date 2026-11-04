@@ -9,14 +9,14 @@ import { defineConfig } from "astro/config";
 const siteDir = fileURLToPath(new URL(".", import.meta.url));
 const docsDir = join(siteDir, "../docs");
 
-/** Copies the README's screenshot from docs/ into the site, as the image that links to the site show. */
+/** Copies the image that links to the site show (drawn by scripts/og-image.mjs) from docs/ into the site. */
 function stageDocs(): AstroIntegration {
   return {
     name: "vastgrid-stage-docs",
     hooks: {
       "astro:config:setup": () => {
         mkdirSync(join(siteDir, "public"), { recursive: true });
-        copyFileSync(join(docsDir, "images/grid.jpg"), join(siteDir, "public/og.jpg"));
+        copyFileSync(join(docsDir, "images/og.jpg"), join(siteDir, "public/og.jpg"));
       },
     },
   };
@@ -31,7 +31,8 @@ export default defineConfig({
     stageDocs(),
     starlight({
       title: "vastgrid",
-      description: "A canvas data grid for React that opens CSV, TSV, Parquet, JSON Lines and Excel files of any size.",
+      description:
+        "Open CSV, TSV, Parquet, JSON Lines and Excel files of any size like a spreadsheet, with a canvas data grid for React, VS Code, the command line, AI chats and Jupyter.",
       logo: { src: "./src/assets/logo.svg" },
       favicon: "/favicon.svg",
       defaultLocale: "root",
@@ -43,9 +44,14 @@ export default defineConfig({
       editLink: { baseUrl: "https://github.com/yhay81/vastgrid/edit/main/site/" },
       head: [
         { tag: "meta", attrs: { property: "og:image", content: `${site}/og.jpg` } },
+        { tag: "meta", attrs: { property: "og:image:width", content: "1280" } },
+        { tag: "meta", attrs: { property: "og:image:height", content: "640" } },
+        { tag: "meta", attrs: { property: "og:image:alt", content: "vastgrid: Open huge tables like a spreadsheet" } },
         { tag: "meta", attrs: { name: "twitter:card", content: "summary_large_image" } },
       ],
       customCss: ["./src/styles/docs.css"],
+      // The home pages have their own hero, with the live grid; other pages keep Starlight's.
+      components: { Hero: "./src/components/landing/Hero.astro" },
       sidebar: [
         {
           label: "Start here",

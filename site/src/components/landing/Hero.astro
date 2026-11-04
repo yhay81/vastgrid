@@ -1,0 +1,88 @@
+---
+// Starlight's Hero, replaced (astro.config.ts): the home pages (`landing: true`) get their own, with the live grid;
+// other pages with a hero, such as the 404 page, keep Starlight's.
+import Default from "@astrojs/starlight/components/Hero.astro";
+import Command from "./Command.astro";
+import Icon from "./Icon.astro";
+import { LiveGrid } from "./LiveGrid.tsx";
+import { type Language, texts } from "./texts.ts";
+import "../../styles/landing.css";
+
+const { entry, lang } = Astro.locals.starlightRoute;
+const language: Language = lang === "ja" ? "ja" : "en";
+const t = texts[language];
+
+// Selections on the sheet behind the hero, beside the texts: the column from the middle, the row, and how many
+// columns and rows they cover. The first one grows by its fill handle, as a drag in a spreadsheet would.
+const ranges = [
+  { column: -5, row: 9, columns: 2, rows: 2 },
+  { column: 4, row: 6, columns: 1, rows: 1 },
+  { column: 4, row: 13, columns: 2, rows: 3 },
+];
+
+const site = "https://vastgrid.yhay81.com";
+const structured = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareSourceCode",
+  name: "vastgrid",
+  description: t.lead,
+  url: language === "ja" ? `${site}/ja/` : `${site}/`,
+  codeRepository: "https://github.com/yhay81/vastgrid",
+  programmingLanguage: "TypeScript",
+  runtimePlatform: ["Web browsers", "Node.js", "VS Code", "Jupyter"],
+  license: "https://opensource.org/license/mit",
+  inLanguage: language,
+};
+---
+
+{
+  entry.data.landing ? (
+    <section class="lp-hero">
+      <div class="lp-hero__backdrop" aria-hidden="true">
+        {ranges.map((range) => (
+          <span
+            class="lp-hero__range"
+            style={`--column: ${range.column}; --row: ${range.row}; --columns: ${range.columns}; --rows: ${range.rows}`}
+          />
+        ))}
+      </div>
+      <a class="lp-news" href={t.news.href}>
+        <span class="lp-news__tag">{t.news.tag}</span>
+        <span>{t.news.text}</span>
+        <Icon name="arrow" size={16} />
+      </a>
+      <h1 id="_top" data-page-title class="lp-hero__title">
+        {t.title[0]} <span class="lp-gradient">{t.title[1]}</span>
+      </h1>
+      <p class="lp-hero__lead">{t.lead}</p>
+      <div class="lp-actions">
+        <a class="lp-button lp-button--primary" href={t.actions.start.href}>
+          {t.actions.start.text}
+          <Icon name="arrow" size={18} />
+        </a>
+        <a class="lp-button" href={t.actions.demo.href}>{t.actions.demo.text}</a>
+        <a class="lp-button lp-button--ghost" href={t.actions.open.href}>{t.actions.open.text}</a>
+      </div>
+      <Command command={t.install.command} copy={t.install.copy} copied={t.install.copied} class="lp-hero__install" />
+      <figure class="lp-showcase">
+        <div class="lp-window">
+          <div class="lp-window__bar">
+            <img src="/favicon.svg" width="16" height="16" alt="" />
+            <span class="lp-window__title">{t.window.title}</span>
+            <span class="lp-window__live">
+              <span class="lp-window__dot" aria-hidden="true" />
+              <span class="lp-window__label">{t.window.live}</span>
+            </span>
+          </div>
+          <div class="lp-window__grid">
+            <LiveGrid client:only="react" locale={language} />
+          </div>
+        </div>
+        <figcaption>{t.window.caption}</figcaption>
+      </figure>
+      <script type="application/ld+json" set:html={JSON.stringify(structured)} />
+    </section>
+  ) : (
+    <Default />
+  )
+}

@@ -139,7 +139,8 @@ they are on the Marketplace and Open VSX as `yhay81.vastgrid-vscode`; 0.2.x is o
 - `node scripts/icons.mjs` at the root draws the icon, and the site's logo and favicon, from
   `docs/images/logo.svg`. `node packages/vscode/scripts/screenshots.mjs` (after `npm run build`) opens the bench's
   files in VS Code (`VSCODE_PATH`, or one that @vscode/test-electron downloads) and takes the README's screenshot,
-  `docs/images/vscode.png`, and the walkthrough's, `media/walkthrough/`.
+  `docs/images/vscode.png`, and the walkthrough's, `media/walkthrough/`. `node scripts/og-image.mjs` then draws
+  the image that links to the site show, `docs/images/og.jpg`, from the logo and that screenshot.
 
 ## Testing
 

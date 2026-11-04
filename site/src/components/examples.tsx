@@ -11,30 +11,9 @@ interface ExampleProps {
   locale?: string;
 }
 
-/** The order number stays at the left as the grid scrolls sideways. */
-const pinned: GridDocument = { kind: "vastgrid/document", version: 2, columns: [{ name: "order_id", pin: "left" }] };
-
 /** Made-up orders in the memory engine, in the page. */
 function useOrders(rows: number) {
   return useMemo(() => localTransport(memoryEngine({ tables: { orders: ordersTable(rows) } })), [rows]);
-}
-
-/** The grid on the home page: 100,000 made-up orders. */
-export function HeroGrid({ locale = "en" }: ExampleProps) {
-  const transport = useOrders(100_000);
-  return (
-    <div className="example example--hero not-content">
-      <DataGrid
-        transport={transport}
-        table="orders"
-        defaultDocument={pinned}
-        locale={locale}
-        messages={locale === "ja" ? ja : undefined}
-        statusBar
-        aria-label="orders"
-      />
-    </div>
-  );
 }
 
 const themes = [

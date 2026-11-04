@@ -11,6 +11,34 @@
   --sl-color-accent-high: #0b2a63;
 }
 
+/* The dark theme in navy grays; the light theme is Starlight's. */
+:root:not([data-theme="light"]) {
+  --sl-color-gray-1: hsl(222 30% 94%);
+  --sl-color-gray-2: hsl(222 16% 79%);
+  --sl-color-gray-3: hsl(222 12% 60%);
+  --sl-color-gray-4: hsl(222 11% 41%);
+  --sl-color-gray-5: hsl(222 17% 24%);
+  --sl-color-gray-6: hsl(223 23% 13%);
+  --sl-color-black: hsl(223 30% 7.5%);
+}
+
+/* The header lets the page show through it, blurred. */
+@supports (backdrop-filter: blur(1px)) {
+  .page > .header {
+    background-color: color-mix(in srgb, var(--sl-color-bg-nav) 76%, transparent);
+    backdrop-filter: blur(14px) saturate(1.4);
+  }
+}
+
+/* The grids follow the theme picked in the header, not only the system's. */
+:root[data-theme="dark"] .vg-root:not(.theme-terminal) {
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] .vg-root:not(.theme-terminal) {
+  color-scheme: light;
+}
+
 /* Live grids inside the documentation. */
 .example {
   margin-block: 1.5rem;
@@ -19,10 +47,6 @@
   overflow: hidden;
   background: var(--sl-color-bg-nav);
   font-size: var(--sl-text-sm);
-}
-
-.example--hero {
-  height: min(420px, 60vh);
 }
 
 .example-toolbar {
