@@ -8,7 +8,7 @@ const args = process.argv.slice(2);
 const first = args[0];
 if (first && !first.startsWith("-") && !isSuite(first)) {
   throw new Error(
-    `Choose an E2E suite (${Object.keys(suites).join(", ")}), then Playwright arguments. Example: npm run e2e -- grid grid.spec.ts`,
+    `Choose an E2E suite (${Object.keys(suites).join(", ")}), then Playwright arguments. Example: pnpm run e2e grid grid.spec.ts`,
   );
 }
 const selected = first && isSuite(first) ? [first] : functionalSuites;

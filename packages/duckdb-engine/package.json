@@ -41,13 +41,13 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@duckdb/node-api": "2.0.0-r.1",
+    "@duckdb/node-api": "catalog:",
     "fzstd": "0.1.1",
-    "vastgrid-spec": "0.3.0",
-    "vastgrid-sql": "0.3.0"
+    "vastgrid-spec": "workspace:*",
+    "vastgrid-sql": "workspace:*"
   },
   "devDependencies": {
-    "vastgrid": "0.3.0",
-    "vastgrid-js": "0.3.0"
+    "vastgrid": "workspace:*",
+    "vastgrid-js": "workspace:*"
   }
 }

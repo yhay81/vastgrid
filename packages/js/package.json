@@ -43,6 +43,9 @@
   "dependencies": {
     "hyparquet": "1.32.0",
     "hyparquet-compressors": "1.1.3",
-    "vastgrid-spec": "0.3.0"
+    "vastgrid-spec": "workspace:*"
+  },
+  "devDependencies": {
+    "@uwdata/flechette": "catalog:"
   }
 }

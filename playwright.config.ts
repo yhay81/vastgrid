@@ -2,8 +2,8 @@ import { mkdirSync } from "node:fs";
 import { defineConfig } from "@playwright/test";
 import { isSuite, suites } from "./e2e/suites.ts";
 
-// npm run e2e runs the functional suites in turn; pass a suite to run just its tests and server.
-// A direct `playwright test` defaults to the grid. The packages must already be built (npm run build).
+// pnpm run e2e runs the functional suites in turn; pass a suite to run just its tests and server.
+// A direct `playwright test` defaults to the grid. The packages must already be built (pnpm run build).
 const name = process.env.VASTGRID_E2E_SUITE ?? "grid";
 if (!isSuite(name)) throw new Error(`Unknown E2E suite: ${name}`);
 const suite = suites[name];

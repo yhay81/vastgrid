@@ -1,0 +1,39 @@
+packages:
+  - packages/spec
+  - packages/sql
+  - packages/duckdb-engine
+  - packages/js
+  - packages/grid
+  - packages/mcp
+  - packages/vscode
+  - packages/cli
+  - packages/notebook
+  - examples/bench
+  - examples/files
+  - site
+
+# Versions that several packages share. Publishing replaces `catalog:` and `workspace:*` with the versions.
+catalog:
+  "@duckdb/node-api": 2.0.0-r.1
+  "@uwdata/flechette": 2.7.1
+  "@vitejs/plugin-react": 6.2.1
+  react: 19.3.1
+  react-dom: 19.3.1
+  vite: 8.3.5
+
+# Dependencies are pinned to exact versions (CONTRIBUTING.md).
+savePrefix: ""
+
+overrides:
+  # Patched against globparts amplification.
+  minimatch: 11.0.4
+
+# pnpm does not switch itself to the version of packageManager: Vite+ (vp env), mise or corepack does. pnpm then
+# writes the lockfile as one YAML document, which GitHub's dependency graph and Dependabot's alerts read.
+pmOnFail: ignore
+
+# The dependencies whose install scripts run. Others are refused (strictDepBuilds).
+allowBuilds:
+  # Copies the platform's binary of vsce's signing tool, as the VS Code extension's packaging and publishing use it.
+  "@vscode/vsce-sign": true
+  esbuild: true

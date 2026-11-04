@@ -7,7 +7,7 @@
  *   node --expose-gc --conditions=vastgrid-source --import tsx packages/duckdb-engine/bench/memory-engine.ts
  *     [--rows=1000000] [--max-bytes=268435456]
  *
- * The files are those of `npm run bench`, generated here when missing. They are given to the engine as files on
+ * The files are those of `pnpm run bench`, generated here when missing. They are given to the engine as files on
  * disk (`openAsBlob`), as a page gives it a `File`, so that the memory measured is the engine's: the JavaScript
  * heap and the buffers of typed arrays, after a garbage collection.
  */

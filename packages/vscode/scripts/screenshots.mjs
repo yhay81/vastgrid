@@ -1,7 +1,7 @@
 // Takes the extension's screenshots: the window for the README (docs/images/vscode.png) and parts of it for the
 // walkthrough (media/walkthrough/*.png). It opens the bench's Parquet file of 100,000,000 rows
 // (packages/duckdb-engine/bench/files.ts, made when it is missing) and a CSV file of 100,000 rows in VS Code with
-// the extension of this folder (`npm run build` at the root first), sorts, filters and edits as a person would, and
+// the extension of this folder (`pnpm run build` at the root first), sorts, filters and edits as a person would, and
 // captures the window, 1280 by 800 points at twice as many pixels, over the Chrome DevTools Protocol. VS Code is
 // the one at `VSCODE_PATH`, or a stable one that @vscode/test-electron downloads. A window of VS Code opens while
 // it runs.

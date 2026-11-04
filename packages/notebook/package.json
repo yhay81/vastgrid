@@ -7,9 +7,10 @@
     "build": "node scripts/build.mjs"
   },
   "devDependencies": {
-    "react": "19.3.1",
-    "react-dom": "19.3.1",
-    "vastgrid": "0.3.0",
-    "vastgrid-spec": "0.3.0"
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "vastgrid": "workspace:*",
+    "vastgrid-js": "workspace:*",
+    "vastgrid-spec": "workspace:*"
   }
 }

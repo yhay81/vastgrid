@@ -20,27 +20,30 @@ jobs:
         with:
           persist-credentials: false
       # No cache: what is published is built from the lockfiles alone.
-      - uses: actions/setup-node@v7
+      - uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          node-version-file: .nvmrc
+          node-version-file: .node-version
+          run-install: false
       - uses: astral-sh/setup-uv@v10.3.3
       - run: node scripts/release.mjs check "${GITHUB_REF_NAME#v}"
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      # Python's widget imports these generated assets, including in the tests run by `npm test`.
-      - run: npm run build
-      - run: npm test
-      - run: npm run test:performance
-      - run: npm run size
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+      # Python's widget imports these generated assets, including in the tests run by `pnpm test`.
+      - run: pnpm run build
+      - run: pnpm test
+      - run: pnpm run test:performance
+      - run: pnpm run size
+      # pnpm writes the versions of the `workspace:*` and `catalog:` dependencies into the packages.
       - name: Pack the npm packages
         run: |
           mkdir -p "$RUNNER_TEMP/packages"
-          npm pack -w packages/spec -w packages/sql -w packages/js -w packages/grid -w packages/duckdb-engine \
-            -w packages/cli -w packages/mcp --pack-destination "$RUNNER_TEMP/packages"
+          pnpm --filter ./packages/spec --filter ./packages/sql --filter ./packages/js --filter ./packages/grid \
+            --filter ./packages/duckdb-engine --filter ./packages/cli --filter ./packages/mcp \
+            pack --pack-destination "$RUNNER_TEMP/packages"
       # The examples of the READMEs, run from the tarballs that are published.
       - run: node scripts/pack-check.mjs "$RUNNER_TEMP/packages"
-      # The notebook's package carries the grid's module that `npm run build` wrote (static/widget.js).
+      # The notebook's package carries the grid's module that `pnpm run build` wrote (static/widget.js).
       - name: Build the Python package
         working-directory: packages/notebook/python
         run: |
@@ -51,7 +54,7 @@ jobs:
       - name: Package the VS Code extension
         run: |
           for target in linux-x64 linux-arm64 alpine-x64 darwin-x64 darwin-arm64 win32-x64 win32-arm64; do
-            npm run package -w vastgrid-vscode -- "$target"
+            pnpm --filter vastgrid-vscode run package "$target"
           done
           mkdir -p "$RUNNER_TEMP/vscode"
           cp packages/vscode/dist/*.vsix "$RUNNER_TEMP/vscode"
@@ -88,7 +91,7 @@ jobs:
       # Trusted publishing needs npm 11.5.1 or later, which Node.js 26 includes.
       - uses: actions/setup-node@v7
         with:
-          node-version-file: .nvmrc
+          node-version-file: .node-version
           registry-url: https://registry.npmjs.org
       - uses: actions/download-artifact@v8
         with:
@@ -140,18 +143,19 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v7
+      - uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          node-version-file: .nvmrc
+          node-version-file: .node-version
+          run-install: false
       - uses: actions/download-artifact@v8
         with:
           name: vscode
           path: ${{ runner.temp }}/vscode
       - name: Publish
         run: |
-          npm ci --ignore-scripts
+          pnpm install --frozen-lockfile --ignore-scripts
           for package in "$RUNNER_TEMP"/vscode/*.vsix; do
-            npx vsce publish --oidc --skip-duplicate --packagePath "$package"
+            pnpm --filter vastgrid-vscode exec vsce publish --oidc --skip-duplicate --packagePath "$package"
           done
   openvsx:
     name: Publish to Open VSX
@@ -168,18 +172,19 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v7
+      - uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          node-version-file: .nvmrc
+          node-version-file: .node-version
+          run-install: false
       - uses: actions/download-artifact@v8
         with:
           name: vscode
           path: ${{ runner.temp }}/vscode
       - name: Publish
         run: |
-          npm ci --ignore-scripts
+          pnpm install --frozen-lockfile --ignore-scripts
           for package in "$RUNNER_TEMP"/vscode/*.vsix; do
-            npx ovsx publish --trusted-publishing --skip-duplicate --packagePath "$package"
+            pnpm --filter vastgrid-vscode exec ovsx publish --trusted-publishing --skip-duplicate --packagePath "$package"
           done
   release:
     name: Create the GitHub release
@@ -196,7 +201,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version-file: .nvmrc
+          node-version-file: .node-version
       - uses: actions/download-artifact@v8
         with:
           path: ${{ runner.temp }}/assets

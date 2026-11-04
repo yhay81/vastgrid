@@ -1,5 +1,5 @@
 // The documentation site and the demo: a Worker with static assets only.
-// `npm run build -w vastgrid-site`, then `npm run deploy -w vastgrid-site`.
+// `pnpm --filter vastgrid-site run build`, then `pnpm --filter vastgrid-site run deploy`.
 {
   "name": "vastgrid",
   "compatibility_date": "2026-10-22",

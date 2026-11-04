@@ -69,7 +69,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "vastgrid-spec": "0.3.0"
+    "vastgrid-spec": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.3.0",
@@ -84,6 +84,6 @@
     }
   },
   "devDependencies": {
-    "vastgrid-js": "0.3.0"
+    "vastgrid-js": "workspace:*"
   }
 }

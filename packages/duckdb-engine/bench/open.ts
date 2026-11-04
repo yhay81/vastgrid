@@ -5,7 +5,7 @@
  *   node --conditions=vastgrid-source --import tsx packages/duckdb-engine/bench/open.ts [--dir=.data/bench]
  *     [--csv-rows=10000000] [--parquet-rows=100000000]
  *
- * `npm run bench` runs it. The files are generated here when they are missing (`files.ts`).
+ * `pnpm run bench` runs it. The files are generated here when they are missing (`files.ts`).
  */
 import { rm, stat } from "node:fs/promises";
 import os from "node:os";

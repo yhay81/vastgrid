@@ -1,5 +1,5 @@
 // Builds the grid's pages for the apps (the command line, the MCP App, the VS Code webview, the notebook's widget):
-// one script and its styles, minified, with React Compiler's output of the packages' builds (`npm run build` at the
+// one script and its styles, minified, with React Compiler's output of the packages' builds (`pnpm run build` at the
 // root first). The menus and panels that the grid loads when they open are in the same file: a page loads nothing
 // else.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";

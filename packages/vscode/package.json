@@ -235,16 +235,16 @@
     "test:vscode": "node scripts/test-vscode.mjs"
   },
   "dependencies": {
-    "vastgrid": "0.3.0",
-    "vastgrid-duckdb": "0.3.0",
-    "vastgrid-spec": "0.3.0"
+    "vastgrid": "workspace:*",
+    "vastgrid-duckdb": "workspace:*",
+    "vastgrid-spec": "workspace:*"
   },
   "devDependencies": {
     "@types/vscode": "1.100.0",
     "@vscode/test-electron": "3.1.0",
     "@vscode/vsce": "4.1.0",
     "ovsx": "1.3.0",
-    "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react": "catalog:",
+    "react-dom": "catalog:"
   }
 }

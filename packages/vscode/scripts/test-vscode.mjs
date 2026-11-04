@@ -1,6 +1,6 @@
 // Runs the extension in VS Code (docs/vscode.md): `test/vscode/suite.cjs` opens, edits, saves, reverts and opens
 // again files of a folder made here, in a window of its own with a profile of its own. It needs the build
-// (`npm run build` at the root). VS Code is the one at `VSCODE_PATH`, or a stable one that @vscode/test-electron
+// (`pnpm run build` at the root). VS Code is the one at `VSCODE_PATH`, or a stable one that @vscode/test-electron
 // downloads into `.vscode-test`. With `VASTGRID_VSIX`, the extension is that package (scripts/package.mjs), which
 // VS Code installs as it installs one of the Marketplace.
 import { execFileSync } from "node:child_process";

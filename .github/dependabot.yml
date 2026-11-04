@@ -7,7 +7,7 @@ updates:
     ignore:
       # The workspace packages themselves.
       - dependency-name: "vastgrid*"
-      # The types follow the Node.js version in .nvmrc.
+      # The types follow the Node.js version in .node-version.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
       # The types follow engines.vscode in packages/vscode/package.json: vsce refuses newer ones.

@@ -1,4 +1,4 @@
-/** Run with npm run test:performance, with no other test files running concurrently. */
+/** Run with pnpm run test:performance, with no other test files running concurrently. */
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { deriveRows, groupRows, sortFloats } from "../test/workloads.ts";

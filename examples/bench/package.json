@@ -9,13 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "19.3.1",
-    "react-dom": "19.3.1",
-    "vastgrid": "0.3.0",
-    "vastgrid-js": "0.3.0"
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "vastgrid": "workspace:*",
+    "vastgrid-js": "workspace:*"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "6.2.1",
-    "vite": "8.3.5"
+    "@vitejs/plugin-react": "catalog:",
+    "vite": "catalog:"
   }
 }

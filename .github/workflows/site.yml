@@ -14,7 +14,8 @@ on:
       - "packages/spec/src/**"
       - "packages/js/src/**"
       - "packages/grid/src/**"
-      - "package-lock.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - ".github/workflows/site.yml"
   pull_request:
     paths:
@@ -23,7 +24,8 @@ on:
       - "packages/spec/src/**"
       - "packages/js/src/**"
       - "packages/grid/src/**"
-      - "package-lock.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - ".github/workflows/site.yml"
   workflow_dispatch:
 permissions:
@@ -39,12 +41,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v7
+      - uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      - run: npm run build -w vastgrid-site
+          node-version-file: .node-version
+          cache: true
+      - run: pnpm --filter vastgrid-site run build
       - uses: actions/upload-artifact@v7
         with:
           name: site
@@ -62,9 +63,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v7
+      # pnpm without the workspace's dependencies: the deployment runs wrangler with pnpm dlx.
+      - uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          node-version-file: .nvmrc
+          node-version-file: .node-version
+          run-install: false
       - uses: actions/download-artifact@v8
         with:
           name: site
@@ -78,4 +81,4 @@ jobs:
             echo "::warning::CLOUDFLARE_API_TOKEN is not set, so the site was not deployed. See the top of .github/workflows/site.yml."
             exit 0
           fi
-          npm run deploy -- --message "main ${GITHUB_SHA}"
+          pnpm run deploy --message "main ${GITHUB_SHA}"

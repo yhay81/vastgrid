@@ -8,6 +8,8 @@ permissions:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+# Each job sets up Vite+, the Node.js of .node-version (or of the matrix) and the pnpm of packageManager, and installs
+# the workspace from pnpm-lock.yaml.
 jobs:
   check:
     name: Lint, typecheck and build
@@ -15,17 +17,16 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm run build
-      - run: npm run size
+          node-version-file: .node-version
+          cache: true
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+      - run: pnpm run build
+      - run: pnpm run size
       # The packages installed from their tarballs in a new project, as users install them.
-      - run: npm run pack-check
+      - run: pnpm run pack-check
   test:
     name: Test (${{ matrix.os }}, Node.js ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
@@ -44,27 +45,25 @@ jobs:
             node: 26
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: voidzero-dev/setup-vp@v1.22.0
         with:
           node-version: ${{ matrix.node }}
-          cache: npm
-      - run: npm ci
-      - run: npm test
+          cache: true
+      - run: pnpm test
   notebook:
     name: Test the notebook's package
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          node-version-file: .nvmrc
-          cache: npm
+          node-version-file: .node-version
+          cache: true
       # The Python package and its tests; the TypeScript tests of packages/notebook run it with uv.
       - uses: astral-sh/setup-uv@v10.3.3
-      - run: npm ci
       # The grid's module that the package carries (static/widget.js).
-      - run: npm run build
+      - run: pnpm run build
       - run: uv run --frozen ruff check && uv run --frozen ruff format --check && uv run --frozen pytest
         working-directory: packages/notebook/python
       - run: node --conditions=vastgrid-source --import tsx --test packages/notebook/test/*.test.ts
@@ -74,14 +73,13 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm run build
-      - run: npm run e2e
+          node-version-file: .node-version
+          cache: true
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm run build
+      - run: pnpm run e2e
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
@@ -94,30 +92,28 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
+          node-version-file: .node-version
+          cache: true
       # One file at a time, before any build or browser runs on this runner.
-      - run: npm run test:performance
-      - run: npx playwright install --with-deps chromium
-      - run: npm run build
-      - run: npm run e2e:performance
+      - run: pnpm run test:performance
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm run build
+      - run: pnpm run e2e:performance
   e2e-large:
     name: Large-file end-to-end tests
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm run build
-      - run: npm run e2e:large
+          node-version-file: .node-version
+          cache: true
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm run build
+      - run: pnpm run e2e:large
   vscode:
     name: VS Code extension (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
@@ -134,13 +130,12 @@ jobs:
             target: win32-x64
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - run: npm run package -w vastgrid-vscode -- ${{ matrix.target }}
+          node-version-file: .node-version
+          cache: true
+      - run: pnpm run build
+      - run: pnpm --filter vastgrid-vscode run package ${{ matrix.target }}
       # The package, installed in a stable VS Code (in a virtual display on Linux): open, edit, save, read-only
       # formats, sheets and the last rows of large files (docs/vscode.md).
       - name: Test the package in VS Code
@@ -149,9 +144,9 @@ jobs:
           version=$(node -p "require('./packages/vscode/package.json').version")
           export VASTGRID_VSIX="dist/vastgrid-vscode-$version-${{ matrix.target }}.vsix"
           if [ "$RUNNER_OS" = Linux ]; then
-            xvfb-run -a npm run test:vscode -w vastgrid-vscode
+            xvfb-run -a pnpm --filter vastgrid-vscode run test:vscode
           else
-            npm run test:vscode -w vastgrid-vscode
+            pnpm --filter vastgrid-vscode run test:vscode
           fi
       - uses: actions/upload-artifact@v7
         with:

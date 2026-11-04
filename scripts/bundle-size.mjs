@@ -2,7 +2,7 @@
  * The size of 0.2's `DataGrid` with an in-memory table (react.md §10 and Appendix A): bundled from the packages'
  * builds with esbuild, minified, React left out, code split where the grid loads parts when they are needed. Prints
  * the size of what a page loads first and of everything, minified and with gzip, and fails over the budget.
- * Run after `npm run build`: `npm run size`. CI runs it.
+ * Run after `pnpm run build`: `pnpm run size`. CI runs it.
  */
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

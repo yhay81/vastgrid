@@ -49,7 +49,7 @@ createRoot(element).render(
       <p>
         Open a file of the server's folder with <code>?file=</code>, such as{" "}
         <a href="?file=sales-100000000.parquet">sales-100000000.parquet</a> or{" "}
-        <a href="?file=sales-10000000.csv">sales-10000000.csv</a> (made by <code>npm run bench</code>).
+        <a href="?file=sales-10000000.csv">sales-10000000.csv</a> (made by <code>pnpm run bench</code>).
       </p>
     </main>
   ),

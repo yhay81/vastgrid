@@ -2,38 +2,25 @@
   "name": "vastgrid-monorepo",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@12.16.1",
   "engines": {
     "node": ">=20"
   },
-  "workspaces": [
-    "packages/spec",
-    "packages/sql",
-    "packages/duckdb-engine",
-    "packages/js",
-    "packages/grid",
-    "packages/mcp",
-    "packages/vscode",
-    "packages/cli",
-    "packages/notebook",
-    "examples/bench",
-    "examples/files",
-    "site"
-  ],
   "scripts": {
-    "build": "tsc -b packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp packages/vscode packages/cli && node scripts/copy-assets.mjs && node scripts/compile-react.mjs packages/grid && npm run build -w vastgrid-mcp && node packages/vscode/scripts/build.mjs && node packages/cli/scripts/build-app.mjs && node packages/notebook/scripts/build.mjs",
+    "build": "tsc -b packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp packages/vscode packages/cli && node scripts/copy-assets.mjs && node scripts/compile-react.mjs packages/grid && pnpm --filter vastgrid-mcp build && node packages/vscode/scripts/build.mjs && node packages/cli/scripts/build-app.mjs && node packages/notebook/scripts/build.mjs",
     "clean": "rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo",
     "typecheck": "tsc -b packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp packages/vscode packages/cli && tsc -p packages/mcp/app && tsc -p packages/mcp/host && tsc -p packages/vscode/webview && tsc -p packages/cli/app && tsc -p packages/notebook/widget && tsc -p examples/bench --noEmit && tsc -p examples/files --noEmit && tsc -p site --noEmit",
     "test": "node --conditions=vastgrid-source --import tsx --test packages/*/test/*.test.ts scripts/test/*.test.ts",
     "lint": "biome check . && eslint packages/grid/src",
     "format": "biome check --write .",
-    "dev": "npm run dev -w vastgrid-files-example",
+    "dev": "pnpm --filter vastgrid-files-example dev",
     "bench": "node --conditions=vastgrid-source --import tsx packages/duckdb-engine/bench/open.ts",
     "e2e": "node --import tsx scripts/e2e.ts",
     "size": "node scripts/bundle-size.mjs",
     "pack-check": "node scripts/pack-check.mjs",
     "test:performance": "node --conditions=vastgrid-source --import tsx --test --test-concurrency=1 packages/*/perf/*.test.ts",
-    "e2e:performance": "npm run e2e -- performance",
-    "e2e:large": "npm run e2e -- large"
+    "e2e:performance": "pnpm run e2e performance",
+    "e2e:large": "pnpm run e2e large"
   },
   "devDependencies": {
     "@babel/core": "7.29.7",
@@ -50,12 +37,11 @@
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-plugin-react-hooks": "7.1.1",
-    "react": "19.3.1",
-    "react-dom": "19.3.1",
+    "react": "catalog:",
+    "react-dom": "catalog:",
     "tsx": "4.23.15",
-    "typescript": "7.0.2"
-  },
-  "overrides": {
-    "minimatch": "11.0.4"
+    "typescript": "7.0.2",
+    "vastgrid": "workspace:*",
+    "vastgrid-js": "workspace:*"
   }
 }

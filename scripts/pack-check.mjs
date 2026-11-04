@@ -5,10 +5,11 @@
 //
 //   node scripts/pack-check.mjs [<folder of .tgz files>]
 //
-// Without a folder, it packs the packages of `npm run build` (run it first). The Release workflow gives it the
+// Without a folder, it packs the packages of `pnpm run build` (run it first). The Release workflow gives it the
 // tarballs that it publishes.
 import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { build } from "esbuild";
@@ -97,6 +98,8 @@ createRoot(document.getElementById("root")).render(<DataGrid transport={transpor
 `;
 
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+const require = createRequire(import.meta.url);
 const root = mkdtempSync(path.join(tmpdir(), "vastgrid-pack-"));
 const app = path.join(root, "app");
 const data = path.join(app, "data");
@@ -106,20 +109,22 @@ try {
   const tarballs = path.resolve(process.argv[2] ?? path.join(root, "packages"));
   if (!process.argv[2]) {
     mkdirSync(tarballs);
-    const workspaces = PACKAGES.flatMap((dir) => ["-w", dir]);
-    execFileSync(npm, ["pack", ...workspaces, "--pack-destination", tarballs, "--silent"], { stdio: "ignore" });
+    // pnpm writes the versions of the `workspace:*` and `catalog:` dependencies into the packages it packs.
+    const filters = PACKAGES.flatMap((dir) => ["--filter", `./${dir}`]);
+    execFileSync(pnpm, [...filters, "pack", "--pack-destination", tarballs], { stdio: "ignore" });
   }
   const files = readdirSync(tarballs).filter((name) => name.endsWith(".tgz"));
   if (files.length !== PACKAGES.length)
     throw new Error(`${tarballs} has ${files.length} packages, not ${PACKAGES.length}.`);
 
-  // React at the version the workspace tests with; the packages from their tarballs alone.
-  const { devDependencies } = JSON.parse(readFileSync("package.json", "utf8"));
+  // React at the version the workspace tests with (the catalog of pnpm-workspace.yaml); the packages from their
+  // tarballs alone, installed by npm as most users install them.
+  const installed = (name) => JSON.parse(readFileSync(require.resolve(`${name}/package.json`), "utf8")).version;
   writeFileSync(path.join(app, "package.json"), JSON.stringify({ name: "app", private: true, type: "module" }));
   const installs = [
     ...files.map((name) => path.join(tarballs, name)),
-    `react@${devDependencies.react}`,
-    `react-dom@${devDependencies["react-dom"]}`,
+    `react@${installed("react")}`,
+    `react-dom@${installed("react-dom")}`,
   ];
   execFileSync(npm, ["install", "--no-audit", "--no-fund", "--loglevel=error", ...installs], {
     cwd: app,

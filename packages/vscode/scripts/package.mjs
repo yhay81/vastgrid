@@ -1,4 +1,4 @@
-// Packages the extension for one platform (docs/vscode.md): a `.vsix` of the build (`npm run build` at the root
+// Packages the extension for one platform (docs/vscode.md): a `.vsix` of the build (`pnpm run build` at the root
 // first) with DuckDB's native bindings of that platform, which `dist/extension.cjs` requires from
 // `dist/node_modules`. `node scripts/package.mjs [target]` takes VS Code's target (darwin-arm64, linux-x64,
 // alpine-x64, win32-x64, ...), this machine's by default, and writes `dist/vastgrid-vscode-<version>-<target>.vsix`.
@@ -13,7 +13,6 @@ import { fileURLToPath } from "node:url";
 import { extensionChangelog } from "./changelog.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const require = createRequire(import.meta.url);
 
 /** VS Code's targets, with the package of DuckDB's bindings for each (`@duckdb/node-bindings-<name>`). */
 const BINDINGS = {
@@ -31,9 +30,9 @@ const target = process.argv[2] ?? `${process.platform}-${process.arch}`;
 const binding = BINDINGS[target];
 if (!binding) throw new Error(`vastgrid is packaged for ${Object.keys(BINDINGS).join(", ")}, not ${target}.`);
 
-/** The folder of an installed package. */
-function installed(name) {
-  return path.dirname(require.resolve(`${name}/package.json`));
+/** The folder of a package that the package in the folder `from` (the extension by default) depends on. */
+function installed(name, from = root) {
+  return path.dirname(createRequire(path.join(from, "package.json")).resolve(`${name}/package.json`));
 }
 
 const stage = await mkdtemp(path.join(os.tmpdir(), "vastgrid-vscode-package-"));
@@ -59,14 +58,17 @@ try {
 
   // The bindings: the package that loads them, with its dependency, and the platform's.
   const modules = path.join(stage, "dist", "node_modules");
-  const bindings = installed("@duckdb/node-bindings");
+  // pnpm puts each package's dependencies beside it: the bindings are those of the DuckDB that vastgrid-duckdb
+  // (packages/duckdb-engine) depends on.
+  const duckdb = installed("@duckdb/node-api", path.join(root, "..", "duckdb-engine"));
+  const bindings = installed("@duckdb/node-bindings", duckdb);
   const { version } = JSON.parse(await readFile(path.join(bindings, "package.json"), "utf8"));
   await cp(bindings, path.join(modules, "@duckdb", "node-bindings"), { recursive: true });
-  await cp(installed("detect-libc"), path.join(modules, "detect-libc"), { recursive: true });
+  await cp(installed("detect-libc", bindings), path.join(modules, "detect-libc"), { recursive: true });
   const platform = path.join(modules, "@duckdb", `node-bindings-${binding}`);
   const local = (() => {
     try {
-      return installed(`@duckdb/node-bindings-${binding}`);
+      return installed(`@duckdb/node-bindings-${binding}`, bindings);
     } catch {
       return null;
     }

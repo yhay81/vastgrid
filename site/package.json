@@ -6,17 +6,18 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "deploy": "npx --yes wrangler@4.157.0 deploy"
+    "deploy": "pnpm dlx wrangler@4.157.0 deploy"
   },
   "dependencies": {
-    "react": "19.3.1",
-    "react-dom": "19.3.1",
-    "vastgrid": "0.3.0",
-    "vastgrid-js": "0.3.0"
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "vastgrid": "workspace:*",
+    "vastgrid-js": "workspace:*"
   },
   "devDependencies": {
     "@astrojs/react": "7.1.2",
     "@astrojs/starlight": "0.42.8",
-    "astro": "7.4.5"
+    "astro": "7.4.5",
+    "vite": "catalog:"
   }
 }

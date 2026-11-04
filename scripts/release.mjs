@@ -1,10 +1,9 @@
 // Release helpers, run from the repository root. See "Releasing" in CONTRIBUTING.md.
 //
-//   node scripts/release.mjs version <version>   sets the version of the packages and of what refers to them
+//   node scripts/release.mjs version <version>   sets the packages, the Python package and CHANGELOG.md to that version
 //   node scripts/release.mjs check <version>     checks that the packages and CHANGELOG.md are at that version
 //   node scripts/release.mjs notes <version>     prints the CHANGELOG.md section of that version
 //   node scripts/release.mjs python <version>    prints the Python package's version for that version
-import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
 /** The packages published to npm, in the order they are published: each after those it depends on. */
@@ -56,16 +55,11 @@ function pythonVersion(value) {
 function setVersion() {
   const changelog = readFileSync("CHANGELOG.md", "utf8");
   if (!changelog.includes("\n## Unreleased\n")) fail('CHANGELOG.md has no "## Unreleased" section.');
-  for (const dir of [...NPM_PACKAGES, ...others]) {
+  // The packages depend on each other through `workspace:*`, which pnpm's pack replaces with the version they are
+  // released with. pnpm-lock.yaml links them without their versions, so it stays as it is.
+  for (const dir of versioned()) {
     const manifest = readJson(`${dir}/package.json`);
-    if (versioned().includes(dir)) manifest.version = version;
-    // The packages depend on each other at exactly the version they are released with. With another version, npm
-    // would also install the workspaces' vastgrid packages from the registry instead of linking them.
-    for (const field of ["dependencies", "devDependencies", "peerDependencies"]) {
-      for (const name of Object.keys(manifest[field] ?? {})) {
-        if (/^vastgrid(-|$)/.test(name)) manifest[field][name] = version;
-      }
-    }
+    manifest.version = version;
     writeJson(`${dir}/package.json`, manifest);
   }
   const python = readFileSync(pyproject, "utf8");
@@ -74,7 +68,6 @@ function setVersion() {
   if (!lockedVersion.test(lock)) fail(`${uvLock} has no version of the package vastgrid.`);
   writeFileSync(uvLock, lock.replace(lockedVersion, `$1"${pythonVersion(version)}"$3`));
   writeFileSync("CHANGELOG.md", changelog.replace("\n## Unreleased\n", `\n## ${version} — ${today()}\n`));
-  execSync("npm install --package-lock-only --ignore-scripts", { stdio: "inherit" });
 }
 
 function check() {
@@ -86,8 +79,8 @@ function check() {
     }
     for (const field of ["dependencies", "devDependencies", "peerDependencies"]) {
       for (const [name, range] of Object.entries(manifest[field] ?? {})) {
-        if (/^vastgrid(-|$)/.test(name) && range !== version) {
-          problems.push(`${manifest.name} depends on ${name} ${range}.`);
+        if (/^vastgrid(-|$)/.test(name) && range !== "workspace:*") {
+          problems.push(`${manifest.name} depends on ${name} ${range}, not workspace:*.`);
         }
       }
     }

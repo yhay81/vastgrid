@@ -1,7 +1,7 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// The bench measures what ships: the packages' builds (`npm run build`), in a production build of the page, with
+// The bench measures what ships: the packages' builds (`pnpm run build`), in a production build of the page, with
 // React's profiling build so that `<Profiler>` reports commits.
 export default defineConfig({
   plugins: [react()],

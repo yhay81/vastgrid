@@ -60,7 +60,7 @@ async function guarded(run: () => Promise<CallToolResult>): Promise<CallToolResu
   }
 }
 
-/** The App's page as the package builds it (`npm run build`), next to `src` and `dist`. */
+/** The App's page as the package builds it (`pnpm run build`), next to `src` and `dist`. */
 async function builtHtml() {
   return readFile(new URL("../dist/app.html", import.meta.url), "utf8");
 }
