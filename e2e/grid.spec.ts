@@ -69,3 +69,57 @@ test("copying puts the selected cells on the clipboard as TSV", async ({ page, c
   const text = await page.evaluate(() => navigator.clipboard.readText());
   expect(text.split("\n")).toEqual(["0\tRen 0", "1\tSora 1"]);
 });
+
+test("dragging across cells selects the whole rectangle for copying", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const start = await page.locator('[role="row"][aria-rowindex="2"] [role="gridcell"]').first().boundingBox();
+  const end = await page.getByRole("gridcell", { name: "Sora 1", exact: true }).boundingBox();
+  if (!start || !end) throw new Error("The cells have boxes.");
+  await page.mouse.move(start.x + 8, start.y + start.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(end.x + 8, end.y + end.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.locator('[role="gridcell"][aria-selected="true"]')).toHaveCount(4);
+  await page.evaluate(() => document.execCommand("copy"));
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("0\tRen 0\n1\tSora 1");
+});
+
+test("dragging a header edge resizes it and dragging its name reorders it without sorting", async ({ page }) => {
+  const id = page.getByRole("columnheader", { name: "id", exact: true });
+  const original = await id.boundingBox();
+  if (!original) throw new Error("The header has a box.");
+  const edge = original.x + original.width - 1;
+  const y = original.y + original.height / 2;
+  await page.mouse.move(edge, y);
+  await page.mouse.down();
+  await page.mouse.move(edge + 60, y, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(async () => (await id.boundingBox())?.width).toBe(Math.round(original.width + 60));
+
+  const target = await page.getByRole("columnheader", { name: "name", exact: true }).boundingBox();
+  if (!target) throw new Error("The next header has a box.");
+  await page.mouse.move(original.x + 20, y);
+  await page.mouse.down();
+  await page.mouse.move(target.x + target.width * 0.75, y, { steps: 6 });
+  await page.mouse.up();
+  await expect(id).toHaveAttribute("aria-colindex", "2");
+  await expect(page.getByRole("columnheader", { name: "name", exact: true })).toHaveAttribute("aria-colindex", "1");
+  await expect(id).not.toHaveAttribute("aria-sort");
+});
+
+test("dragging beyond the grid scrolls and releasing the pointer stops it", async ({ page }) => {
+  const start = await page.getByRole("gridcell", { name: "Ren 0", exact: true }).boundingBox();
+  const scroller = page.locator(".vg-scroller");
+  const box = await scroller.boundingBox();
+  if (!start || !box) throw new Error("The grid and its cell have boxes.");
+  await page.mouse.move(start.x + 8, start.y + start.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 8, box.y + box.height + 10, { steps: 6 });
+  await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await page.mouse.up();
+  const stopped = await scroller.evaluate((element) => element.scrollTop);
+  await page.evaluate(async () => {
+    for (let frame = 0; frame < 4; frame++) await new Promise(requestAnimationFrame);
+  });
+  expect(await scroller.evaluate((element) => element.scrollTop)).toBe(stopped);
+});

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { memoryEngine } from "vastgrid-js";
-import { createGridStore, localTransport, serveEngine, workerTransport } from "../src/core.ts";
+import { createGridStore, localTransport, serveEngine, type Transport, workerTransport } from "../src/core.ts";
 import { settle } from "./fake-engine.ts";
 
 function table() {
@@ -22,8 +22,12 @@ function table() {
 
 async function editable(document?: { kind: "vastgrid/document"; version: 2; rowKey?: string }) {
   const engine = memoryEngine({ tables: { cities: table() } });
+  return openStore(localTransport(engine), document);
+}
+
+async function openStore(transport: Transport, document?: { kind: "vastgrid/document"; version: 2; rowKey?: string }) {
   const store = createGridStore({
-    transport: localTransport(engine),
+    transport,
     table: "cities",
     ...(document ? { document } : {}),
   });
@@ -144,6 +148,103 @@ test("a write that fails shows the cell's value again and reports why", async ()
   assert.equal(store.cell(0, "city"), "Tokyo");
   assert.equal(store.getSnapshot().session.history, undefined);
   disconnect();
+});
+
+test("retrying a conflict overwrites the cell and records a step that can be undone", async ({ onTestFinished }) => {
+  const transport = localTransport(memoryEngine({ tables: { cities: table() } }));
+  const sent: Parameters<Transport["send"]>[0][] = [];
+  const { store, disconnect } = await openStore({
+    ...transport,
+    send(request, options) {
+      if (request.op === "write") {
+        sent.push(request);
+        if (sent.length === 1) {
+          return Promise.resolve({ v: 2, id: request.id, error: { code: "edit_conflict", message: "Try again." } });
+        }
+      }
+      return transport.send(request, options);
+    },
+  });
+  onTestFinished(disconnect);
+  await store.dispatch({ command: "select", row: 0, column: "city" });
+  store.dispatchSync({ command: "edit.begin", text: "Nara" });
+  assert.equal((await store.dispatch({ command: "edit.commit", move: null })).ok, false);
+  assert.equal(store.cell(0, "city"), "Tokyo");
+  assert.equal(store.getSnapshot().failedWrite?.retry, "overwrite");
+
+  assert.deepEqual(await store.retryWrite(), { ok: true });
+  assert.equal(store.getSnapshot().failedWrite, null);
+  assert.equal(Object.hasOwn((sent[1].updates as object[])[0], "previous"), false);
+  await until(() => store.getSnapshot().pending === null && store.cell(0, "city") === "Nara");
+  assert.deepEqual(store.getSnapshot().session.history?.undo[0].updates, [
+    { key: { rowId: 0 }, column: "city", before: "Tokyo", after: "Nara" },
+  ]);
+  assert.deepEqual(await store.dispatch({ command: "history.undo" }), { ok: true });
+  await until(() => store.getSnapshot().pending === null && store.cell(0, "city") === "Tokyo");
+});
+
+test("retrying a failed undo moves its original history step to redo", async ({ onTestFinished }) => {
+  const transport = localTransport(memoryEngine({ tables: { cities: table() } }));
+  let failNext = false;
+  const { store, disconnect } = await openStore({
+    ...transport,
+    send(request, options) {
+      if (request.op === "write" && failNext) {
+        failNext = false;
+        return Promise.resolve({ v: 2, id: request.id, error: { code: "internal", message: "Try again." } });
+      }
+      return transport.send(request, options);
+    },
+  });
+  onTestFinished(disconnect);
+  await store.dispatch({ command: "select", row: 0, column: "city" });
+  store.dispatchSync({ command: "edit.begin", text: "Nara" });
+  await store.dispatch({ command: "edit.commit", move: null });
+  await until(() => store.getSnapshot().pending === null && store.cell(0, "city") === "Nara");
+  const step = store.getSnapshot().session.history?.undo[0];
+  failNext = true;
+  assert.equal((await store.dispatch({ command: "history.undo" })).ok, false);
+  assert.equal(store.getSnapshot().failedWrite?.retry, "retry");
+  assert.equal(store.getSnapshot().session.history?.undo.length, 1);
+
+  assert.deepEqual(await store.retryWrite(), { ok: true });
+  await until(() => store.getSnapshot().pending === null && store.cell(0, "city") === "Tokyo");
+  assert.deepEqual(store.getSnapshot().session.history, { undo: [], redo: [step] });
+  assert.deepEqual(await store.dispatch({ command: "history.redo" }), { ok: true });
+  await until(() => store.getSnapshot().pending === null && store.cell(0, "city") === "Nara");
+});
+
+test("undo waits for a pending write to be answered and entered in history", async ({ onTestFinished }) => {
+  const transport = localTransport(memoryEngine({ tables: { cities: table() } }));
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let writes = 0;
+  const { store, disconnect } = await openStore({
+    ...transport,
+    async send(request, options) {
+      if (request.op === "write" && ++writes === 1) await held;
+      return transport.send(request, options);
+    },
+  });
+  onTestFinished(disconnect);
+  onTestFinished(release);
+  await store.dispatch({ command: "select", row: 0, column: "city" });
+  store.dispatchSync({ command: "edit.begin", text: "Nara" });
+  const committed = store.dispatch({ command: "edit.commit", move: null });
+  assert.equal(store.cell(0, "city"), "Nara");
+  const undone = store.dispatch({ command: "history.undo" });
+  await settle();
+  assert.equal(writes, 1);
+  assert.equal(store.getSnapshot().session.history, undefined);
+  release();
+  assert.deepEqual(await committed, { ok: true });
+  assert.deepEqual(await undone, { ok: true });
+  await until(() => store.getSnapshot().pending === null && store.cell(0, "city") === "Tokyo");
+  assert.equal(writes, 2);
+  assert.equal(store.getSnapshot().session.history?.undo.length, 0);
+  assert.equal(store.getSnapshot().session.history?.redo.length, 1);
 });
 
 test("export over an engine that answers data gives the file's bytes, with written cells and a name (§6.6)", async () => {

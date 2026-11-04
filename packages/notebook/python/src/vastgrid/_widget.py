@@ -20,7 +20,11 @@ import anywidget
 import duckdb
 import traitlets
 
-from ._engine import Engine, EngineError, Running, Source, file_format, new_database
+from ._engine import Engine
+from ._engine_types import Source
+from ._errors import EngineError
+from ._session import Running, new_database
+from ._table import file_format
 
 _STATIC = pathlib.Path(__file__).parent / "static"
 _MARK = "vastgrid:buffer"

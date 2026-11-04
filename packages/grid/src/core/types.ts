@@ -11,6 +11,7 @@ import type {
   Plan,
   RowKey,
 } from "vastgrid-spec";
+import { PlanError } from "vastgrid-spec";
 
 /** The table's edits version and the number of cells written so far (§8.2 of the specification). */
 export interface Edits {
@@ -112,6 +113,15 @@ export class GridError extends Error {
     if (extra.details !== undefined) this.details = extra.details;
     if (extra.op !== undefined) this.op = extra.op;
   }
+}
+
+/** Gives every request failure the grid's error shape. */
+export function asGridError(error: unknown): GridError {
+  if (error instanceof GridError) return error;
+  if (error instanceof PlanError) {
+    return new GridError("invalid_plan", error.message, { reason: error.reason, path: error.path });
+  }
+  return new GridError("internal", error instanceof Error ? error.message : String(error));
 }
 
 /** What a dispatched command came to: its output, or why it failed (§4.2 of react.md). */

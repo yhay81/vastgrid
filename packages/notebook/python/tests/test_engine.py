@@ -18,8 +18,8 @@ import pyarrow as pa
 import pytest
 
 from vastgrid import Engine, Source
-from vastgrid._engine import file_format
 from vastgrid._messages import ProtocolError, check_request
+from vastgrid._table import file_format
 
 MESSAGES = Path(__file__).resolve().parents[3] / "spec" / "conformance" / "messages"
 REQUESTS = json.loads((MESSAGES / "requests.json").read_text("utf-8"))["cases"]
