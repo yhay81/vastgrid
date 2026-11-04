@@ -64,6 +64,11 @@
 - `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb` and the Python package `vastgrid`: the key of the group of
   −0.0 and 0.0 is 0.0 whichever comes first (§3.9), and so are a pivot's values and the names of its columns
   (`0.0 / n`, not `-0.0 / n`), where the engines kept the first row's.
+- `vastgrid`, `vastgrid-cli`, `vastgrid-mcp`, `vastgrid-vscode` and the Python package `vastgrid`: a selection of
+  many rows is drawn to its last row. Near the end of a table of 100,000,000 rows, the selected area stopped a few
+  rows short.
+- `vastgrid-vscode`: selected cells show their values in themes whose selection color is opaque, such as Dark
+  Modern and Light Modern, where they looked empty: the grid lays the theme's color over the cells at 40%.
 
 ## 0.3.0 — 2026-10-30
 

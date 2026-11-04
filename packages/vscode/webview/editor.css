@@ -31,7 +31,8 @@ body.vscode-high-contrast .vg-root {
   --vg-header-fg: var(--vscode-foreground);
   --vg-gutter-bg: var(--vscode-editorGutter-background, var(--vscode-editor-background));
   --vg-gutter-fg: var(--vscode-editorLineNumber-foreground);
-  --vg-selection-bg: var(--vscode-editor-selectionBackground);
+  /* The grid lays the selection over the cells' text, which the theme's color, made for under the text, may hide. */
+  --vg-selection-bg: color-mix(in srgb, var(--vscode-editor-selectionBackground) 40%, transparent);
   --vg-selection-border: var(--vscode-focusBorder);
   --vg-active-border: var(--vscode-focusBorder);
   --vg-accent: var(--vscode-button-background);

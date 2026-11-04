@@ -851,8 +851,11 @@ export class GridCanvas {
       const x1 = Math.max(
         ...visible.map((column) => this.geometry.columnX(column) + this.geometry.layout.width(column)),
       );
-      const y0 = this.geometry.rowY(rows[0]);
-      const y1 = this.geometry.rowY(rows[1]);
+      // Cut to the canvas and a pixel past it: the edges of a range of many rows can be billions of pixels away,
+      // where the canvas's single precision would misplace them by rows.
+      const y0 = Math.max(this.geometry.rowY(rows[0]), -1);
+      const y1 = Math.min(this.geometry.rowY(rows[1]), this.geometry.height + 1);
+      if (y1 <= y0) return null;
       return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
     };
     ranges.forEach((range, position) => {
