@@ -22,6 +22,9 @@ VSIX…**. It needs VS Code 1.100 or later, on macOS (Apple silicon or Intel), L
 (x64 or arm64): the platforms of DuckDB's Node.js bindings, each with a package of its own. It does not run in
 vscode.dev or on 32-bit Arm Linux, where the bindings do not run.
 
+Once it is installed, VS Code's Welcome page has **Get Started with vastgrid**, a walkthrough of opening files,
+sorting, filtering and grouping, the sum of a selection, and editing.
+
 ## Opening files
 
 Parquet and Excel files open in vastgrid when you open them. CSV, TSV and JSON Lines files open as text, as
@@ -37,7 +40,8 @@ the explorer.
 | Excel | `.xlsx`, `.xlsm` | read, by default; a bar above the grid, or "vastgrid: Choose Sheet", chooses the sheet |
 
 The grid takes VS Code's theme colors and font, and its language (English, Japanese, Chinese, Korean, Spanish,
-Portuguese, French or German).
+Portuguese, French or German). The commands, the walkthrough and the extension's messages are in English, and in
+Japanese when VS Code is.
 
 ## Editing and saving
 

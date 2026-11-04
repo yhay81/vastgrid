@@ -1,0 +1,21 @@
+{
+  "displayName": "vastgrid: CSV・Parquet・Excel ビューアー",
+  "description": "巨大な CSV・Parquet・Excel・JSON Lines のファイルをグリッドで開き、数百万行をスクロール、並べ替え、絞り込み、グループ化。CSV と TSV は編集した所だけを書き換えて保存します。",
+  "untrustedWorkspaces": "信頼されていないワークスペースでは、ファイルは読み取り専用で開きます。セルの編集と保存はできません。",
+  "command.open": "vastgrid で開く",
+  "command.sheet": "シートを選択",
+  "walkthrough.title": "vastgrid を始める",
+  "walkthrough.description": "どんな大きさの CSV・Parquet・Excel・JSON Lines のファイルもグリッドで開いて調べ、CSV と TSV のファイルを編集します。",
+  "walkthrough.open.title": "ファイルをグリッドで開く",
+  "walkthrough.open.description": "Parquet と Excel のファイルは vastgrid で開きます。CSV・TSV・JSON Lines のファイルはテキストで開くので、エディターの右上の vastgrid のボタンか、エクスプローラーのコンテキストメニューの **vastgrid で開く** でグリッドに表示します。Excel のファイルのシートは、グリッドの上のバーか **vastgrid: シートを選択** で選びます。\n[ファイルを開く](command:workbench.action.files.openFile)",
+  "walkthrough.open.alt": "テキストで開いた CSV のファイルと、エディターの右上の vastgrid のボタン。",
+  "walkthrough.explore.title": "並べ替え、絞り込み、グループ化",
+  "walkthrough.explore.description": "列の名前をクリックすると、その列で並べ替えます。右端の矢印は列のメニューを開きます。**絞り込み…** は列の値をそれぞれの行数とともに一覧にし、**この列でグループ化** と **統計…** もここにあります。並べ替えも絞り込みもグループ化も、画面の行だけでなくファイル全体が対象です。",
+  "walkthrough.explore.alt": "1 億行の city 列の絞り込み。市ごとの行数が並んでいる。",
+  "walkthrough.select.title": "選択した範囲を数えて合計する",
+  "walkthrough.select.description": "セルをポインターか、Shift と矢印キーで選択します。Shift+⌘↓（Shift+Ctrl+↓）で最後の行まで選択できます。ステータスバーに、選択したすべての行の個数、合計、平均が出ます。",
+  "walkthrough.select.alt": "1 億行の price を選択し、ステータスバーに個数、合計、平均が出ている。",
+  "walkthrough.edit.title": "CSV と TSV を編集して保存する",
+  "walkthrough.edit.description": "セルに入力するか F2 を押すと編集できます。貼り付け、消去、フィルもスプレッドシートと同じです。元に戻す、やり直し、保存は VS Code のものです。保存は変更したセルをファイルに書き込み、ほかのバイトはそのまま残します。名前を付けて保存は、表を CSV・TSV・Parquet・JSON・Excel で書き出します。",
+  "walkthrough.edit.alt": "vastgrid で開いた CSV のファイル。セルを編集中で、エディターのタブに未保存の印が付いている。"
+}

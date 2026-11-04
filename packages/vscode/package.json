@@ -1,9 +1,9 @@
 {
   "name": "vastgrid-vscode",
-  "displayName": "vastgrid",
+  "displayName": "%displayName%",
   "version": "0.3.0",
   "private": true,
-  "description": "Huge CSV, TSV, Parquet, JSON Lines and Excel files in a grid in VS Code, read by DuckDB in the extension: scroll to the last row, sort, filter, group, edit cells and save CSV and TSV files with the bytes that were not edited kept as they are.",
+  "description": "%description%",
   "license": "MIT",
   "author": "yhay81",
   "publisher": "yhay81",
@@ -14,8 +14,16 @@
   },
   "homepage": "https://vastgrid.yhay81.com",
   "bugs": "https://github.com/yhay81/vastgrid/issues",
+  "qna": "https://github.com/yhay81/vastgrid/issues",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1a2a4a",
+    "theme": "dark"
+  },
+  "pricing": "Free",
   "type": "module",
   "main": "./dist/extension.cjs",
+  "l10n": "./l10n",
   "exports": {
     ".": {
       "vastgrid-source": "./src/index.ts",
@@ -29,22 +37,40 @@
   },
   "categories": [
     "Data Science",
-    "Visualization",
-    "Other"
+    "Visualization"
   ],
   "keywords": [
     "csv",
     "tsv",
     "parquet",
     "excel",
+    "xlsx",
+    "jsonl",
+    "ndjson",
+    "json lines",
     "duckdb",
+    "csv viewer",
+    "csv editor",
+    "parquet viewer",
+    "excel viewer",
+    "jsonl viewer",
+    "data viewer",
+    "data preview",
+    "large csv",
+    "large files",
+    "big data",
+    "table",
     "data grid",
-    "table"
+    "spreadsheet",
+    "dataframe",
+    "tabular data",
+    "gzip",
+    "zstd"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "In a workspace that is not trusted, files open read-only: cells cannot be edited or saved."
+      "description": "%untrustedWorkspaces%"
     }
   },
   "contributes": {
@@ -112,12 +138,16 @@
     "commands": [
       {
         "command": "vastgrid.open",
-        "title": "Open in vastgrid",
-        "category": "vastgrid"
+        "title": "%command.open%",
+        "category": "vastgrid",
+        "icon": {
+          "light": "media/open-light.svg",
+          "dark": "media/open-dark.svg"
+        }
       },
       {
         "command": "vastgrid.sheet",
-        "title": "Choose Sheet",
+        "title": "%command.sheet%",
         "category": "vastgrid"
       }
     ],
@@ -146,7 +176,58 @@
           "when": "activeCustomEditorId == vastgrid.table && resourceFilename =~ /\\.(xlsx|xlsm)$/i"
         }
       ]
-    }
+    },
+    "walkthroughs": [
+      {
+        "id": "start",
+        "title": "%walkthrough.title%",
+        "description": "%walkthrough.description%",
+        "steps": [
+          {
+            "id": "open",
+            "title": "%walkthrough.open.title%",
+            "description": "%walkthrough.open.description%",
+            "media": {
+              "image": "media/walkthrough/open.png",
+              "altText": "%walkthrough.open.alt%"
+            },
+            "completionEvents": [
+              "onContext:activeCustomEditorId == vastgrid.table || activeCustomEditorId == vastgrid.text"
+            ]
+          },
+          {
+            "id": "explore",
+            "title": "%walkthrough.explore.title%",
+            "description": "%walkthrough.explore.description%",
+            "media": {
+              "image": "media/walkthrough/filter.png",
+              "altText": "%walkthrough.explore.alt%"
+            }
+          },
+          {
+            "id": "select",
+            "title": "%walkthrough.select.title%",
+            "description": "%walkthrough.select.description%",
+            "media": {
+              "image": "media/walkthrough/select.png",
+              "altText": "%walkthrough.select.alt%"
+            }
+          },
+          {
+            "id": "edit",
+            "title": "%walkthrough.edit.title%",
+            "description": "%walkthrough.edit.description%",
+            "media": {
+              "image": "media/walkthrough/edit.png",
+              "altText": "%walkthrough.edit.alt%"
+            },
+            "completionEvents": [
+              "onContext:activeCustomEditorId == vastgrid.text && activeEditorIsDirty"
+            ]
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
     "build": "tsc -b && node scripts/build.mjs",

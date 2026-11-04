@@ -1,0 +1,21 @@
+{
+  "displayName": "vastgrid: CSV, Parquet and Excel Viewer",
+  "description": "Huge CSV, Parquet, Excel and JSON Lines files in a grid: scroll millions of rows, sort, filter and group them, and edit CSV and TSV files in place.",
+  "untrustedWorkspaces": "In a workspace that is not trusted, files open read-only: cells cannot be edited or saved.",
+  "command.open": "Open in vastgrid",
+  "command.sheet": "Choose Sheet",
+  "walkthrough.title": "Get Started with vastgrid",
+  "walkthrough.description": "Open CSV, Parquet, Excel and JSON Lines files of any size in a grid, explore them, and edit CSV and TSV files.",
+  "walkthrough.open.title": "Open a file in the grid",
+  "walkthrough.open.description": "Parquet and Excel files open in vastgrid. CSV, TSV and JSON Lines files open as text: the vastgrid button at the top right of the editor, or **Open in vastgrid** in the Explorer's context menu, shows them in the grid. In an Excel file, the bar above the grid or **vastgrid: Choose Sheet** chooses the sheet.\n[Open a File](command:workbench.action.files.openFile)",
+  "walkthrough.open.alt": "A CSV file open as text, with the vastgrid button at the top right of the editor.",
+  "walkthrough.explore.title": "Sort, filter and group",
+  "walkthrough.explore.description": "Click a column's name to sort by it. The arrow at its right opens the column's menu: **Filter…** lists the column's values with how many rows have each, and **Group by this column** and **Statistics…** are there too. The whole file is sorted, filtered and grouped, not only the rows on screen.",
+  "walkthrough.explore.alt": "The filter of the city column of 100,000,000 rows, with how many rows have each city.",
+  "walkthrough.select.title": "Count and sum a selection",
+  "walkthrough.select.description": "Select cells with the pointer, or with Shift and the arrow keys: Shift+⌘↓ (Shift+Ctrl+↓) selects to the last row. The status bar shows their count, sum and average, over every row selected.",
+  "walkthrough.select.alt": "The prices of 100,000,000 rows selected, with their count, sum and average in the status bar.",
+  "walkthrough.edit.title": "Edit and save CSV and TSV files",
+  "walkthrough.edit.description": "Type in a cell, or press F2, to edit it, and paste, clear and fill cells as in a spreadsheet. Undo, Redo and Save are VS Code's: Save writes the changed cells into the file and keeps every other byte as it was. Save As writes the table as CSV, TSV, Parquet, JSON or Excel.",
+  "walkthrough.edit.alt": "A CSV file in vastgrid, with a cell being edited and the editor's tab marked as unsaved."
+}

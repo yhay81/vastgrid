@@ -58,6 +58,14 @@
   repository variable `OPEN_VSX_ENABLED` is `true` and the namespace lists the workflow.
 - `vastgrid-vscode`: the release workflow publishes the extension to the VS Code Marketplace by trusted publishing
   (`vsce publish --oidc`) instead of the `VSCE_PAT` secret.
+- `vastgrid-vscode`: the Marketplace and Open VSX show the extension as "vastgrid: CSV, Parquet and Excel Viewer",
+  with an icon, a banner, a description and keywords to be found by, a README with screenshots, and a Changelog tab
+  of the extension's changes.
+- `vastgrid-vscode`: a walkthrough, "Get Started with vastgrid", on VS Code's Welcome page: opening files, sorting,
+  filtering and grouping, the sum of a selection, and editing.
+- `vastgrid-vscode`: the editor's "Open in vastgrid" button shows the extension's logo instead of its name.
+- `vastgrid-vscode`: in VS Code in Japanese, the commands, the walkthrough and the extension's messages are in
+  Japanese.
 
 ### Fixes
 

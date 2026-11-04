@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <title>vastgrid</title>
+  <clipPath id="tile"><rect x="8" y="8" width="112" height="112" rx="18"/></clipPath>
+  <rect x="8" y="8" width="112" height="112" rx="18" fill="#0b57d0"/>
+  <path clip-path="url(#tile)" d="M17.33 8v112M36 8v112M54.67 8v112M73.33 8v112M92 8v112M110.67 8v112M8 17.33h112M8 36h112M8 54.67h112M8 73.33h112M8 92h112M8 110.67h112" stroke="#fff" stroke-opacity=".3" stroke-width="2.5"/>
+  <path d="M17.33 36H36v18.67H17.33zM92 36h18.67v18.67H92zM36 54.67h18.67v18.66H36zM73.33 54.67H92v18.66H73.33zM54.67 73.33h18.66V92H54.67z" fill="#fff"/>
+</svg>

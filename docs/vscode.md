@@ -126,6 +126,21 @@ test:vscode -w vastgrid-vscode` runs the suite on it.
 Releases ship seven VSIX files: Linux x64/arm64, Alpine x64, macOS x64/arm64 and Windows x64/arm64. From 0.3.0
 they are on the Marketplace and Open VSX as `yhay81.vastgrid-vscode`; 0.2.x is only on the GitHub releases.
 
+## The listing and the texts
+
+- The Marketplace and Open VSX show the manifest's name, description, keywords, icon (`media/icon.png`) and banner,
+  the package's README.md, and its CHANGELOG.md: the items of the repository's CHANGELOG.md that name
+  `vastgrid-vscode`, which `scripts/package.mjs` writes into the package (`scripts/changelog.mjs`).
+- The manifest's texts are in `package.nls.json`, and in Japanese in `package.nls.ja.json`; the extension's
+  messages (`vscode.l10n.t`) are in Japanese in `l10n/bundle.l10n.ja.json`. `test/manifest.test.ts` checks that
+  every text has both and that the files the manifest names are there.
+- The walkthrough "Get Started with vastgrid" (`contributes.walkthroughs`) shows on VS Code's Welcome page, and opens
+  when the extension is installed.
+- `node scripts/icons.mjs` at the root draws the icon, and the site's logo and favicon, from
+  `docs/images/logo.svg`. `node packages/vscode/scripts/screenshots.mjs` (after `npm run build`) opens the bench's
+  files in VS Code (`VSCODE_PATH`, or one that @vscode/test-electron downloads) and takes the README's screenshot,
+  `docs/images/vscode.png`, and the walkthrough's, `media/walkthrough/`.
+
 ## Testing
 
 - `packages/vscode/test/table-file.test.ts` runs `TableFile` without VS Code: grids of `vastgrid` talk to it

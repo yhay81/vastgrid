@@ -1,0 +1,8 @@
+{
+  "This file has no other sheets.": "このファイルにほかのシートはありません。",
+  "shown": "表示中",
+  "Choose a sheet": "シートを選択",
+  "Export": "書き出し",
+  "{0}: {1} of the edits not saved were not restored, because the file changed since.": "{0}: ファイルがその後に変更されたため、保存されていなかった編集のうち {1} 件を復元しませんでした。",
+  "Edit cells": "セルの編集"
+}

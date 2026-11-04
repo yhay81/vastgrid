@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>Open in vastgrid</title>
+  <rect x="1.5" y="1.5" width="13" height="13" rx="2.5" fill="none" stroke="#C5C5C5"/>
+  <path d="M3 5h2v2H3zM11 5h2v2h-2zM5 7h2v2H5zM9 7h2v2H9zM7 9h2v2H7z" fill="#C5C5C5"/>
+</svg>

@@ -2,13 +2,15 @@
 // first) with DuckDB's native bindings of that platform, which `dist/extension.cjs` requires from
 // `dist/node_modules`. `node scripts/package.mjs [target]` takes VS Code's target (darwin-arm64, linux-x64,
 // alpine-x64, win32-x64, ...), this machine's by default, and writes `dist/vastgrid-vscode-<version>-<target>.vsix`.
-// The bindings of another platform are fetched from npm, of the version installed here.
+// The bindings of another platform are fetched from npm, of the version installed here. The package's
+// CHANGELOG.md is the root one's items about the extension (scripts/changelog.mjs).
 import { execFileSync } from "node:child_process";
 import { copyFile, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { extensionChangelog } from "./changelog.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const require = createRequire(import.meta.url);
@@ -39,9 +41,16 @@ try {
   // The manifest without what only the workspace uses.
   const manifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
   for (const key of ["private", "exports", "scripts", "dependencies", "devDependencies"]) delete manifest[key];
-  manifest.files = ["dist/**", "LICENSE"];
+  manifest.files = ["dist/**", "media/**", "l10n/**", "package.nls*.json", "CHANGELOG.md", "LICENSE"];
   await writeFile(path.join(stage, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-  await copyFile(path.join(root, "README.md"), path.join(stage, "README.md"));
+  for (const name of ["README.md", "package.nls.json", "package.nls.ja.json"]) {
+    await copyFile(path.join(root, name), path.join(stage, name));
+  }
+  for (const name of ["media", "l10n"]) {
+    await cp(path.join(root, name), path.join(stage, name), { recursive: true });
+  }
+  const changelog = await readFile(path.join(root, "..", "..", "CHANGELOG.md"), "utf8");
+  await writeFile(path.join(stage, "CHANGELOG.md"), extensionChangelog(changelog));
   await copyFile(path.join(root, "..", "..", "LICENSE"), path.join(stage, "LICENSE"));
   await mkdir(path.join(stage, "dist"));
   for (const name of ["extension.cjs", "webview.js", "webview.css"]) {

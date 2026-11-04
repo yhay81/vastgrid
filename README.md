@@ -1,4 +1,4 @@
-# vastgrid
+# <img src="docs/images/logo.svg" alt="" width="32" height="32"> vastgrid
 
 [![npm](https://img.shields.io/npm/v/vastgrid)](https://www.npmjs.com/package/vastgrid)
 [![CI](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml/badge.svg)](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml)
