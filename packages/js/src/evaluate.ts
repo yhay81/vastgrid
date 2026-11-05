@@ -28,6 +28,7 @@ import {
   textOf,
   timestampText,
   trimSpaces,
+  TIMESTAMP_INFINITY,
   UNIT_PER_SECOND,
   type ValueType,
   yearOf,
@@ -220,7 +221,10 @@ function caster(from: ValueType, to: ValueType): (value: JsonValue) => JsonValue
       // An infinity is the same in every unit.
       if (infinityOf(value as string) !== 0) return value;
       const count = parseTimestampText(asTimestampText(value as string, from), source) as bigint;
-      const result = timestampText(b >= a ? count * (b / a) : floorDivide(count, a / b), unit);
+      const converted = b >= a ? count * (b / a) : floorDivide(count, a / b);
+      // A finite value must fit the new unit without becoming an infinity (§3.6).
+      if (converted <= -TIMESTAMP_INFINITY || converted >= TIMESTAMP_INFINITY) return null;
+      const result = timestampText(converted, unit);
       return isValueOf(result, to) ? result : null;
     };
   }

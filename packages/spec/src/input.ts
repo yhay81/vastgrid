@@ -126,6 +126,7 @@ function zoneOffset(instant: number, timeZone: string): number {
     format = new Intl.DateTimeFormat("en-US", {
       timeZone,
       hourCycle: "h23",
+      era: "short",
       year: "numeric",
       month: "numeric",
       day: "numeric",
@@ -137,9 +138,15 @@ function zoneOffset(instant: number, timeZone: string): number {
   }
   const second = Math.floor(instant / 1000) * 1000;
   const parts: Record<string, number> = {};
-  for (const part of format.formatToParts(second)) parts[part.type] = Number(part.value);
+  let bc = false;
+  for (const part of format.formatToParts(second)) {
+    if (part.type === "era") bc = part.value === "BC";
+    else parts[part.type] = Number(part.value);
+  }
+  // Intl numbers years within their era: 1 BC is astronomical year 0.
+  const year = bc ? 1 - parts.year : parts.year;
   const local =
-    daysFromCivil(parts.year, parts.month, parts.day) * DAY_MS +
+    daysFromCivil(year, parts.month, parts.day) * DAY_MS +
     ((parts.hour * 60 + parts.minute) * 60 + parts.second) * 1000;
   return local - second;
 }

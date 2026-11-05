@@ -185,11 +185,13 @@ export function parseTimeText(text: string): bigint | null {
 
 /**
  * The text of a timestamp (§2.2) from a count of its unit since 1970-01-01 00:00:00, and `infinity` or `-infinity`
- * for ±`TIMESTAMP_INFINITY`. Throws for −2^63, which is neither.
+ * for ±`TIMESTAMP_INFINITY`. Throws outside these counts or the dates of §2.2.
  */
 export function timestampText(count: bigint, unit: TimestampUnit = "us"): string {
   if (count === TIMESTAMP_INFINITY || count === -TIMESTAMP_INFINITY) return count > 0n ? "infinity" : "-infinity";
-  if (count < -TIMESTAMP_INFINITY) throw new RangeError("−2^63 is not a timestamp.");
+  if (count < -TIMESTAMP_INFINITY || count > TIMESTAMP_INFINITY) {
+    throw new RangeError("The count is outside the range of timestamps.");
+  }
   // `dateText` throws for a timestamp whose date is not a date.
   const perDay = DAY_SECONDS * UNIT_PER_SECOND[unit];
   const days = floorDiv(count, perDay);

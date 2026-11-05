@@ -178,11 +178,11 @@ def parse_time_text(text: str) -> int | None:
 
 def timestamp_text(count: int, unit: str = "us") -> str:
     """The text of a timestamp (§2.2) from a count of its unit since 1970-01-01 00:00:00, and `infinity` or
-    `-infinity` for ±`TIMESTAMP_INFINITY`. Raises for -2^63, which is neither."""
+    `-infinity` for ±`TIMESTAMP_INFINITY`. Raises outside these counts or the dates of §2.2."""
     if count in (TIMESTAMP_INFINITY, -TIMESTAMP_INFINITY):
         return "infinity" if count > 0 else "-infinity"
-    if count < -TIMESTAMP_INFINITY:
-        raise ValueError("-2^63 is not a timestamp.")
+    if count < -TIMESTAMP_INFINITY or count > TIMESTAMP_INFINITY:
+        raise ValueError("The count is outside the range of timestamps.")
     per_day = _DAY_SECONDS * UNIT_PER_SECOND[unit]
     days = count // per_day
     return f"{date_text(days)} {_clock(count - days * per_day, unit)}"

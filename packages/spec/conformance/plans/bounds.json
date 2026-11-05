@@ -136,6 +136,60 @@
   },
   "cases": [
     {
+      "id": "bounds.temporal-casts-out-of-range",
+      "section": "3.6",
+      "description": "Converting a date or timestamp to nanoseconds gives null outside that unit's range, without failing the other rows or expressions.",
+      "table": "eras",
+      "plan": {
+        "derive": [
+          { "name": "n", "expr": { "lit": "1970-01-01 00:00:00.000000001", "type": "timestamp" } },
+          { "name": "date", "expr": { "fn": "if", "args": [{ "lit": true }, { "col": "d" }, { "col": "n" }] } },
+          { "name": "time", "expr": { "fn": "if", "args": [{ "lit": false }, { "col": "n" }, { "col": "t" }] } },
+          { "name": "first", "expr": { "fn": "coalesce", "args": [{ "col": "d" }, { "col": "n" }] } },
+          { "name": "lo", "expr": { "fn": "least", "args": [{ "col": "n" }, { "col": "t" }] } },
+          { "name": "hi", "expr": { "fn": "greatest", "args": [{ "col": "n" }, { "col": "t" }] } }
+        ]
+      },
+      "read": { "columns": ["date", "time", "first", "lo", "hi"] },
+      "expect": {
+        "rowCount": 5,
+        "rows": [
+          [null, null, null, "1970-01-01 00:00:00.000000001", "1970-01-01 00:00:00.000000001"],
+          [null, null, null, "1970-01-01 00:00:00.000000001", "1970-01-01 00:00:00.000000001"],
+          [null, null, null, "1970-01-01 00:00:00.000000001", "1970-01-01 00:00:00.000000001"],
+          [null, null, null, "1970-01-01 00:00:00.000000001", "1970-01-01 00:00:00.000000001"],
+          ["1999-12-31 00:00:00", "1999-12-31 23:59:59", "1999-12-31 00:00:00", "1970-01-01 00:00:00.000000001", "1999-12-31 23:59:59"]
+        ]
+      }
+    },
+    {
+      "id": "bounds.temporal-quantile-endpoints",
+      "section": "3.8",
+      "description": "Quantiles at exact ranks preserve the finite timestamp endpoints without a float conversion.",
+      "table": "eras",
+      "plan": {
+        "aggregate": {
+          "keys": [],
+          "measures": [
+            { "name": "lo", "fn": "quantile", "column": "t", "p": 0 },
+            { "name": "hi", "fn": "quantile", "column": "t", "p": 1 }
+          ]
+        }
+      },
+      "expect": { "rowCount": 1, "rows": [["-290308-12-22 00:00:00", "+294247-01-10 04:00:54.775806"]] }
+    },
+    {
+      "id": "bounds.temporal-quantile-singleton",
+      "section": "3.8",
+      "description": "The median of a single finite timestamp at the upper bound is that timestamp.",
+      "table": "eras",
+      "plan": {
+        "where": { "fn": "eq", "args": [{ "col": "d" }, { "lit": "+294247-01-10", "type": "date" }] },
+        "aggregate": { "keys": [], "measures": [{ "name": "q", "fn": "quantile", "column": "t", "p": 0.5 }] }
+      },
+      "expect": { "rowCount": 1, "rows": [["+294247-01-10 04:00:54.775806"]] }
+    },
+    {
       "id": "bounds.block-roundtrip",
       "section": "2.2",
       "table": "bounds",

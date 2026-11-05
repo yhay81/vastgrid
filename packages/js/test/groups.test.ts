@@ -3,7 +3,7 @@
  * summarizing groups, the names of a pivot's columns, sums beyond their type, writes, and generated rows.
  */
 import assert from "node:assert/strict";
-import type { JsonValue } from "vastgrid-spec";
+import type { JsonValue, ValueType } from "vastgrid-spec";
 import { test } from "vite-plus/test";
 import type { MemoryTable } from "../src/index.ts";
 import { Client } from "./client.ts";
@@ -134,4 +134,52 @@ test("groups see the values that writes have written", async () => {
 
 test("generated rows group by 1,000 keys with exact counts and sums", async () => {
   await groupRows(10_000);
+});
+
+test("temporal quantiles preserve exact ranks and round nanoseconds only at the result (§3.8)", async () => {
+  const cases: { type: ValueType; values: JsonValue[]; expected: JsonValue[] }[] = [
+    {
+      type: { type: "timestamp" },
+      // These distinct counts all become the same float; sort them before converting to floats.
+      values: ["+294247-01-10 04:00:54.775806", "+294247-01-10 04:00:54.775804", "+294247-01-10 04:00:54.775805"],
+      expected: ["+294247-01-10 04:00:54.775804", "+294247-01-10 04:00:54.775805", "+294247-01-10 04:00:54.775806"],
+    },
+    {
+      type: { type: "timestamptz" },
+      values: ["+294247-01-10 04:00:54.775806+00", null, "infinity", "-infinity"],
+      expected: Array(3).fill("+294247-01-10 04:00:54.775806+00"),
+    },
+    {
+      type: { type: "timestamp", unit: "ns" },
+      values: ["2262-04-11 23:47:16.854775806", "1969-12-31 23:59:59.9999985", "1970-01-01 00:00:00.0000015"],
+      expected: ["1969-12-31 23:59:59.999998", "1970-01-01 00:00:00.000002", "2262-04-11 23:47:16.854776"],
+    },
+    {
+      type: { type: "timestamp", unit: "ms" },
+      values: ["+010000-01-01 00:00:00.001"],
+      expected: Array(3).fill("+010000-01-01 00:00:00.001"),
+    },
+    {
+      type: { type: "timestamp", unit: "s" },
+      values: ["0000-01-01 00:00:01"],
+      expected: Array(3).fill("0000-01-01 00:00:01"),
+    },
+    {
+      type: { type: "date" },
+      values: ["+294247-01-10"],
+      expected: Array(3).fill("+294247-01-10 00:00:00"),
+    },
+    {
+      type: { type: "time" },
+      values: ["23:59:59.999999"],
+      expected: Array(3).fill("23:59:59.999999"),
+    },
+  ];
+  for (const { type, values, expected } of cases) {
+    const client = new Client({ times: { columns: [{ name: "t", ...type }], rows: values.map((value) => [value]) } });
+    const info = await client.open("times");
+    const measures = [0, 0.5, 1].map((p, index) => ({ name: "q" + index, fn: "quantile", column: "t", p }));
+    const read = await client.rows(info, { aggregate: { keys: [], measures } }, { columns: ["q0", "q1", "q2"] });
+    assert.deepEqual(read.rows, [expected], JSON.stringify(type));
+  }
 });

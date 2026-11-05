@@ -50,6 +50,43 @@ test("a view derives, filters and sorts by a derived column, and reads it as its
   ]);
 });
 
+test("temporal conversions keep representable values and infinities, and null out overflow (§3.6)", async () => {
+  const cases = [
+    ["1600-01-01", "1600-01-01 12:00:00", null, null],
+    ["2300-01-01", "2300-01-01 12:00:00", null, null],
+    ["1677-09-21", "1677-09-21 00:12:43.145225", null, "1677-09-21 00:12:43.145225"],
+    ["2262-04-11", "2262-04-11 23:47:16.854775", "2262-04-11 00:00:00", "2262-04-11 23:47:16.854775"],
+    ["2262-04-12", "2262-04-11 23:47:16.854776", null, null],
+    ["infinity", "-infinity", "infinity", "-infinity"],
+    [null, null, null, null],
+  ];
+  const client = new Client({
+    dates: {
+      columns: [
+        { name: "d", type: "date" },
+        { name: "t", type: "timestamp" },
+        { name: "n", type: "timestamp", unit: "ns" },
+      ],
+      rows: cases.map(([date, time]) => [date, time, "2024-01-01 00:00:00"]),
+    },
+  });
+  const info = await client.open("dates");
+  const read = await client.rows(
+    info,
+    {
+      derive: [
+        { name: "date", expr: { fn: "if", args: [{ lit: true }, { col: "d" }, { col: "n" }] } },
+        { name: "time", expr: { fn: "if", args: [{ lit: false }, { col: "n" }, { col: "t" }] } },
+      ],
+    },
+    { columns: ["date", "time"] },
+  );
+  assert.deepEqual(
+    read.rows,
+    cases.map(([, , date, time]) => [date, time]),
+  );
+});
+
 test("a search matches the text form of the table's own columns, ignoring letter case (§3.5)", async () => {
   const client = new Client({ orders: ORDERS });
   const info = await client.open("orders");

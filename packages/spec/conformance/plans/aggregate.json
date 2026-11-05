@@ -36,6 +36,13 @@
       "columns": [{ "name": "x", "type": "float" }],
       "rows": [[-1.7976931348623157e308], [1.7976931348623157e308]]
     },
+    "temporal_limits": {
+      "columns": [{ "name": "t", "type": "timestamp" }, { "name": "z", "type": "timestamptz" }],
+      "rows": [
+        ["+294247-01-10 04:00:54.775805", "+294247-01-10 04:00:54.775805+00"],
+        ["+294247-01-10 04:00:54.775806", "+294247-01-10 04:00:54.775806+00"]
+      ]
+    },
     "moments": {
       "columns": [
         { "name": "day", "type": "date" },
@@ -64,6 +71,22 @@
     }
   },
   "cases": [
+    {
+      "id": "aggregate.temporal-quantile-overflow",
+      "section": "3.8",
+      "description": "A temporal quantile rounded beyond the finite 64-bit count gives null, not an infinity or an error.",
+      "table": "temporal_limits",
+      "plan": {
+        "aggregate": {
+          "keys": [],
+          "measures": [
+            { "name": "t", "fn": "quantile", "column": "t", "p": 0.5 },
+            { "name": "z", "fn": "quantile", "column": "z", "p": 0.5 }
+          ]
+        }
+      },
+      "expect": { "rowCount": 1, "rows": [[null, null]] }
+    },
     {
       "id": "aggregate.totals",
       "section": "3.8",

@@ -299,7 +299,9 @@ measures are null.
   microseconds (since midnight for a time, since 1970-01-01 00:00:00 for the others, with a fraction for
   nanoseconds) and rounds the result to the nearest microsecond, halves away from zero: it is a timestamp (in
   microseconds) over dates and timestamps of any unit, a time over times, and a timestamptz over timestamptz
-  values. The median of `2024-01-01` and `2024-01-02` is `2024-01-01 12:00:00`.
+  values. At an integer rank (`w = 0`), the selected temporal value is converted to microseconds without
+  passing its count through a float. A rounded result outside the result type's finite range is null. The
+  median of `2024-01-01` and `2024-01-02` is `2024-01-01 12:00:00`.
 
 Sums and averages of floats depend on the order of the additions. Engines MAY add in any order, and
 conformance compares them with a relative tolerance. Measures with `"approx": true` (`count_distinct`,

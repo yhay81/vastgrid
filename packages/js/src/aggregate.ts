@@ -19,6 +19,7 @@ import {
   SpecError,
   type TypedExpr,
   textOf,
+  TIMESTAMP_INFINITY,
   timestampText,
   timestamptzText,
   timeText,
@@ -214,30 +215,35 @@ function accumulator(measure: CheckedMeasure, input: GroupInput, cells: number):
     }
     case "quantile": {
       const p = measure.p ?? 0.5;
-      const [read, write] = quantileScale(column);
-      const numbers: (number[] | undefined)[] = new Array(cells);
+      const temporal = temporalQuantile(column);
+      // Temporal counts stay in their source unit, which fits int64, until after the native typed-array sort.
+      const samples: ((number | bigint)[] | undefined)[] = new Array(cells);
       return {
         add: (cell, row) => {
           const value = values.at(row);
           if (!takes(value)) return;
-          let list = numbers[cell];
+          let list = samples[cell];
           if (!list) {
             list = [];
-            numbers[cell] = list;
+            samples[cell] = list;
           }
-          list.push(read(value));
+          list.push(temporal ? temporal.read(value) : toFloat(value, column));
         },
         // Linear interpolation between the two closest ranks, weighing each as DuckDB's quantile_cont does: the
         // difference of the two would overflow between the largest floats of either sign.
         result: (cell) => {
-          const list = numbers[cell];
+          const list = samples[cell];
           if (!list) return null;
-          const sorted = Float64Array.from(list).sort();
+          const sorted = temporal
+            ? BigInt64Array.from(list as bigint[]).sort()
+            : Float64Array.from(list as number[]).sort();
           const place = p * (sorted.length - 1);
           const low = Math.floor(place);
           const high = Math.ceil(place);
           const weight = place - low;
-          return write(sorted[low] * (1 - weight) + sorted[high] * weight);
+          return temporal
+            ? temporal.interpolate(sorted[low] as bigint, sorted[high] as bigint, weight)
+            : finite((sorted[low] as number) * (1 - weight) + (sorted[high] as number) * weight);
         },
       };
     }
@@ -245,41 +251,59 @@ function accumulator(measure: CheckedMeasure, input: GroupInput, cells: number):
 }
 
 /**
- * How `quantile` reads a column's values as floats and writes its result (§3.8): numbers as they are, and
- * temporal values as microseconds, rounded back to the nearest one with halves away from zero.
+ * A temporal quantile between two ranks (§3.8), or null for a numeric column. Scale only the selected values:
+ * exact ranks keep their counts; interpolation uses floats. Both round to microseconds with halves away from zero.
  */
-function quantileScale(column: Column): [(value: JsonValue) => number, (value: number) => JsonValue] {
-  const micros = (text: (count: bigint) => string) => (value: number) => {
-    if (!Number.isFinite(value)) return null;
-    const count = BigInt(Math.sign(value) * Math.round(Math.abs(value)));
-    try {
-      return text(count);
-    } catch {
-      return null; // beyond the dates, which floats far from 1970 can round to
-    }
-  };
+function temporalQuantile(column: Column): {
+  read(value: JsonValue): bigint;
+  interpolate(low: bigint, high: bigint, weight: number): JsonValue;
+} | null {
+  const micros = (
+    read: (value: JsonValue) => bigint,
+    text: (count: bigint) => string,
+    multiplier = 1n,
+    divisor = 1n,
+  ) => ({
+    read,
+    interpolate(low: bigint, high: bigint, weight: number): JsonValue {
+      const first = low * multiplier;
+      let count: bigint;
+      if (weight === 0) {
+        const sign = first < 0n ? -1n : 1n;
+        count = sign * ((sign * first + divisor / 2n) / divisor);
+      } else {
+        const value =
+          (Number(first) / Number(divisor)) * (1 - weight) + (Number(high * multiplier) / Number(divisor)) * weight;
+        count = BigInt(Math.sign(value) * Math.round(Math.abs(value)));
+      }
+      if (count <= -TIMESTAMP_INFINITY || count >= TIMESTAMP_INFINITY) return null;
+      try {
+        return text(count);
+      } catch {
+        return null; // beyond the dates or the end of a time's day
+      }
+    },
+  });
   switch (column.type) {
     case "date":
-      return [(value) => (parseDateText(value as string) as number) * DAY_MICROS, micros(timestampText)];
+      return micros((value) => BigInt(parseDateText(value as string) as number), timestampText, DAY_MICROS);
     case "timestamp": {
       const unit = column.unit ?? "us";
       const count = (value: JsonValue) => parseTimestampText(value as string, unit) as bigint;
-      const read =
-        unit === "ns"
-          ? (value: JsonValue) => Number(count(value)) / 1000
-          : (value: JsonValue) => Number(count(value) * (1_000_000n / UNIT_PER_SECOND[unit]));
-      return [read, micros(timestampText)];
+      return unit === "ns"
+        ? micros(count, timestampText, 1n, 1000n)
+        : micros(count, timestampText, 1_000_000n / UNIT_PER_SECOND[unit]);
     }
     case "time":
-      return [(value) => Number(parseTimeText(value as string)), micros(timeText)];
+      return micros((value) => parseTimeText(value as string) as bigint, timeText);
     case "timestamptz":
-      return [(value) => Number(parseTimestamptzText(value as string)), micros(timestamptzText)];
+      return micros((value) => parseTimestamptzText(value as string) as bigint, timestamptzText);
     default:
-      return [(value) => toFloat(value, column), finite];
+      return null;
   }
 }
 
-const DAY_MICROS = 86_400_000_000;
+const DAY_MICROS = 86_400_000_000n;
 
 /** The key of a group from the value of its first row: 0.0 for the group of −0.0 and 0.0 (§3.9). */
 function keyValue(value: JsonValue): JsonValue {

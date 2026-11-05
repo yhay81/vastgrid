@@ -42,8 +42,11 @@ for (const engine of ["main", "worker"]) {
     if (!box) throw new Error("The column header has a box.");
     await page.mouse.click(box.x + 20, box.y + box.height / 2);
     await expect(header).toHaveAttribute("aria-sort", "ascending");
+    await expect(grid).toHaveAttribute("aria-busy", "false");
     await page.mouse.click(box.x + 20, box.y + box.height / 2);
     await expect(header).toHaveAttribute("aria-sort", "descending");
+    // The sort indicator changes before the worker finishes moving the active row to its new position.
+    await expect(grid).toHaveAttribute("aria-busy", "false");
     await page.keyboard.press("ControlOrMeta+Home");
     await expect(cell(0, 0)).toHaveText("99");
     await page.keyboard.press("ControlOrMeta+ArrowDown");

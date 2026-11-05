@@ -490,7 +490,11 @@ class Compiler {
       case "quantile": {
         // DuckDB interpolates temporal values in microseconds and gives a TIMESTAMP for a DATE (§3.8); its
         // approx_quantile keeps a DATE and nanoseconds, so they are exact.
-        if (measure.type.type !== "float") return `quantile_cont(${column}, ${Number(measure.p)})${filter}`;
+        if (measure.type.type !== "float") {
+          const result = `quantile_cont(${column}, ${Number(measure.p)})${filter}`;
+          // Rounding near a timestamp's bound can produce an infinity from finite inputs (§3.8).
+          return measure.type.type === "time" ? result : finite(result);
+        }
         const fn = measure.approx ? "approx_quantile" : "quantile_cont";
         // Interpolated in doubles, also for a 32-bit float column (§3.7).
         return `${fn}(CAST(${column} AS DOUBLE), ${Number(measure.p)})${filter}`;

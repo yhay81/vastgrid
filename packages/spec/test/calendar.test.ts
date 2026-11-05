@@ -75,6 +75,18 @@ test("DuckDB's infinities are counts that no date or timestamp has (§2.2)", () 
   }
 });
 
+test("timestamp counts reject both 64-bit overflows while preserving infinities (§2.2)", () => {
+  for (const unit of ["s", "ms", "us", "ns"] as const) {
+    assert.throws(() => timestampText(TIMESTAMP_INFINITY + 1n, unit), RangeError, unit);
+    assert.throws(() => timestampText(-TIMESTAMP_INFINITY - 1n, unit), RangeError, unit);
+    assert.equal(timestampText(TIMESTAMP_INFINITY, unit), "infinity");
+    assert.equal(timestampText(-TIMESTAMP_INFINITY, unit), "-infinity");
+  }
+  assert.equal(timestampText(TIMESTAMP_INFINITY - 1n), "+294247-01-10 04:00:54.775806");
+  assert.equal(timestampText(-TIMESTAMP_INFINITY + 1n, "ns"), "1677-09-21 00:12:43.145224194");
+  assert.equal(timestampText(TIMESTAMP_INFINITY - 1n, "ns"), "2262-04-11 23:47:16.854775806");
+});
+
 test("times and timestamps are written without trailing zeros (§2.2)", () => {
   assert.equal(timeText(0n), "00:00:00");
   assert.equal(timeText(86_399_999_999n), "23:59:59.999999");

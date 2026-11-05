@@ -75,6 +75,13 @@
 
 ### Fixes
 
+- `vastgrid-spec`: entering or pasting a timestamp in a column's time zone keeps its year BC, including year 0
+  and crossings into AD, instead of using the year within its era as an AD year when calculating the offset.
+- `vastgrid-js`: converting dates and timestamps to a finer unit in `if`, `coalesce`, `least` and `greatest`
+  gives null for values outside that unit's range, instead of failing the whole request.
+- `vastgrid-spec`, `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb` and the Python package `vastgrid`: temporal
+  quantiles keep exact ranks, including a single timestamp at the upper bound, and give null when interpolation
+  rounds beyond the finite range. Timestamp count formatting rejects overflow on both sides of the 64-bit range.
 - The Python package `vastgrid`: undo and redo in Notebook 7 reach the focused grid, where the notebook's own
   shortcuts could take them before the widget received them.
 - `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb` and the Python package `vastgrid`: the key of the group of

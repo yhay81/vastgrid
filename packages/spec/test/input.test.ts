@@ -189,6 +189,22 @@ test("timestamptz text without an offset is the time of day in the format's time
   }
 });
 
+test("time zones keep astronomical years across the BC/AD boundary (§7.3)", () => {
+  const cases = [
+    ["0000-01-01 00:00:00", "UTC", "0000-01-01 00:00:00+00"],
+    ["-000001-06-15 12:30:00.000001", "UTC", "-000001-06-15 12:30:00.000001+00"],
+    ["0001-01-01 (BC) 00:00:00", "UTC", "0000-01-01 00:00:00+00"],
+    ["0000-01-01 00:00:00", "Etc/GMT-9", "-000001-12-31 15:00:00+00"],
+    ["0000-12-31 23:00:00", "Etc/GMT+5", "0001-01-01 04:00:00+00"],
+    ["0001-01-01 00:00:00", "Etc/GMT-9", "0000-12-31 15:00:00+00"],
+    ["0001-01-01 00:00:00", "UTC", "0001-01-01 00:00:00+00"],
+    ["0000-01-01 00:00:00+02", "Etc/GMT-9", "-000001-12-31 22:00:00+00"],
+  ];
+  for (const [text, timeZone, expected] of cases) {
+    assert.deepEqual(readCellText(text, { type: "timestamptz" }, { timeZone }), ok(expected), text + " in " + timeZone);
+  }
+});
+
 test("UUIDs are lowercase with dashes; intervals and binary values are not typed", () => {
   reads({ type: "uuid" }, [
     ["A0EEBC999C0B4EF8BB6D6BB9BD380A11", ok("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")],

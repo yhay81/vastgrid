@@ -455,7 +455,9 @@ class _Compiler:
         if measure.type["type"] != "float":
             # DuckDB interpolates temporal values in microseconds and gives a TIMESTAMP for a DATE (§3.8); its
             # approx_quantile keeps a DATE and nanoseconds, so they are exact.
-            return f"quantile_cont({column}, {number_text(measure.p)}){where}"
+            result = f"quantile_cont({column}, {number_text(measure.p)}){where}"
+            # Rounding near a timestamp's bound can produce an infinity from finite inputs (§3.8).
+            return result if measure.type["type"] == "time" else _finite(result)
         # quantile, interpolated in doubles, also for a 32-bit float column (§3.7).
         name = "approx_quantile" if measure.approx else "quantile_cont"
         return f"{name}(CAST({column} AS DOUBLE), {number_text(measure.p)}){where}"
