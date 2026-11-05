@@ -66,6 +66,31 @@ export default defineConfig({
   // build.
   ssr: { resolve: { conditions: ["vastgrid-source", ...defaultServerConditions] } },
   test: {
+    // Opt in with test:coverage; ordinary local tests pay no instrumentation cost. Include unloaded UI files too.
+    coverage: {
+      provider: "v8",
+      include: [
+        "packages/*/src/**/*.{ts,tsx}",
+        "packages/*/{app,host,webview}/**/*.{ts,tsx}",
+        "packages/notebook/widget/**/*.{ts,tsx}",
+      ],
+      exclude: ["**/*.d.ts"],
+      reporter: ["text-summary", "json-summary", "lcov", "html"],
+      reportOnFailure: true,
+      thresholds: {
+        lines: 76,
+        statements: 74,
+        branches: 71,
+        functions: 67,
+        // Package budgets keep strong logic coverage from hiding a regression in a smaller package.
+        "packages/spec/src/**": { lines: 95, branches: 87, functions: 97 },
+        "packages/sql/src/**": { lines: 98, branches: 91, functions: 100 },
+        "packages/js/src/**": { lines: 94, branches: 87, functions: 92 },
+        "packages/js/src/parquet.ts": { lines: 83, branches: 67, functions: 74 },
+        "packages/duckdb-engine/src/**": { lines: 95, branches: 87, functions: 93 },
+        "packages/grid/src/core/**": { lines: 93, branches: 79, functions: 88 },
+      },
+    },
     // The engines' tests read and write whole files: a test or a hook is stopped after a minute, not five seconds.
     testTimeout: 60_000,
     hookTimeout: 60_000,

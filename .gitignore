@@ -8,6 +8,7 @@ dist/
 # What Playwright writes when the end-to-end tests run
 test-results/
 playwright-report/
+coverage/
 
 # The site's copy of the screenshot (site/astro.config.ts), and Astro's and Wrangler's local state
 site/public/og.jpg

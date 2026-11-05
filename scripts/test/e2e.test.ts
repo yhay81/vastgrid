@@ -3,7 +3,7 @@ import { readdir } from "node:fs/promises";
 import { test } from "vite-plus/test";
 import { functionalSuites, suites } from "../../e2e/suites.ts";
 
-test("every E2E spec belongs to exactly one suite, with heavy tests outside the functional run", async () => {
+test("every E2E spec belongs to exactly one suite, with opt-in tests outside the functional run", async () => {
   const files = (await readdir(new URL("../../e2e/", import.meta.url), { recursive: true }))
     .filter((name) => name.endsWith(".spec.ts"))
     .sort();
@@ -11,6 +11,8 @@ test("every E2E spec belongs to exactly one suite, with heavy tests outside the 
   assert.deepEqual(assigned.sort(), files, "Register each E2E spec once in e2e/suites.ts");
   assert.deepEqual(
     functionalSuites.flatMap((name) => [...suites[name].tests]).sort(),
-    files.filter((name) => !["budgets.spec.ts", "files.spec.ts"].includes(name)).map((name) => name.slice(0, -8)),
+    files
+      .filter((name) => !["budgets.spec.ts", "files.spec.ts", "browsers.spec.ts", "notebook.spec.ts"].includes(name))
+      .map((name) => name.slice(0, -8)),
   );
 });

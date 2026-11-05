@@ -75,6 +75,8 @@
 
 ### Fixes
 
+- The Python package `vastgrid`: undo and redo in Notebook 7 reach the focused grid, where the notebook's own
+  shortcuts could take them before the widget received them.
 - `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb` and the Python package `vastgrid`: the key of the group of
   −0.0 and 0.0 is 0.0 whichever comes first (§3.9), and so are a pivot's values and the names of its columns
   (`0.0 / n`, not `-0.0 / n`), where the engines kept the first row's.

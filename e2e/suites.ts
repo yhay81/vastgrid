@@ -44,6 +44,16 @@ export const suites = {
   },
   performance: { tests: ["budgets"], server: bench },
   large: { tests: ["files"], server: files },
+  browsers: { tests: ["browsers"], server: bench },
+  notebook: {
+    tests: ["notebook"],
+    server: {
+      command: "uv run --frozen --directory packages/notebook/python python tests/e2e_server.py",
+      url: "http://127.0.0.1:5188/lab",
+      // Let Jupyter close its kernels and leave the temporary-directory context before Playwright exits.
+      gracefulShutdown: { signal: "SIGTERM", timeout: 5_000 },
+    },
+  },
 } as const;
 
 export type Suite = keyof typeof suites;

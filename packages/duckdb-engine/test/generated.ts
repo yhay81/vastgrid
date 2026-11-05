@@ -481,9 +481,10 @@ export async function answer(send: Send, table: { table: string; revision: strin
 }
 
 /** The differences between the memory engine's answer and this engine's; empty when they agree. */
-export function differences(memory: Answer, duckdb: Answer): string[] {
+export function differences(memory: Answer, duckdb: Answer, allowKnown = true): string[] {
   const message = (duckdb.error as { message?: string } | undefined)?.message ?? "";
-  if (!memory.error && duckdb.error && KNOWN.some((known) => known.message.test(message))) return ["known"];
+  if (allowKnown && !memory.error && duckdb.error && KNOWN.some((known) => known.message.test(message)))
+    return ["known"];
   if (memory.error || duckdb.error) {
     const shown = (item: Answer) =>
       item.error ? `${item.error.code} ${item.error.reason ?? ""} ${item.error.path ?? ""}`.trim() : "rows";
@@ -527,6 +528,21 @@ export function differences(memory: Answer, duckdb: Answer): string[] {
     });
   });
   return problems;
+}
+
+/** Check each input independently. A known DuckDB limitation cannot excuse different memory-engine answers. */
+export function compareInputs(rows: Answer, parquet: Answer, duckdb: Answer) {
+  let known = false;
+  const problems: string[] = [];
+  for (const [label, found] of [
+    ["rows", differences(rows, duckdb)],
+    ["parquet", differences(parquet, duckdb)],
+    ["rows/parquet", differences(rows, parquet, false)],
+  ] as const) {
+    if (found.length === 1 && found[0] === "known") known = true;
+    else problems.push(...found.map((problem) => `${label}: ${problem}`));
+  }
+  return { known, problems };
 }
 
 /** Sends requests to a memory engine, checking every response against §8. */

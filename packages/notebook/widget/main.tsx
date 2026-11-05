@@ -84,9 +84,11 @@ function render({ model, el }: { model: Model; el: HTMLElement }) {
   const disconnect = store.connect();
   const locale = (model.get("locale") as string | undefined) || "en";
   el.classList.add("vastgrid-notebook");
-  // The grid's keys are its own. Notebook 7 handles keys before the page does (JupyterLab after it), and its keys of
-  // command mode (A adds a cell, the arrows move between cells) skip a notebook marked `jp-mod-readWrite`, as it is
-  // while one of its text fields has the focus. The notebook sets the mark at every focus, so the grid sets it after.
+  // Lumino's shortcut dispatcher respects this boundary in both notebook UIs, including Notebook 7's capture
+  // handler. Keep cell commands and notebook undo/redo from taking keys meant for the grid or its editors.
+  el.setAttribute("data-lm-suppress-shortcuts", "true");
+  // The notebook's own key handler also uses this mark to leave Enter and arrow keys to an editable output.
+  // It resets the mark on focus, so restore it after focus reaches this widget.
   const keepKeys = () => {
     if (el.contains(el.ownerDocument.activeElement)) el.closest(".jp-Notebook")?.classList.add("jp-mod-readWrite");
   };
@@ -110,6 +112,7 @@ function render({ model, el }: { model: Model; el: HTMLElement }) {
   // kernel keeps the written cells for the `Grid` until it is closed.
   return () => {
     window.removeEventListener("focusin", keepKeys);
+    el.removeAttribute("data-lm-suppress-shortcuts");
     root.unmount();
     disconnect();
     transport.close();

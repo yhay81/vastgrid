@@ -24,6 +24,7 @@ import { setUp, type TableInfo, writeParquet } from "./client.ts";
 import {
   answer,
   COLUMNS,
+  compareInputs,
   differences,
   fieldValue,
   generateTable,
@@ -95,12 +96,11 @@ test(`${PLANS} generated plans give the same answers in both engines (seed ${SEE
       outcomes.errors++;
       if (process.env.VASTGRID_DEBUG) console.log(JSON.stringify(plan), JSON.stringify(memory.error));
     } else outcomes.rows++;
-    const problems = differences(memory, duckdb);
-    const parquet = differences(await answer(parquetSend, parquetTable, plan), duckdb);
-    if (parquet.length > 0 && parquet[0] !== "known") problems.push(...parquet.map((problem) => `parquet: ${problem}`));
+    const parquet = await answer(parquetSend, parquetTable, plan);
+    const { known, problems } = compareInputs(memory, parquet, duckdb);
     if (only) console.log(JSON.stringify({ plan, memory, duckdb }));
-    if (problems[0] === "known") outcomes.known++;
-    else if (problems.length > 0) {
+    if (known) outcomes.known++;
+    if (problems.length > 0) {
       failures.push(`plan ${seed}: ${JSON.stringify(plan)}\n  ${problems.join("\n  ")}`);
     }
   }

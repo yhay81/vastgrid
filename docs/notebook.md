@@ -98,10 +98,11 @@ that carries these messages; the kernel answers each request on a thread of its 
 ## Keys
 
 The grid's keys are its own while it has the focus: typing starts editing a cell, the arrows move between cells,
-Enter and Tab write the edited cell and move, Esc cancels. JupyterLab handles keys after the page and Notebook 7 before it; both skip their
-keys of command mode (A adds a cell, the arrows move between cells) for a notebook marked `jp-mod-readWrite`, as it is
-while one of its text fields has the focus, so the grid sets that mark while it has the focus. The notebook's own keys
-work again once the focus leaves the grid. The grid follows JupyterLab's theme, light or dark.
+Enter and Tab write the edited cell and move, Esc cancels. JupyterLab handles keys after the page and Notebook 7
+before it. The widget sets `data-lm-suppress-shortcuts` to keep Lumino's notebook shortcuts, including undo/redo,
+outside its output. It also marks the notebook `jp-mod-readWrite` while the grid has focus, so the notebook's own
+Enter and arrow handlers leave it alone. The notebook's own keys work again once focus leaves the grid. The grid
+follows JupyterLab's theme, light or dark.
 
 ## Testing
 
@@ -113,6 +114,11 @@ work again once the focus leaves the grid. The grid follows JupyterLab's theme, 
 - `packages/notebook/test/engines.test.ts` compares the engine's answers with vastgrid-js's memory engine: generated
   tables and plans, finding, statistics, locating, every export format and generated writes (`VASTGRID_SEED`,
   `VASTGRID_PLANS`).
+- `pnpm run e2e:notebook`, after `pnpm run build` and `pnpm exec playwright install chromium`, runs both installed
+  notebook UIs in Chromium with a real Python kernel. It checks typed edits and undo/redo without triggering
+  notebook commands, the written values read back in Python, and rerunning a cell closing its previous grid.
+  CI runs this smoke suite separately from the ordinary unit tests. Its notebooks, settings and kernels live
+  in a temporary directory (`packages/notebook/python/tests/e2e_server.py`).
 - By hand, in JupyterLab 4.6.4 and Notebook 7.6.3 (`uv run jupyter lab` in `packages/notebook/python`): a DataFrame
   of 1,000,000 rows opens, sorts by a column, takes typed cells without the notebook's keys, gives `grid.edits`, the
   view as a DataFrame and the view exported as Excel and CSV with the written cells; running the cell again closes

@@ -12,6 +12,7 @@
     "clean": "rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo",
     "typecheck": "pnpm run build:ts && tsc -p packages/mcp/app && tsc -p packages/mcp/host && tsc -p packages/vscode/webview && tsc -p packages/cli/app && tsc -p packages/notebook/widget && tsc -p examples/bench --noEmit && tsc -p examples/files --noEmit && tsc -p site --noEmit",
     "test": "vp test run --project unit",
+    "test:coverage": "vp test run --project unit --coverage",
     "lint": "pnpm run build:ts && vp check",
     "format": "pnpm run build:ts && vp check --fix",
     "dev": "pnpm --filter vastgrid-files-example dev",
@@ -21,6 +22,8 @@
     "pack-check": "node scripts/pack-check.mjs",
     "test:performance": "vp test run --project performance",
     "e2e:performance": "pnpm run e2e performance",
+    "e2e:browsers": "pnpm run e2e browsers",
+    "e2e:notebook": "pnpm run e2e notebook",
     "e2e:large": "pnpm run e2e large"
   },
   "devDependencies": {
@@ -31,6 +34,7 @@
     "@types/node": "26.6.6",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "@vitest/coverage-v8": "5.0.5",
     "ajv": "8.20.0",
     "babel-plugin-react-compiler": "1.0.0",
     "react": "catalog:",

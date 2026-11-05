@@ -53,7 +53,19 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: true
+      # Collect coverage once, in place of this matrix entry's ordinary test run.
+      - uses: astral-sh/setup-uv@v10.3.3
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 26
+      - run: pnpm run test:coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 26
       - run: pnpm test
+        if: matrix.os != 'ubuntu-latest' || matrix.node != 26
+      - uses: actions/upload-artifact@v7
+        if: always() && matrix.os == 'ubuntu-latest' && matrix.node == 26
+        with:
+          name: unit-coverage
+          path: coverage/
+          retention-days: 7
   notebook:
     name: Test the notebook's package
     runs-on: ubuntu-latest
@@ -71,6 +83,33 @@ jobs:
       - run: uv run --frozen ruff check && uv run --frozen ruff format --check && uv run --frozen pytest
         working-directory: packages/notebook/python
       - run: pnpm test packages/notebook/test
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm run e2e:notebook
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: notebook-e2e-failure
+          path: test-results/notebook/
+          retention-days: 7
+  browsers:
+    name: Browser compatibility smoke tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          node-version-file: .node-version
+          cache: true
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - run: pnpm run build
+      - run: pnpm run e2e:browsers
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: browser-compatibility-failure
+          path: test-results/browsers/
+          retention-days: 7
   e2e:
     name: Functional end-to-end tests
     runs-on: ubuntu-latest

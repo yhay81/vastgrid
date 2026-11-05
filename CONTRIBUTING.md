@@ -50,11 +50,14 @@ CI runs these on every pull request; run them before you push:
 pnpm run lint        # Oxfmt and Oxlint (vp check); pnpm run format fixes what they can
 pnpm run typecheck
 pnpm test            # Vitest (vp test), on the sources
+pnpm run test:coverage  # unit coverage and its minimums; HTML and LCOV reports in coverage/
 pnpm run test:performance  # isolated, sequential performance budgets; no other tests or benchmarks running
 pnpm run build
 pnpm run size        # after the build: what a page loads first of the grid, within 200 KB with gzip
 pnpm run pack-check  # after the build: the packages installed from their tarballs run the READMEs' examples
 pnpm run e2e         # functional Playwright suites, when the grid or an entry point changed
+pnpm run e2e:browsers  # small Chromium, Firefox and WebKit checks
+pnpm run e2e:notebook  # JupyterLab and Notebook with a real Python kernel (requires uv)
 pnpm run e2e:performance  # browser performance budgets, run on their own
 pnpm run e2e:large   # 100-million-row Parquet and 10-million-row CSV checks
 pnpm --filter vastgrid-site build  # when you changed the site, docs/ or the grid
@@ -70,15 +73,28 @@ Functional tests have no wall-clock performance assertions. `packages/*/perf/*.t
 run sequentially by `pnpm run test:performance` on a dedicated CI runner. Shared JS workloads check correctness
 on smaller tables in `pnpm test` and on a million rows in the performance suite.
 
+Coverage is opt-in locally; CI collects it once on Linux with Node.js 26, in place of that matrix entry's normal
+unit run. `vite.config.ts` sets global and package minimums and includes unloaded UI files, so untested files
+cannot disappear from the report. Browser and Python execution are not part of this TypeScript unit report.
+The `unit-coverage` CI artifact holds the HTML and LCOV reports. Keep the minimums when adding tests or code;
+lowering one needs an explanation of the coverage being lost.
+
 E2E suites start just their own server. After `pnpm run build`, use `pnpm run e2e grid grid.spec.ts` for one file,
 or `pnpm run e2e cli` for the CLI. The functional suites are `grid`, `strict` (the grid in Strict Mode, on Vite's
 development server), `files` (menus and panels), `mcp`, `cli` and `open`; without a suite name, they all run in
 turn. Further arguments go to Playwright, for example
 `pnpm run e2e files --grep "column menu"`. Direct `pnpm exec playwright test` defaults to `grid`. Browser performance
 (`performance`) and large files (`large`) have separate commands and CI jobs; both keep their full-size fixtures.
+Compatibility checks also run separately: `browsers` exercises rendering, editing, undo/redo, selection and sorting
+with main-thread and worker engines in three browsers; `notebook` checks editing through a real widget comm,
+keyboard ownership and output cleanup in both notebook UIs. Install their browsers with
+`pnpm exec playwright install chromium firefox webkit`; the notebook suite uses Chromium and an isolated temporary
+Jupyter server. These small smoke suites do not multiply the full functional suite by every browser.
 
 `packages/duckdb-engine/test/memory-engine.test.ts` sends 300 generated plans to the memory engine and the DuckDB
-engine and compares their answers. After a change to either engine or to `vastgrid-sql`, run more of them:
+engine and compares their answers, including rows against Parquet even when DuckDB has a known limitation.
+The Parquet HTTP failure cases use a tiny checked-in file, without a server or DuckDB startup.
+After a change to either engine or to `vastgrid-sql`, run more of them:
 `VASTGRID_PLANS=3000 VASTGRID_SEED=7` with the test, and `VASTGRID_ONLY=<plan seed>` to see one plan that differs.
 
 ## Guidelines

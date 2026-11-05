@@ -1,10 +1,34 @@
 import assert from "node:assert/strict";
 import type { Column } from "vastgrid-spec";
 import { test } from "vite-plus/test";
-import { type Answer, differences, same, sameSummary } from "./generated.ts";
+import { type Answer, compareInputs, differences, same, sameSummary } from "./generated.ts";
 
 const column: Column = { name: "average", type: "float", bits: 64 };
 const result: Answer = { columns: [column], rowCount: 1, rowIds: null, rows: [[42]] };
+
+test("known DuckDB errors do not hide a Parquet error or different rows", () => {
+  const known = { error: { code: "internal", message: "STDDEV_SAMP is out of range" } };
+  assert.deepEqual(compareInputs(result, structuredClone(result), known), { known: true, problems: [] });
+  assert.deepEqual(compareInputs(result, structuredClone(result), result), { known: false, problems: [] });
+  for (const broken of [
+    { error: { code: "load_failed", message: "Parquet read failed" } },
+    { ...result, rows: [[99]] },
+    { ...result, rows: [] },
+    known,
+  ]) {
+    for (const [rows, parquet] of [
+      [result, broken],
+      [broken, result],
+    ]) {
+      const compared = compareInputs(rows, parquet, known);
+      assert.equal(compared.known, true);
+      assert.ok(compared.problems.some((problem) => problem.startsWith("rows/parquet:")));
+    }
+  }
+  const unexpected = { error: { code: "internal", message: "new failure" } };
+  assert.equal(compareInputs(result, result, unexpected).known, false);
+  assert.equal(compareInputs(result, result, unexpected).problems.length, 2);
+});
 
 test("generated comparisons reject missing or extra rows and cells, including null cells", () => {
   for (const [left, right] of [
