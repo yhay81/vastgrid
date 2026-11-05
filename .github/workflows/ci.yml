@@ -101,7 +101,7 @@ jobs:
     container:
       # Match @playwright/test: browsers and their OS dependencies are already installed.
       image: mcr.microsoft.com/playwright:v1.64.1-noble
-      options: --ipc=host
+      options: --user 1001 --ipc=host
     steps:
       - uses: actions/checkout@v7
       - uses: voidzero-dev/setup-vp@v1.22.0
