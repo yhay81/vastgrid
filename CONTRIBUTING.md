@@ -69,6 +69,9 @@ a name. A bug fix comes with a test that fails without it, where the bug can be 
 changes to the DuckDB engine that may affect speed, run `pnpm run bench` before and after and put both results in
 the pull request.
 
+When uv is installed, the unit suite also runs the notebook's Python engine. Run `pnpm run build` once first:
+the Python package imports its widget, which needs the generated `static/widget.js` and `widget.css` files.
+
 Functional tests have no wall-clock performance assertions. `packages/*/perf/*.test.ts` holds those budgets,
 run sequentially by `pnpm run test:performance` on a dedicated CI runner. Shared JS workloads check correctness
 on smaller tables in `pnpm test` and on a million rows in the performance suite.

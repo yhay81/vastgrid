@@ -56,6 +56,9 @@ jobs:
       # Collect coverage once, in place of this matrix entry's ordinary test run.
       - uses: astral-sh/setup-uv@v10.3.3
         if: matrix.os == 'ubuntu-latest' && matrix.node == 26
+      # anywidget reads static/widget.js at import time, including in the Python engine tests.
+      - run: pnpm run build
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 26
       - run: pnpm run test:coverage
         if: matrix.os == 'ubuntu-latest' && matrix.node == 26
       - run: pnpm test
