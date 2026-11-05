@@ -456,10 +456,12 @@ class _Compiler:
             # DuckDB interpolates temporal values in microseconds and gives a TIMESTAMP for a DATE (§3.8); its
             # approx_quantile keeps a DATE and nanoseconds, so they are exact.
             result = f"quantile_cont({column}, {number_text(measure.p)}){where}"
-            # Overflow can become infinity or -2^63 depending on the CPU; the latter isfinite but is not a date (§3.8).
             if measure.type["type"] == "time":
                 return result
-            return f"(CASE WHEN isfinite({result}) AND {result} >= {FIRST_DATE} THEN {result} END)"
+            # Overflow can be infinity (epoch_us gives null) or -2^63. Check the first valid date (§3.8).
+            # The text round-trip blocks range propagation, which wrongly assumes quantiles stay within their inputs.
+            count = f"CAST(CAST(epoch_us({result}) AS VARCHAR) AS BIGINT)"
+            return f"(CASE WHEN {count} >= epoch_us({FIRST_DATE}) THEN {result} END)"
         # quantile, interpolated in doubles, also for a 32-bit float column (§3.7).
         name = "approx_quantile" if measure.approx else "quantile_cont"
         return f"{name}(CAST({column} AS DOUBLE), {number_text(measure.p)}){where}"
