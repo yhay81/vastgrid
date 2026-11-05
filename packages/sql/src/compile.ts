@@ -492,8 +492,10 @@ class Compiler {
         // approx_quantile keeps a DATE and nanoseconds, so they are exact.
         if (measure.type.type !== "float") {
           const result = `quantile_cont(${column}, ${Number(measure.p)})${filter}`;
-          // Rounding near a timestamp's bound can produce an infinity from finite inputs (§3.8).
-          return measure.type.type === "time" ? result : finite(result);
+          // Overflow can become infinity or -2^63 depending on the CPU; the latter isfinite but is not a date (§3.8).
+          return measure.type.type === "time"
+            ? result
+            : `(CASE WHEN isfinite(${result}) AND ${result} >= ${FIRST_DATE} THEN ${result} END)`;
         }
         const fn = measure.approx ? "approx_quantile" : "quantile_cont";
         // Interpolated in doubles, also for a 32-bit float column (§3.7).
