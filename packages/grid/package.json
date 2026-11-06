@@ -1,6 +1,6 @@
 {
   "name": "vastgrid",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A canvas data grid for React that opens tables of any size like a spreadsheet: sort, filter, group, pivot, edit, undo and export, driven by a typed document, session and commands.",
   "keywords": [
     "react",
