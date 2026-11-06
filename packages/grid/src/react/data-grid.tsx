@@ -21,6 +21,7 @@ import { createGridStore, type GridStore } from "../core/store.js";
 import type { GridError, InitialView, OpenOptions } from "../core/types.js";
 import { GridContext, LocaleContext, SaveContext } from "./context.js";
 import type { DetailPanelProps } from "./detail-panel.js";
+import type { ViewerTarget } from "./value-viewer.js";
 import { type CellActionEvent, GridBody } from "./grid-body.js";
 import { en, type GridMessages } from "./messages.js";
 import { useSaveAction } from "./save.js";
@@ -31,6 +32,7 @@ import { Toolbar } from "./toolbar.js";
 // The find bar and the detail panel load when they first open (§10 of react.md).
 const FindBar = lazy(() => import("./find-bar.js").then((module) => ({ default: module.FindBar })));
 const DetailPanel = lazy(() => import("./detail-panel.js").then((module) => ({ default: module.DetailPanel })));
+const ValueViewer = lazy(() => import("./value-viewer.js").then((module) => ({ default: module.ValueViewer })));
 
 /** What `ref` gives (§5.5 of react.md). */
 export interface DataGridHandle {
@@ -208,6 +210,7 @@ function Frame({
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [notice, setNotice] = useState("");
   const [finding, setFinding] = useState(false);
+  const [viewing, setViewing] = useState<ViewerTarget | null>(null);
   const detailOpen = useGridSelectorOf(store, (snapshot) => snapshot.session.detail?.open === true);
   const saving = useSaveAction(store, language, setNotice);
   const status = useGridSelectorOf(store, (snapshot) => snapshot.status);
@@ -247,6 +250,7 @@ function Frame({
                   hooks={{ cellText, cellStyle, drawCell, cellAction }}
                   onCellAction={onCellAction}
                   onFind={() => setFinding(true)}
+                  onView={setViewing}
                   label={label}
                   scrollerRef={scrollerRef}
                   announce={setNotice}
@@ -257,12 +261,23 @@ function Frame({
                   <DetailPanel
                     custom={detailPanel}
                     onClosed={() => scrollerRef.current?.focus({ preventScroll: true })}
+                    onView={setViewing}
                   />
                 </Suspense>
               )}
             </div>
             {statusBar && (
               <StatusBar announce={setNotice} onDone={() => scrollerRef.current?.focus({ preventScroll: true })} />
+            )}
+            {viewing && (
+              <Suspense fallback={null}>
+                {/* The dialog gives the focus back to what had it when it opened. */}
+                <ValueViewer
+                  key={`${viewing.row}\u0000${viewing.column}`}
+                  target={viewing}
+                  onClose={() => setViewing(null)}
+                />
+              </Suspense>
             )}
             <div className="vg-sr-only" aria-live="polite">
               {notice}

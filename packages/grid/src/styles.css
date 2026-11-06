@@ -50,6 +50,8 @@
   /* The detail panel: its width beside the grid, its height below a grid narrower than 640px. */
   --vg-detail-width: 340px;
   --vg-detail-height: 45%;
+  /* The lines of a long value that the detail panel shows until Show more. */
+  --vg-detail-lines: 8;
 
   container: vg-root / inline-size;
   position: relative;
@@ -812,14 +814,58 @@
 }
 
 .vg-detail__item dt {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
   color: var(--vg-muted);
   font-size: 0.9em;
+}
+
+.vg-detail__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.vg-detail__actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.vg-detail__action {
+  padding: 0;
+  color: var(--vg-link-fg);
+  font: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.vg-detail__action:hover {
+  text-decoration: underline;
+}
+
+.vg-detail__action:focus-visible {
+  outline: 2px solid var(--vg-focus);
+  outline-offset: 1px;
+  border-radius: 2px;
 }
 
 .vg-detail__item dd {
   margin: 2px 0 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* A long value shows its first lines, fading out, until Show more; the panel scrolls, not the value. */
+.vg-detail__item dd:not([data-expanded]) {
+  max-height: calc(var(--vg-detail-lines) * 1lh);
+  overflow: hidden;
+}
+
+.vg-detail__item dd[data-clamped] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 2lh), transparent);
 }
 
 @container vg-root (max-width: 640px) {
@@ -855,20 +901,109 @@
   color: var(--vg-muted);
 }
 
-/* The cell menu, and a value shown in full. */
+/* The cell menu. */
 
 .vg-cell-menu {
   max-width: min(480px, calc(100vw - 16px));
 }
 
-.vg-cell-menu__value {
-  max-height: min(50vh, 360px);
-  margin: 6px 0;
-  padding: 6px 8px;
+/* The viewer of a value: a modal dialog whose body scrolls under its header. */
+
+.vg-viewer {
+  width: min(960px, calc(100vw - 32px));
+  max-width: none;
+  height: min(80vh, 960px);
+  max-height: none;
+  padding: 0;
+  overflow: hidden;
+  color: var(--vg-fg);
+  font-family: var(--vg-font-family);
+  font-size: var(--vg-font-size);
+  line-height: 1.4;
+  background: var(--vg-surface);
+  border: 1px solid var(--vg-border);
+  border-radius: var(--vg-radius);
+  box-shadow: var(--vg-shadow);
+}
+
+.vg-viewer[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.vg-viewer::backdrop {
+  background: rgb(0 0 0 / 35%);
+}
+
+.vg-viewer__header {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 8px 8px 8px 16px;
+  border-bottom: 1px solid var(--vg-line);
+}
+
+.vg-viewer__heading {
+  min-width: 0;
+}
+
+.vg-viewer__title {
+  margin: 0;
+  font-size: inherit;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.vg-viewer__meta {
+  margin: 2px 0 0;
+  color: var(--vg-muted);
+  font-size: 0.9em;
+}
+
+.vg-viewer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.vg-viewer__actions .vg-button[aria-pressed="true"] {
+  color: var(--vg-accent-fg);
+  background: var(--vg-accent);
+  border-color: var(--vg-accent);
+}
+
+.vg-viewer__note {
+  flex: none;
+  margin: 0;
+  padding: 6px 16px;
+  color: var(--vg-muted);
+  background: var(--vg-surface-muted);
+  border-bottom: 1px solid var(--vg-line);
+}
+
+.vg-viewer__text {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 12px 16px;
   overflow: auto;
-  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Noto Sans Mono CJK JP", monospace;
+  font-size: inherit;
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 4;
+}
+
+.vg-viewer__text[data-wrap] {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  background: var(--vg-surface-muted);
-  border-radius: var(--vg-radius);
+}
+
+.vg-viewer__text:focus-visible {
+  outline: 2px solid var(--vg-focus);
+  outline-offset: -2px;
 }

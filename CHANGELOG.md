@@ -63,6 +63,10 @@
   520 pixels high in every case.
 - `vastgrid-mcp`: the App's Export menu downloads its file through the host (ext-apps' `downloadFile`), from the
   App's new tool `grid_export_file`, up to 64 MB; the menu says when the host does not download files.
+- `vastgrid`: Show full value in the cell menu opens a viewer over the page, whose body scrolls: with the value's
+  characters and lines, the rows before and after in the same column (Alt+↑, Alt+↓), wrapping on or off, JSON
+  indented, and Copy. In the detail panel a value longer than `--vg-detail-lines` lines (8) shows its first lines
+  with Show more, and Open for the viewer (docs/react.md §6.11, §6.13).
 - `vastgrid`: `Transport.downloadExport` and `GridStore.downloadExport` download an export's file where a link to
   `exportUrl` cannot, and the Export menu uses them first.
 - `vastgrid-cli`: the page keeps the view of each file and sheet (sorts, filters, column widths, selection and
@@ -81,6 +85,9 @@
   Japanese.
 
 ### Fixes
+
+- `vastgrid`: the detail panel shows a text that the engine cut to the text limit (2,000 characters by default)
+  in full, reading it again, where it showed the cut text as if it were whole.
 
 - `vastgrid-spec`: entering or pasting a timestamp in a column's time zone keeps its year BC, including year 0
   and crossings into AD, instead of using the year within its era as an AD year when calculating the offset.

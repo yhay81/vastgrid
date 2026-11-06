@@ -73,7 +73,7 @@ import { ThemedGrid } from "../../../../components/examples.tsx";
 | `--vg-fg` | `#1f2328` | `#e6e6eb` | 文字 |
 | `--vg-muted` | `#656d76` | `#9a9aa6` | 補助の文字 |
 | `--vg-surface` | `#ffffff` | `#1e1e24` | メニュー・パネル・入力欄・ボタン |
-| `--vg-surface-muted` | `#f6f8fa` | `#24242b` | グループの一覧と、セルのメニューの値 |
+| `--vg-surface-muted` | `#f6f8fa` | `#24242b` | グループの一覧と、ビューアーで切れた値の注記 |
 | `--vg-border` | `#d0d7de` | `#3a3a44` | 入力欄・ボタン・メニュー・パネルの枠 |
 | `--vg-header-bg` | `#f6f8fa` | `#1d1d23` | 列の見出しとステータスバー |
 | `--vg-header-fg` | `#1f2328` | `#e6e6eb` | 列名と、アクティブな行の番号 |
@@ -91,8 +91,9 @@ import { ThemedGrid } from "../../../../components/examples.tsx";
 | `--vg-error-fg` | `#b42318` | `#ff8a80` | エラーの文言 |
 | `--vg-link-fg` | `#0b57d0` | `#8ab4f8` | `cellAction` でリンクにしたセル |
 | `--vg-focus` | `#0b57d0` | `#8ab4f8` | フォーカスの枠 |
-| `--vg-shadow` | | | 編集欄の影 |
+| `--vg-shadow` | | | 編集欄とビューアーの影 |
 | `--vg-detail-width` | `340px` | | グリッドの横に出す詳細パネルの幅 |
 | `--vg-detail-height` | `45%` | | 狭いグリッドの下に出す詳細パネルの高さ |
+| `--vg-detail-lines` | `8` | | 詳細パネルが「続きを表示」まで出す長い値の行数 |
 
 正確な値と、ツールバー・ステータスバー・メニュー・パネルのクラス名は [`styles.css`](https://github.com/yhay81/vastgrid/blob/main/packages/grid/src/styles.css) にあります。テーマではなく一部のセルの色を変えるには、`cellStyle` か列の条件付きの色を使います。[DataGrid](/ja/reference/data-grid/) を参照してください。

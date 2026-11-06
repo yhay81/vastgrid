@@ -110,8 +110,12 @@ the whole view, so cells far from the screen are found too.
 ## The cell menu
 
 A right click on a cell, Shift + F10 or the context menu key opens it: Copy, Filter to this value, Exclude this
-value (not on grouped views), Show full value (reads a text that the engine cut short, such as the DuckDB
-engine's strings over 2,000 characters), and Details.
+value (not on grouped views), Show full value, and Details.
+
+Show full value opens the value in a viewer over the page, which reads again a text that the engine cut short
+(such as the DuckDB engine's strings over 2,000 characters). Its body scrolls, and the browser's find searches
+it. Its buttons, or Alt + ↑ and Alt + ↓, go to the rows before and after in the same column; Wrap text turns
+off wrapping so that long lines scroll sideways; Format JSON indents JSON; Copy copies the value. Esc closes it.
 
 ## Column statistics
 
@@ -151,5 +155,7 @@ Each of these is a command (`column.resize`, `column.move`, `column.pin`, `colum
   current filter shows a dash and cannot be checked until the filter is as it was.
 - **Details** in the toolbar, or Alt + Enter, opens a panel beside the grid (below it when the grid is narrower
   than 640 pixels) with every column of the active row, hidden ones included, with their labels and formats and
-  their whole text. It follows the active cell. The `detailPanel` prop shows the row with a component of your
+  their whole text. It follows the active cell. A value longer than eight lines (`--vg-detail-lines`) shows its
+  first lines with **Show more**, which keeps the column whole while you move through the rows, and **Open**,
+  which opens it in the viewer. The `detailPanel` prop shows the row with a component of your
   own: see [DataGrid](/reference/data-grid/).

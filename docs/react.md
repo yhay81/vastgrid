@@ -495,7 +495,11 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
 - When the session's `detail` is open, a panel beside the body (below it in a grid narrower than 640 pixels,
   `--vg-detail-width` and `--vg-detail-height`) shows every column of the view for the active row, hidden ones
   included, with labels and formats, the text in full; it follows the active cell and reads the row's values that
-  the canvas did not (`useGridRows`). The toolbar's Details button dispatches `detail.open` and `detail.close`.
+  the canvas did not (`useGridRows`), and a value that the engine cut to the text limit again without it
+  (`GridStore.fullValue`, §8.4 of the specification). A value longer than `--vg-detail-lines` lines (8) shows
+  them, fading out, with Show more, which shows it whole while the active row moves, and Open, which opens it in
+  the viewer (§6.13); the panel scrolls, not the value. The toolbar's Details button dispatches `detail.open` and
+  `detail.close`.
   Alt+Enter on the grid opens and closes it too. `detailPanel` shows the row with a component of the host's, which
   gets the row's position, the view's columns, its values once they are all read, and its key.
   Only an open panel follows the rows, so a closed one keeps scrolling free of commits (§10); an open one renders
@@ -527,8 +531,15 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
 - A right click on a cell (selecting it first when it is outside the selection), Shift+F10 and the context menu
   key open the cell menu: Copy (the selection, through the asynchronous clipboard), Filter to this value and
   Exclude this value (`filter.column` with the column's values filter, replacing its conditions; not on a grouped
-  view), Show full value (read again without the text limit when the engine cut it, `GridStore.fullValue`), and
-  Details.
+  view), Show full value (the viewer), and Details.
+- The viewer is a modal dialog of a cell's value in full, read again without the text limit when the engine cut
+  it (`GridStore.fullValue`); a value longer than the largest limit, 1,000,000 code points, says that only its
+  start can be read. Its body scrolls under a header with the column's label, the row, the value's characters
+  and lines, and buttons: the rows before and after in the same column (also Alt+↑ and Alt+↓, which select the
+  row in the grid's active column), Wrap text (on by default; off, long lines scroll sideways), Format JSON (for
+  an object, an array, or text of one: indented by two spaces), Copy (the value's text) and Close. The focus
+  moves to the body, so that the keyboard scrolls it and the browser's find searches it; Esc closes it and gives
+  the focus back.
 - A click on a column's name sorts by it (on the pointer's release, Shift adding a key). Dragging the name moves
   the column, or every column of a selection of whole columns that holds it, and dragging a group's header moves
   the group's columns (`column.move`): a line shows where they go, before the column under the pointer or after it
@@ -595,8 +606,8 @@ when 0.2 exceeds a budget:
 Counts of commits are exact; times allow for the machine. What a page loads first of `DataGrid` with an in-memory
 table and their dependencies, minified and compressed with gzip, stays under 200 KB, measured with Rolldown as in
 Appendix A by `pnpm run size` ([`scripts/bundle-size.mjs`](../scripts/bundle-size.mjs), after `pnpm run build`),
-which CI runs and which fails over the budget. The column and cell menus, the toolbar's menus, the find bar and the
-detail panel load when they first open, so that the first load is the grid itself. The budget was 60 KB until
+which CI runs and which fails over the budget. The column and cell menus, the toolbar's menus, the find bar, the
+detail panel and the viewer of a value load when they first open, so that the first load is the grid itself. The budget was 60 KB until
 2026-10-26, set before editing, saving, exports and formulas, and 100 KB until 2026-10-27, when the first load had
 reached it; it was raised to 200 KB so that features are not shaped by the budget before the grid is complete.
 Appendix A gives what was measured.

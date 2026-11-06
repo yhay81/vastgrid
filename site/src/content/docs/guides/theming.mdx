@@ -85,7 +85,7 @@ beside them, `--vg-detail-width` wide.
 | `--vg-fg` | `#1f2328` | `#e6e6eb` | Text |
 | `--vg-muted` | `#656d76` | `#9a9aa6` | Secondary text |
 | `--vg-surface` | `#ffffff` | `#1e1e24` | Menus, panels, inputs and buttons |
-| `--vg-surface-muted` | `#f6f8fa` | `#24242b` | The list of groups, and the value in the cell menu |
+| `--vg-surface-muted` | `#f6f8fa` | `#24242b` | The list of groups, and the note of a value that is cut in the viewer |
 | `--vg-border` | `#d0d7de` | `#3a3a44` | Borders of inputs, buttons, menus and panels |
 | `--vg-header-bg` | `#f6f8fa` | `#1d1d23` | Column headers and the status bar |
 | `--vg-header-fg` | `#1f2328` | `#e6e6eb` | Column names, and the number of the active row |
@@ -103,9 +103,10 @@ beside them, `--vg-detail-width` wide.
 | `--vg-error-fg` | `#b42318` | `#ff8a80` | Error messages |
 | `--vg-link-fg` | `#0b57d0` | `#8ab4f8` | Cells that `cellAction` makes links |
 | `--vg-focus` | `#0b57d0` | `#8ab4f8` | Focus rings |
-| `--vg-shadow` | | | Shadow of the cell editor |
+| `--vg-shadow` | | | Shadow of the cell editor and the viewer |
 | `--vg-detail-width` | `340px` | | Width of the detail panel beside the grid |
 | `--vg-detail-height` | `45%` | | Height of the detail panel below a narrow grid |
+| `--vg-detail-lines` | `8` | | Lines of a long value that the detail panel shows until Show more |
 
 [`styles.css`](https://github.com/yhay81/vastgrid/blob/main/packages/grid/src/styles.css) has the exact values,
 and the class names of the toolbar, status bar, menus and panels for further changes. To change one cell's

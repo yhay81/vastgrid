@@ -77,8 +77,31 @@ test("find, the cell menu and dragging columns", async ({ page }) => {
   await page.keyboard.press(`${primary}+ArrowRight`);
   await page.keyboard.press("Shift+F10");
   await menu.getByRole("menuitem", { name: "Show full value" }).click();
-  await expect(menu.locator("pre")).toHaveText(long);
+  const viewer = page.getByRole("dialog", { name: "note" });
+  await expect(viewer.locator("pre")).toHaveText(long);
+  await expect(viewer.locator("pre")).toBeFocused();
+  await expect(viewer).toContainText("Row 3 · 2,500 characters, 1 lines");
+  // The rows after and before in the same column, which the grid follows.
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect(viewer.locator("pre")).toHaveText("fourth");
+  await expect.poll(active).toMatchObject({ row: 3, column: "note" });
+  await viewer.getByRole("button", { name: "Previous row" }).click();
+  await expect(viewer.locator("pre")).toHaveText(long);
   await page.keyboard.press("Escape");
+  await expect(viewer).toHaveCount(0);
+  await expect(grid).toBeFocused();
+
+  // The detail panel reads the cut value in full, and shows its first lines until Show more.
+  await page.keyboard.press("Alt+Enter");
+  const value = page.getByRole("complementary", { name: "Row 3" }).locator("dd").nth(3);
+  await expect(value).toHaveText(long);
+  const clamped = await value.evaluate((element) => element.clientHeight);
+  await page.getByRole("button", { name: "Show more" }).click();
+  await expect.poll(() => value.evaluate((element) => element.clientHeight)).toBeGreaterThan(clamped);
+  await page.getByRole("button", { name: "Open note in the viewer" }).click();
+  await expect(viewer.locator("pre")).toHaveText(long);
+  await viewer.getByRole("button", { name: "Close" }).click();
+  await page.getByRole("button", { name: "Close details" }).click();
 
   // Dragging the qty header before city moves it; a click sorts.
   const qty = await page.getByRole("columnheader", { name: "qty" }).boundingBox();

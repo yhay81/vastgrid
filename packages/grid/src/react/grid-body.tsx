@@ -22,6 +22,7 @@ import type { GridStore } from "../core/store.js";
 import { AccessibleRows, cellId } from "./accessible-rows.js";
 import { CellEditor, type EditorControl } from "./cell-editor.js";
 import type { CellMenuTarget } from "./cell-menu.js";
+import type { ViewerTarget } from "./value-viewer.js";
 import type { MenuTarget } from "./column-menu.js";
 import { LocaleContext, SaveContext } from "./context.js";
 import { useGridPointer } from "./grid-pointer.js";
@@ -148,6 +149,8 @@ export interface GridBodyProps {
   onCellAction?: (event: CellActionEvent) => void;
   /** Opens the find bar (⌘F or Ctrl+F). */
   onFind?: () => void;
+  /** Opens a value in the viewer (the cell menu's Show full value). */
+  onView: (target: ViewerTarget) => void;
   label: string;
   /** Receives the scroller, which has the focus of the grid. */
   scrollerRef: RefObject<HTMLDivElement | null>;
@@ -169,6 +172,7 @@ export function GridBody({
   hooks,
   onCellAction,
   onFind,
+  onView,
   label,
   scrollerRef,
   announce,
@@ -506,7 +510,7 @@ export function GridBody({
       )}
       {cellMenu && (
         <Suspense fallback={null}>
-          <CellMenu target={cellMenu} onClose={closeCellMenu} copy={copySelection} />
+          <CellMenu target={cellMenu} onClose={closeCellMenu} copy={copySelection} onView={onView} />
         </Suspense>
       )}
     </div>

@@ -934,8 +934,15 @@ export class GridStore {
     return found ? { row: found.row, column: columns[found.column] } : null;
   }
 
-  /** The whole value of a cell of the view on screen, also when the engine cut its text (§8.4), and its type. */
-  async fullValue(row: number, column: string, signal?: AbortSignal): Promise<{ value: JsonValue; column: Column }> {
+  /**
+   * The whole value of a cell of the view on screen, also when the engine cut its text (§8.4), and its type; `cut`
+   * when it is longer than the largest text limit, 1,000,000 code points, and so is cut still.
+   */
+  async fullValue(
+    row: number,
+    column: string,
+    signal?: AbortSignal,
+  ): Promise<{ value: JsonValue; column: Column; cut: boolean }> {
     const view = this.current;
     const table = this.snapshot.table;
     const client = this.client;
@@ -954,7 +961,11 @@ export class GridStore {
       signal,
     );
     const block = decodeBlock(result.block.bytes);
-    return { value: block.rows[0]?.[0] ?? null, column: block.columns[0] };
+    return {
+      value: block.rows[0]?.[0] ?? null,
+      column: block.columns[0],
+      cut: (result.truncated?.[column]?.length ?? 0) > 0,
+    };
   }
 }
 

@@ -175,6 +175,17 @@ export interface GridMessages {
   excludeValue: string;
   fullValue: string;
   close: string;
+  /** Long values in the detail panel, and the viewer of a value (§6.13 of react.md). */
+  showMore: string;
+  showLess: string;
+  openViewer: string;
+  openViewerOf: (column: string) => string;
+  valueSize: (characters: string, lines: string) => string;
+  valueCut: (characters: string) => string;
+  previousRow: string;
+  nextRow: string;
+  formatJson: string;
+  valueCopied: string;
 }
 
 /** The grid's texts in English, which it shows unless the `messages` prop replaces them. */
@@ -362,4 +373,14 @@ export const en: GridMessages = {
   excludeValue: "Exclude this value",
   fullValue: "Show full value",
   close: "Close",
+  showMore: "Show more",
+  showLess: "Show less",
+  openViewer: "Open",
+  openViewerOf: (column) => `Open ${column} in the viewer`,
+  valueSize: (characters, lines) => `${characters} characters, ${lines} lines`,
+  valueCut: (characters) => `Only the first ${characters} characters can be read.`,
+  previousRow: "Previous row",
+  nextRow: "Next row",
+  formatJson: "Format JSON",
+  valueCopied: "Copied",
 };
