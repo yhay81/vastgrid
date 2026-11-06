@@ -20,6 +20,27 @@ test("every set has the texts of the English one, of the same kinds", () => {
   for (const [name, messages] of Object.entries(sets)) assert.deepEqual(shape(messages), shape(en), name);
 });
 
+/** The texts of a set that take arguments, with their keys. */
+function functions(messages: object, prefix = ""): [string, (...values: string[]) => unknown][] {
+  return Object.entries(messages).flatMap(([key, value]) =>
+    typeof value === "object"
+      ? functions(value, `${prefix}${key}.`)
+      : typeof value === "function"
+        ? [[`${prefix}${key}`, value]]
+        : [],
+  );
+}
+
+test("every text of every set puts in each of its arguments", () => {
+  for (const [name, messages] of Object.entries({ en, ...sets }))
+    for (const [key, text] of functions(messages)) {
+      const values = Array.from({ length: text.length }, (_, index) => `‹${index}›`);
+      const result = text(...values);
+      assert.equal(typeof result, "string", `${name}.${key}`);
+      for (const value of values) assert.ok((result as string).includes(value), `${name}.${key} lacks ${value}`);
+    }
+});
+
 test("`messagesFor` chooses a set by the tag's language", () => {
   assert.equal(messagesFor(undefined), en);
   assert.equal(messagesFor("en-GB"), en);
