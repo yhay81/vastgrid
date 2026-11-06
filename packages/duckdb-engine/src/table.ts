@@ -60,19 +60,29 @@ const REVISION_HEAD_BYTES = 64 * 1024;
 /**
  * A file's revision: its size, its modification time and a hash of its first 64 KiB, so that a file rewritten with
  * the same size within the resolution of its modification time still counts as changed. A DuckDB database's covers
- * its write-ahead log too (`databaseLog`), whose changes a read of the database includes.
+ * its write-ahead log too (`databaseLog`), whose changes a read of the database includes. A file that another
+ * program has locked (`EBUSY`, as Windows locks a database that DuckDB writes) has only its size and time: what
+ * reads it then says why it cannot.
  */
 export async function fileRevision(file: string): Promise<string> {
-  const handle = await openFile(file, "r");
+  const handle = await openFile(file, "r").catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "EBUSY") return null;
+    throw error;
+  });
   let revision: string;
-  try {
-    const info = await handle.stat();
-    const head = Buffer.alloc(Math.min(info.size, REVISION_HEAD_BYTES));
-    const { bytesRead } = await handle.read(head, 0, head.length, 0);
-    const hash = createHash("sha1").update(head.subarray(0, bytesRead)).digest("hex").slice(0, 16);
-    revision = `${info.size}:${Math.round(info.mtimeMs)}:${hash}`;
-  } finally {
-    await handle.close();
+  if (handle === null) {
+    const info = await stat(file);
+    revision = `${info.size}:${Math.round(info.mtimeMs)}:locked`;
+  } else {
+    try {
+      const info = await handle.stat();
+      const head = Buffer.alloc(Math.min(info.size, REVISION_HEAD_BYTES));
+      const { bytesRead } = await handle.read(head, 0, head.length, 0);
+      const hash = createHash("sha1").update(head.subarray(0, bytesRead)).digest("hex").slice(0, 16);
+      revision = `${info.size}:${Math.round(info.mtimeMs)}:${hash}`;
+    } finally {
+      await handle.close();
+    }
   }
   if (tableFormatOf(file) !== "duckdb") return revision;
   const log = await stat(databaseLog(file)).catch(() => null);
