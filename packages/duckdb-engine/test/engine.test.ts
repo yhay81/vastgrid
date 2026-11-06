@@ -5,6 +5,7 @@ import { DuckDBInstance } from "@duckdb/node-api";
 import { checkResponse, MESSAGE_LIMITS, planHash } from "vastgrid-spec";
 import { afterAll, beforeAll, test } from "vite-plus/test";
 import { DuckDBEngine, tableFormatOf } from "../src/index.ts";
+import { Session } from "../src/session.ts";
 import { type Client, type Json, setUp, type TableInfo } from "./client.ts";
 
 let context: Awaited<ReturnType<typeof setUp>>;
@@ -686,6 +687,40 @@ test("a request cancelled before it is answered is answered with cancelled (§8.
   const signal = AbortSignal.abort();
   const aborted = (await context.engine.handle({ ...request, id: 902 }, { signal })) as { error: { code: string } };
   assert.equal(aborted.error.code, "cancelled");
+});
+
+test("an aborted query maps a DuckDB interrupt to cancelled and preserves other query errors (§8.6)", async () => {
+  const session = await Session.create({
+    allowedDirectories: [],
+    tempDirectory: path.join(context.root, "temp-interrupt"),
+    threads: 1,
+  });
+  try {
+    const controller = new AbortController();
+    await assert.rejects(
+      session.withConnection(controller.signal, async (connection) => {
+        // With one thread, the pending query waits for getResult() to run it.
+        const pending = await connection.start("SELECT sum(i) FROM range(10) AS t(i)");
+        try {
+          controller.abort();
+          return await pending.getResult();
+        } finally {
+          pending.closeSync();
+        }
+      }),
+      { code: "cancelled" },
+    );
+
+    const late = new AbortController();
+    await assert.rejects(
+      session.withConnection(late.signal, (connection) =>
+        connection.run("SELECT missing_column").finally(() => late.abort()),
+      ),
+      /Binder Error:.*missing_column/i,
+    );
+  } finally {
+    await session.dispose();
+  }
 });
 
 test("requests that do not follow §8 are answered with invalid_request", async () => {
