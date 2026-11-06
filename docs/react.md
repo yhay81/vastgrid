@@ -361,7 +361,8 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   that moving the selection renders again only the rows whose selected cells changed.
 - The keyboard follows §6.4 of the specification (the grid pattern of the ARIA Authoring Practices), and adds:
   Space (a cell's link or button, or checking the row), Alt+Enter (the detail panel), Alt+↓ (the column menu),
-  Shift+F10 and the context menu key (the cell menu), ⌘/Ctrl+F (find), ⌘/Ctrl+D and R (fill) and ⌘/Ctrl+S (save).
+  Shift+F10 and the context menu key (the cell menu), ⌘/Ctrl+F (find), ⌘/Ctrl+D and R (fill), ⌘/Ctrl+; and :
+  (the date and the time, §6.6) and ⌘/Ctrl+S (save).
   While an IME composes, its keys are its own: none of these act. Menus and panels give the focus back to the grid
   when they close from the keyboard.
 - Results and failures are announced in a polite live region.
@@ -376,11 +377,19 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   key, so that the key's text, or the IME's composition, goes into it whole. F2 and a double click open it with
   the cell's value.
 - The text reaches the session when the person types it, not while an IME composes: keys that end a composition
-  are the IME's. Enter writes and moves down (Shift+Enter up), Tab right (Shift+Tab left), Esc cancels, and
-  Alt+Enter (⌃↩ on Apple platforms) starts a new line. Leaving the editor for another place of the page writes it.
-  Text that is not a value of the column (§7.3) keeps the editor open and tells why.
+  are the IME's. Enter writes and moves down (Shift+Enter up), Tab right (Shift+Tab left), the primary modifier
+  with Enter writes the text into every selected cell and keeps the active cell (`edit.commit` with
+  `cells: selection`, §6.5.2 of the specification), Esc cancels, and Alt+Enter (⌃↩ on Apple platforms) starts a
+  new line. Leaving the editor for another place of the page writes it. Text that is not a value of a column
+  (§7.3) keeps the editor open and tells which column.
+- The primary modifier with `;` types today's date, and with `:` (Shift+; on many keyboards) the time now, in the
+  browser's time zone (`2024-01-31`, `09:05:30`), as spreadsheets do: at the caret of the editor, or into an
+  editor that it opens on the active cell.
 - Delete clears the selected cells (`edit.clear`), pasting writes the clipboard into the selection
   (`edit.paste`), and the primary modifier with Z undoes (with Shift, or Ctrl+Y off Apple platforms, redoes).
+- Cutting copies the selection as copying does (§4.2), then clears it (`edit.clear`) once the clipboard holds it.
+  When the rows had to be read first and the selection or the view changed meanwhile, the cells stay as they are,
+  and the cut is a copy. When the engine does not write (`capabilities.write`), the key is the browser's.
 - When the engine saves the table's file (`capabilities.save`), the primary modifier with S saves (`save`), also
   from the editor, which writes its text first; otherwise the key is the browser's. The toolbar has a Save button
   while cells are not saved. The status bar counts the cells not saved, and shows the save while it runs and then

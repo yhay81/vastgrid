@@ -119,7 +119,7 @@ const outcome = await grid.current?.dispatch({ command: "search.set", text: "Tok
 | `edit.begin` | `text` | アクティブセルでエディターを開きます。`text` か、セルの値を入れて。 |
 | `edit.change` | `text` | エディターのテキストを変えます。 |
 | `edit.cancel` | | エディターを閉じます。 |
-| `edit.commit` | `move`：`up`、`down`、`left`、`right` か null | テキストを列の型として読んで書き込み、アクティブセルを動かします。 |
+| `edit.commit` | `move`：`up`、`down`、`left`、`right` か null。`cells`：`editor`（既定）か `selection` | テキストを列の型として読んで書き込み、`selection` なら選んだすべてのセルにも書き込んで、アクティブセルを動かします。 |
 | `edit.clear` | | 選択したセルのうち書き込めるものに null を書き込みます。 |
 | `edit.paste` | | クリップボード（`DispatchOptions.clipboard`、TSV か HTML の表）を選択範囲に貼り付けます。 |
 | `edit.fill` | `direction`：`down` か `right` | 各範囲の最初の行（または列）を残りにコピーします。 |

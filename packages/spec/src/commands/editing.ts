@@ -1,7 +1,8 @@
 /** The commands of editing (docs/spec.md §6.5): the editor, the writes of cells, and undo and redo. */
 import { parseHtmlTable, parseTsv } from "../clipboard.js";
 import { editText, readCellText } from "../input.js";
-import type { HistoryUpdate } from "../state.js";
+import type { Editor, HistoryUpdate } from "../state.js";
+import type { JsonValue } from "../types.js";
 import { isBlank, sameType, textOf } from "../values.js";
 import { type CommandRequest, choice, fail, optionalString, stringArgument, takes } from "./command.js";
 import { type Handlers, type Run, span, type Target } from "./run.js";
@@ -24,6 +25,46 @@ function historyWrite(run: Run, updates: readonly HistoryUpdate[], values: "befo
   };
   if (run.document.rowKey !== undefined) request.rowKey = run.document.rowKey;
   return request;
+}
+
+/** The editor's text read as a cell's column type (§7.3), failing with `invalid_value` at that cell. */
+function readTyped(run: Run, text: string, cell: Target) {
+  const read = readCellText(text, run.typeOf(cell.column), { timeZone: run.timeZoneOf(cell.column) });
+  if (!read.ok) {
+    fail("", "invalid_value", `The text is not a value of "${cell.column}".`, {
+      row: cell.row,
+      column: cell.column,
+      error: read.error,
+    });
+  }
+  return read.value;
+}
+
+/** The write of the editor's cell, by its key and with its value as `previous` (§6.5). */
+function editorUpdate(run: Run, editor: Editor) {
+  return { key: editor.key, column: editor.column, value: readTyped(run, editor.text, editor), previous: editor.value };
+}
+
+/**
+ * The writes of the editor's text into every selected cell (§6.5.2): the editor's cell, when no range holds it,
+ * then the cells of the ranges, each read as its column's type.
+ */
+function selectionUpdates(run: Run, editor: Editor) {
+  const grid = run.grid();
+  const isEditor = (cell: Target) => cell.row === editor.row && cell.column === editor.column;
+  const selected = run.cellsOf(grid, grid.ranges);
+  const targets = selected.some(isEditor) ? selected : [{ row: editor.row, column: editor.column }, ...selected];
+  run.writable(new Set(targets.map((cell) => cell.column)));
+  if (targets.length > WRITE_LIMIT) fail("", "too_many_cells", "A write holds at most 100,000 cells.");
+  run.need([{ cells: targets.filter((cell) => !isEditor(cell)), keyed: true }]);
+  // The text reads the same in every cell of a column: once per column, failing at its first cell.
+  const values = new Map<string, JsonValue>();
+  return targets.map((cell) => {
+    if (!values.has(cell.column)) values.set(cell.column, readTyped(run, editor.text, cell));
+    const value = values.get(cell.column) ?? null;
+    if (isEditor(cell)) return { key: editor.key, column: cell.column, value, previous: editor.value };
+    return { key: run.keyAt(cell.row), column: cell.column, value, previous: run.valueAt(cell) };
+  });
 }
 
 export const EDITING_HANDLERS = {
@@ -54,20 +95,13 @@ export const EDITING_HANDLERS = {
   },
 
   "edit.commit"(run, command) {
-    takes(command, ["move"]);
+    takes(command, ["move", "cells"]);
     const move = command.move === undefined || command.move === null ? null : choice(command, "move", DIRECTIONS);
+    const cells = choice(command, "cells", ["editor", "selection"] as const, "editor");
     const editor = run.session.editor;
     if (!editor) fail("", "no_editor", "No cell is being edited.");
     run.writable([editor.column]);
-    const read = readCellText(editor.text, run.typeOf(editor.column), { timeZone: run.timeZoneOf(editor.column) });
-    if (!read.ok) {
-      fail("", "invalid_value", `The text is not a value of "${editor.column}".`, {
-        row: editor.row,
-        column: editor.column,
-        error: read.error,
-      });
-    }
-    run.write([{ key: editor.key, column: editor.column, value: read.value, previous: editor.value }]);
+    run.write(cells === "selection" ? selectionUpdates(run, editor) : [editorUpdate(run, editor)]);
     delete run.session.editor;
     if (move === "down" || move === "up") run.advance("row", move === "up");
     else if (move) run.advance("column", move === "left");

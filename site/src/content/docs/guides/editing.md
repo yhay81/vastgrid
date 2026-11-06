@@ -44,6 +44,12 @@ engine sees them, and they are dropped, unless saved, when the last of them clos
 - F2 or a double click opens it with the cell's value as text (`2024-01-31`, `1234.50`).
 - Enter writes and moves down (Shift + Enter up), and Tab writes and moves right (Shift + Tab left). In a
   selection of several cells, they walk through it.
+- ⌘/Ctrl + Enter writes the text into every selected cell and keeps the active cell, as in a spreadsheet. Each
+  cell reads it as its column's type; when a column does not read it, no cell is written and the editor says
+  which column.
+- ⌘/Ctrl + ; types today's date and ⌘/Ctrl + : (Shift + ; on many keyboards) the time now, as `2024-01-31` and
+  `09:05:30` in the browser's time zone: at the caret, or on the grid into an editor that opens on the active
+  cell.
 - Alt + Enter (⌃ + Return on a Mac) starts a new line. Esc cancels. Clicking elsewhere in the page writes.
 - Text that is not a value of the column keeps the editor open and says so ("This is not a value of price.").
 
@@ -70,8 +76,11 @@ White space around the text is removed, except for strings, and empty text is nu
 may group their digits with commas (`1,234.5`). The full rules are in
 [§7.3](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#73-reading-typed-text) of the specification.
 
-## Pasting, clearing and filling
+## Cutting, pasting, clearing and filling
 
+- **Cut** (⌘/Ctrl + X) copies the selection as copying does, then clears it. When its rows had to be read
+  first and the selection or the view changed meanwhile, the cells stay as they are and the cut is a copy. A
+  grid whose engine does not write copies nothing on a cut, and the browser handles the key.
 - **Paste** (⌘/Ctrl + V) writes the clipboard's tab-separated text, or the first table of its HTML, from the
   top-left cell of each range. The values repeat over a range whose rows and columns are whole multiples of
   theirs. A single value goes into every selected cell, also of several ranges; several values cannot go into

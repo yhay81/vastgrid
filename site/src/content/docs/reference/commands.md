@@ -137,7 +137,7 @@ These change the session. Rows are positions in the view, and columns are names 
 | `edit.begin` | `text` | Opens an editor on the active cell, with `text` or the cell's value. |
 | `edit.change` | `text` | Changes the editor's text. |
 | `edit.cancel` | | Closes the editor. |
-| `edit.commit` | `move`: `up`, `down`, `left`, `right` or null | Reads the text as the column's type and writes it; the active cell then moves. |
+| `edit.commit` | `move`: `up`, `down`, `left`, `right` or null; `cells`: `editor` (default) or `selection` | Reads the text as the column's type and writes it, with `selection` into every selected cell too; the active cell then moves. |
 | `edit.clear` | | Writes null into the selected cells that can be written. |
 | `edit.paste` | | Pastes the clipboard (`DispatchOptions.clipboard`, TSV or an HTML table) into the selection. |
 | `edit.fill` | `direction`: `down` or `right` | Copies the first row (or column) of each range into the rest of it. |

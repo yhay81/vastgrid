@@ -70,3 +70,67 @@ test("Escape cancels, F2 edits the value, and text that is not a number keeps th
   await expect(page.getByRole("grid")).toBeFocused();
   await expect(cell(page, 0, 4)).toHaveText(before ?? "");
 });
+
+test("the modifier and Enter write the editor's text into every selected cell, as one step to undo", async ({
+  page,
+}) => {
+  await focusCell(page, 0, 2);
+  await page.keyboard.press("Shift+ArrowDown");
+  await page.keyboard.press("Shift+ArrowDown");
+  const before = await Promise.all([0, 1, 2].map(async (row) => (await cell(page, row, 2).textContent()) ?? ""));
+  await page.keyboard.type("Nara");
+  await expect(page.locator(".vg-editor-input")).toHaveValue("Nara");
+  await page.keyboard.press("ControlOrMeta+Enter");
+  const grid = page.getByRole("grid");
+  await expect(grid).toBeFocused();
+  for (const row of [0, 1, 2]) await expect(cell(page, row, 2)).toHaveText("Nara");
+  // The active cell stays.
+  await expect.poll(async () => grid.getAttribute("aria-activedescendant")).toMatch(/-r0-c2$/);
+  await page.keyboard.press("ControlOrMeta+z");
+  for (const [row, text] of before.entries()) await expect(cell(page, row, 2)).toHaveText(text);
+});
+
+test("cutting puts the selection on the clipboard as TSV, then clears it", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await focusCell(page, 0, 1);
+  await page.keyboard.press("Shift+ArrowDown");
+  await page.keyboard.press("Shift+ArrowRight");
+  const city = (await cell(page, 0, 2).textContent()) ?? "";
+  await page.evaluate(() => document.execCommand("cut"));
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`Ren 0\t${city}\nSora 1\tSendai`);
+  for (const [row, column] of [
+    [0, 1],
+    [0, 2],
+    [1, 1],
+    [1, 2],
+  ])
+    await expect(cell(page, row, column)).toHaveText("");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(cell(page, 0, 1)).toHaveText("Ren 0");
+  await expect(cell(page, 1, 2)).toHaveText("Sendai");
+});
+
+test("the modifier with ; types today's date, and with : the time at the caret", async ({ page }) => {
+  const today = await page.evaluate(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  });
+  await focusCell(page, 0, 5);
+  await page.keyboard.press("ControlOrMeta+;");
+  const editor = page.locator(".vg-editor-input");
+  await expect(editor).toBeFocused();
+  await expect(editor).toHaveValue(today);
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("grid")).toBeFocused();
+  // Written as a date: the editor gives it back.
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("F2");
+  await expect(editor).toHaveValue(today);
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.type("at ");
+  await page.keyboard.press("ControlOrMeta+:");
+  await expect(editor).toHaveValue(/^at \d{2}:\d{2}:\d{2}$/);
+  await page.keyboard.press("Escape");
+});

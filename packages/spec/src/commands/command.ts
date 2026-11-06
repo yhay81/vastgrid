@@ -116,7 +116,7 @@ export type GridCommand =
     }
   | { command: "edit.begin"; text?: string }
   | { command: "edit.change"; text: string }
-  | { command: "edit.commit"; move?: Direction | null }
+  | { command: "edit.commit"; move?: Direction | null; cells?: "editor" | "selection" }
   | { command: "edit.fill"; direction: "down" | "right" }
   | { command: "copy"; headers?: boolean; values?: "raw" | "formatted" }
   | { command: "export"; format: string; columns?: "displayed" | "all"; rows?: "view" | "table"; target?: string }

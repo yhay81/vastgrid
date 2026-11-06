@@ -16,7 +16,7 @@ import { browser } from "react-dom";
 import { CommandError, type GridCommand, parseTsv, type RowKey } from "vastgrid-spec";
 import { GridCanvas } from "../canvas/grid-canvas.js";
 import type { CellAction, CellHooks, ColumnGroup, GridCell } from "../canvas/hooks.js";
-import { isApple, type KeyInput, keyCommand, typesText } from "../canvas/keys.js";
+import { isApple, type KeyInput, keyCommand, stampText, typesText } from "../canvas/keys.js";
 import { checkedCount, checkState } from "../core/checked.js";
 import type { GridStore } from "../core/store.js";
 import { AccessibleRows, cellId } from "./accessible-rows.js";
@@ -27,6 +27,7 @@ import type { MenuTarget } from "./column-menu.js";
 import { LocaleContext, SaveContext } from "./context.js";
 import { useGridPointer } from "./grid-pointer.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
+import type { GridMessages } from "./messages.js";
 
 // The menus load when they first open (§10 of react.md).
 const ColumnMenu = lazy(() => import("./column-menu.js").then((module) => ({ default: module.ColumnMenu })));
@@ -50,10 +51,11 @@ function writeClipboard(data: DataTransfer, output: unknown) {
   data.setData("text/html", html);
 }
 
+/** Writes the output of `copy` through the asynchronous clipboard; resolves with whether there was one. */
 async function writeClipboardLater(output: unknown) {
   const { tsv, html } = output as { tsv: string; html: string };
   const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
-  if (!clipboard) return;
+  if (!clipboard) return false;
   if (typeof ClipboardItem === "function" && clipboard.write) {
     await clipboard.write([
       new ClipboardItem({
@@ -64,28 +66,55 @@ async function writeClipboardLater(output: unknown) {
   } else {
     await clipboard.writeText(tsv);
   }
+  return true;
 }
 
-/** Copies the selection: at once when its rows are read, after reading them otherwise. */
+/** What a cut clears: the selected cells of a view, which a cut that reads rows first compares again. */
+function cutCells(store: GridStore) {
+  const { view, revision, active, selection } = store.getSnapshot().session;
+  return JSON.stringify([view, revision, active?.row, active?.column, selection]);
+}
+
+/**
+ * Copies the selection: at once when its rows are read, after reading them otherwise. Cutting copies it the same
+ * way, then clears it (`edit.clear`) once the clipboard holds it, while the same cells are selected.
+ */
 function useClipboard(store: GridStore, scroller: RefObject<HTMLDivElement | null>, announce: (text: string) => void) {
   const { messages, locale, number } = use(LocaleContext);
-  const report = useEffectEvent((output: unknown, failure: string | null) => {
-    announce(failure === null ? messages.copied(number.format(countCells(output))) : messages.failed(failure));
+  const report = useEffectEvent((output: unknown, failure: string | null, done: "copied" | "cut" = "copied") => {
+    announce(failure === null ? messages[done](number.format(countCells(output))) : messages.failed(failure));
   });
+  const reportText = useEffectEvent((text: (texts: GridMessages) => string) => announce(text(messages)));
   useEffect(() => {
     const element = scroller.current;
     if (!element) return;
-    // Without selected text, browsers disable copying unless "beforecopy" is cancelled.
+    // Without selected text, browsers disable copying (and cutting) unless "beforecopy" ("beforecut") is cancelled.
     const onBeforeCopy = (event: Event) => {
       if (document.activeElement === element) event.preventDefault();
     };
-    const onCopy = (event: ClipboardEvent) => {
+    // Cells are cut only from a table that the engine writes; otherwise the key is the browser's.
+    const onBeforeCut = (event: Event) => {
+      if (store.getSnapshot().table?.capabilities.write === true) onBeforeCopy(event);
+    };
+    /** Clears the cells that a cut copied, and tells what it did. */
+    const clear = (output: unknown) => {
+      void store.dispatch({ command: "edit.clear" }).then((cleared) => {
+        if (cleared.ok) report(output, null, "cut");
+        else if (cleared.error instanceof CommandError && cleared.error.reason === "read_only") {
+          reportText((texts) => texts.readOnly);
+        } else report(null, cleared.error.message);
+      });
+    };
+    const onCopyOrCut = (event: ClipboardEvent) => {
       if (document.activeElement !== element || !event.clipboardData) return;
+      const cut = event.type === "cut";
+      if (cut && store.getSnapshot().table?.capabilities.write !== true) return;
       event.preventDefault();
       const outcome = store.dispatchSync({ command: "copy" }, { locale });
       if (outcome.ok) {
         writeClipboard(event.clipboardData, outcome.output);
-        report(outcome.output, null);
+        if (cut) clear(outcome.output);
+        else report(outcome.output, null);
         return;
       }
       if (!(outcome.error instanceof CommandError) || outcome.error.reason !== "not_loaded") {
@@ -93,16 +122,27 @@ function useClipboard(store: GridStore, scroller: RefObject<HTMLDivElement | nul
         return;
       }
       // The rows are read first; the clipboard is then written through the asynchronous API.
+      const cells = cutCells(store);
       void store.dispatch({ command: "copy" }, { locale }).then(async (later) => {
         if (!later.ok) {
           report(null, later.error.message);
           return;
         }
-        await writeClipboardLater(later.output);
-        report(later.output, null);
+        let written: boolean;
+        try {
+          written = await writeClipboardLater(later.output);
+        } catch (error) {
+          report(null, error instanceof Error ? error.message : String(error));
+          return;
+        }
+        // A cut clears nothing that the clipboard does not hold, nor cells selected after it began.
+        if (cut && written && cutCells(store) === cells) clear(later.output);
+        else if (cut && !written) reportText((texts) => texts.failed(texts.noClipboard));
+        else report(later.output, null);
       });
     };
     document.addEventListener("beforecopy", onBeforeCopy);
+    document.addEventListener("beforecut", onBeforeCut);
     // Pasting writes the clipboard into the selection (§6.5.1).
     const onPaste = (event: ClipboardEvent) => {
       if (document.activeElement !== element || !event.clipboardData) return;
@@ -114,11 +154,14 @@ function useClipboard(store: GridStore, scroller: RefObject<HTMLDivElement | nul
         if (!outcome.ok) report(null, outcome.error.message);
       });
     };
-    document.addEventListener("copy", onCopy);
+    document.addEventListener("copy", onCopyOrCut);
+    document.addEventListener("cut", onCopyOrCut);
     document.addEventListener("paste", onPaste);
     return () => {
       document.removeEventListener("beforecopy", onBeforeCopy);
-      document.removeEventListener("copy", onCopy);
+      document.removeEventListener("beforecut", onBeforeCut);
+      document.removeEventListener("copy", onCopyOrCut);
+      document.removeEventListener("cut", onCopyOrCut);
       document.removeEventListener("paste", onPaste);
     };
   }, [store, scroller, locale]);
@@ -450,6 +493,13 @@ export function GridBody({
       if (column === undefined || index < 0) return;
       event.preventDefault();
       openMenu(column, index);
+      return;
+    }
+    // The primary modifier with ; or : opens the editor on the active cell with today's date or the time now.
+    const stamp = composing ? null : stampText(event, isApple(), new Date());
+    if (stamp !== null) {
+      event.preventDefault();
+      startEditing(stamp);
       return;
     }
     if (typesText({ ...pick(event), keyCode: event.keyCode, isComposing: event.nativeEvent.isComposing })) {

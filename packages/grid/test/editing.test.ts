@@ -108,6 +108,46 @@ test("typing into a cell writes it, shows the value at once and records a step t
   disconnect();
 });
 
+test("the modifier and Enter write the text into every selected cell, as one step to undo (§6.5.2)", async () => {
+  const { store, disconnect } = await editable();
+  await store.dispatch({ command: "select", row: 0, column: "city" });
+  await store.dispatch({ command: "select", row: 2, column: "city", mode: "extend" });
+  store.dispatchSync({ command: "edit.begin", text: "Nara" });
+  const committed = store.dispatch({ command: "edit.commit", move: null, cells: "selection" });
+  // Before the engine answers, every selected cell shows the text, and the active cell stays.
+  assert.equal(store.getSnapshot().session.editor, undefined);
+  assert.equal(store.getSnapshot().session.active?.row, 0);
+  assert.deepEqual(
+    [0, 1, 2].map((row) => store.cell(row, "city")),
+    ["Nara", "Nara", "Nara"],
+  );
+  assert.deepEqual(await committed, { ok: true });
+  await until(() => store.getSnapshot().pending === null && store.getSnapshot().session.history?.undo.length === 1);
+  assert.equal(store.getSnapshot().session.history?.undo[0].updates.length, 3);
+  assert.deepEqual(await store.dispatch({ command: "history.undo" }), { ok: true });
+  await until(() => store.getSnapshot().pending === null && store.cell(2, "city") === "Kobe");
+  assert.deepEqual(
+    [0, 1, 2].map((row) => store.cell(row, "city")),
+    ["Tokyo", "Osaka", "Kobe"],
+  );
+  disconnect();
+});
+
+test("text that one selected column does not read writes no cell, and names that column", async () => {
+  const { store, disconnect } = await editable();
+  await store.dispatch({ command: "select", row: 0, column: "city" });
+  await store.dispatch({ command: "select", row: 1, column: "qty", mode: "extend" });
+  store.dispatchSync({ command: "edit.begin", text: "Nara" });
+  const outcome = await store.dispatch({ command: "edit.commit", move: null, cells: "selection" });
+  assert.equal(outcome.ok, false);
+  const error = outcome.ok ? null : (outcome.error as { reason?: string; details?: { column?: string } });
+  assert.equal(error?.reason, "invalid_value");
+  assert.equal(error?.details?.column, "qty");
+  assert.equal(store.getSnapshot().session.editor?.text, "Nara", "the editor stays");
+  assert.equal(store.cell(0, "city"), "Tokyo");
+  disconnect();
+});
+
 test("text that is not a value of the column keeps the editor open, and a cell cleared by key is null", async () => {
   const { store, disconnect } = await editable({ kind: "vastgrid/document", version: 2, rowKey: "id" });
   await store.dispatch({ command: "select", row: 0, column: "qty" });

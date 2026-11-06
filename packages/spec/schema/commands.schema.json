@@ -917,6 +917,9 @@
             },
             "move": {
               "enum": ["up", "down", "left", "right", null]
+            },
+            "cells": {
+              "enum": ["editor", "selection"]
             }
           }
         },

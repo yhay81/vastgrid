@@ -14,6 +14,9 @@ export interface GridMessages {
   sum: (sum: string) => string;
   average: (average: string) => string;
   copied: (cells: string) => string;
+  cut: (cells: string) => string;
+  /** A cut whose rows were read first finds no clipboard to write: nothing is cleared. */
+  noClipboard: string;
   search: string;
   /** The switch beside the search box that folds width and kana (§3.5 of the specification). */
   searchFold: string;
@@ -22,6 +25,8 @@ export interface GridMessages {
   /** How the editor saves and leaves, for screen readers. */
   editorHint: string;
   readOnly: string;
+  /** Writing into the selection: a column of it is not written. */
+  readOnlyColumn: (column: string) => string;
   invalidValue: (column: string) => string;
   /** The button that saves the written cells into the file. */
   save: string;
@@ -202,11 +207,14 @@ export const en: GridMessages = {
   sum: (sum) => `Sum ${sum}`,
   average: (average) => `Average ${average}`,
   copied: (cells) => `Copied ${cells} cells`,
+  cut: (cells) => `Cut ${cells} cells`,
+  noClipboard: "The clipboard cannot be written.",
   search: "Search",
   searchFold: "Match full-width and half-width, hiragana and katakana",
   editing: (row, column) => `Editing row ${row}, ${column}`,
   editorHint: "Enter saves, Esc cancels, Alt+Enter starts a new line",
   readOnly: "This cell is not written.",
+  readOnlyColumn: (column) => `The cells of ${column} are not written.`,
   invalidValue: (column) => `This is not a value of ${column}.`,
   save: "Save",
   saving: "Saving…",

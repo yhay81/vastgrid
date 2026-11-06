@@ -73,6 +73,14 @@
   with Show more, and Open for the viewer (docs/react.md §6.11, §6.13).
 - `vastgrid`: `Transport.downloadExport` and `GridStore.downloadExport` download an export's file where a link to
   `exportUrl` cannot, and the Export menu uses them first.
+- `vastgrid-spec` and `vastgrid`: `edit.commit` with `cells: "selection"` writes the editor's text into every
+  selected cell (§6.5.2), each cell reading it as its column's type, as one step to undo. Text that a column does
+  not read writes no cell, and fails with `invalid_value` naming the first such cell. In the grid's editor, the
+  primary modifier with Enter does it and keeps the active cell, as spreadsheets do (docs/react.md §6.6).
+- `vastgrid`: cutting (⌘/Ctrl+X) copies the selection as copying does, then clears it, where the engine writes;
+  when the rows had to be read first and the selection or the view changed meanwhile, it is a copy. The primary
+  modifier with `;` types today's date and with `:` the time now, at the caret of the editor or into one that
+  opens on the active cell. The new texts `cut`, `noClipboard` and `readOnlyColumn` are in every locale.
 - `vastgrid-cli`: the page keeps the view of each file and sheet (sorts, filters, column widths, selection and
   scroll) in the tab, and shows it again when it is loaded again and on the browser's back and forward.
 - `vastgrid-vscode`: the release workflow publishes the extension to Open VSX by trusted publishing, once the

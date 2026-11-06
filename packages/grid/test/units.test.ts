@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { memoryEngine } from "vastgrid-js";
 import { encodeBlock, frameAttached, type GridCommand } from "vastgrid-spec";
 import { test } from "vite-plus/test";
-import { keyCommand } from "../src/canvas/keys.ts";
+import { keyCommand, stampText } from "../src/canvas/keys.ts";
 import { BLOCK_ROWS, ViewCache } from "../src/core/cache.ts";
 import { GridClient, GridError, httpTransport, localTransport, serveEngine, workerTransport } from "../src/core.ts";
 import { fakeEngine, numbers } from "./fake-engine.ts";
@@ -37,9 +37,31 @@ test("keys give the commands of the grid pattern (§6.4)", () => {
     [key("d", { metaKey: true }), true, { command: "edit.fill", direction: "down" }],
     [key("r", { ctrlKey: true }), false, { command: "edit.fill", direction: "right" }],
     [key("d", { ctrlKey: true }), true, null],
+    // The modifier with Enter is the editor's (it writes into the selection); on the grid it does nothing.
+    [key("Enter", { metaKey: true }), true, null],
+    [key(";", { ctrlKey: true }), false, null],
   ];
   for (const [input, apple, expected] of cases)
     assert.deepEqual(keyCommand(input, apple), expected, JSON.stringify(input));
+});
+
+test("the modifier with ; or : types today's date or the time now, by the character (§6.6 of react.md)", () => {
+  const now = new Date(2024, 0, 31, 9, 5, 30);
+  const cases: [ReturnType<typeof key>, boolean, string | null][] = [
+    [key(";", { metaKey: true }), true, "2024-01-31"],
+    [key(":", { metaKey: true, shiftKey: true }), true, "09:05:30"],
+    [key(";", { ctrlKey: true }), false, "2024-01-31"],
+    // A Japanese keyboard has : without Shift, and a German one ; with Shift.
+    [key(":", { ctrlKey: true }), false, "09:05:30"],
+    [key(";", { ctrlKey: true, shiftKey: true }), false, "2024-01-31"],
+    [key(";", { ctrlKey: true }), true, null],
+    [key(";", { ctrlKey: true, altKey: true }), false, null],
+    [key(";"), false, null],
+    [key("d", { metaKey: true }), true, null],
+  ];
+  for (const [input, apple, expected] of cases)
+    assert.equal(stampText(input, apple, now), expected, JSON.stringify(input));
+  assert.equal(stampText(key(";", { ctrlKey: true }), false, new Date(987, 11, 9, 23, 59, 7)), "0987-12-09");
 });
 
 test("the cache reads runs of blocks that lack the same columns, and keeps what it is reading", () => {

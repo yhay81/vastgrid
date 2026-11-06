@@ -16,7 +16,7 @@ comes as a command, a VS Code extension, an MCP App and a Jupyter widget.
   Range requests. A 100-million-row Parquet file sorts on DuckDB with its first rows ready in under a second.
   Cells are drawn on a canvas, and scrolling renders no React.
 - **A spreadsheet's way of working.** Excel's keys and selections, sorting, filters, conditions, search and find,
-  groups, pivots and totals, formulas, formats, copy, paste and fill.
+  groups, pivots and totals, formulas, formats, copy, cut, paste and fill.
 - **Edits you can trust.** Typed input is checked against the column's type, writes are checked for conflicts and
   can be undone, and saving a CSV or TSV file rewrites only the edited fields and keeps every other byte. A file
   that changes on disk is followed, and is never saved over. Values that cannot survive a save, including empty

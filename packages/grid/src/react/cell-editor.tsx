@@ -14,7 +14,7 @@ import {
 } from "react";
 import { CommandError, type Editor } from "vastgrid-spec";
 import type { GridCanvas } from "../canvas/grid-canvas.js";
-import { isApple, keyCommand } from "../canvas/keys.js";
+import { isApple, keyCommand, stampText } from "../canvas/keys.js";
 import type { GridStore } from "../core/store.js";
 import { LocaleContext, SaveContext } from "./context.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
@@ -61,8 +61,9 @@ export interface CellEditorProps {
  * The text field over the cell being edited (§6.5 of the specification), the session's `editor`. It stays in the
  * page while no cell is edited, so that a key that types text, an IME's included, moves into it with its text:
  * the grid opens the editor and gives it the focus before the browser handles the key. Enter saves and moves down
- * (Shift+Enter up), Tab saves and moves right (Shift+Tab left), Esc cancels, and Alt+Enter (also ⌃↩ on Apple
- * platforms) starts a new line. Keys that end an IME composition are left to the IME.
+ * (Shift+Enter up), Tab saves and moves right (Shift+Tab left), the primary modifier with Enter saves into every
+ * selected cell, Esc cancels, and Alt+Enter (also ⌃↩ on Apple platforms) starts a new line. The modifier with ;
+ * or : types the date or the time. Keys that end an IME composition are left to the IME.
  */
 export function CellEditor({ canvas, scrollerRef, announce, ref }: CellEditorProps) {
   const store = useGridStore();
@@ -122,19 +123,28 @@ export function CellEditor({ canvas, scrollerRef, announce, ref }: CellEditorPro
     if (store.getSnapshot().session.editor) store.dispatchSync({ command: "edit.change", text });
   };
 
-  /** Writes the text (`edit.commit`); resolves with whether it was written. */
-  const commit = async (move: "up" | "down" | "left" | "right" | null) => {
+  /**
+   * Writes the text (`edit.commit`), with `selection` into every selected cell (§6.5.2); resolves with whether it
+   * was written.
+   */
+  const commit = async (move: "up" | "down" | "left" | "right" | null, cells: "editor" | "selection" = "editor") => {
     const textarea = textareaRef.current;
     const current = store.getSnapshot().session.editor;
     if (!textarea || !current) return false;
     setProblem(null);
     change(textarea.value);
-    const outcome = await store.dispatch({ command: "edit.commit", move });
+    const outcome = await store.dispatch(
+      cells === "selection" ? { command: "edit.commit", move, cells } : { command: "edit.commit", move },
+    );
     if (outcome.ok) return true;
-    const reason = outcome.error instanceof CommandError ? outcome.error.reason : null;
-    if (reason === "invalid_value") setProblem({ editor: current, text: messages.invalidValue(current.column) });
-    else if (reason === "read_only") setProblem({ editor: current, text: messages.readOnly });
-    else announce(messages.failed(outcome.error.message));
+    const error = outcome.error instanceof CommandError ? outcome.error : null;
+    // Into the selection, the column that refuses the text may be another than the editor's.
+    const column = typeof error?.details?.column === "string" ? error.details.column : current.column;
+    if (error?.reason === "invalid_value") setProblem({ editor: current, text: messages.invalidValue(column) });
+    else if (error?.reason === "read_only") {
+      const text = column === current.column ? messages.readOnly : messages.readOnlyColumn(column);
+      setProblem({ editor: current, text });
+    } else announce(messages.failed(outcome.error.message));
     return false;
   };
 
@@ -143,21 +153,33 @@ export function CellEditor({ canvas, scrollerRef, announce, ref }: CellEditorPro
     event.stopPropagation();
     if (!open || event.nativeEvent.isComposing || event.keyCode === 229) return;
     const textarea = event.currentTarget;
+    const apple = isApple();
+    const stamp = stampText(event, apple, new Date());
     if (event.key === "Escape") {
       event.preventDefault();
       store.dispatchSync({ command: "edit.cancel" });
-    } else if (event.key === "Enter" && (event.altKey || (isApple() && event.ctrlKey))) {
+    } else if (event.key === "Enter" && (event.altKey || (apple && event.ctrlKey))) {
       event.preventDefault();
       textarea.setRangeText("\n", textarea.selectionStart, textarea.selectionEnd, "end");
       change(textarea.value);
       fit(textarea);
+    } else if (event.key === "Enter" && (apple ? event.metaKey : event.ctrlKey)) {
+      // The modifier with Enter writes the text into every selected cell, and the active cell stays.
+      event.preventDefault();
+      void commit(null, "selection");
     } else if (event.key === "Enter") {
       event.preventDefault();
       void commit(event.shiftKey ? "up" : "down");
     } else if (event.key === "Tab") {
       event.preventDefault();
       void commit(event.shiftKey ? "left" : "right");
-    } else if (saving && keyCommand(event, isApple())?.command === "save") {
+    } else if (stamp !== null) {
+      // The modifier with ; or : types the date or the time at the caret.
+      event.preventDefault();
+      textarea.setRangeText(stamp, textarea.selectionStart, textarea.selectionEnd, "end");
+      change(textarea.value);
+      fit(textarea);
+    } else if (saving && keyCommand(event, apple)?.command === "save") {
       // The modifier and S writes the text, then saves, as a spreadsheet does.
       if (store.getSnapshot().table?.capabilities.save !== true) return;
       event.preventDefault();

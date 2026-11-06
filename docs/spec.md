@@ -1027,7 +1027,7 @@ Moving without `extend` makes the active cell `anchor`, `focus` and the only ran
 | `edit.begin` | `text` | opens an editor on the active cell with `text`, or with the cell's value as text (§7.3); `value` is the cell's value |
 | `edit.change` | `text` | changes the editor's text |
 | `edit.cancel` | | closes the editor |
-| `edit.commit` | `move`: `up`, `down`, `left`, `right` or null | reads the text as the column's type (§7.3) and writes it into the editor's cell, with `previous` the editor's `value`; the editor closes, and the active cell moves as `advance` moves it (`down` and `up` along rows, `right` and `left` along columns) |
+| `edit.commit` | `move`: `up`, `down`, `left`, `right` or null; `cells`: `editor` (default) or `selection` | reads the text as the column's type (§7.3) and writes it into the editor's cell, with `previous` the editor's `value`, and with `selection` into every selected cell too (§6.5.2); the editor closes, and the active cell moves as `advance` moves it (`down` and `up` along rows, `right` and `left` along columns) |
 | `edit.clear` | | writes null into the selected cells that are writable and not blank (§3.2); fails with `read_only` when no selected cell is writable |
 | `edit.paste` | | pastes `context.clipboard` into the selection (§6.5.1); `output` is `{ "cutRows", "cutColumns" }` |
 | `edit.fill` | `direction`: `down` or `right` | copies the first row (or column) of each range into its other rows (or columns); a range of one row (or column) takes the row above it (or the displayed column left of it), and a range without one is left as it is |
@@ -1038,8 +1038,8 @@ has one, its `rowKey`. Its updates are the cells in the order of the ranges, row
 column, each cell once, with `previous`, the value the cell had (§7.2); cells whose value would not change
 are left out, and a command left without updates gives no request. The cells a command writes MUST be
 writable (§7.1, `read_only`), and their keys and values, and those of the cells it copies from, MUST be in
-`context.rows` (`not_loaded`). `edit.commit` writes by the editor's key and value, and `history.undo` and
-`history.redo` by the step's keys, without `context.rows`; they only need writable columns. Filled values
+`context.rows` (`not_loaded`). `edit.commit` writes the editor's cell by the editor's key and value, and
+`history.undo` and `history.redo` by the step's keys, without `context.rows`; they only need writable columns. Filled values
 keep their value when the two columns have the same type, and are otherwise read from their text form
 (§2.4) as the target column's type (§7.3).
 
@@ -1055,6 +1055,19 @@ range:
   several ranges (`paste_ranges`).
 - Rows and columns beyond the view are left out, and `output` counts them; rows are never added.
 - Values are read as their column's type with digit grouping allowed (§7.3).
+
+#### 6.5.2 Writing into the selection
+
+`edit.commit` with `cells: selection` writes the editor's text into every selected cell (§6.4), as spreadsheets
+do with the primary modifier and Enter. Its updates are the editor's cell, when no range holds it, then the cells
+of the ranges:
+
+- The text is read as each cell's column type (§7.3), as typed text: without digit grouping, in the time zone
+  of the column's date format. When it is not a value of a cell's column, the command fails with `invalid_value`,
+  whose `details` have the `row`, the `column` and the `error` of the first such cell, and nothing is written.
+- Every column of the cells MUST be writable (`read_only`), and a write holds at most 100,000 cells
+  (`too_many_cells`).
+- The editor's cell has `previous` the editor's `value`; the other cells have their value in `context.rows`.
 
 ### 6.6 Copying and exporting
 

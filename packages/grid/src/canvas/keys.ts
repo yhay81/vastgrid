@@ -29,7 +29,8 @@ const ARROWS: Record<string, "up" | "down" | "left" | "right"> = {
  * Down move by a page; Home and End go to the first and last column (with the modifier, also row); Tab and
  * Enter walk through the selection; the modifier and A selects everything. Delete and Backspace clear the selected
  * cells, F2 edits the active cell, the modifier and Z undoes (with Shift, or Ctrl+Y off Apple platforms,
- * redoes), the modifier and D or R fills down or right, and the modifier and S saves. Null for other keys: a key that types text starts editing (`typesText`).
+ * redoes), the modifier and D or R fills down or right, and the modifier and S saves. Null for other keys: a key that
+ * types text starts editing (`typesText`), and the modifier with ; or : types the date or the time (`stampText`).
  */
 export function keyCommand(event: KeyInput, apple: boolean): GridCommand | null {
   const primary = apple ? event.metaKey : event.ctrlKey;
@@ -85,6 +86,29 @@ export function keyCommand(event: KeyInput, apple: boolean): GridCommand | null 
     default:
       return null;
   }
+}
+
+/** A part of a date or a time in two digits. */
+function twoDigits(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+/**
+ * The text that the primary modifier types with `;` (today's date) or `:` (the time now, Shift+; on many
+ * keyboards), in the browser's time zone, as spreadsheets do: `2024-01-31` and `09:05:30`, which typed text reads
+ * (§7.3 of the specification). The character decides, not the key's place, so that every keyboard layout has
+ * both. Null for other keys.
+ */
+export function stampText(event: KeyInput, apple: boolean, now: Date): string | null {
+  if (!(apple ? event.metaKey : event.ctrlKey) || event.altKey) return null;
+  if (event.key === ";") {
+    const year = String(now.getFullYear()).padStart(4, "0");
+    return `${year}-${twoDigits(now.getMonth() + 1)}-${twoDigits(now.getDate())}`;
+  }
+  if (event.key === ":") {
+    return `${twoDigits(now.getHours())}:${twoDigits(now.getMinutes())}:${twoDigits(now.getSeconds())}`;
+  }
+  return null;
 }
 
 /** Whether a key types text, a character or the start of an IME composition, which starts editing the cell. */

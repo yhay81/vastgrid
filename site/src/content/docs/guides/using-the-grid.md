@@ -36,11 +36,13 @@ counts every row.
 | Shift + any of the above | Extend the selection |
 | Tab · Enter (with Shift: backwards) | Move right · down; inside a selection of several cells, walk through it |
 | ⌘/Ctrl + A | Select everything |
-| ⌘/Ctrl + C | Copy |
+| ⌘/Ctrl + C · ⌘/Ctrl + X | Copy · cut (copy, then clear) |
 | Typing · F2 · double click | Edit the cell (see [Editing cells](/guides/editing/)) |
+| ⌘/Ctrl + Enter, in the editor | Write its text into every selected cell |
 | Delete · Backspace | Clear the selected cells |
 | ⌘/Ctrl + Z · ⌘/Ctrl + Shift + Z (Ctrl + Y) | Undo · redo |
 | ⌘/Ctrl + D · ⌘/Ctrl + R | Fill down · fill right |
+| ⌘/Ctrl + ; · ⌘/Ctrl + : | Type today's date · the time now |
 | ⌘/Ctrl + S | Save into the file, when the engine saves |
 | ⌘/Ctrl + F | Find, when the engine finds |
 | Alt + ↓ | The active column's menu |
