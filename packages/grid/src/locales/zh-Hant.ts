@@ -13,6 +13,7 @@ export const zhHant: GridMessages = {
   average: (average) => `平均值 ${average}`,
   copied: (cells) => `已複製 ${cells} 個儲存格`,
   search: "搜尋",
+  searchFold: "不區分全形與半形、平假名與片假名",
   editing: (row, column) => `正在編輯第 ${row} 列，${column}`,
   editorHint: "Enter 儲存，Esc 取消，Alt+Enter 換行",
   readOnly: "此儲存格無法寫入。",

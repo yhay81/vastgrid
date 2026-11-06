@@ -13,6 +13,7 @@ export const es: GridMessages = {
   average: (average) => `Promedio ${average}`,
   copied: (cells) => `${cells} celdas copiadas`,
   search: "Buscar",
+  searchFold: "Igualar ancho completo y medio, hiragana y katakana",
   editing: (row, column) => `Editando fila ${row}, ${column}`,
   editorHint: "Enter guarda, Esc cancela, Alt+Enter inserta un salto de línea",
   readOnly: "Esta celda no se puede editar.",

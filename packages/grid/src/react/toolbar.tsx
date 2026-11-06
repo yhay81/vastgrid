@@ -1,5 +1,5 @@
 import { lazy, use, useDeferredValue, useEffect, useState, useTransition } from "react";
-import { type Expr, partsOf } from "vastgrid-spec";
+import { type Expr, type Fold, type GridCommand, partsOf, type Search } from "vastgrid-spec";
 import { isApple } from "../canvas/keys.js";
 import { offers } from "../core/measures.js";
 import { LocaleContext, SaveContext } from "./context.js";
@@ -16,10 +16,18 @@ const FormulaPanel = lazy(() => import("./formula-menu.js"));
 /** How long typing must pause before the search is set. */
 const SEARCH_DELAY = 200;
 
-/** The text of the search part of a plan's `where` (§6.2.1). */
-function searchOf(where: Expr | undefined): string {
-  for (const part of partsOf(where)) if ("search" in part) return part.search;
-  return "";
+/** The search part of a plan's `where` (§6.2.1). */
+function searchPartOf(where: Expr | undefined): Search | undefined {
+  for (const part of partsOf(where)) if ("search" in part) return part;
+  return undefined;
+}
+
+/** The folds of the search box's switch (§3.5 of the specification). */
+const FOLDS: Fold[] = ["width", "kana"];
+
+/** `search.set` with the text of the box, folding width and kana when the switch is on. */
+function searchSet(text: string, fold: boolean): GridCommand {
+  return fold ? { command: "search.set", text, fold: FOLDS } : { command: "search.set", text };
 }
 
 /**
@@ -29,7 +37,7 @@ function searchOf(where: Expr | undefined): string {
  * button that saves the written cells when the engine saves (§7.5), and one that reads the file again when it
  * changed on disk while cells were written (§7.6). The
  * search's text is React state, which updates as the person types; `search.set` follows through
- * `useDeferredValue` once typing pauses.
+ * `useDeferredValue` once typing pauses. A switch beside the box folds width and kana in the search.
  */
 export function Toolbar({ announce }: { announce: (text: string) => void }) {
   const store = useGridStore();
@@ -50,22 +58,33 @@ export function Toolbar({ announce }: { announce: (text: string) => void }) {
   const saving = use(SaveContext);
   const saves = useGridSelector((snapshot) => snapshot.table?.capabilities.save === true);
   const unsaved = useGridSelector((snapshot) => snapshot.table?.edits.cells ?? 0);
-  const current = useGridSelector((snapshot) => searchOf(snapshot.document.plan?.where));
+  const current = useGridSelector((snapshot) => searchPartOf(snapshot.document.plan?.where)?.search ?? "");
+  const currentFolds = useGridSelector(
+    (snapshot) => (searchPartOf(snapshot.document.plan?.where)?.fold?.length ?? 0) > 0,
+  );
   const [text, setText] = useState(current);
+  const [folds, setFolds] = useState(currentFolds);
   const [shown, setShown] = useState(current);
-  // A search set elsewhere (an agent, a saved view) replaces the text.
-  if (shown !== current) {
+  const [shownFolds, setShownFolds] = useState(currentFolds);
+  // A search set elsewhere (an agent, a saved view) replaces the text, and the switch when it has text.
+  if (shown !== current || shownFolds !== currentFolds) {
     setShown(current);
+    setShownFolds(currentFolds);
     setText(current);
+    if (current !== "") setFolds(currentFolds);
   }
   const deferred = useDeferredValue(text);
   useEffect(() => {
     if (deferred === current) return;
-    const timer = setTimeout(() => {
-      void store.dispatch({ command: "search.set", text: deferred });
-    }, SEARCH_DELAY);
+    const timer = setTimeout(() => void store.dispatch(searchSet(deferred, folds)), SEARCH_DELAY);
     return () => clearTimeout(timer);
-  }, [store, deferred, current]);
+  }, [store, deferred, current, folds]);
+  const toggleFolds = () => {
+    const next = !folds;
+    setFolds(next);
+    // A search that is set changes at once; the switch alone waits for text.
+    if (current !== "" && deferred === current) void store.dispatch(searchSet(current, next));
+  };
   const showsSave = saves && saving !== null;
   const exports = useGridSelector((snapshot) => (snapshot.table?.capabilities.export?.formats.length ?? 0) > 0);
   const derives = useGridSelector(
@@ -93,6 +112,18 @@ export function Toolbar({ announce }: { announce: (text: string) => void }) {
           value={text}
           onChange={(event) => setText(event.target.value)}
         />
+      )}
+      {searches && (
+        <button
+          type="button"
+          className="vg-button vg-toolbar__fold"
+          aria-pressed={folds}
+          aria-label={messages.searchFold}
+          title={messages.searchFold}
+          onClick={toggleFolds}
+        >
+          ｱ=ア
+        </button>
       )}
       <span className="vg-toolbar__spacer" />
       {fileChanged && (

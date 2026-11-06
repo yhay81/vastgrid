@@ -148,6 +148,16 @@
   min-width: 140px;
 }
 
+.vg-toolbar__fold {
+  white-space: nowrap;
+}
+
+.vg-toolbar__fold[aria-pressed="true"] {
+  color: var(--vg-accent-fg);
+  background: var(--vg-accent);
+  border-color: var(--vg-accent);
+}
+
 .vg-toolbar__spacer {
   flex: 1 1 auto;
 }

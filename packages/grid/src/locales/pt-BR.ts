@@ -13,6 +13,7 @@ export const ptBR: GridMessages = {
   average: (average) => `Média ${average}`,
   copied: (cells) => `${cells} células copiadas`,
   search: "Pesquisar",
+  searchFold: "Igualar largura total e meia largura, hiragana e katakana",
   editing: (row, column) => `Editando linha ${row}, ${column}`,
   editorHint: "Enter salva, Esc cancela, Alt+Enter insere uma quebra de linha",
   readOnly: "Esta célula não pode ser editada.",

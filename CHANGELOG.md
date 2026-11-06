@@ -16,7 +16,8 @@
   full-width (`ｶﾞｯｺｳ` → `ガッコウ`); `fold(x, "kana")` makes hiragana katakana. `fold` on both sides of `contains`
   or `eq` matches such text, and sorting by a derived `fold` orders it. Formulas have it as `FOLD(s, 'width')`.
   The search folds the same with `{ "search": text, "fold": ["width", "kana"] }` (§3.5), which `search.set` sets
-  with its `fold`; a search implies a narrower one when both fold the same (§5.2.1).
+  with its `fold`; a search implies a narrower one when both fold the same (§5.2.1). `vastgrid`'s toolbar has a
+  switch beside the search box, ｱ=ア, that folds both, with the text `searchFold` in every locale.
 - `vastgrid-spec`, `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb` and the Python package `vastgrid`: dates are
   the days from `-290308-12-22` to `+294247-01-10`, DuckDB's timestamps' dates, where they were the years 0001 to
   9999 (§2.2). The years 0000 to 9999 keep four digits, others have a sign and six digits (`+010000-01-01`), and

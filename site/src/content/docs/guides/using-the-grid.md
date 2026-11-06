@@ -84,7 +84,8 @@ view is complete, and rows further down come when they are ready.
 ## Filtering and searching
 
 - **Search** (the toolbar's box) keeps the rows where any column of the table contains the text, ignoring letter
-  case.
+  case. The **ｱ=ア** switch beside it also matches full-width and half-width forms, and hiragana and katakana, as
+  the same: `ｶﾌｪ`, `カフェ` and `かふぇ` find each other.
 - **Filter…** in the column menu lists the column's values with how many rows have each, the most common first,
   with check boxes, "Search values", "(Select all)" and "(Blank)". Below it, a condition on typed text: Equals,
   Does not equal, Less than (or equal to), Greater than (or equal to), Between (From, To), Contains, Does not

@@ -14,7 +14,7 @@ export const suites = {
   grid: { tests: ["grid", "editing"], server: bench },
   strict: { tests: ["strict"], server: benchDev },
   files: {
-    tests: ["cells", "checked", "column-menu", "find", "format", "formulas", "panels", "totals"],
+    tests: ["cells", "checked", "column-menu", "find", "format", "formulas", "panels", "search", "totals"],
     server: files,
   },
   mcp: {

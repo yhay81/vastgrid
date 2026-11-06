@@ -337,7 +337,10 @@ positions are computed when the document or the view changes, not per frame.
 - `save` and `export` run as Actions: `useTransition` gives their pending state, and errors reach the UI as
   outcomes (§4.2).
 - The search box keeps its text in React state, which updates at once, and dispatches `search.set` with the
-  text from `useDeferredValue`; the store cancels the reads of views it no longer needs.
+  text from `useDeferredValue`; the store cancels the reads of views it no longer needs. A switch beside it
+  (`aria-pressed`, labelled by `messages.searchFold`) adds `fold: ["width", "kana"]` (§3.5 of the
+  specification), at once for a search that is set and with the next text otherwise; a search set elsewhere sets
+  the switch.
 
 ### 6.3 Scrolling
 

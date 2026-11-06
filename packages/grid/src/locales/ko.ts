@@ -13,6 +13,7 @@ export const ko: GridMessages = {
   average: (average) => `평균 ${average}`,
   copied: (cells) => `셀 ${cells}개를 복사했습니다`,
   search: "검색",
+  searchFold: "전각과 반각, 히라가나와 가타카나를 구별하지 않음",
   editing: (row, column) => `${row}행, ${column} 편집 중`,
   editorHint: "Enter로 저장, Esc로 취소, Alt+Enter로 줄 바꿈",
   readOnly: "이 셀은 쓸 수 없습니다.",

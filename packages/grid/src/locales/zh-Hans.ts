@@ -13,6 +13,7 @@ export const zhHans: GridMessages = {
   average: (average) => `平均值 ${average}`,
   copied: (cells) => `已复制 ${cells} 个单元格`,
   search: "搜索",
+  searchFold: "不区分全角与半角、平假名与片假名",
   editing: (row, column) => `正在编辑第 ${row} 行，${column}`,
   editorHint: "Enter 保存，Esc 取消，Alt+Enter 换行",
   readOnly: "此单元格不可写入。",

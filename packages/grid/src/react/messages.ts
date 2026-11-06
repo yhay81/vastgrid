@@ -15,6 +15,8 @@ export interface GridMessages {
   average: (average: string) => string;
   copied: (cells: string) => string;
   search: string;
+  /** The switch beside the search box that folds width and kana (§3.5 of the specification). */
+  searchFold: string;
   /** The cell editor's label. */
   editing: (row: string, column: string) => string;
   /** How the editor saves and leaves, for screen readers. */
@@ -201,6 +203,7 @@ export const en: GridMessages = {
   average: (average) => `Average ${average}`,
   copied: (cells) => `Copied ${cells} cells`,
   search: "Search",
+  searchFold: "Match full-width and half-width, hiragana and katakana",
   editing: (row, column) => `Editing row ${row}, ${column}`,
   editorHint: "Enter saves, Esc cancels, Alt+Enter starts a new line",
   readOnly: "This cell is not written.",

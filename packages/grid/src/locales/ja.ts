@@ -13,6 +13,7 @@ export const ja: GridMessages = {
   average: (average) => `平均 ${average}`,
   copied: (cells) => `${cells} セルをコピーしました`,
   search: "検索",
+  searchFold: "全角と半角、ひらがなとカタカナを区別しない",
   editing: (row, column) => `${row} 行目・${column} を編集中`,
   editorHint: "Enter で保存、Esc で取り消し、Alt+Enter で改行",
   readOnly: "このセルは書き込めません。",
