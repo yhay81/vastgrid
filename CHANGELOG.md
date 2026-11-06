@@ -108,6 +108,10 @@
 
 ### Fixes
 
+- `vastgrid-duckdb` and the Python package `vastgrid`: a Parquet, JSON or JSON Lines file inside folders named
+  `key=value` keeps its own columns, where DuckDB added one for each such folder of its path; in the Python
+  package, so does a CSV or TSV file.
+
 - `vastgrid`: the detail panel shows a text that the engine cut to the text limit (2,000 characters by default)
   in full, reading it again, where it showed the cut text as if it were whole.
 

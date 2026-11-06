@@ -730,3 +730,21 @@ test("engines delete their session folders, also those that ended processes left
   await engine.dispose();
   assert.deepEqual(await readdir(base), []);
 });
+
+test("a file in folders named like key=value has its own columns, not ones made from the folders' names", async () => {
+  await mkdir(path.join(workspace, "region=west", "year=2024"), { recursive: true });
+  await parquet("region=west/year=2024/sales.parquet", "SELECT 1 AS id, 'a' AS item");
+  await writeFile(path.join(workspace, "region=west/year=2024/sales.csv"), "id,item\n1,a\n");
+  await writeFile(path.join(workspace, "region=west/year=2024/sales.jsonl"), '{"id":1,"item":"a"}\n');
+  await writeFile(path.join(workspace, "region=west/year=2024/sales.json"), '[{"id":1,"item":"a"}]');
+  for (const name of ["sales.parquet", "sales.csv", "sales.jsonl", "sales.json"]) {
+    const info = await client.open(`region=west/year=2024/${name}`);
+    assert.equal(info.status, "ready", info.error);
+    assert.deepEqual(
+      info.columns.map((column) => column.name),
+      ["id", "item"],
+      name,
+    );
+    assert.deepEqual((await client.rows(info)).rows, [[1, "a"]], name);
+  }
+});

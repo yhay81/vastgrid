@@ -326,3 +326,20 @@ def test_cancel_interrupts_a_request(engine: Engine, tmp_path: Path) -> None:
     assert answers[0]["error"]["code"] == "cancelled"
     # The engine answers the next request.
     assert client.rows(info, {}, ["n"])[:2] == [[0], [1]]
+
+
+def test_files_in_folders_named_like_key_value_have_their_own_columns(engine: Engine, tmp_path: Path) -> None:
+    client = Client(engine)
+    folder = tmp_path / "region=west" / "year=2024"
+    folder.mkdir(parents=True)
+    (folder / "sales.csv").write_text("id,item\n1,a\n", "utf-8")
+    (folder / "sales.jsonl").write_text('{"id":1,"item":"a"}\n', "utf-8")
+    (folder / "sales.json").write_text('[{"id":1,"item":"a"}]', "utf-8")
+    parquet = str(folder / "sales.parquet").replace("'", "''")
+    duckdb.connect().execute(f"COPY (SELECT 1 AS id, 'a' AS item) TO '{parquet}' (FORMAT parquet)")
+    formats = {"sales.csv": "csv", "sales.jsonl": "ndjson", "sales.json": "json", "sales.parquet": "parquet"}
+    for name, fmt in formats.items():
+        engine.add(name, Source(path=str(folder / name), format=fmt))
+        opened = client.result("open", ref=name)
+        assert [column["name"] for column in opened["columns"]] == ["id", "item"], name
+        assert client.rows(opened) == [[1, "a"]], name

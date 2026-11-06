@@ -288,14 +288,17 @@ export class LoadedTable {
       case "xlsx":
       case "duckdb":
         return given;
+      // A file's columns are its own: DuckDB would add one for each folder of its path named like `key=value`.
       case "parquet":
-        return "read_parquet($1)";
+        return "read_parquet($1, hive_partitioning=false)";
       case "json":
-        return attempt === 0 ? "read_json_auto($1)" : "read_json_auto($1, sample_size=-1)";
+        return attempt === 0
+          ? "read_json_auto($1, hive_partitioning=false)"
+          : "read_json_auto($1, hive_partitioning=false, sample_size=-1)";
       case "ndjson":
         return attempt === 0
-          ? "read_json_auto($1, format='newline_delimited')"
-          : "read_json_auto($1, format='newline_delimited', sample_size=-1)";
+          ? "read_json_auto($1, format='newline_delimited', hive_partitioning=false)"
+          : "read_json_auto($1, format='newline_delimited', hive_partitioning=false, sample_size=-1)";
       default:
         return `read_csv($1${this.delimitedOptions(attempt, reading)})`;
     }
@@ -440,7 +443,7 @@ export class LoadedTable {
   private async readParquetInPlace(): Promise<boolean> {
     return this.session.withConnection(undefined, async (connection) => {
       const file = quoteLiteral(this.path);
-      const sources = await this.describe(connection, `SELECT * FROM read_parquet(${file})`);
+      const sources = await this.describe(connection, `SELECT * FROM read_parquet(${file}, hive_partitioning=false)`);
       if (sources.some((column) => column.name.toLowerCase() === "file_row_number")) return false;
       const columns = sources.map(tableColumn);
       const view = this.session.createName("vg_p");
@@ -449,7 +452,7 @@ export class LoadedTable {
         (item, index) => `${sourceExpression(item, columns[index])} AS ${quoteIdentifier(item.name)}`,
       );
       await connection.run(
-        `CREATE VIEW ${quoteIdentifier(view)} AS SELECT ${[...values, `file_row_number AS ${rowId}`].join(", ")} FROM read_parquet(${file}, file_row_number=true)`,
+        `CREATE VIEW ${quoteIdentifier(view)} AS SELECT ${[...values, `file_row_number AS ${rowId}`].join(", ")} FROM read_parquet(${file}, file_row_number=true, hive_partitioning=false)`,
       );
       this.objects.push(`VIEW ${quoteIdentifier(view)}`);
       const count = await connection.runAndReadAll(`SELECT count(*) FROM ${quoteIdentifier(view)}`);

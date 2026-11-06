@@ -67,7 +67,8 @@ temporary folder.
   detected by default: `read: { headerRow: 1 }` forces the first record to be a header, `headerRow: 0` reads
   every record as data, and a larger value skips records before that header. These options also apply to saves
   and reloads; a grid passes them through its `open` prop. Parent folders named `key=value` never add or replace
-  columns. Long records raise the reader's buffer limit as needed, subject to the engine's memory limit.
+  columns, whatever the file's format. Long records raise the reader's buffer limit as needed, subject to the
+  engine's memory limit.
 - **Databases.** The tables of a DuckDB database (`.duckdb`, `.ddb`) are its `sheets`, those of the schema `main`
   by their names and others as `schema.name`, and `read: { sheet }` chooses one, by default the first. Views are
   not: their SQL reads whatever it names. The database is attached read only while the table is copied, so that

@@ -246,8 +246,9 @@ or tab). Headers are detected by default; `open.read.headerRow: 1` uses the firs
 every record as data, and a larger value skips records before that header. These options apply to saves and
 reloads too. A grid passes them as `open={{ read: { delimiter: ";", headerRow: 1 } }}`.
 
-Folders named `key=value` do not add or replace columns. Quoted fields are decoded even when they first appear
-late in the file. Long records grow the reader's buffer as needed, subject to the engine's memory limit.
+Folders named `key=value` do not add or replace columns, whatever the file's format. Quoted fields are decoded
+even when they first appear late in the file. Long records grow the reader's buffer as needed, subject to the
+engine's memory limit.
 
 Text encodings (UTF-16, Shift_JIS, EUC-JP and others) are found and converted after decompression for gzip and
 zstd files too, and files whose types change late

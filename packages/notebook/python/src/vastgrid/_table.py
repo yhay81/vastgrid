@@ -165,13 +165,15 @@ class Table:
 
     def _reader(self, attempt: int) -> str:
         fmt = self.source.format
+        # A file's columns are its own: DuckDB would add one for each folder of its path named like `key=value`.
         if fmt == "parquet":
-            return "read_parquet($1)"
+            return "read_parquet($1, hive_partitioning=false)"
         if fmt == "json":
-            return "read_json_auto($1)" if attempt == 0 else "read_json_auto($1, sample_size=-1)"
+            options = "" if attempt == 0 else ", sample_size=-1"
+            return f"read_json_auto($1, hive_partitioning=false{options})"
         if fmt == "ndjson":
             options = "" if attempt == 0 else ", sample_size=-1"
-            return f"read_json_auto($1, format='newline_delimited'{options})"
+            return f"read_json_auto($1, format='newline_delimited', hive_partitioning=false{options})"
         if fmt == "xlsx":
             sheet = "" if self.sheet is None else f", sheet='{self.sheet.replace(chr(39), chr(39) * 2)}'"
             return f"read_xlsx($1{sheet}, ignore_errors=true)"
@@ -182,6 +184,7 @@ class Table:
             # Text without strict quotes is read with padding: unpadded, such a record would fail the read.
             reading = "sequential"
         options = ", delim='\\t'" if self.source.format == "tsv" else ""
+        options += ", hive_partitioning=false"
         # Without null_padding, DuckDB's sniffer may settle on the last consistent part of a file whose rows have
         # different numbers of fields and silently skip the rest (`_reads_plain` rules that out).
         if reading != "plain":
@@ -274,7 +277,7 @@ class Table:
         """Reads a Parquet file in place, by its row numbers; False for a file with a column named like those row
         numbers (`file_row_number`), which is loaded as a table instead."""
         literal = "'" + path.replace("'", "''") + "'"
-        sources = self._describe(cursor, f"SELECT * FROM read_parquet({literal})", [])
+        sources = self._describe(cursor, f"SELECT * FROM read_parquet({literal}, hive_partitioning=false)", [])
         if any(name.lower() == "file_row_number" for name, _ in sources):
             return False
         columns = [table_column(name, sql_type) for name, sql_type in sources]
@@ -286,7 +289,7 @@ class Table:
         ]
         cursor.execute(
             f"CREATE VIEW {view} AS SELECT {', '.join([*values, f'file_row_number AS {row_id}'])} "
-            f"FROM read_parquet({literal}, file_row_number=true)"
+            f"FROM read_parquet({literal}, file_row_number=true, hive_partitioning=false)"
         )
         self.objects.insert(0, f"VIEW {view}")
         rows = int(cursor.execute(f"SELECT count(*) FROM {view}").fetchone()[0])
