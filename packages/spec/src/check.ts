@@ -15,7 +15,7 @@ import {
   type PlanMember,
   type SortDirection,
 } from "./plan.js";
-import { FOLDS } from "./fold.js";
+import { type Fold, FOLDS } from "./fold.js";
 import { type Column, type JsonValue, LOGICAL_TYPES, type LogicalType, type ValueType } from "./types.js";
 import { decimalTextType, isObject, isValueOf, sameType, trimSpaces, typeName } from "./values.js";
 
@@ -49,6 +49,7 @@ export interface CallExpr {
 export interface SearchExpr {
   kind: "search";
   text: string;
+  fold: Fold[];
   columns: Column[];
   type: ValueType;
 }
@@ -174,6 +175,21 @@ function comparable(a: ValueType, b: ValueType) {
 
 function decimal(precision: number, scale: number): ValueType {
   return { type: "decimal", precision, scale };
+}
+
+/** The folds of a search (§3.5): some of `FOLDS`, in their order, at least one when given. */
+function searchFolds(folds: unknown, path: string): Fold[] {
+  if (folds === undefined) return [];
+  const names = FOLDS.map((name) => `"${name}"`).join(", ");
+  if (!Array.isArray(folds) || folds.length === 0) fail(path, "syntax", `A search's fold is a list of ${names}.`);
+  let last = -1;
+  for (const [index, fold] of folds.entries()) {
+    const at = FOLDS.indexOf(fold as Fold);
+    if (at < 0) fail(child(path, index), "syntax", `A search's fold is a list of ${names}.`);
+    if (at <= last) fail(child(path, index), "syntax", `A search's folds are each named once, in the order ${names}.`);
+    last = at;
+  }
+  return folds as Fold[];
 }
 
 /** Whether an exact type holds a number: its digits (as `String` writes them) fit its scale and range. */
@@ -324,8 +340,8 @@ class Checker {
       return this.literal(node.lit, node.type, path);
     }
     if ("search" in node) {
-      members(node, ["search"], path);
-      return this.search(node.search, path, place);
+      members(node, ["search", "fold"], path);
+      return this.search(node.search, node.fold, path, place);
     }
     if ("fn" in node) {
       members(node, ["fn", "args"], path);
@@ -381,14 +397,15 @@ class Checker {
     return { kind: "literal", value, type: literalType };
   }
 
-  private search(text: unknown, path: string, place: Place): TypedExpr {
+  private search(text: unknown, folds: unknown, path: string, place: Place): TypedExpr {
     this.member("search", path);
     if (typeof text !== "string") fail(child(path, "search"), "syntax", "A search is a string.");
     if (!isValueOf(text, STRING)) fail(child(path, "search"), "literal", "A search is well-formed Unicode text.");
     if (place !== "where" || this.searched) fail(path, "misplaced", "A plan can search once, in where.");
     if (trimSpaces(text) === "") fail(path, "literal", "A search needs text other than spaces.");
+    const fold = searchFolds(folds, child(path, "fold"));
     this.searched = true;
-    return { kind: "search", text, columns: [...this.table], type: BOOLEAN };
+    return { kind: "search", text, fold, columns: [...this.table], type: BOOLEAN };
   }
 
   /** A value of the kind a function takes: an untyped null takes `otherwise`. */

@@ -63,6 +63,7 @@ class SearchExpr:
     """The search of §3.5, over the table's own columns."""
 
     text: str
+    fold: list[str]
     columns: list[Column]
     type: ValueType
     kind: str = field(default="search", init=False)
@@ -213,6 +214,24 @@ def _decimal_shape(type: ValueType) -> tuple[int, int]:
     return _member(type, "precision", 38), _member(type, "scale", 0)
 
 
+def _search_folds(folds: Any, path: str) -> list[str]:
+    """The folds of a search (§3.5): some of `FOLDS`, in their order, at least one when given."""
+    if folds is _MISSING:
+        return []
+    names = ", ".join(f'"{name}"' for name in FOLDS)
+    if not isinstance(folds, list) or not folds:
+        _fail(path, "syntax", f"A search's fold is a list of {names}.")
+    last = -1
+    for index, fold in enumerate(folds):
+        if not isinstance(fold, str) or fold not in FOLDS:
+            _fail(_child(path, index), "syntax", f"A search's fold is a list of {names}.")
+        at = FOLDS.index(fold)
+        if at <= last:
+            _fail(_child(path, index), "syntax", f"A search's folds are each named once, in the order {names}.")
+        last = at
+    return list(folds)
+
+
 def _holds_exact(type: ValueType, value: float) -> bool:
     """Whether an exact type holds a number: its digits (as `String` writes them) fit its scale and range."""
     text = number_text(value)
@@ -351,8 +370,8 @@ class _Checker:
             _members(node, ("lit", "type"), path)
             return self._literal(node["lit"], node.get("type", _MISSING), path)
         if "search" in node:
-            _members(node, ("search",), path)
-            return self._search(node["search"], path, place)
+            _members(node, ("search", "fold"), path)
+            return self._search(node["search"], node.get("fold", _MISSING), path, place)
         if "fn" in node:
             _members(node, ("fn", "args"), path)
             fn = node["fn"]
@@ -404,7 +423,7 @@ class _Checker:
             _fail(path, "literal", f"{json_text(value)} is not a {declared} value.")
         return LiteralExpr(value, literal_type)
 
-    def _search(self, text: Any, path: str, place: str) -> TypedExpr:
+    def _search(self, text: Any, folds: Any, path: str, place: str) -> TypedExpr:
         self.member("search", path)
         if not isinstance(text, str):
             _fail(_child(path, "search"), "syntax", "A search is a string.")
@@ -414,8 +433,9 @@ class _Checker:
             _fail(path, "misplaced", "A plan can search once, in where.")
         if trim_spaces(text) == "":
             _fail(path, "literal", "A search needs text other than spaces.")
+        fold = _search_folds(folds, _child(path, "fold"))
         self.searched = True
-        return SearchExpr(text, list(self.table), BOOLEAN)
+        return SearchExpr(text, fold, list(self.table), BOOLEAN)
 
     def _want(
         self, arg: TypedExpr, path: str, accepts: Callable[[ValueType], bool], kind: str, otherwise: ValueType

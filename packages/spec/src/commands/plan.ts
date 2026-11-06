@@ -1,5 +1,6 @@
 /** The commands of the plan (docs/spec.md §6.2): sort keys, filters, search, derived columns and groups. */
 import { checkPlan } from "../check.js";
+import { type Fold, FOLDS } from "../fold.js";
 import type { Expr, Plan, Search, SortKey } from "../plan.js";
 import { columnsOf, joinParts, partsOf } from "../state.js";
 import { isObject, trimSpaces } from "../values.js";
@@ -16,6 +17,21 @@ import type { Handlers } from "./run.js";
 
 export function isSearch(expr: Expr): expr is Search {
   return "search" in expr;
+}
+
+/** The folds of `search.set` (§3.5): some of `FOLDS`, in their order; none when absent or empty. */
+function foldsArgument(command: Command): Fold[] {
+  const folds = command.fold;
+  if (folds === undefined) return [];
+  const names = FOLDS.map((name) => `"${name}"`).join(", ");
+  if (!Array.isArray(folds)) fail("/fold", "syntax", `fold is a list of ${names}.`);
+  let last = -1;
+  for (const [index, fold] of folds.entries()) {
+    const at = FOLDS.indexOf(fold as Fold);
+    if (at <= last) fail(`/fold/${index}`, "syntax", `fold names each of ${names} at most once, in that order.`);
+    last = at;
+  }
+  return folds as Fold[];
 }
 
 function renameExpr(expr: Expr, from: string, to: string): Expr {
@@ -111,11 +127,13 @@ export const PLAN_HANDLERS = {
   },
 
   "search.set"(run, command) {
-    takes(command, ["text"]);
+    takes(command, ["text", "fold"]);
     const text = stringArgument(command, "text");
+    const fold = foldsArgument(command);
     const plan = run.draft();
     const conditions = partsOf(plan.where).filter((part) => !isSearch(part));
-    plan.where = joinParts(trimSpaces(text) === "" ? conditions : [{ search: text }, ...conditions]);
+    const search: Search = fold.length === 0 ? { search: text } : { search: text, fold };
+    plan.where = joinParts(trimSpaces(text) === "" ? conditions : [search, ...conditions]);
     run.setPlan(plan);
   },
 

@@ -2,6 +2,7 @@
  * What a command is (docs/spec.md §6.1): its arguments, the context it is applied with, what it gives and why
  * it fails, with the readers of its arguments.
  */
+import type { Fold } from "../fold.js";
 import type { Aggregate, Capabilities, Expr, SortKey } from "../plan.js";
 import {
   type ColumnFormat,
@@ -77,7 +78,7 @@ export type GridCommand =
   | { command: "sort.clear" | "filter.clear" | "group.clear" }
   | { command: "filter.set"; where: Expr | null }
   | { command: "filter.column"; column: string; where: Expr | null }
-  | { command: "search.set"; text: string }
+  | { command: "search.set"; text: string; fold?: Fold[] }
   | { command: "derive.add"; name: string; expr: Expr; before?: string }
   | { command: "derive.update"; name: string; expr?: Expr; rename?: string }
   | { command: "derive.remove"; name: string }

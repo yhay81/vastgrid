@@ -1,6 +1,7 @@
 /**
  * Plans and expressions (docs/spec.md §4): their JSON form, limits and errors.
  */
+import type { Fold } from "./fold.js";
 import type { JsonValue, LogicalType } from "./types.js";
 
 /** The functions of expressions (§4.4). */
@@ -97,6 +98,8 @@ export interface Call {
 /** The search of §3.5, only in `where`. */
 export interface Search {
   search: string;
+  /** The folds of §3.4 on both sides, in the order of `FOLDS`; none when absent. */
+  fold?: Fold[];
 }
 
 export type Expr = ColumnRef | Literal | Call | Search;

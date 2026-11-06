@@ -67,7 +67,7 @@ const outcome = await grid.current?.dispatch({ command: "search.set", text: "Tok
 | `filter.set` | `where`：式か null | 条件を `where` の各部分にします。検索の後に置きます。 |
 | `filter.column` | `column`、`where`：式か null | その列の条件を `where` の各部分にします。どの部分もその列だけを参照します。 |
 | `filter.clear` | | 条件を外し、検索は残します。 |
-| `search.set` | `text` | 検索を `text` にし、`where` の部分の先頭に置きます。空白だけのテキストは検索を外します。 |
+| `search.set` | `text`、`fold`: `["width"]`・`["kana"]`・`["width", "kana"]` | 検索を `text` にし、`where` の部分の先頭に置きます。空白だけのテキストは検索を外します。`fold` を付けると、全角と半角、ひらがなとカタカナを区別せずに探します（`ｶﾌｪ` で `カフェ` が見つかる）。 |
 | `derive.add` | `name`、`expr`、`before`：派生列 | 派生列を末尾か `before` の前に加えます。 |
 | `derive.update` | `name`、`expr`、`rename` | 式を変えるか、使われているすべての場所で列の名前を変えます。 |
 | `derive.remove` | `name` | 派生列と、それを使うものを外します。 |

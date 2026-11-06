@@ -778,6 +778,169 @@
       }
     },
     {
+      "id": "checked.narrower-folded-search",
+      "section": "5.2.1",
+      "description": "Folding width, ｶﾞｯｺｳ is ガッコウ, which contains ガッ.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "search": "ｶﾞｯｺｳ",
+              "fold": [
+                "width"
+              ]
+            }
+          }
+        },
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "exclude",
+            "keys": [],
+            "where": {
+              "search": "ガッ",
+              "fold": [
+                "width"
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "uncheck",
+          "keys": [
+            {
+              "rowId": 0
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "exclude",
+            "keys": [
+              {
+                "rowId": 0
+              }
+            ],
+            "where": {
+              "search": "ガッ",
+              "fold": [
+                "width"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "checked.folded-search-by-its-folded-text",
+      "section": "5.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "search": "ｶﾞ",
+              "fold": [
+                "width"
+              ]
+            }
+          }
+        },
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "exclude",
+            "keys": [],
+            "where": {
+              "search": "ｶ",
+              "fold": [
+                "width"
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "uncheck",
+          "keys": [
+            {
+              "rowId": 0
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_state",
+          "path": ""
+        }
+      },
+      "description": "ｶﾞ contains ｶ, but folded it is ガ, which does not contain カ."
+    },
+    {
+      "id": "checked.search-of-other-folds",
+      "section": "5.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "search": "tokyo"
+            }
+          }
+        },
+        "session": {
+          "kind": "vastgrid/session",
+          "version": 2,
+          "checked": {
+            "mode": "exclude",
+            "keys": [],
+            "where": {
+              "search": "ok",
+              "fold": [
+                "width"
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "uncheck",
+          "keys": [
+            {
+              "rowId": 0
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "unknown_state",
+          "path": ""
+        }
+      },
+      "description": "A search implies another only when both fold the same."
+    },
+    {
       "id": "checked.include-ignores-view",
       "section": "5.2.1",
       "state": {

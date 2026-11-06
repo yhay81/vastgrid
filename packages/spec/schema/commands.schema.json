@@ -383,6 +383,13 @@
             },
             "text": {
               "type": "string"
+            },
+            "fold": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": ["width", "kana"]
+              }
             }
           }
         },

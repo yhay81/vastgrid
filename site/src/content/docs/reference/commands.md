@@ -80,7 +80,7 @@ A command can also fail with a `GridError` from the engine, such as `read_only` 
 | `filter.set` | `where`: an expression or null | The conditions become the parts of `where`, after the search. |
 | `filter.column` | `column`; `where`: an expression or null | The conditions of that column become the parts of `where`; every part refers to that column only. |
 | `filter.clear` | | Removes the conditions and keeps the search. |
-| `search.set` | `text` | The search becomes `text`, first among the parts of `where`; blank text removes it. |
+| `search.set` | `text`; `fold`: `["width"]`, `["kana"]` or `["width", "kana"]` | The search becomes `text`, first among the parts of `where`; blank text removes it. With `fold`, it matches full-width and half-width forms, or hiragana and katakana, as the same (`ｶﾌｪ` finds `カフェ`). |
 | `derive.add` | `name`, `expr`; `before`: a derived column | Adds a derived column at the end, or before `before`. |
 | `derive.update` | `name`; `expr`; `rename` | Changes the expression, or renames the column everywhere it is used. |
 | `derive.remove` | `name` | Removes the derived column and what uses it. |

@@ -29,6 +29,7 @@ import {
   timestampText,
   trimSpaces,
   type Fold,
+  foldAll,
   foldText,
   TIMESTAMP_INFINITY,
   UNIT_PER_SECOND,
@@ -338,14 +339,16 @@ export function compile(expr: TypedExpr, read: ColumnReader): RowValue {
       return () => value;
     }
     case "search": {
-      const needle = mapCase(expr.text, false);
+      // The folds first, then lower (§3.5).
+      const folds = expr.fold;
+      const needle = mapCase(foldAll(expr.text, folds), false);
       const columns = expr.columns.map((column) => ({ column, values: read(column.name) }));
       return (row) => {
         for (const { column, values } of columns) {
           const value = values(row);
           if (value === null) continue;
           const text = column.type === "string" ? (value as string) : (textOf(value, column) as string);
-          if (mapCase(text, false).includes(needle)) return true;
+          if (mapCase(folds.length === 0 ? text : foldAll(text, folds), false).includes(needle)) return true;
         }
         return false;
       };

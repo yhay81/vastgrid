@@ -177,6 +177,7 @@ def _finite(sql: str) -> str:
 class _Compiler:
     def __init__(self, params: _Params) -> None:
         self.params = params
+        self._tables: dict[str, str] = {}
 
     def expression(self, node: TypedExpr) -> str:
         if isinstance(node, ColumnExpr):
@@ -186,11 +187,12 @@ class _Compiler:
         if isinstance(node, SearchExpr):
             if not node.columns:
                 return "FALSE"
-            text = f"CAST({self.params.add(node.text)} AS VARCHAR)"
-            matches = [
-                f"coalesce(contains(lower({text_sql(quote_identifier(column['name']), column)}), lower({text})), FALSE)"
-                for column in node.columns
+            # The folds first, then lower (§3.5).
+            text = self._fold_all(f"CAST({self.params.add(node.text)} AS VARCHAR)", node.fold)
+            values = [
+                self._fold_all(text_sql(quote_identifier(column["name"]), column), node.fold) for column in node.columns
             ]
+            matches = [f"coalesce(contains(lower({value}), lower({text})), FALSE)" for value in values]
             return f"({' OR '.join(matches)})"
         return self._call(node)
 
@@ -223,9 +225,24 @@ class _Compiler:
         sql = self.expression(node)
         return _finite(sql) if node.type["type"] == "float" else sql
 
-    def _string(self, value: str) -> str:
-        """A text that is not a value of the plan (a table of `fold`), as a parameter."""
-        return f"CAST({self.params.add(value)} AS VARCHAR)"
+    def _table(self, value: str) -> str:
+        """A text of a table of `fold`, as one parameter for the whole plan."""
+        param = self._tables.get(value)
+        if param is None:
+            param = self._tables[value] = self.params.add(value)
+        return f"CAST({param} AS VARCHAR)"
+
+    def _fold(self, sql: str, fold: str) -> str:
+        """`fold` (§4.4): the pairs first, two code points to one, then each code point by translate."""
+        pairs, source, target = FOLD_TABLES[fold]
+        for pair, letter in pairs:
+            sql = f"replace({sql}, {self._table(pair)}, {self._table(letter)})"
+        return f"translate({sql}, {self._table(source)}, {self._table(target)})"
+
+    def _fold_all(self, sql: str, folds: Sequence[str]) -> str:
+        for fold in folds:
+            sql = self._fold(sql, fold)
+        return sql
 
     def _double(self, node: TypedExpr) -> str:
         return f"CAST({self._number(node)} AS DOUBLE)"
@@ -361,12 +378,7 @@ class _Compiler:
                 return f"substring({arg(0)}, {start}, {_at_least(arg(2), 0)})"
             return f"substring({arg(0)}, {start})"
         if fn == "fold":
-            # The pairs first, two code points to one, then each code point by translate (§4.4).
-            pairs, source, target = FOLD_TABLES[args[1].value]
-            sql = arg(0)
-            for pair, letter in pairs:
-                sql = f"replace({sql}, {self._string(pair)}, {self._string(letter)})"
-            return f"translate({sql}, {self._string(source)}, {self._string(target)})"
+            return self._fold(arg(0), args[1].value)
         if fn == "replace":
             return f"replace({arg(0)}, {arg(1)}, {arg(2)})"
         if fn in ("contains", "starts_with", "ends_with"):

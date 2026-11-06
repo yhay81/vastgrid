@@ -70,8 +70,8 @@ Each step adds conformance cases on every engine.
 ## 2. Collations and folding
 
 Part 1 is done (§3.4, §4.4): `fold(x, "width")` and `fold(x, "kana")`, without accents, by the tables proposed
-below; a half-width mark that makes no letter becomes the combining one, as NFKC maps it. The search's `fold`, the
-grid's switch and locale collations remain open (§12).
+below; a half-width mark that makes no letter becomes the combining one, as NFKC maps it. So is the search's `fold`
+(§3.5), with a switch beside the grid's search box. Locale collations remain open (§12).
 
 ### Today
 
@@ -171,7 +171,7 @@ meaning. The change is additive, and fits a patch version of 0.2 under §11.
 The proposed order of the work:
 
 1. Dates first: small, additive, and every part is checkable against DuckDB. Done.
-2. Then folding as functions (§2 part 1). Done; the search's `fold` next.
+2. Then folding as functions (§2 part 1), and in the search. Done.
 3. Then nested types in their four steps. They need the most work and the opt-in.
 
 Locale collations wait for a need.

@@ -198,4 +198,4 @@ export {
   typeName,
   valueOfText,
 } from "./values.js";
-export { FOLD_TABLES, FOLDS, type Fold, foldText } from "./fold.js";
+export { FOLD_TABLES, FOLDS, type Fold, foldAll, foldText, searchImplies } from "./fold.js";

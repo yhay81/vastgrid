@@ -87,3 +87,22 @@ export function foldText(text: string, fold: Fold): string {
   }
   return result;
 }
+
+/** Each fold of a list in turn. */
+export function foldAll(text: string, folds: readonly Fold[] | undefined): string {
+  let result = text;
+  for (const fold of folds ?? []) result = foldText(result, fold);
+  return result;
+}
+
+/**
+ * Whether every row that a search finds is found by another, the view's (§5.2.1): both fold the same, and the
+ * folded text of the one is contained in that of the view's, since `lower` and the folds map the text of a value
+ * in the same way.
+ */
+export function searchImplies(view: { search: string; fold?: Fold[] }, part: { search: string; fold?: Fold[] }) {
+  const folds = view.fold ?? [];
+  const partFolds = part.fold ?? [];
+  if (folds.length !== partFolds.length || folds.some((fold, index) => partFolds[index] !== fold)) return false;
+  return foldAll(view.search, folds).includes(foldAll(part.search, folds));
+}

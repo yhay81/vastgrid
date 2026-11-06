@@ -187,6 +187,7 @@ function finite(sql: string) {
 
 class Compiler {
   readonly params: Params;
+  private readonly tables = new Map<string, string>();
 
   constructor(params: Params) {
     this.params = params;
@@ -200,16 +201,38 @@ class Compiler {
         return this.literal(node);
       case "search": {
         if (node.columns.length === 0) return "FALSE";
-        const text = `CAST(${this.params.add(node.text)} AS VARCHAR)`;
+        // The folds first, then lower (§3.5).
+        const text = this.foldAll(`CAST(${this.params.add(node.text)} AS VARCHAR)`, node.fold);
         const matches = node.columns.map(
           (column) =>
-            `coalesce(contains(lower(${textSql(quoteIdentifier(column.name), column)}), lower(${text})), FALSE)`,
+            `coalesce(contains(lower(${this.foldAll(textSql(quoteIdentifier(column.name), column), node.fold)}), lower(${text})), FALSE)`,
         );
         return `(${matches.join(" OR ")})`;
       }
       case "call":
         return this.call(node);
     }
+  }
+
+  /** `fold` (§4.4): the pairs first, two code points to one, then each code point by translate. */
+  private fold(sql: string, fold: Fold): string {
+    const table = FOLD_TABLES[fold];
+    const text = (value: string) => {
+      // The tables are the same in every fold of a plan, so each is one parameter.
+      let param = this.tables.get(value);
+      if (param === undefined) {
+        param = this.params.add(value);
+        this.tables.set(value, param);
+      }
+      return `CAST(${param} AS VARCHAR)`;
+    };
+    let result = sql;
+    for (const [pair, letter] of table.pairs) result = `replace(${result}, ${text(pair)}, ${text(letter)})`;
+    return `translate(${result}, ${text(table.from)}, ${text(table.to)})`;
+  }
+
+  private foldAll(sql: string, folds: readonly Fold[]): string {
+    return folds.reduce((result, fold) => this.fold(result, fold), sql);
   }
 
   private literal(node: LiteralExpr): string {
@@ -386,14 +409,8 @@ class Compiler {
           ? `substring(${arg(0)}, ${start}, ${atLeast(arg(2), 0)})`
           : `substring(${arg(0)}, ${start})`;
       }
-      case "fold": {
-        // The pairs first, two code points to one, then each code point by translate (§4.4).
-        const table = FOLD_TABLES[(args[1] as LiteralExpr).value as Fold];
-        const text = (value: string) => `CAST(${this.params.add(value)} AS VARCHAR)`;
-        let sql = arg(0);
-        for (const [pair, letter] of table.pairs) sql = `replace(${sql}, ${text(pair)}, ${text(letter)})`;
-        return `translate(${sql}, ${text(table.from)}, ${text(table.to)})`;
-      }
+      case "fold":
+        return this.fold(arg(0), (args[1] as LiteralExpr).value as Fold);
       case "replace":
         return `replace(${arg(0)}, ${arg(1)}, ${arg(2)})`;
       case "contains":

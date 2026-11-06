@@ -2,7 +2,7 @@
  * Checked rows (§5.2.1 of the specification) as the grid shows them: whether a row of the view is checked, not
  * checked or unknown, and how many rows of the view are checked.
  */
-import { type Checked, canonicalJson, keyText, type Plan, partsOf, type RowKey } from "vastgrid-spec";
+import { type Checked, canonicalJson, keyText, type Plan, partsOf, type RowKey, searchImplies } from "vastgrid-spec";
 
 export type CheckState = "checked" | "unchecked" | "unknown";
 
@@ -13,8 +13,7 @@ function coversView(checked: Checked | undefined, plan: Plan | undefined): boole
   return partsOf(checked.where).every((part) => {
     const json = canonicalJson(part);
     return view.some(
-      (item) =>
-        item.json === json || ("search" in part && "search" in item.part && item.part.search.includes(part.search)),
+      (item) => item.json === json || ("search" in part && "search" in item.part && searchImplies(item.part, part)),
     );
   });
 }

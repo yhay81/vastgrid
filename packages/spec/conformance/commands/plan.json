@@ -1649,6 +1649,198 @@
       }
     },
     {
+      "id": "plan.search-set-fold",
+      "section": "6.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "a"
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "search.set",
+          "text": "ｶﾌｪ",
+          "fold": [
+            "width",
+            "kana"
+          ]
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "ｶﾌｪ",
+                  "fold": [
+                    "width",
+                    "kana"
+                  ]
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "description": "fold goes into the search; a later search.set without it folds nothing."
+    },
+    {
+      "id": "plan.search-set-fold-dropped",
+      "section": "6.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "a",
+                  "fold": [
+                    "width"
+                  ]
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "search.set",
+          "text": "b"
+        }
+      ],
+      "expect": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "b"
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "description": "search.set without fold folds nothing."
+    },
+    {
+      "id": "plan.search-set-fold-order",
+      "section": "6.2.1",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "plan": {
+            "where": {
+              "fn": "and",
+              "args": [
+                {
+                  "search": "a"
+                },
+                {
+                  "fn": "gt",
+                  "args": [
+                    {
+                      "col": "qty"
+                    },
+                    {
+                      "lit": 1
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "context": "orders",
+      "commands": [
+        {
+          "command": "search.set",
+          "text": "b",
+          "fold": [
+            "kana",
+            "width"
+          ]
+        }
+      ],
+      "expect": {
+        "error": {
+          "code": "invalid_command",
+          "reason": "syntax",
+          "path": "/fold/1"
+        }
+      }
+    },
+    {
       "id": "plan.search-set-keeps-text",
       "section": "6.2",
       "description": "The search keeps its text as it is given.",

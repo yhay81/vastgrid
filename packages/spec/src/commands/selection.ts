@@ -1,4 +1,5 @@
 /** The commands of the selection, scrolling and checked rows (docs/spec.md §6.4). */
+import { searchImplies } from "../fold.js";
 import { canonicalJson } from "../hash.js";
 import type { Plan } from "../plan.js";
 import { type Checked, checkRowKey, partsOf, sameKey } from "../state.js";
@@ -27,7 +28,7 @@ function covers(checked: Checked, plan: Plan): boolean {
   return partsOf(checked.where).every((part) => {
     const json = canonicalJson(part);
     return view.some(
-      (item) => item.json === json || (isSearch(part) && isSearch(item.part) && item.part.search.includes(part.search)),
+      (item) => item.json === json || (isSearch(part) && isSearch(item.part) && searchImplies(item.part, part)),
     );
   });
 }

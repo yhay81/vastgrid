@@ -1,6 +1,6 @@
 {
   "$schema": "../../schema/conformance.schema.json",
-  "description": "Search (§3.5): any of the table's own columns whose text form contains the text, ignoring letter case.",
+  "description": "Search (§3.5): any of the table's own columns whose text form contains the text, ignoring letter case, and width and kana when it folds them.",
   "tables": {
     "people": {
       "columns": [
@@ -10,6 +10,18 @@
         { "name": "score", "type": "float" }
       ],
       "rows": [["Ada", 36, "1815-12-10", 1.5], ["Grace", 85, "1906-12-09", 2], ["Tokyo Taro", null, null, 10]]
+    },
+    "shops": {
+      "columns": [
+        { "name": "name", "type": "string" },
+        { "name": "code", "type": "uuid" }
+      ],
+      "rows": [
+        ["ｶﾌｪ ﾀﾞｲﾔ", "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"],
+        ["カフェ　ＤＩＡ", null],
+        ["かふぇ だいや", null],
+        ["ガフェ", null]
+      ]
     }
   },
   "cases": [
@@ -90,6 +102,74 @@
       "table": "people",
       "plan": { "where": { "search": "\u3000 " } },
       "expect": { "error": { "code": "invalid_plan", "reason": "literal", "path": "/where" } }
+    },
+    {
+      "id": "search.fold-width",
+      "section": "3.5",
+      "description": "Folding width, half-width katakana find full-width ones, and full-width letters ASCII ones in any case.",
+      "table": "shops",
+      "plan": { "where": { "search": "ｶﾌｪ dia", "fold": ["width"] } },
+      "read": { "columns": ["name"] },
+      "expect": { "rowCount": 1, "rowIds": [1], "rows": [["カフェ\u3000ＤＩＡ"]] }
+    },
+    {
+      "id": "search.fold-width-and-kana",
+      "section": "3.5",
+      "description": "Folding width and kana, hiragana, katakana and half-width katakana find each other; ｶﾞ is ガ, which ｶ does not find.",
+      "table": "shops",
+      "plan": { "where": { "search": "かふぇ", "fold": ["width", "kana"] } },
+      "read": { "columns": ["name"] },
+      "expect": { "rowCount": 3, "rowIds": [0, 1, 2], "rows": [["ｶﾌｪ ﾀﾞｲﾔ"], ["カフェ\u3000ＤＩＡ"], ["かふぇ だいや"]] }
+    },
+    {
+      "id": "search.fold-marks",
+      "section": "3.5",
+      "description": "ﾀﾞ folds to ダ, the same as だ folded by kana.",
+      "table": "shops",
+      "plan": { "where": { "search": "ダイヤ", "fold": ["width", "kana"] } },
+      "read": { "columns": ["name"] },
+      "expect": { "rowCount": 2, "rowIds": [0, 2], "rows": [["ｶﾌｪ ﾀﾞｲﾔ"], ["かふぇ だいや"]] }
+    },
+    {
+      "id": "search.without-fold",
+      "section": "3.5",
+      "description": "Without fold, a search respects width and kana.",
+      "table": "shops",
+      "plan": { "where": { "search": "かふぇ" } },
+      "read": { "columns": ["name"] },
+      "expect": { "rowCount": 1, "rowIds": [2], "rows": [["かふぇ だいや"]] }
+    },
+    {
+      "id": "search.fold-text-forms",
+      "section": "3.5",
+      "description": "The text forms of other types fold too: full-width digits find a uuid.",
+      "table": "shops",
+      "plan": { "where": { "search": "０ｆ１ｅ", "fold": ["width"] } },
+      "read": { "columns": ["name"] },
+      "expect": { "rowCount": 1, "rowIds": [0], "rows": [["ｶﾌｪ ﾀﾞｲﾔ"]] }
+    },
+    {
+      "id": "search.fold-order",
+      "section": "3.5",
+      "description": "The folds are named in the order width, kana.",
+      "table": "shops",
+      "plan": { "where": { "search": "a", "fold": ["kana", "width"] } },
+      "expect": { "error": { "code": "invalid_plan", "reason": "syntax", "path": "/where/fold/1" } }
+    },
+    {
+      "id": "search.fold-empty",
+      "section": "3.5",
+      "description": "A fold that is given names at least one fold.",
+      "table": "shops",
+      "plan": { "where": { "search": "a", "fold": [] } },
+      "expect": { "error": { "code": "invalid_plan", "reason": "syntax", "path": "/where/fold" } }
+    },
+    {
+      "id": "search.fold-unknown",
+      "section": "3.5",
+      "table": "shops",
+      "plan": { "where": { "search": "a", "fold": ["accents"] } },
+      "expect": { "error": { "code": "invalid_plan", "reason": "syntax", "path": "/where/fold/0" } }
     }
   ]
 }

@@ -253,7 +253,10 @@ in every engine.
 
 `{ "search": text }` (§4.3) is true for a row when, for at least one of the table's own columns (not the
 derived ones), `contains(lower(the text form of the value), lower(text))` is true. Null values match
-nothing. `text` MUST NOT be empty or only spaces (as `trim` removes them, §4.4); grids leave such a search
+nothing. `{ "search": text, "fold": ["width", "kana"] }` folds both sides first (§3.4), with each fold it
+names in turn: `contains(lower(fold(fold(the text form, "width"), "kana")), lower(fold(fold(text, "width"),
+"kana")))`, so that `ｶﾌｪ` finds `カフェ` and `かふぇ`. `fold` names `"width"`, `"kana"` or both, in that order and
+at least one (`syntax` otherwise). `text` MUST NOT be empty or only spaces (as `trim` removes them, §4.4); grids leave such a search
 out instead.
 
 ### 3.6 Evaluation, nulls and errors
@@ -380,7 +383,7 @@ decide, but it is stable for a revision.
 | `{ "col": name }` | the value of a column of the row (in `having`, of the group's row) |
 | `{ "lit": value }`, `{ "lit": value, "type": T }` | a literal (§2.5) |
 | `{ "fn": name, "args": [ … ] }` | a function (§4.4) |
-| `{ "search": text }` | the search of §3.5; only in `where`, at most once |
+| `{ "search": text }`, `{ "search": text, "fold": [...] }` | the search of §3.5; only in `where`, at most once |
 
 Every expression has a type, decided from the types of its columns and the rules of §4.4. `where` and
 `having` MUST be boolean.
@@ -767,8 +770,10 @@ table's columns and the derived columns) is true.
 - with `exclude` and `where`: when the view's `where` **implies** it, checked unless its key is in `keys`;
   otherwise unknown, since the view may hold rows for which `where` is not true. The view's `where` implies
   it when every part (§6.2.1) of `where` is a part of the view's `where` (the same canonical JSON, §4.8), or
-  is a search whose text is contained in the text of the view's search (a row with a value that contains
-  `"abc"` also has one that contains `"ab"`, since `lower` maps code points one by one, §3.4).
+  is a search with the same `fold` whose text, folded, is contained in the text of the view's search, folded
+  (a row with a value that contains `"abc"` also has one that contains `"ab"`, since `lower` maps code points
+  one by one, §3.4). The texts are compared folded: `ｶﾞ` contains `ｶ`, but folded by width it is `ガ`, which
+  does not contain `カ`.
 
 `check.all` (§6.4) makes `{ "mode": "exclude", "keys": [] }` with the view's `where` when it has one.
 
@@ -933,7 +938,7 @@ to the displayed columns (§5.4, step 3).
 | `filter.set` | `where`: an expression or null | the conditions (§6.2.1) become the parts of `where`, after the search |
 | `filter.column` | `column`: a column of the rows (the table's or a derived one); `where`: an expression or null | the conditions of the column become the parts of `where` |
 | `filter.clear` | | removes the conditions, keeping the search |
-| `search.set` | `text` | the search becomes `{ "search": text }`, first; a text that `trim` leaves empty (§4.4) removes it |
+| `search.set` | `text`; `fold`: as in §3.5, none when absent or empty | the search becomes `{ "search": text }` (with `fold` when it names any), first; a text that `trim` leaves empty (§4.4) removes it |
 | `derive.add` | `name`, `expr`; `before`: a derived column | adds a derived column at the end, or before `before` |
 | `derive.update` | `name`: a derived column; `expr`; `rename`: a new name | changes the expression, and gives the column a new name (§6.2.2) |
 | `derive.remove` | `name`: a derived column | removes the column and what uses it (§6.2.2) |
