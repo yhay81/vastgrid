@@ -10,6 +10,7 @@ import {
   type Column,
   FOLD_TABLES,
   type Fold,
+  foldAll,
   type LiteralExpr,
   SpecError,
   type TypedExpr,
@@ -185,6 +186,63 @@ function finite(sql: string) {
   return `(CASE WHEN isfinite(${sql}) THEN ${sql} END)`;
 }
 
+/** Parts of one fold's table (`FOLD_TABLES`): pairs of two code points to one, then single code points. */
+export interface FoldPart {
+  pairs: [string, string][];
+  singles: [string, string][];
+}
+
+/** Folds that change at most this many single code points use `replace`, which is faster than `translate`. */
+const REPLACED_SINGLES = 16;
+
+/** The whole table of a fold, as its part. */
+function foldPart(fold: Fold): FoldPart {
+  const { pairs, from, to } = FOLD_TABLES[fold];
+  const targets = [...to];
+  return { pairs, singles: [...from].map((source, index): [string, string] => [source, targets[index]]) };
+}
+
+/**
+ * The parts of a search's folds that can change whether a value holds its text (§3.5): the entries that make one of
+ * the folded text's code points, after the later folds and `lower`, and those whose own code points are among them.
+ * Any other entry makes a code point that no occurrence of the folded text holds, folded or not, so a value without
+ * it holds the folded text exactly when the value folded with it does. `lower` maps one code point to one in
+ * DuckDB, and to that one among others in JavaScript (`İ` to `i̇`), so the code points looked for are a superset.
+ */
+export function searchFolds(text: string, folds: readonly Fold[]): FoldPart[] {
+  const wanted = new Set<string>();
+  for (const char of foldAll(text, folds)) {
+    wanted.add(char);
+    for (const lower of char.toLowerCase()) wanted.add(lower);
+  }
+  const reaches = (value: string) => [...value, ...value.toLowerCase()].some((char) => wanted.has(char));
+  return folds.map((fold, index) => {
+    const after = folds.slice(index + 1);
+    const { pairs, singles } = foldPart(fold);
+    const needed = ([source, target]: [string, string]) => reaches(source) || reaches(foldAll(target, after));
+    return {
+      pairs: pairs.filter(
+        (pair) => needed(pair) || [...pair[0]].some((char) => reaches(foldAll(char, folds.slice(index)))),
+      ),
+      singles: singles.filter(needed),
+    };
+  });
+}
+
+/** An RE2 class of code points, as escapes and ranges: `[\x{3041}-\x{3096}]`. */
+function codePointClass(chars: readonly string[]): string {
+  const codes = [...new Set(chars.map((char) => char.codePointAt(0) as number))].sort((a, b) => a - b);
+  const escape = (code: number) => `\\x{${code.toString(16)}}`;
+  let result = "";
+  for (let start = 0; start < codes.length;) {
+    let end = start;
+    while (end + 1 < codes.length && codes[end + 1] === codes[end] + 1) end++;
+    result += end > start ? `${escape(codes[start])}-${escape(codes[end])}` : escape(codes[start]);
+    start = end + 1;
+  }
+  return `[${result}]`;
+}
+
 class Compiler {
   readonly params: Params;
   private readonly tables = new Map<string, string>();
@@ -201,12 +259,15 @@ class Compiler {
         return this.literal(node);
       case "search": {
         if (node.columns.length === 0) return "FALSE";
-        // The folds first, then lower (§3.5).
-        const text = this.foldAll(`CAST(${this.params.add(node.text)} AS VARCHAR)`, node.fold);
-        const matches = node.columns.map(
-          (column) =>
-            `coalesce(contains(lower(${this.foldAll(textSql(quoteIdentifier(column.name), column), node.fold)}), lower(${text})), FALSE)`,
-        );
+        // The folds first, then lower (§3.5). The text is folded here, by the same tables. Values are folded only by
+        // the parts of the folds that the search needs, and only strings: the other text forms are ASCII, which no
+        // fold changes.
+        const text = `lower(CAST(${this.params.add(foldAll(node.text, node.fold))} AS VARCHAR))`;
+        const parts = searchFolds(node.text, node.fold);
+        const matches = node.columns.map((column) => {
+          const value = textSql(quoteIdentifier(column.name), column);
+          return `coalesce(contains(lower(${column.type === "string" ? this.folded(value, parts) : value}), ${text}), FALSE)`;
+        });
         return `(${matches.join(" OR ")})`;
       }
       case "call":
@@ -214,25 +275,41 @@ class Compiler {
     }
   }
 
-  /** `fold` (§4.4): the pairs first, two code points to one, then each code point by translate. */
-  private fold(sql: string, fold: Fold): string {
-    const table = FOLD_TABLES[fold];
-    const text = (value: string) => {
-      // The tables are the same in every fold of a plan, so each is one parameter.
-      let param = this.tables.get(value);
-      if (param === undefined) {
-        param = this.params.add(value);
-        this.tables.set(value, param);
-      }
-      return `CAST(${param} AS VARCHAR)`;
-    };
-    let result = sql;
-    for (const [pair, letter] of table.pairs) result = `replace(${result}, ${text(pair)}, ${text(letter)})`;
-    return `translate(${result}, ${text(table.from)}, ${text(table.to)})`;
+  /** A text of the folds' tables as a parameter: the same text is one parameter in the whole plan. */
+  private constant(value: string): string {
+    let param = this.tables.get(value);
+    if (param === undefined) {
+      param = this.params.add(value);
+      this.tables.set(value, param);
+    }
+    return `CAST(${param} AS VARCHAR)`;
   }
 
-  private foldAll(sql: string, folds: readonly Fold[]): string {
-    return folds.reduce((result, fold) => this.fold(result, fold), sql);
+  /**
+   * A value folded by parts of folds (§4.4): their pairs first, two code points to one, then each code point, by
+   * `replace` when they are few and by `translate` otherwise. DuckDB's `translate` costs about 100 ns a row
+   * whatever it changes, so `guarded` values are folded only when they hold a code point that the parts change:
+   * `guarded` repeats the value, so it is only for values that cost nothing to repeat, such as columns.
+   */
+  private folded(sql: string, parts: readonly FoldPart[], guarded = true): string {
+    let result = sql;
+    const sources: string[] = [];
+    for (const { pairs, singles } of parts) {
+      for (const [pair, letter] of pairs) {
+        result = `replace(${result}, ${this.constant(pair)}, ${this.constant(letter)})`;
+        sources.push(String.fromCodePoint(pair.codePointAt(0) as number));
+      }
+      if (singles.length <= REPLACED_SINGLES) {
+        for (const [from, to] of singles) result = `replace(${result}, ${this.constant(from)}, ${this.constant(to)})`;
+      } else {
+        const from = singles.map(([source]) => source).join("");
+        result = `translate(${result}, ${this.constant(from)}, ${this.constant(singles.map(([, target]) => target).join(""))})`;
+      }
+      sources.push(...singles.map(([source]) => source));
+    }
+    if (sources.length === 0) return sql;
+    if (!guarded) return result;
+    return `(CASE WHEN regexp_matches(${sql}, ${this.constant(codePointClass(sources))}) THEN ${result} ELSE ${sql} END)`;
   }
 
   private literal(node: LiteralExpr): string {
@@ -410,7 +487,7 @@ class Compiler {
           : `substring(${arg(0)}, ${start})`;
       }
       case "fold":
-        return this.fold(arg(0), (args[1] as LiteralExpr).value as Fold);
+        return this.folded(arg(0), [foldPart((args[1] as LiteralExpr).value as Fold)], args[0].kind === "column");
       case "replace":
         return `replace(${arg(0)}, ${arg(1)}, ${arg(2)})`;
       case "contains":

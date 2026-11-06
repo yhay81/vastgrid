@@ -39,3 +39,76 @@ FOLD_TABLES: dict[str, tuple[list[tuple[str, str]], str, str]] = {
     "width": _width(),
     "kana": ([], *_range(0x3041, 0x3096, 0x60)),
 }
+
+
+def fold_text(text: str, fold: str) -> str:
+    """`fold(text, fold)` (§4.4), by code point: a pair first where one starts, then each code point."""
+    pairs, source, target = FOLD_TABLES[fold]
+    pair_map = dict(pairs)
+    single = dict(zip(source, target, strict=True))
+    result: list[str] = []
+    index = 0
+    while index < len(text):
+        pair = pair_map.get(text[index : index + 2])
+        if pair is not None:
+            result.append(pair)
+            index += 2
+            continue
+        result.append(single.get(text[index], text[index]))
+        index += 1
+    return "".join(result)
+
+
+def fold_all(text: str, folds: list[str] | tuple[str, ...]) -> str:
+    """Each fold of a list in turn."""
+    for fold in folds:
+        text = fold_text(text, fold)
+    return text
+
+
+FoldPart = tuple[list[tuple[str, str]], list[tuple[str, str]]]
+"""Parts of one fold's table: pairs of two code points to one, then single code points."""
+
+
+def fold_part(fold: str) -> FoldPart:
+    """The whole table of a fold, as its part."""
+    pairs, source, target = FOLD_TABLES[fold]
+    return list(pairs), list(zip(source, target, strict=True))
+
+
+def search_folds(text: str, folds: list[str] | tuple[str, ...]) -> list[FoldPart]:
+    """The parts of a search's folds that can change whether a value holds its text (§3.5), as vastgrid-sql's
+    `searchFolds`: the entries that make one of the folded text's code points, after the later folds and `lower`, and
+    those whose own code points are among them. Any other entry makes a code point that no occurrence of the folded
+    text holds, folded or not."""
+    wanted: set[str] = set()
+    for char in fold_all(text, folds):
+        wanted.add(char)
+        wanted.update(char.lower())
+    parts: list[FoldPart] = []
+    for index, fold in enumerate(folds):
+        after = folds[index + 1 :]
+        rest = folds[index:]
+        pairs, singles = fold_part(fold)
+        parts.append(
+            (
+                [
+                    (source, target)
+                    for source, target in pairs
+                    if _reaches(source, wanted)
+                    or _reaches(fold_all(target, after), wanted)
+                    or any(_reaches(fold_all(char, rest), wanted) for char in source)
+                ],
+                [
+                    (source, target)
+                    for source, target in singles
+                    if _reaches(source, wanted) or _reaches(fold_all(target, after), wanted)
+                ],
+            )
+        )
+    return parts
+
+
+def _reaches(value: str, wanted: set[str]) -> bool:
+    """Whether a text or its lowercase holds one of the code points looked for."""
+    return any(char in wanted for char in value + value.lower())

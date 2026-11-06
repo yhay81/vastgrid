@@ -17,7 +17,10 @@
   or `eq` matches such text, and sorting by a derived `fold` orders it. Formulas have it as `FOLD(s, 'width')`.
   The search folds the same with `{ "search": text, "fold": ["width", "kana"] }` (§3.5), which `search.set` sets
   with its `fold`; a search implies a narrower one when both fold the same (§5.2.1). `vastgrid`'s toolbar has a
-  switch beside the search box, ｱ=ア, that folds both, with the text `searchFold` in every locale.
+  switch beside the search box, ｱ=ア, that folds both, with the text `searchFold` in every locale. On DuckDB,
+  `vastgrid-sql` and the Python package fold only strings, by the entries of the tables that can make the search's
+  text, and only values that hold one of their code points: a folded search of 4 million values takes 0.03 to
+  0.2 seconds, where folding by the whole tables took 6.6.
 - `vastgrid-spec`, `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb` and the Python package `vastgrid`: dates are
   the days from `-290308-12-22` to `+294247-01-10`, DuckDB's timestamps' dates, where they were the years 0001 to
   9999 (§2.2). The years 0000 to 9999 keep four digits, others have a sign and six digits (`+010000-01-01`), and

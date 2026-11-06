@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ._check import CallExpr, CheckedMeasure, CheckedPlan, ColumnExpr, LiteralExpr, SearchExpr, TypedExpr, value_type
-from ._fold import FOLD_TABLES
+from ._fold import FoldPart, fold_all, fold_part, search_folds
 from ._plan import SpecError
 from ._values import is_number, is_safe_integer, js_float, js_string, number_text, value_of_text
 
@@ -169,6 +169,25 @@ _FINITE_TYPES = ("float", "date", "timestamp", "timestamptz")
 """The types whose values may be infinite."""
 
 
+_REPLACED_SINGLES = 16
+"""Folds that change at most this many single code points use `replace`, which is faster than `translate`."""
+
+
+def _code_point_class(chars: list[str]) -> str:
+    """An RE2 class of code points, as escapes and ranges: `[\\x{3041}-\\x{3096}]`."""
+    codes = sorted({ord(char) for char in chars})
+    parts: list[str] = []
+    start = 0
+    while start < len(codes):
+        end = start
+        while end + 1 < len(codes) and codes[end + 1] == codes[end] + 1:
+            end += 1
+        first = f"\\x{{{codes[start]:x}}}"
+        parts.append(f"{first}-\\x{{{codes[end]:x}}}" if end > start else first)
+        start = end + 1
+    return f"[{''.join(parts)}]"
+
+
 def _finite(sql: str) -> str:
     """Null unless the number, the date or the timestamp is finite (§3.6)."""
     return f"(CASE WHEN isfinite({sql}) THEN {sql} END)"
@@ -187,12 +206,17 @@ class _Compiler:
         if isinstance(node, SearchExpr):
             if not node.columns:
                 return "FALSE"
-            # The folds first, then lower (§3.5).
-            text = self._fold_all(f"CAST({self.params.add(node.text)} AS VARCHAR)", node.fold)
-            values = [
-                self._fold_all(text_sql(quote_identifier(column["name"]), column), node.fold) for column in node.columns
-            ]
-            matches = [f"coalesce(contains(lower({value}), lower({text})), FALSE)" for value in values]
+            # The folds first, then lower (§3.5). The text is folded here, by the same tables. Values are folded only
+            # by the parts of the folds that the search needs, and only strings: the other text forms are ASCII, which
+            # no fold changes.
+            text = f"lower(CAST({self.params.add(fold_all(node.text, node.fold))} AS VARCHAR))"
+            parts = search_folds(node.text, node.fold)
+            matches = []
+            for column in node.columns:
+                value = text_sql(quote_identifier(column["name"]), column)
+                if column["type"] == "string":
+                    value = self._folded(value, parts)
+                matches.append(f"coalesce(contains(lower({value}), {text}), FALSE)")
             return f"({' OR '.join(matches)})"
         return self._call(node)
 
@@ -232,17 +256,31 @@ class _Compiler:
             param = self._tables[value] = self.params.add(value)
         return f"CAST({param} AS VARCHAR)"
 
-    def _fold(self, sql: str, fold: str) -> str:
-        """`fold` (§4.4): the pairs first, two code points to one, then each code point by translate."""
-        pairs, source, target = FOLD_TABLES[fold]
-        for pair, letter in pairs:
-            sql = f"replace({sql}, {self._table(pair)}, {self._table(letter)})"
-        return f"translate({sql}, {self._table(source)}, {self._table(target)})"
-
-    def _fold_all(self, sql: str, folds: Sequence[str]) -> str:
-        for fold in folds:
-            sql = self._fold(sql, fold)
-        return sql
+    def _folded(self, sql: str, parts: Sequence[FoldPart], guarded: bool = True) -> str:
+        """A value folded by parts of folds (§4.4), as vastgrid-sql folds it: their pairs first, two code points to
+        one, then each code point, by `replace` when they are few and by `translate` otherwise. DuckDB's `translate`
+        costs about 100 ns a row whatever it changes, so `guarded` values are folded only when they hold a code point
+        that the parts change: `guarded` repeats the value, so it is only for values that cost nothing to repeat."""
+        result = sql
+        sources: list[str] = []
+        for pairs, singles in parts:
+            for pair, letter in pairs:
+                result = f"replace({result}, {self._table(pair)}, {self._table(letter)})"
+                sources.append(pair[0])
+            if len(singles) <= _REPLACED_SINGLES:
+                for source, target in singles:
+                    result = f"replace({result}, {self._table(source)}, {self._table(target)})"
+            else:
+                source = "".join(source for source, _ in singles)
+                target = "".join(target for _, target in singles)
+                result = f"translate({result}, {self._table(source)}, {self._table(target)})"
+            sources.extend(source for source, _ in singles)
+        if not sources:
+            return sql
+        if not guarded:
+            return result
+        changed = self._table(_code_point_class(sources))
+        return f"(CASE WHEN regexp_matches({sql}, {changed}) THEN {result} ELSE {sql} END)"
 
     def _double(self, node: TypedExpr) -> str:
         return f"CAST({self._number(node)} AS DOUBLE)"
@@ -378,7 +416,7 @@ class _Compiler:
                 return f"substring({arg(0)}, {start}, {_at_least(arg(2), 0)})"
             return f"substring({arg(0)}, {start})"
         if fn == "fold":
-            return self._fold(arg(0), args[1].value)
+            return self._folded(arg(0), [fold_part(args[1].value)], isinstance(args[0], ColumnExpr))
         if fn == "replace":
             return f"replace({arg(0)}, {arg(1)}, {arg(2)})"
         if fn in ("contains", "starts_with", "ends_with"):
