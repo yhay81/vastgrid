@@ -155,6 +155,7 @@ a route that serves `engine.exportFile`.
 | JSON Lines | `.jsonl`, `.ndjson`, also `.gz` |
 | JSON | `.json`, `.json.gz` |
 | Excel | `.xlsx`, `.xlsm` |
+| DuckDB | `.duckdb`, `.ddb` |
 
 `tableFormatOf(file)` gives a file's format by its name, or null. `findTableFiles(folders, limit)` lists the table
 files of folders, two levels deep, without hidden ones: use it to offer a list of files.

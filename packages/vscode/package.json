@@ -90,6 +90,12 @@
           },
           {
             "filenamePattern": "*.xlsm"
+          },
+          {
+            "filenamePattern": "*.duckdb"
+          },
+          {
+            "filenamePattern": "*.ddb"
           }
         ],
         "priority": "default"
@@ -169,11 +175,11 @@
       "commandPalette": [
         {
           "command": "vastgrid.open",
-          "when": "resourceFilename =~ /\\.(csv|tsv|tab|jsonl|ndjson|parquet|pq|xlsx|xlsm)(\\.gz|\\.zst)?$/i"
+          "when": "resourceFilename =~ /\\.(csv|tsv|tab|jsonl|ndjson|parquet|pq|xlsx|xlsm)(\\.gz|\\.zst)?$|\\.(duckdb|ddb)$/i"
         },
         {
           "command": "vastgrid.sheet",
-          "when": "activeCustomEditorId == vastgrid.table && resourceFilename =~ /\\.(xlsx|xlsm)$/i"
+          "when": "activeCustomEditorId == vastgrid.table && resourceFilename =~ /\\.(xlsx|xlsm|duckdb|ddb)$/i"
         }
       ]
     },

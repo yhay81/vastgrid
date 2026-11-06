@@ -108,7 +108,7 @@ export function registerVastgrid(server: McpServer, options: VastgridToolsOption
     {
       title: "List table files",
       description:
-        "Lists the CSV, TSV, Parquet, JSON Lines and Excel files that vastgrid may open, in the allowed folders " +
+        "Lists the CSV, TSV, Parquet, JSON Lines, Excel and DuckDB files that vastgrid may open, in the allowed folders " +
         `(${options.folders.join(", ")}), up to two folders deep.`,
       inputSchema: z.object({}),
       annotations: { readOnlyHint: true },
@@ -125,13 +125,17 @@ export function registerVastgrid(server: McpServer, options: VastgridToolsOption
     {
       title: "Open a table in a grid",
       description:
-        "Opens a CSV, TSV, Parquet, JSON Lines or Excel file of the allowed folders in a grid that the person sees " +
+        "Opens a CSV, TSV, Parquet, JSON Lines, Excel or DuckDB file of the allowed folders in a grid that the person sees " +
         "and works in. Files of any size open: DuckDB reads them on the server. Gives the grid's id, its columns and " +
         "its state. `document` (§5.1 of the vastgrid 0.2 specification) sets the view to start with: its plan " +
         "(filters, sort, groups, derived columns) and its columns (widths, pins, formats).",
       inputSchema: z.object({
         file: z.string().min(1).max(4096).describe("The file: a path, absolute or in the first allowed folder."),
-        sheet: z.string().max(256).optional().describe("The sheet of an Excel workbook."),
+        sheet: z
+          .string()
+          .max(256)
+          .optional()
+          .describe("The sheet of an Excel workbook, or the table of a DuckDB database."),
         document: documentSchema.optional(),
       }),
       _meta: { ui },

@@ -28,7 +28,8 @@ deletes its temporary files.
 ## Files
 
 - A file named opens when its name says it is a table: `.csv`, `.tsv`, `.tab`, `.parquet`, `.pq`, `.jsonl`,
-  `.ndjson`, `.json`, `.xlsx`, `.xlsm`, and `.gz` (also `.zst` for CSV and TSV) of the text formats.
+  `.ndjson`, `.json`, `.xlsx`, `.xlsm`, `.duckdb`, `.ddb`, and `.gz` (also `.zst` for CSV and TSV) of the text
+  formats.
 - A folder named gives its table files, two folders deep, without hidden ones, at most 1,000. With nothing named,
   the current folder is used.
 - No other file opens: DuckDB reads nothing outside the folders of the files and folders named, links followed.
@@ -36,7 +37,7 @@ deletes its temporary files.
 ## The page
 
 The page shows the first file with the toolbar, the status bar and a check box for each row; a list above the grid
-chooses another file, and the sheets of a workbook are buttons. The address keeps the file and the sheet, so that the
+chooses another file, and the sheets of a workbook and the tables of a database are buttons. The address keeps the file and the sheet, so that the
 browser's back and forward move between them. The page follows the browser's language (English, Japanese, Chinese,
 Korean, Spanish, Portuguese, French or German).
 

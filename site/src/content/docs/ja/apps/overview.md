@@ -24,14 +24,14 @@ vastgrid は巨大な CSV・TSV・Parquet・JSON Lines・Excel のファイル�
 
 ## 形式
 
-| 入口 | CSV、TSV | JSON Lines | JSON | Parquet | Excel | DataFrame |
-| --- | --- | --- | --- | --- | --- | --- |
-| ブラウザーのページ | 可 | 可 | | 可 | `.xlsx`、`.xlsm` | |
-| React コンポーネント | エンジンが読むもの | | | | | |
-| コマンドライン | 可（圧縮も） | 可 | 可 | 可 | `.xlsx`、`.xlsm` | |
-| VS Code | 可（圧縮も） | 可 | | 可 | `.xlsx`、`.xlsm` | |
-| MCP App | 可（圧縮も） | 可 | 可 | 可 | `.xlsx`、`.xlsm` | |
-| ノートブック | 可（圧縮も） | 可 | 可 | 可 | `.xlsx` | pandas、Polars、PyArrow、DuckDB のリレーション |
+| 入口 | CSV、TSV | JSON Lines | JSON | Parquet | Excel | DuckDB | DataFrame |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| ブラウザーのページ | 可 | 可 | | 可 | `.xlsx`、`.xlsm` | | |
+| React コンポーネント | エンジンが読むもの | | | | | | |
+| コマンドライン | 可（圧縮も） | 可 | 可 | 可 | `.xlsx`、`.xlsm` | `.duckdb`、`.ddb` | |
+| VS Code | 可（圧縮も） | 可 | | 可 | `.xlsx`、`.xlsm` | `.duckdb`、`.ddb` | |
+| MCP App | 可（圧縮も） | 可 | 可 | 可 | `.xlsx`、`.xlsm` | `.duckdb`、`.ddb` | |
+| ノートブック | 可（圧縮も） | 可 | 可 | 可 | `.xlsx`、`.xlsm` | `.duckdb`、`.ddb` | pandas、Polars、PyArrow、DuckDB のリレーション |
 
 どの入口もブックのシートを（隠しシートには印を付けて）開き、ファイルの大きさを問いません。Parquet はその場で行の範囲ごとに読み、ほかの形式は DuckDB に読み込むか、メモリーエンジンの上限（`maxBytes`。[ブラウザーで開く大きなファイル](/ja/guides/browser/)を参照）の内で読み込みます。
 

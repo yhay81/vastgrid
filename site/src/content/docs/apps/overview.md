@@ -28,14 +28,14 @@ write.
 
 ## Formats
 
-| Entry | CSV, TSV | JSON Lines | JSON | Parquet | Excel | DataFrames |
-| --- | --- | --- | --- | --- | --- | --- |
-| Browser page | yes | yes | | yes | `.xlsx`, `.xlsm` | |
-| React component | as its engine reads | | | | | |
-| Command line | yes, also compressed | yes | yes | yes | `.xlsx`, `.xlsm` | |
-| VS Code | yes, also compressed | yes | | yes | `.xlsx`, `.xlsm` | |
-| MCP App | yes, also compressed | yes | yes | yes | `.xlsx`, `.xlsm` | |
-| Notebook | yes, also compressed | yes | yes | yes | `.xlsx` | pandas, Polars, PyArrow, DuckDB relations |
+| Entry | CSV, TSV | JSON Lines | JSON | Parquet | Excel | DuckDB | DataFrames |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Browser page | yes | yes | | yes | `.xlsx`, `.xlsm` | | |
+| React component | as its engine reads | | | | | | |
+| Command line | yes, also compressed | yes | yes | yes | `.xlsx`, `.xlsm` | `.duckdb`, `.ddb` | |
+| VS Code | yes, also compressed | yes | | yes | `.xlsx`, `.xlsm` | `.duckdb`, `.ddb` | |
+| MCP App | yes, also compressed | yes | yes | yes | `.xlsx`, `.xlsm` | `.duckdb`, `.ddb` | |
+| Notebook | yes, also compressed | yes | yes | yes | `.xlsx`, `.xlsm` | `.duckdb`, `.ddb` | pandas, Polars, PyArrow, DuckDB relations |
 
 Every entry opens the sheets of a workbook, hidden ones marked, and a file of any size. Parquet files are read in
 place, a row range at a time; the others are read into DuckDB, or into the memory engine within its memory limit

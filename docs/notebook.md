@@ -31,7 +31,7 @@ grid
 
 | Option | Default | What it is |
 | --- | --- | --- |
-| `sheet` | the first sheet | the sheet of a workbook |
+| `sheet` | the first sheet | the sheet of a workbook, or the table of a DuckDB database |
 | `height` | 480 | the grid's height in pixels |
 | `locale` | `"en"` | the grid's texts and numbers, a BCP 47 tag: `"ja"`, `"zh-CN"`, `"zh-TW"`, `"ko"`, `"es"`, `"pt-BR"`, `"fr"`, `"de"`; texts are English for other languages |
 | `name` | the file's name, or `"table"` | the table's name, which the grid reads it by and screen readers say |
@@ -48,6 +48,7 @@ hosts of anywidget (VS Code's notebooks, Google Colab, marimo) are not tested ye
 | JSON, JSON Lines | `.json`, `.jsonl`, `.ndjson` (also `.gz`, `.zst`) | edited |
 | Parquet | `.parquet`, `.pq` | edited; read in place, a row range at a time |
 | Excel | `.xlsx`, `.xlsm` | edited; the sheets of the workbook, hidden ones marked, and `sheet` chooses one |
+| DuckDB | `.duckdb`, `.ddb` | edited; the tables and views of the database are its sheets, `schema.name` outside `main` |
 | DataFrames | pandas, Polars, PyArrow tables, DuckDB relations | edited |
 
 A DataFrame is copied into DuckDB in its row order when the grid opens: the DataFrame itself does not change. Files

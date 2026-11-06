@@ -28,6 +28,7 @@ Parquet と Excel のファイルは、開くと vastgrid で開きます。CSV�
 | JSON Lines | `.jsonl`、`.ndjson`（`.gz` も） | 読むだけ |
 | Parquet | `.parquet`、`.pq` | 読むだけ。既定で vastgrid で開く |
 | Excel | `.xlsx`、`.xlsm` | 読むだけ。既定で vastgrid で開く。表の上のバーか「vastgrid: シートを選択」でシートを選ぶ |
+| DuckDB | `.duckdb`、`.ddb` | 読むだけ。既定で vastgrid で開く。表の上のバーか「vastgrid: シートを選択」でデータベースの表を選ぶ |
 
 グリッドは VS Code のテーマの色とフォント、言語（英語・日本語・中国語・韓国語・スペイン語・ポルトガル語・フランス語・ドイツ語）に従います。コマンド、ウォークスルー、拡張機能のメッセージは英語で、VS Code が日本語なら日本語で出ます。
 

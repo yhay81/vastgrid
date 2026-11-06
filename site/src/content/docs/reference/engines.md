@@ -238,6 +238,7 @@ middleware: requests to other paths go to `next`, or get 404 without it.
 | JSON | `.json`, `.json.gz` | into DuckDB |
 | Parquet | `.parquet`, `.pq` | in place, by row numbers |
 | Excel | `.xlsx`, `.xlsm` | a sheet into DuckDB; `open`'s `read` chooses `sheet`, `headerRow`, `keepEmptyRows` and `keepEmptyColumns` |
+| DuckDB | `.duckdb`, `.ddb` | a table or view into DuckDB, the database attached read only meanwhile; its tables and views are the `sheets`, `schema.name` outside `main`, and `open`'s `read.sheet` chooses one |
 
 CSV uses comma and TSV uses tab, with standard double quotes. Single quotes, semicolons and pipes in CSV values
 stay as data. `open.read.delimiter` selects another separator (one printable ASCII character except double quote,

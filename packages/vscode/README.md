@@ -15,8 +15,9 @@ files and save them with VS Code's Save, which rewrites only the edited fields a
 | JSON Lines | `.jsonl`, `.ndjson` (also `.gz`) | read |
 | Parquet | `.parquet`, `.pq` | read, by default |
 | Excel | `.xlsx`, `.xlsm` | read, by default; the bar above the grid, or "vastgrid: Choose Sheet", chooses the sheet |
+| DuckDB | `.duckdb`, `.ddb` | read, by default; the bar above the grid, or "vastgrid: Choose Sheet", chooses the table |
 
-Parquet and Excel files open in vastgrid when they are opened. CSV, TSV and JSON Lines files open as text, as
+Parquet, Excel and DuckDB files open in vastgrid when they are opened. CSV, TSV and JSON Lines files open as text, as
 before: vastgrid opens them with the editor's "Open in vastgrid" button, the explorer's "Open in vastgrid", or "Open
 With…". "Get Started with vastgrid", on VS Code's Welcome page, shows the way around.
 

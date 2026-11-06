@@ -26,6 +26,7 @@ vastgrid opens them with "Open With…", the editor's "Open in vastgrid" button,
 | JSON Lines | `.jsonl`, `.ndjson` (also `.gz`) | read |
 | Parquet | `.parquet`, `.pq` | read, by default |
 | Excel | `.xlsx`, `.xlsm` | read, by default; a bar above the grid, or "vastgrid: Choose Sheet", chooses the sheet |
+| DuckDB | `.duckdb`, `.ddb` | read, by default; a bar above the grid, or "vastgrid: Choose Sheet", chooses the table |
 
 ## Editing and saving
 

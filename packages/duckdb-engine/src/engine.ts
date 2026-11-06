@@ -21,7 +21,7 @@ import { EngineError, errorMessage } from "./errors.js";
 import { type ExportFormat, ExportStore, type KeptExport, writeExport } from "./export.js";
 import { isSavable, saveTable } from "./save.js";
 import { Session } from "./session.js";
-import { fileRevision, LoadedTable, type TableFormat, tableFormatOf } from "./table.js";
+import { databaseLog, fileRevision, LoadedTable, type TableFormat, tableFormatOf } from "./table.js";
 import { CAPABILITIES, type ViewOptions, Views } from "./view.js";
 import { FileWatcher } from "./watch.js";
 import { type ReadOptions, readOptionsOf } from "./xlsx.js";
@@ -452,7 +452,9 @@ export class DuckDBEngine {
         ? readOptions
         : format === "csv" || format === "tsv"
           ? readOptionsOf({ headerRow: readOptions.headerRow, delimiter: readOptions.delimiter })
-          : {};
+          : format === "duckdb"
+            ? readOptionsOf({ sheet: readOptions.sheet })
+            : {};
     const key = tableKey(file, options);
     const loaded = this.tables.get(key);
     // The handles of a table whose file changed follow it first (§7.6), so that all of them read the same table.
@@ -497,7 +499,12 @@ export class DuckDBEngine {
     if (this.options.watchFiles !== false) {
       const follow = () =>
         void this.follow(table).catch((error: unknown) => this.options.log?.(`Could not follow ${file}`, error));
-      this.unwatch.set(table, this.watcher.watch(file, follow));
+      const unwatch = [this.watcher.watch(file, follow)];
+      // A database changes in its write-ahead log first.
+      if (format === "duckdb") unwatch.push(this.watcher.watch(databaseLog(file), follow));
+      this.unwatch.set(table, () => {
+        for (const stop of unwatch) stop();
+      });
     }
     return table;
   }

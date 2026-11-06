@@ -1,7 +1,8 @@
 # vastgrid
 
 Huge tables in a Jupyter notebook as a grid you can edit. DuckDB in the kernel reads a pandas or Polars DataFrame,
-a PyArrow table, a DuckDB relation, or a CSV, TSV, Parquet, JSON, JSON Lines or Excel file of any size; vastgrid's
+a PyArrow table, a DuckDB relation, a CSV, TSV, Parquet, JSON, JSON Lines or Excel file of any size, or a table of
+a DuckDB database; vastgrid's
 grid shows it in the cell's output, a row range at a time, and sorts, filters, groups, pivots, finds, edits and
 exports it. The notebook gets the edited table back as a DataFrame.
 

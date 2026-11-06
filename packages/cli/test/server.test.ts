@@ -166,7 +166,7 @@ test("paths that do not exist or are not tables are refused before anything star
   await assert.rejects(serve({ paths: ["missing"], cwd: root, tempDirectory: temp }), /missing does not exist/);
   await assert.rejects(
     serve({ paths: ["data/notes.txt"], cwd: root, tempDirectory: temp }),
-    /data\/notes.txt is not a CSV, TSV, Parquet, JSON Lines or Excel file/,
+    /data\/notes.txt is not a CSV, TSV, Parquet, JSON Lines, Excel or DuckDB file/,
   );
   await assert.rejects(serve({ paths: ["data"], cwd: root, tempDirectory: temp, token: "short" }), /16 or more/);
   await assert.rejects(

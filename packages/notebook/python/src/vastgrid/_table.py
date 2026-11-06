@@ -30,6 +30,8 @@ FILE_FORMATS = {
     ".jsonl": "ndjson",
     ".xlsx": "xlsx",
     ".xlsm": "xlsx",
+    ".duckdb": "duckdb",
+    ".ddb": "duckdb",
 }
 
 
@@ -101,6 +103,12 @@ class Table:
         self.byte_size = os.path.getsize(path)
         fmt = source.format
         if fmt == "parquet" and self.session.run(running, lambda cursor: self._parquet_in_place(cursor, path)):
+            return
+        if fmt == "duckdb":
+            try:
+                self.session.run(running, lambda cursor: self._load_database(cursor, path, source.sheet))
+            except duckdb.Error as failure:
+                raise EngineError("load_failed", str(failure).replace(path, os.path.basename(path))) from failure
             return
         if fmt == "xlsx":
             try:
@@ -214,6 +222,48 @@ class Table:
         self.columns = columns
         self.relation = Relation(view, row_id, int(rows))
         self.row_count = int(rows)
+
+    def _load_database(self, cursor: duckdb.DuckDBPyConnection, path: str, sheet: str | None) -> None:
+        """A table or view of a DuckDB database: the database is attached read only while it is copied, and its
+        tables and views are its sheets, those of the schema `main` by their names and others as `schema.name`.
+        The copy's row IDs are positions (§1), and the file is free again for programs that write it."""
+        name = self.session.name("vg_db")
+        catalog = quote_identifier(name)
+        try:
+            cursor.execute(f"ATTACH $1 AS {catalog} (TYPE duckdb, READ_ONLY)", [path])
+        except duckdb.Error as error:
+            if "could not set lock" in str(error).lower():
+                message = "Another program has the database open to write it; close it there first."
+                raise EngineError("load_failed", message) from error
+            if "not a valid duckdb database" in str(error).lower():
+                raise EngineError("load_failed", "The file is not a DuckDB database.") from error
+            raise
+        try:
+            listed = cursor.execute(
+                "SELECT table_schema, table_name FROM information_schema.tables WHERE table_catalog = $1 "
+                "ORDER BY table_schema <> 'main', table_schema, table_name",
+                [name],
+            ).fetchall()
+            tables = [
+                (
+                    table if schema == "main" else f"{schema}.{table}",
+                    f"{catalog}.{quote_identifier(schema)}.{quote_identifier(table)}",
+                )
+                for schema, table in listed
+            ]
+            self.sheets = [{"name": sheet_name} for sheet_name, _ in tables]
+            if not tables:
+                raise EngineError("load_failed", "The database has no tables.")
+            chosen = tables[0] if sheet is None else next((table for table in tables if table[0] == sheet), None)
+            if chosen is None:
+                raise EngineError("load_failed", f"The database has no table named {quoted(sheet)}.")
+            self.sheet = chosen[0]
+            self._create(cursor, chosen[1], [])
+        finally:
+            try:
+                cursor.execute(f"DETACH DATABASE IF EXISTS {catalog}")
+            except duckdb.Error:
+                pass
 
     def _parquet_in_place(self, cursor: duckdb.DuckDBPyConnection, path: str) -> bool:
         """Reads a Parquet file in place, by its row numbers; False for a file with a column named like those row

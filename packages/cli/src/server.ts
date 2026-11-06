@@ -98,7 +98,7 @@ async function sortPaths(paths: string[], cwd: string) {
     if (!found) throw new Error(`${named} does not exist.`);
     if (found.isDirectory()) folders.push(full);
     else if (tableFormatOf(full)) files.push(full);
-    else throw new Error(`${named} is not a CSV, TSV, Parquet, JSON Lines or Excel file.`);
+    else throw new Error(`${named} is not a CSV, TSV, Parquet, JSON Lines, Excel or DuckDB file.`);
   }
   return { files: [...new Set(files)], folders: [...new Set(folders)] };
 }

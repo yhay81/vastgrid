@@ -124,7 +124,9 @@ class Grid(anywidget.AnyWidget):
             path = os.path.abspath(os.fspath(data))
             fmt = file_format(path)
             if fmt is None:
-                raise ValueError(f"vastgrid reads CSV, TSV, Parquet, JSON, JSON Lines and Excel files, not {path}.")
+                raise ValueError(
+                    f"vastgrid reads CSV, TSV, Parquet, JSON, JSON Lines, Excel and DuckDB files, not {path}."
+                )
             source = Source(path=path, format=fmt, sheet=sheet)
             name = name or os.path.basename(path)
         else:

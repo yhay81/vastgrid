@@ -48,6 +48,7 @@ command that was killed are deleted by the next one.
 | JSON Lines, JSON | `.jsonl`, `.ndjson`, `.json`, also `.gz` |
 | Parquet | `.parquet`, `.pq` |
 | Excel | `.xlsx`, `.xlsm` |
+| DuckDB | `.duckdb`, `.ddb`: the tables and views of the database are its sheets |
 
 - A file named opens. A folder named gives its table files, two folders deep, without hidden files and folders,
   at most 1,000. With nothing named, the current folder is used.

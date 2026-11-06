@@ -38,6 +38,7 @@ the explorer.
 | JSON Lines | `.jsonl`, `.ndjson` (also `.gz`) | read |
 | Parquet | `.parquet`, `.pq` | read, by default |
 | Excel | `.xlsx`, `.xlsm` | read, by default; a bar above the grid, or "vastgrid: Choose Sheet", chooses the sheet |
+| DuckDB | `.duckdb`, `.ddb` | read, by default; a bar above the grid, or "vastgrid: Choose Sheet", chooses the table |
 
 The grid takes VS Code's theme colors and font, and its language (English, Japanese, Chinese, Korean, Spanish,
 Portuguese, French or German). The commands, the walkthrough and the extension's messages are in English, and in

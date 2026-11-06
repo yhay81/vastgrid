@@ -159,8 +159,8 @@ class Engine:
         source = self.sources.get(ref)
         if source is None:
             raise EngineError("not_allowed", "The notebook did not give a table by this name.")
-        if source.format == "xlsx" and isinstance(read, dict) and isinstance(read.get("sheet"), str):
-            source = Source(path=source.path, format="xlsx", sheet=read["sheet"])
+        if source.format in ("xlsx", "duckdb") and isinstance(read, dict) and isinstance(read.get("sheet"), str):
+            source = Source(path=source.path, format=source.format, sheet=read["sheet"])
         key = f"{ref}\0{source.sheet or ''}"
         with self.lock:
             table = self.tables.get(key)

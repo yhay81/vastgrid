@@ -1298,13 +1298,17 @@ an `internal` error.
   `table` is an opaque id for later requests; `revision` a string or null; `edits` `{ "version", "cells" }`;
   `status` `loading`, `ready` or `error`; `progress` from 0 to 1 or null; `rowCount` null while the table loads;
   `readableRows` the rows that can be read now; `columns` §2.1; `capabilities` §4.10; `sheets`
-  `[{ "name", "hidden"? }]` for workbooks; `fileChanged` true when the file changed on disk since the table,
-  which has written values, was read (§7.6).
+  `[{ "name", "hidden"? }]` for workbooks and databases, and `sheet` the one read; `fileChanged` true when the
+  file changed on disk since the table, which has written values, was read (§7.6).
 - For CSV and TSV files in `vastgrid-duckdb`, `read.headerRow` is the 1-based record holding column names
   (earlier records are skipped); `0` means no header, and omission keeps header detection. `read.delimiter`
   is tab or one printable ASCII character other than `"`; the default is comma for CSV and tab for TSV.
   Standard double quoting and doubled-quote escaping apply regardless of the sampled records. These options
   also apply when saving and reloading the file. Workbook options retain their workbook meanings.
+- For DuckDB databases (`.duckdb`, `.ddb`) in `vastgrid-duckdb`, `sheets` are the database's tables and views,
+  those of the schema `main` by their names and others as `schema.name`, and `read.sheet` chooses one, by default
+  the first. The table is read as it is when it opens, so that its row IDs are its positions; written values stay
+  with the table and are not saved into the database.
 - `rows` reads positions `[start, end)` of the plan's view: `columns` are names of the view's columns, at most
   1,000,000 rows and 1,000,000 cells. Positions beyond the view are left out: the answer's `end` is at most the
   view's row count, and a request whose `start` is at or beyond it is answered with no rows (`end` equal to

@@ -213,6 +213,49 @@ def test_sheets_of_a_workbook(engine: Engine, tmp_path: Path) -> None:
     assert client.error("open", ref="book", read={"sheet": "Missing"})["code"] in ("not_found", "load_failed")
 
 
+def test_tables_of_a_duckdb_database(engine: Engine, tmp_path: Path) -> None:
+    client = Client(engine)
+    path = tmp_path / "shop.duckdb"
+    database = duckdb.connect(str(path))
+    database.execute("CREATE TABLE cities (id INTEGER, name VARCHAR)")
+    database.execute("INSERT INTO cities VALUES (1, 'Tokyo'), (2, 'Osaka'), (3, 'Nara')")
+    # Deleted rows leave gaps in DuckDB's rowid; the row IDs of the table are its positions (§1).
+    database.execute("DELETE FROM cities WHERE id = 2")
+    database.execute("CREATE VIEW names AS SELECT name FROM cities")
+    database.execute("CREATE SCHEMA sales")
+    database.execute("CREATE TABLE sales.orders AS SELECT 'Tokyo' AS city")
+    database.close()
+    assert file_format("shop.duckdb") == "duckdb" and file_format("Shop.DDB") == "duckdb"
+    assert file_format("shop.db") is None
+    engine.add("shop", Source(path=str(path), format="duckdb"))
+    first = client.result("open", ref="shop")
+    assert first["format"] == "duckdb"
+    assert first["sheets"] == [{"name": "cities"}, {"name": "names"}, {"name": "sales.orders"}]
+    assert first["sheet"] == "cities" and client.rows(first) == [[1, "Tokyo"], [3, "Nara"]]
+    names = [column["name"] for column in first["columns"]]
+    read = client.result(
+        "rows", table=first["table"], revision=first["revision"], plan={}, start=0, end=9, columns=names
+    )
+    assert read["rowIds"] == [0, 1]
+    orders = client.result("open", ref="shop", read={"sheet": "sales.orders"})
+    assert orders["sheet"] == "sales.orders" and client.rows(orders) == [["Tokyo"]]
+    missing = client.error("open", ref="shop", read={"sheet": "nowhere"})
+    assert missing["message"] == 'The database has no table named "nowhere".'
+    # The database is attached only while its table loads.
+    attached = engine.session.database.execute("SELECT database_name FROM duckdb_databases()").fetchall()
+    assert not any(name.startswith("vg_db") for (name,) in attached)
+
+
+def test_files_that_are_not_duckdb_databases(engine: Engine, tmp_path: Path) -> None:
+    client = Client(engine)
+    (tmp_path / "fake.duckdb").write_text("id,name\n1,a\n" * 1000, "utf-8")
+    engine.add("fake", Source(path=str(tmp_path / "fake.duckdb"), format="duckdb"))
+    assert client.error("open", ref="fake")["message"] == "The file is not a DuckDB database."
+    duckdb.connect(str(tmp_path / "empty.duckdb")).close()
+    engine.add("empty", Source(path=str(tmp_path / "empty.duckdb"), format="duckdb"))
+    assert client.error("open", ref="empty")["message"] == "The database has no tables."
+
+
 def test_dataframes_arrow_tables_and_relations(engine: Engine) -> None:
     client = Client(engine)
     sources = {

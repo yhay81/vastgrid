@@ -1,7 +1,7 @@
 # vastgrid-duckdb
 
 The DuckDB engine of [vastgrid](https://www.npmjs.com/package/vastgrid) for Node.js. It opens huge CSV, TSV, Parquet
-and JSON Lines files and Excel workbooks, writes their cells, saves CSV and TSV files with every byte that was not
+and JSON Lines files, Excel workbooks and the tables of DuckDB databases, writes their cells, saves CSV and TSV files with every byte that was not
 edited kept as it is, follows files that change on disk, and exports views. It answers the grid's messages
 ([§8 of the specification](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#8-messages)) with Arrow
 blocks, over HTTP or in the same process.
@@ -58,8 +58,8 @@ temporary folder.
 ## What it does
 
 - **Opening.** Parquet files are read in place, by their row numbers, so that any block of a 100-million-row file
-  reads in tens of milliseconds. Delimited and JSON files and the sheets of workbooks are loaded into a database
-  of the engine's session; the first rows are readable at once while the rest loads (§9), and `progress` and
+  reads in tens of milliseconds. Delimited and JSON files, the sheets of workbooks and the tables of DuckDB
+  databases are loaded into a database of the engine's session; the first rows are readable at once while the rest loads (§9), and `progress` and
   `view` events tell when the table has loaded. Text encodings (UTF-16, Shift_JIS, EUC-JP and others) are found
   and converted, including gzip and zstd files, and files whose types change late fall back to wider types.
   CSV uses comma and TSV uses tab, with standard double quotes; single quotes, semicolons and pipes in CSV
@@ -68,6 +68,12 @@ temporary folder.
   every record as data, and a larger value skips records before that header. These options also apply to saves
   and reloads; a grid passes them through its `open` prop. Parent folders named `key=value` never add or replace
   columns. Long records raise the reader's buffer limit as needed, subject to the engine's memory limit.
+- **Databases.** The tables and views of a DuckDB database (`.duckdb`, `.ddb`) are its `sheets`, those of the
+  schema `main` by their names and others as `schema.name`, and `read: { sheet }` chooses one, by default the
+  first. The database is attached read only while the table is copied, so that row IDs are positions and a program
+  that writes the database can open it again once the table has loaded; a database that another program has open
+  to write it fails to open. Its views read only what the engine may read, and its changes, those in its
+  write-ahead log included, are followed as a file's are.
 - **Reading.** `rows`, `locate`, `summarize` and `find` read the views of plans that
   [`vastgrid-sql`](https://www.npmjs.com/package/vastgrid-sql) compiles. Every column is read as its logical type
   (§2.1), and a view without `where`, `aggregate` and `sort` is read by row IDs. Other views save their total order once and read ranges of

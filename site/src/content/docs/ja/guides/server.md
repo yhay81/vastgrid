@@ -137,6 +137,7 @@ export function Sales() {
 | JSON Lines | `.jsonl`、`.ndjson`、それぞれの `.gz` |
 | JSON | `.json`、`.json.gz` |
 | Excel | `.xlsx`、`.xlsm` |
+| DuckDB | `.duckdb`、`.ddb` |
 
 `tableFormatOf(file)` は、ファイル名から形式を返します（表のファイルでなければ null）。`findTableFiles(folders, limit)` は、フォルダーの中の表のファイルを、2 階層下まで、隠しファイルを除いて列挙します。ファイルの一覧を見せるのに使えます。
 

@@ -7,7 +7,7 @@
   "walkthrough.title": "vastgrid を始める",
   "walkthrough.description": "どんな大きさの CSV・Parquet・Excel・JSON Lines のファイルもグリッドで開いて調べ、CSV と TSV のファイルを編集します。",
   "walkthrough.open.title": "ファイルをグリッドで開く",
-  "walkthrough.open.description": "Parquet と Excel のファイルは vastgrid で開きます。CSV・TSV・JSON Lines のファイルはテキストで開くので、エディターの右上の vastgrid のボタンか、エクスプローラーのコンテキストメニューの **vastgrid で開く** でグリッドに表示します。Excel のファイルのシートは、グリッドの上のバーか **vastgrid: シートを選択** で選びます。\n[ファイルを開く](command:workbench.action.files.openFile)",
+  "walkthrough.open.description": "Parquet・Excel・DuckDB のファイルは vastgrid で開きます。CSV・TSV・JSON Lines のファイルはテキストで開くので、エディターの右上の vastgrid のボタンか、エクスプローラーのコンテキストメニューの **vastgrid で開く** でグリッドに表示します。Excel のファイルのシートと DuckDB のデータベースの表は、グリッドの上のバーか **vastgrid: シートを選択** で選びます。\n[ファイルを開く](command:workbench.action.files.openFile)",
   "walkthrough.open.alt": "テキストで開いた CSV のファイルと、エディターの右上の vastgrid のボタン。",
   "walkthrough.explore.title": "並べ替え、絞り込み、グループ化",
   "walkthrough.explore.description": "列の名前をクリックすると、その列で並べ替えます。右端の矢印は列のメニューを開きます。**絞り込み…** は列の値をそれぞれの行数とともに一覧にし、**この列でグループ化** と **統計…** もここにあります。並べ替えも絞り込みもグループ化も、画面の行だけでなくファイル全体が対象です。",

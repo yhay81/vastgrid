@@ -1,7 +1,7 @@
 # vastgrid-mcp
 
 An MCP server with an [MCP App](https://github.com/modelcontextprotocol/ext-apps): an agent opens a CSV, TSV,
-Parquet, JSON Lines or Excel file of any size in a grid that the person sees in the chat, and both work on the same
+Parquet, JSON Lines or Excel file of any size, or a table of a DuckDB database, in a grid that the person sees in the chat, and both work on the same
 grid. The agent reads the grid's state and rows and applies the same commands as the person's keys and menus; the
 person scrolls, sorts, filters, selects and edits. What one does, the other sees. DuckDB reads the files on the
 server, in Node.js.

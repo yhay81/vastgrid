@@ -1,12 +1,12 @@
 /**
  * One file that the engine opened (docs/spec.md §8.2): loading it, and the relation that its views read.
  *
- * Parquet files are read in place, by their row numbers. Delimited and JSON files and the sheets of workbooks are
- * loaded into tables of the session's database; their first rows are readable as soon as a preview of them is
- * loaded, while the rest loads (§9).
+ * Parquet files are read in place, by their row numbers. Delimited and JSON files, the sheets of workbooks and the
+ * tables of DuckDB databases are loaded into tables of the session's database; their first rows are readable as soon
+ * as a preview of them is loaded, while the rest loads (§9).
  */
 import { createHash } from "node:crypto";
-import { open as openFile, readdir, rm } from "node:fs/promises";
+import { open as openFile, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import type { DuckDBConnection } from "@duckdb/node-api";
 import type { Column } from "vastgrid-spec";
@@ -18,7 +18,7 @@ import { EngineError, errorMessage } from "./errors.js";
 import { quoteLiteral, type Session } from "./session.js";
 import { convertSheet, type ReadOptions, readWorkbook, type SheetInfo, sheetList, WorkbookError } from "./xlsx.js";
 
-export type TableFormat = "csv" | "tsv" | "parquet" | "json" | "ndjson" | "xlsx";
+export type TableFormat = "csv" | "tsv" | "parquet" | "json" | "ndjson" | "xlsx" | "duckdb";
 
 const EXTENSIONS: [RegExp, TableFormat][] = [
   [/\.(csv|csv\.gz|csv\.zst)$/i, "csv"],
@@ -27,6 +27,7 @@ const EXTENSIONS: [RegExp, TableFormat][] = [
   [/\.(jsonl|ndjson|jsonl\.gz|ndjson\.gz)$/i, "ndjson"],
   [/\.(json|json\.gz)$/i, "json"],
   [/\.(xlsx|xlsm)$/i, "xlsx"],
+  [/\.(duckdb|ddb)$/i, "duckdb"],
 ];
 
 /** The format of a file judged by its name, or null when it is not a table file. */
@@ -58,19 +59,29 @@ const REVISION_HEAD_BYTES = 64 * 1024;
 
 /**
  * A file's revision: its size, its modification time and a hash of its first 64 KiB, so that a file rewritten with
- * the same size within the resolution of its modification time still counts as changed.
+ * the same size within the resolution of its modification time still counts as changed. A DuckDB database's covers
+ * its write-ahead log too (`databaseLog`), whose changes a read of the database includes.
  */
 export async function fileRevision(file: string): Promise<string> {
   const handle = await openFile(file, "r");
+  let revision: string;
   try {
     const info = await handle.stat();
     const head = Buffer.alloc(Math.min(info.size, REVISION_HEAD_BYTES));
     const { bytesRead } = await handle.read(head, 0, head.length, 0);
     const hash = createHash("sha1").update(head.subarray(0, bytesRead)).digest("hex").slice(0, 16);
-    return `${info.size}:${Math.round(info.mtimeMs)}:${hash}`;
+    revision = `${info.size}:${Math.round(info.mtimeMs)}:${hash}`;
   } finally {
     await handle.close();
   }
+  if (tableFormatOf(file) !== "duckdb") return revision;
+  const log = await stat(databaseLog(file)).catch(() => null);
+  return log ? `${revision}:${log.size}:${Math.round(log.mtimeMs)}` : revision;
+}
+
+/** The write-ahead log of a DuckDB database: changes that its file does not hold yet. */
+export function databaseLog(file: string): string {
+  return `${file}.wal`;
 }
 
 /** What the views of a table read: a view of the session with the table's columns, and the row IDs. */
@@ -204,7 +215,7 @@ export class LoadedTable {
     return this.firstRows;
   }
 
-  /** Workbooks: waits until the sheets are known, or the load failed. */
+  /** Workbooks and databases: waits until the sheets are known, or the load failed. */
   whenListed(): Promise<void> {
     return Promise.race([this.sheetsKnown, this.ready]);
   }
@@ -232,14 +243,16 @@ export class LoadedTable {
     source: string,
     limit?: number,
   ): Promise<{ objects: string[]; table: string; columns: Column[]; relation: Relation }> {
-    const sources = await this.describe(connection, `SELECT * FROM ${reader}`, [source]);
+    // The reader of a database's table names it and takes no file.
+    const params = this.format === "duckdb" ? [] : [source];
+    const sources = await this.describe(connection, `SELECT * FROM ${reader}`, params);
     const columns = sources.map(tableColumn);
     const table = this.session.createName("vg_t");
     const values = sources.map((item, index) => `${sourceExpression(item, columns[index])} AS "c${index}"`);
     const objects = [`TABLE ${quoteIdentifier(table)}`];
     await connection.run(
       `CREATE TABLE ${quoteIdentifier(table)} AS SELECT ${values.join(", ")} FROM ${reader}${limit === undefined ? "" : ` LIMIT ${limit}`}`,
-      [source],
+      params,
     );
     try {
       const view = this.session.createName("vg_v");
@@ -269,10 +282,12 @@ export class LoadedTable {
     }
   }
 
-  private readerFunction(attempt: number, workbook: string, reading = this.reading) {
+  /** The reader of the file. `given` is that of a workbook's converted sheet, or a database's table. */
+  private readerFunction(attempt: number, given: string, reading = this.reading) {
     switch (this.format) {
       case "xlsx":
-        return workbook;
+      case "duckdb":
+        return given;
       case "parquet":
         return "read_parquet($1)";
       case "json":
@@ -315,6 +330,7 @@ export class LoadedTable {
 
   private async load() {
     if (this.format === "parquet" && (await this.readParquetInPlace())) return;
+    if (this.format === "duckdb") return this.loadDatabase();
     let source = this.path;
     let workbook = "";
     if (this.format === "csv" || this.format === "tsv") {
@@ -324,11 +340,16 @@ export class LoadedTable {
     }
     if (this.format === "xlsx") ({ source, reader: workbook } = await this.convertWorkbook());
     if (this.disposed) return;
+    await this.loadRows(source, workbook);
+  }
+
+  /** Loads the preview, and then, once no other file loads, the table. */
+  private async loadRows(source: string, workbook: string) {
     await this.loadPreview(source, workbook);
     await this.session.loads.run(async () => {
       if (this.disposed) return;
       let lastError: unknown = null;
-      // A converted sheet and a Parquet file have one type per column already: nothing to retry.
+      // A converted sheet, a Parquet file and a database's table have one type per column already: nothing to retry.
       const attempts =
         this.format === "csv" || this.format === "tsv"
           ? TEXT_ATTEMPT + 1
@@ -345,7 +366,7 @@ export class LoadedTable {
           lastError = error;
           this.options.log?.(`Loading ${this.path} failed (attempt ${attempt + 1})`, error);
           // Only DuckDB's error of invalid UTF-8: its other errors list `Encoding: utf-8` among what was tried.
-          if (/invalid unicode/i.test(errorMessage(error)) && source === this.path) {
+          if (/invalid unicode/i.test(errorMessage(error)) && source === this.path && this.format !== "duckdb") {
             // The sample was valid UTF-8 but a later part is not: convert with replacement characters.
             source = await this.convert("utf-8");
             this.notes.push("invalid_utf8_replaced");
@@ -354,6 +375,61 @@ export class LoadedTable {
       }
       throw lastError;
     });
+  }
+
+  /**
+   * Loads a table or view of a DuckDB database: the database is attached read only while it loads, and its tables
+   * and views are its sheets, those of the schema `main` by their names and others as `schema.name`. Its rows are
+   * loaded into a table of the session, so that row IDs are positions (§1) and the file is free again for programs
+   * that write it.
+   */
+  private async loadDatabase() {
+    const catalog = this.session.createName("vg_db");
+    try {
+      await this.session.withConnection(undefined, (connection) =>
+        connection.run(`ATTACH $1 AS ${quoteIdentifier(catalog)} (TYPE duckdb, READ_ONLY)`, [this.path]),
+      );
+    } catch (error) {
+      if (/could not set lock/i.test(errorMessage(error))) {
+        throw new EngineError(
+          "load_failed",
+          "Another program has the database open to write it; close it there first.",
+        );
+      }
+      if (/not a valid DuckDB database/i.test(errorMessage(error))) {
+        throw new EngineError("load_failed", "The file is not a DuckDB database.");
+      }
+      throw error;
+    }
+    try {
+      const tables = await this.session.withConnection(undefined, async (connection) => {
+        const reader = await connection.runAndReadAll(
+          "SELECT table_schema, table_name FROM information_schema.tables WHERE table_catalog = $1 ORDER BY table_schema <> 'main', table_schema, table_name",
+          [catalog],
+        );
+        return reader.getRowsJS().map(([schema, name]) => {
+          const sheet = schema === "main" ? String(name) : `${String(schema)}.${String(name)}`;
+          return {
+            sheet,
+            sql: `${quoteIdentifier(catalog)}.${quoteIdentifier(String(schema))}.${quoteIdentifier(String(name))}`,
+          };
+        });
+      });
+      this.sheets = tables.map(({ sheet }) => ({ name: sheet }));
+      this.listed();
+      if (tables.length === 0) throw new EngineError("load_failed", "The database has no tables.");
+      const chosen = this.read.sheet === undefined ? tables[0] : tables.find(({ sheet }) => sheet === this.read.sheet);
+      if (!chosen) throw new EngineError("load_failed", `The database has no table named "${this.read.sheet}".`);
+      this.sheet = chosen.sheet;
+      if (this.disposed) return;
+      await this.loadRows(this.path, chosen.sql);
+    } finally {
+      await this.session
+        .withConnection(undefined, (connection) =>
+          connection.run(`DETACH DATABASE IF EXISTS ${quoteIdentifier(catalog)}`),
+        )
+        .catch((error: unknown) => this.options.log?.(`Could not detach ${this.path}`, error));
+    }
   }
 
   /**

@@ -10,7 +10,8 @@ import { serve } from "./server.js";
 
 const USAGE = `Usage: vastgrid [options] [<file or folder>…]
 
-Opens CSV, TSV, Parquet, JSON Lines and Excel files in a grid in the browser, read by DuckDB on this computer.
+Opens CSV, TSV, Parquet, JSON Lines, Excel and DuckDB files in a grid in the browser, read by DuckDB on this
+computer.
 A folder gives its files, two folders deep; the current folder when nothing is named.
 
 Options:

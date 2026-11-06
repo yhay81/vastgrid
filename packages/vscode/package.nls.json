@@ -7,7 +7,7 @@
   "walkthrough.title": "Get Started with vastgrid",
   "walkthrough.description": "Open CSV, Parquet, Excel and JSON Lines files of any size in a grid, explore them, and edit CSV and TSV files.",
   "walkthrough.open.title": "Open a file in the grid",
-  "walkthrough.open.description": "Parquet and Excel files open in vastgrid. CSV, TSV and JSON Lines files open as text: the vastgrid button at the top right of the editor, or **Open in vastgrid** in the Explorer's context menu, shows them in the grid. In an Excel file, the bar above the grid or **vastgrid: Choose Sheet** chooses the sheet.\n[Open a File](command:workbench.action.files.openFile)",
+  "walkthrough.open.description": "Parquet, Excel and DuckDB files open in vastgrid. CSV, TSV and JSON Lines files open as text: the vastgrid button at the top right of the editor, or **Open in vastgrid** in the Explorer's context menu, shows them in the grid. In an Excel file, the bar above the grid or **vastgrid: Choose Sheet** chooses the sheet, and in a DuckDB database the table.\n[Open a File](command:workbench.action.files.openFile)",
   "walkthrough.open.alt": "A CSV file open as text, with the vastgrid button at the top right of the editor.",
   "walkthrough.explore.title": "Sort, filter and group",
   "walkthrough.explore.description": "Click a column's name to sort by it. The arrow at its right opens the column's menu: **Filter…** lists the column's values with how many rows have each, and **Group by this column** and **Statistics…** are there too. The whole file is sorted, filtered and grouped, not only the rows on screen.",

@@ -91,7 +91,7 @@ DuckDB エンジンは CSV をカンマ区切り・二重引用符で読みま�
 | --- | --- |
 | [`vastgrid`](packages/grid) | React のグリッド: `DataGrid`、`GridProvider` とフック。`vastgrid/core`（ストアとトランスポート、React なし）、`vastgrid/server`、`vastgrid/locales/<tag>`（言語ごとの文言）、`vastgrid/styles.css` |
 | [`vastgrid-js`](packages/js) | ブラウザーと Node.js のメモリーエンジン: 型の付いた JSON の行、Arrow、CSV・TSV・JSON Lines・Excel・Parquet（HTTP 越しも） |
-| [`vastgrid-duckdb`](packages/duckdb-engine) | Node.js の DuckDB エンジン: どんな大きさのファイルも開き、セルの書き込み、CSV・TSV への保存、ファイルの追跡、書き出し。HTTP の受け口つき |
+| [`vastgrid-duckdb`](packages/duckdb-engine) | Node.js の DuckDB エンジン: どんな大きさのファイルも DuckDB のデータベースの表も開き、セルの書き込み、CSV・TSV への保存、ファイルの追跡、書き出し。HTTP の受け口つき |
 | [`vastgrid-spec`](packages/spec) | コードにした仕様: 型、プランの検証、コマンド、電文のスキーマ、適合性のコーパス |
 | [`vastgrid-sql`](packages/sql) | プランを DuckDB の SQL に |
 | [`vastgrid-cli`](packages/cli) | `npx vastgrid-cli <ファイル>`: このコンピューターの DuckDB で読んだファイルをブラウザーのグリッドで |
