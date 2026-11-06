@@ -28,6 +28,8 @@ import {
   textOf,
   timestampText,
   trimSpaces,
+  type Fold,
+  foldText,
   TIMESTAMP_INFINITY,
   UNIT_PER_SECOND,
   type ValueType,
@@ -597,6 +599,10 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
       return string1(a, (text) => mapCase(text, true));
     case "trim":
       return string1(a, trimSpaces);
+    case "fold": {
+      const fold = (expr.args[1] as { value: Fold }).value;
+      return string1(a, (text) => foldText(text, fold));
+    }
     case "left":
     case "right": {
       const left = expr.fn === "left";

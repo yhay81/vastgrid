@@ -10,6 +10,11 @@
 
 ### New
 
+- `vastgrid-spec`, `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb` and the Python package `vastgrid`: a `fold`
+  function (§3.4, §4.4) for text that Japanese writes in more than one way, by fixed tables that are the same in
+  every engine. `fold(x, "width")` makes full-width ASCII and the ideographic space ASCII, and half-width katakana
+  full-width (`ｶﾞｯｺｳ` → `ガッコウ`); `fold(x, "kana")` makes hiragana katakana. `fold` on both sides of `contains`
+  or `eq` matches such text, and sorting by a derived `fold` orders it. Formulas have it as `FOLD(s, 'width')`.
 - `vastgrid-spec`, `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb` and the Python package `vastgrid`: dates are
   the days from `-290308-12-22` to `+294247-01-10`, DuckDB's timestamps' dates, where they were the years 0001 to
   9999 (§2.2). The years 0000 to 9999 keep four digits, others have a sign and six digits (`+010000-01-01`), and

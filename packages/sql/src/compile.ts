@@ -8,6 +8,8 @@ import {
   type CheckedMeasure,
   type CheckedPlan,
   type Column,
+  FOLD_TABLES,
+  type Fold,
   type LiteralExpr,
   SpecError,
   type TypedExpr,
@@ -383,6 +385,14 @@ class Compiler {
         return args.length === 3
           ? `substring(${arg(0)}, ${start}, ${atLeast(arg(2), 0)})`
           : `substring(${arg(0)}, ${start})`;
+      }
+      case "fold": {
+        // The pairs first, two code points to one, then each code point by translate (§4.4).
+        const table = FOLD_TABLES[(args[1] as LiteralExpr).value as Fold];
+        const text = (value: string) => `CAST(${this.params.add(value)} AS VARCHAR)`;
+        let sql = arg(0);
+        for (const [pair, letter] of table.pairs) sql = `replace(${sql}, ${text(pair)}, ${text(letter)})`;
+        return `translate(${sql}, ${text(table.from)}, ${text(table.to)})`;
       }
       case "replace":
         return `replace(${arg(0)}, ${arg(1)}, ${arg(2)})`;

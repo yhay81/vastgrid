@@ -49,6 +49,7 @@ FUNCTIONS: tuple[str, ...] = (
     "lower",
     "upper",
     "trim",
+    "fold",
     "left",
     "right",
     "substr",

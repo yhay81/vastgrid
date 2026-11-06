@@ -568,6 +568,8 @@ class Compiler {
       case "to_date":
       case "to_timestamp":
         return args.map((arg) => this.asString(arg));
+      case "fold":
+        return args.map((arg, index) => (index === 0 ? this.asString(arg) : arg));
       case "left":
       case "right":
       case "substr":

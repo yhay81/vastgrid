@@ -15,6 +15,7 @@ import {
   type PlanMember,
   type SortDirection,
 } from "./plan.js";
+import { FOLDS } from "./fold.js";
 import { type Column, type JsonValue, LOGICAL_TYPES, type LogicalType, type ValueType } from "./types.js";
 import { decimalTextType, isObject, isValueOf, sameType, trimSpaces, typeName } from "./values.js";
 
@@ -610,6 +611,15 @@ class Checker {
         arity(1);
         strings();
         return STRING;
+      case "fold": {
+        arity(2);
+        this.want(args[0], at(0), (type) => type.type === "string", "a string", STRING);
+        const fold = args[1];
+        if (fold.kind !== "literal" || !(FOLDS as readonly unknown[]).includes(fold.value)) {
+          fail(at(1), "type", `fold's second argument is ${FOLDS.map((name) => `"${name}"`).join(" or ")}.`);
+        }
+        return STRING;
+      }
       case "left":
       case "right":
         arity(2);

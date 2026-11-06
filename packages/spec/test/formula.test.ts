@@ -120,6 +120,9 @@ test("0.1's functions map onto §4.4", () => {
   compiles("LEFT(name, 3.0)", fn("left", col("name"), lit(3)));
   compiles("lower(name)", fn("lower", col("name")));
   compiles("ceil(ratio)", fn("ceil", col("ratio")));
+  compiles("FOLD(FOLD(name, 'width'), 'kana')", fn("fold", fn("fold", col("name"), lit("width")), lit("kana")));
+  // As for LOWER, a value that 0.1 read as text folds as its text form.
+  compiles("FOLD(id, 'width')", fn("fold", fn("text", col("id")), lit("width")));
 });
 
 test("0.1's conversions: text read as dates, text forms of values 0.1 read as text, dates as timestamps", () => {

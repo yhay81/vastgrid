@@ -14,8 +14,9 @@ the VS Code extension is on the Visual Studio Marketplace and Open VSX from 0.3.
 
 - **The specification.** Its open questions
   ([§12](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#12-open-questions)): lists, structs and maps
-  as their own types instead of their text (and a `histogram` measure that gives one), collations such as the
-  reading order of Japanese, and DuckDB's dates beyond those of its timestamps.
+  as their own types instead of their text (and a `histogram` measure that gives one), a search that folds width
+  and kana as `fold` does, collations such as the reading order of Japanese, and DuckDB's dates beyond those of
+  its timestamps.
 
 ## Left out
 

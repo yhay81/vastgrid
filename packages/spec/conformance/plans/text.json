@@ -1,6 +1,6 @@
 {
   "$schema": "../../schema/conformance.schema.json",
-  "description": "Text (§3.4, §4.4) and text forms (§2.4): case mappings by code point, lengths in code points, trim of space separators, and the text of every type.",
+  "description": "Text (§3.4, §4.4) and text forms (§2.4): case mappings by code point, lengths in code points, trim of space separators, fold of width and kana, and the text of every type.",
   "tables": {
     "words": {
       "columns": [{ "name": "s", "type": "string" }],
@@ -16,6 +16,17 @@
     },
     "emoji": { "columns": [{ "name": "s", "type": "string" }], "rows": [["😀abc"]] },
     "repeats": { "columns": [{ "name": "s", "type": "string" }], "rows": [["aaa"]] },
+    "folds": {
+      "columns": [{ "name": "s", "type": "string" }],
+      "rows": [
+        ["ＡＢＣ\u3000１２３！"],
+        ["ｶﾞｯｺｳ ﾊﾟﾝ ｳﾞｧｲｵﾘﾝ"],
+        ["ｱﾞ｢ｰ｣ ﾞ"],
+        ["ひらがな ゔ ゖ ゝ"],
+        ["カタカナ 😀"],
+        [null]
+      ]
+    },
     "fractions": {
       "columns": [{ "name": "d", "type": "decimal", "precision": 2, "scale": 2 }],
       "rows": [["0.50"], ["-0.05"], [null]]
@@ -350,6 +361,83 @@
           ["-0.10", "0099-01-01", "2024-01-31 12:00:00", "23:59:59", false, "2024-01-31 23:00:00.123456+00", -1]
         ]
       }
+    },
+    {
+      "id": "text.fold-width",
+      "section": "4.4",
+      "description": "Full-width ASCII and the ideographic space become ASCII; half-width katakana become full-width, a letter and its mark one code point where one exists, a mark otherwise the combining one.",
+      "table": "folds",
+      "plan": { "derive": [{ "name": "f", "expr": { "fn": "fold", "args": [{ "col": "s" }, { "lit": "width" }] } }] },
+      "read": { "columns": ["f"] },
+      "expect": {
+        "rowCount": 6,
+        "rows": [
+          ["ABC 123!"],
+          ["ガッコウ パン ヴァイオリン"],
+          ["ア\u3099「ー」 \u3099"],
+          ["ひらがな ゔ ゖ ゝ"],
+          ["カタカナ 😀"],
+          [null]
+        ]
+      }
+    },
+    {
+      "id": "text.fold-kana",
+      "section": "4.4",
+      "description": "Hiragana U+3041–3096 become katakana; other code points (ゝ, half-width and full-width forms) stay.",
+      "table": "folds",
+      "plan": { "derive": [{ "name": "f", "expr": { "fn": "fold", "args": [{ "col": "s" }, { "lit": "kana" }] } }] },
+      "read": { "columns": ["f"] },
+      "expect": {
+        "rowCount": 6,
+        "rows": [
+          ["ＡＢＣ\u3000１２３！"],
+          ["ｶﾞｯｺｳ ﾊﾟﾝ ｳﾞｧｲｵﾘﾝ"],
+          ["ｱﾞ｢ｰ｣ ﾞ"],
+          ["ヒラガナ ヴ ヶ ゝ"],
+          ["カタカナ 😀"],
+          [null]
+        ]
+      }
+    },
+    {
+      "id": "text.fold-width-then-kana",
+      "section": "4.4",
+      "description": "Folding width, then kana, on both sides finds a word in half-width, full-width, hiragana or katakana.",
+      "table": "folds",
+      "plan": {
+        "derive": [
+          {
+            "name": "f",
+            "expr": { "fn": "fold", "args": [{ "fn": "fold", "args": [{ "col": "s" }, { "lit": "width" }] }, { "lit": "kana" }] }
+          }
+        ],
+        "where": {
+          "fn": "contains",
+          "args": [
+            { "col": "f" },
+            { "fn": "fold", "args": [{ "fn": "fold", "args": [{ "lit": "ｶﾀｶﾅ" }, { "lit": "width" }] }, { "lit": "kana" }] }
+          ]
+        }
+      },
+      "read": { "columns": ["s"] },
+      "expect": { "rowCount": 1, "rows": [["カタカナ 😀"]] }
+    },
+    {
+      "id": "text.fold-unknown",
+      "section": "4.4",
+      "description": "A fold is \"width\" or \"kana\".",
+      "table": "folds",
+      "plan": { "derive": [{ "name": "f", "expr": { "fn": "fold", "args": [{ "col": "s" }, { "lit": "accents" }] } }] },
+      "expect": { "error": { "code": "invalid_plan", "reason": "type", "path": "/derive/0/expr/args/1" } }
+    },
+    {
+      "id": "text.fold-not-literal",
+      "section": "4.4",
+      "description": "The fold is a literal, not a column.",
+      "table": "folds",
+      "plan": { "derive": [{ "name": "f", "expr": { "fn": "fold", "args": [{ "col": "s" }, { "col": "s" }] } }] },
+      "expect": { "error": { "code": "invalid_plan", "reason": "type", "path": "/derive/0/expr/args/1" } }
     }
   ]
 }

@@ -106,6 +106,7 @@
             "lower",
             "upper",
             "trim",
+            "fold",
             "left",
             "right",
             "substr",

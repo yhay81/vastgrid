@@ -235,8 +235,19 @@ in every engine.
   `toLowerCase` gives `"i̇"` and `"σας"`, and `toUpperCase` gives `"SS"`; JS engines MUST map code points
   one by one, with the conformance corpus as the reference.
 - Matching that ignores letter case is written with `lower` on both sides:
-  `contains(lower(x), lower("Tokyo"))`. Nothing else is folded in 0.2 (full-width and half-width forms,
-  kana, accents); it may come later as a capability.
+  `contains(lower(x), lower("Tokyo"))`.
+- `fold` (§4.4) maps forms that Japanese text writes in more than one way, by fixed tables rather than NFKC, so
+  that no Unicode version changes a result. Matching that ignores them is written with `fold` on both sides, as
+  for `lower`: `contains(fold(fold(x, "width"), "kana"), fold(fold("ｶﾀｶﾅ", "width"), "kana"))`.
+  - `"width"`: full-width ASCII (U+FF01–FF5E) becomes ASCII (U+0021–007E), and the ideographic space U+3000 a
+    space. Half-width katakana (U+FF61–FF9F) become full-width: `｡｢｣､･` become `。「」、・`, U+FF66–FF9D
+    `ｦ`…`ﾝ` (with `ｰ`) become `ヲ`…`ン`, in the order of both blocks. First, a half-width letter followed by
+    `ﾞ` (U+FF9E) or `ﾟ` (U+FF9F) becomes the one full-width letter they make where one exists: `ｶﾞ` → `ガ`,
+    `ﾊﾟ` → `パ`, `ｳﾞ` → `ヴ`, `ﾜﾞ` → `ヷ`, `ｦﾞ` → `ヺ`. The marks otherwise become the combining marks U+3099
+    and U+309A, as NFKC maps them.
+  - `"kana"`: hiragana U+3041–3096 become katakana U+30A1–30F6. Other code points (`ゝ`, `ゟ`) stay.
+  - Nothing else is folded in 0.2 (accents, other full-width signs); locale collations may come later as a
+    capability.
 
 ### 3.5 Search
 
@@ -417,6 +428,7 @@ Text:
 | `concat` | 1 or more values of any type | string: their text forms (§2.4) joined, null counting as the empty string |
 | `length` | a string | bigint: the number of code points |
 | `lower`, `upper` | a string | string (§3.4) |
+| `fold` | a string, and `"width"` or `"kana"` (a string literal) | string (§3.4) |
 | `trim` | a string | string without its leading and trailing space separators (Unicode category Zs, such as U+0020, U+00A0 and U+3000); tabs and line breaks stay |
 | `left`, `right` | a string and an integer n | string: the first or the last n code points; n below 0 counts as 0 |
 | `substr` | a string, a start from 1, and optionally a length (integers) | string: the code points from the start; a start below 1 counts as 1, a length below 0 as 0 |
@@ -1521,7 +1533,7 @@ comes with conformance cases checked against DuckDB, and the JS engine follows i
 
 - Native nested types (lists, structs, maps) instead of their text, and measures that give them, such as a
   `histogram` that gives the counts of all the bins in one value.
-- Collations and folding (reading order of Japanese, full-width and half-width forms) as capabilities.
+- Collations (the reading order of Japanese) as capabilities; folding is `fold` (§3.4).
 - DuckDB's dates beyond those of §2.2 (to 5877642 BC and 5881580 AD), which read as null.
 
 ## Appendix A. From 0.1

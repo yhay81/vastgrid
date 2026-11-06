@@ -10,6 +10,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, NoReturn
 
+from ._fold import FOLDS
 from ._plan import FUNCTIONS, LIMITS, MEASURES, PlanError
 from ._values import (
     LOGICAL_TYPES,
@@ -608,6 +609,14 @@ class _Checker:
         if fn in ("lower", "upper", "trim"):
             arity(1)
             strings()
+            return STRING
+        if fn == "fold":
+            arity(2)
+            self._want(args[0], at(0), is_string, "a string", STRING)
+            fold = args[1]
+            if not isinstance(fold, LiteralExpr) or not isinstance(fold.value, str) or fold.value not in FOLDS:
+                names = " or ".join(f'"{name}"' for name in FOLDS)
+                _fail(at(1), "type", f"fold's second argument is {names}.")
             return STRING
         if fn in ("left", "right"):
             arity(2)

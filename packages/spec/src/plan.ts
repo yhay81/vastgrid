@@ -47,6 +47,7 @@ export const FUNCTIONS = [
   "lower",
   "upper",
   "trim",
+  "fold",
   "left",
   "right",
   "substr",

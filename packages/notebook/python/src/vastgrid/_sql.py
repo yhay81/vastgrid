@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ._check import CallExpr, CheckedMeasure, CheckedPlan, ColumnExpr, LiteralExpr, SearchExpr, TypedExpr, value_type
+from ._fold import FOLD_TABLES
 from ._plan import SpecError
 from ._values import is_number, is_safe_integer, js_float, js_string, number_text, value_of_text
 
@@ -222,6 +223,10 @@ class _Compiler:
         sql = self.expression(node)
         return _finite(sql) if node.type["type"] == "float" else sql
 
+    def _string(self, value: str) -> str:
+        """A text that is not a value of the plan (a table of `fold`), as a parameter."""
+        return f"CAST({self.params.add(value)} AS VARCHAR)"
+
     def _double(self, node: TypedExpr) -> str:
         return f"CAST({self._number(node)} AS DOUBLE)"
 
@@ -355,6 +360,13 @@ class _Compiler:
             if len(args) == 3:
                 return f"substring({arg(0)}, {start}, {_at_least(arg(2), 0)})"
             return f"substring({arg(0)}, {start})"
+        if fn == "fold":
+            # The pairs first, two code points to one, then each code point by translate (§4.4).
+            pairs, source, target = FOLD_TABLES[args[1].value]
+            sql = arg(0)
+            for pair, letter in pairs:
+                sql = f"replace({sql}, {self._string(pair)}, {self._string(letter)})"
+            return f"translate({sql}, {self._string(source)}, {self._string(target)})"
         if fn == "replace":
             return f"replace({arg(0)}, {arg(1)}, {arg(2)})"
         if fn in ("contains", "starts_with", "ends_with"):

@@ -7,7 +7,7 @@ description: vastgrid のバージョン 0.3 の後に予定していること�
 
 ## 次に行うこと
 
-- **仕様。** 未解決の問い（[§12](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#12-open-questions)）です。リスト・構造体・マップをテキストではなくそれ自身の型として扱うこと（それを返す `histogram` の集計も）、日本語の読みの順のような照合順序、DuckDB のタイムスタンプが届かない年の日付などがあります。
+- **仕様。** 未解決の問い（[§12](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#12-open-questions)）です。リスト・構造体・マップをテキストではなくそれ自身の型として扱うこと（それを返す `histogram` の集計も）、`fold` と同じように全角・半角とひらがな・カタカナを同一視する検索、日本語の読みの順のような照合順序、DuckDB のタイムスタンプが届かない年の日付などがあります。
 
 ## 入れないもの
 

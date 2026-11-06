@@ -1,7 +1,7 @@
 # Proposals for the open questions
 
 The three questions that [§12 of the specification](spec.md#12-open-questions) leaves open, each with what holds
-today, what the sources give, the choices, and the one proposed. Only the years of §3 are specified so far: each part becomes
+today, what the sources give, the choices, and the one proposed. Only the years of §3 and folding (§2 part 1) are specified so far: each part becomes
 spec text, conformance cases and engine code only once it is chosen. Checked against DuckDB 2.0.0, Node.js 24
 (ICU 78.3, Unicode 17) and Python's DuckDB 2.0.0.
 
@@ -68,6 +68,10 @@ Each step adds conformance cases on every engine.
   shows as `{0=2, 5=1}`.
 
 ## 2. Collations and folding
+
+Part 1 is done (§3.4, §4.4): `fold(x, "width")` and `fold(x, "kana")`, without accents, by the tables proposed
+below; a half-width mark that makes no letter becomes the combining one, as NFKC maps it. The search's `fold`, the
+grid's switch and locale collations remain open (§12).
 
 ### Today
 
@@ -166,8 +170,8 @@ meaning. The change is additive, and fits a patch version of 0.2 under §11.
 
 The proposed order of the work:
 
-1. Dates first: small, additive, and every part is checkable against DuckDB.
-2. Then folding as functions (§2 part 1).
+1. Dates first: small, additive, and every part is checkable against DuckDB. Done.
+2. Then folding as functions (§2 part 1). Done; the search's `fold` next.
 3. Then nested types in their four steps. They need the most work and the opt-in.
 
 Locale collations wait for a need.
