@@ -157,7 +157,7 @@ Node.js 22.18 以降と、DuckDB（`@duckdb/node-api`）のバイナリがある
 | `resolve` | `(ref) => string \| Promise<string>` | パス。相対パスは最初の許可フォルダーの中 | `open` の `ref` が指すファイル。投げると拒否します（`not_allowed`）。 |
 | `resolveTarget` | `(target) => string \| Promise<string>` | | `export` の `target` が指すファイル。許可フォルダーの中で、表が読むファイル以外。ないときは書き出しに target を付けず、エンジンが保持します（`exportFile`）。 |
 | `saveFiles` | `boolean` | `false` | `save` で書き込んだセルを元の CSV・TSV ファイルに保存できるようにします。編集したフィールドを含まないバイトはそのまま残します。オフならエンジンはファイルを一切変えません。 |
-| `watchFiles` | `boolean` | `true` | 開いている表のファイルを監視します。ディスク上で変わったファイルは読み直し、書き込んだセルがある表では `fileChanged` で知らせます。 |
+| `watchFiles` | `boolean` | `true` | 開いている表のファイルを監視します。ディスク上で変わったファイルは読み直し、書き込んだセルがある表とデータベースの表では `fileChanged` で知らせます。 |
 | `memoryLimit` | `string` | システムのメモリの 5 分の 1（1〜4 GB） | DuckDB のメモリ上限（`"4GB"` など）。 |
 | `maxTempDirectorySize` | `string` | `"8GB"` | DuckDB の退避ファイルの上限（データベースと変換したファイルは含みません）。 |
 | `threads` | `number` | CPU の数から 1 を引いた数 | DuckDB のスレッド数。 |
@@ -212,7 +212,7 @@ Node.js の `http` リクエストのハンドラー `(request, response, next?)
 | JSON | `.json`、`.json.gz` | DuckDB に読み込みます |
 | Parquet | `.parquet`、`.pq` | その場で、行番号で読みます |
 | Excel | `.xlsx`、`.xlsm` | シートを DuckDB に読み込みます。`open` の `read` で `sheet`、`headerRow`、`keepEmptyRows`、`keepEmptyColumns` を選びます |
-| DuckDB | `.duckdb`、`.ddb` | 表かビューを DuckDB に読み込みます（その間だけデータベースを読み取り専用で接続します）。表とビューが `sheets` になり（`main` 以外のスキーマは `schema.name`）、`open` の `read.sheet` で選びます |
+| DuckDB | `.duckdb`、`.ddb` | 表を DuckDB に読み込みます（その間だけデータベースを読み取り専用で接続します）。表が `sheets` になり（`main` 以外のスキーマは `schema.name`。ビューは含みません）、`open` の `read.sheet` で選びます |
 
 CSV はカンマ区切り、TSV はタブ区切りで、二重引用符を使って読みます。CSV の値に含まれる単一引用符・セミコロン・パイプは、そのまま値として扱います。別の区切り文字は `open.read.delimiter` で指定できます（二重引用符以外の印字可能な ASCII 文字 1 文字、またはタブ）。見出しは既定では自動判定です。`open.read.headerRow: 1` は最初のレコードを見出しに、`0` は全レコードをデータにし、より大きい値は見出しより前のレコードを読み飛ばします。保存・再読み込みでも同じ設定を使います。グリッドには `open={{ read: { delimiter: ";", headerRow: 1 } }}` の形で渡します。
 

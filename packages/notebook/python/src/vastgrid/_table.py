@@ -224,23 +224,28 @@ class Table:
         self.row_count = int(rows)
 
     def _load_database(self, cursor: duckdb.DuckDBPyConnection, path: str, sheet: str | None) -> None:
-        """A table or view of a DuckDB database: the database is attached read only while it is copied, and its
-        tables and views are its sheets, those of the schema `main` by their names and others as `schema.name`.
-        The copy's row IDs are positions (§1), and the file is free again for programs that write it."""
+        """A table of a DuckDB database: the database is attached read only while it is copied, and its tables are
+        its sheets, those of the schema `main` by their names and others as `schema.name`. Its views are not: they
+        are SQL of the database's author, which reads whatever it names. The copy's row IDs are positions (§1), and
+        the file is free again for programs that write it."""
         name = self.session.name("vg_db")
         catalog = quote_identifier(name)
         try:
             cursor.execute(f"ATTACH $1 AS {catalog} (TYPE duckdb, READ_ONLY)", [path])
         except duckdb.Error as error:
-            if "could not set lock" in str(error).lower():
+            words = str(error).lower()
+            # DuckDB's words on POSIX, and on Windows, where it also names the programs that have the file open.
+            locked = ("could not set lock", "already open in", "being used by another process")
+            if any(part in words for part in locked):
                 message = "Another program has the database open to write it; close it there first."
                 raise EngineError("load_failed", message) from error
-            if "not a valid duckdb database" in str(error).lower():
+            if "not a valid duckdb database" in words:
                 raise EngineError("load_failed", "The file is not a DuckDB database.") from error
             raise
         try:
             listed = cursor.execute(
-                "SELECT table_schema, table_name FROM information_schema.tables WHERE table_catalog = $1 "
+                "SELECT table_schema, table_name FROM information_schema.tables "
+                "WHERE table_catalog = $1 AND table_type = 'BASE TABLE' "
                 "ORDER BY table_schema <> 'main', table_schema, table_name",
                 [name],
             ).fetchall()

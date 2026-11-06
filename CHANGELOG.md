@@ -22,13 +22,15 @@
   text, and only values that hold one of their code points: a folded search of 4 million values takes 0.03 to
   0.2 seconds, where folding by the whole tables took 6.6.
 - `vastgrid-duckdb`, `vastgrid-cli`, `vastgrid-mcp`, `vastgrid-vscode` and the Python package `vastgrid`: DuckDB
-  databases (`.duckdb`, `.ddb`) open. Their tables and views are the `sheets` (§8.2), those of the schema `main` by
-  their names and others as `schema.name`, and `read.sheet` chooses one as it does a workbook's sheet: the CLI's
-  sheet buttons, VS Code's bar and "vastgrid: Choose Sheet", `open_grid`'s `sheet` and `vastgrid.show(…, sheet=…)`.
-  The engine attaches the database read only while it copies the table into its session, so that row IDs are
-  positions and a program can write the database again once the table has loaded; one that another program has
-  open to write it fails to open and says so. `vastgrid-duckdb` follows the database's changes, those in its
-  write-ahead log (`.wal`) included (§7.6). Written values stay in the session, as for Parquet files.
+  databases (`.duckdb`, `.ddb`) open. Their tables are the `sheets` (§8.2), those of the schema `main` by their
+  names and others as `schema.name`, and `read.sheet` chooses one as it does a workbook's sheet: the CLI's sheet
+  buttons, VS Code's bar and "vastgrid: Choose Sheet", `open_grid`'s `sheet` and `vastgrid.show(…, sheet=…)`.
+  Views are not opened, since their SQL reads whatever it names. The engine attaches the database read only
+  while it copies the table into its session, so that row IDs are positions and a program can write the
+  database again once the table has loaded; one that another program has open to write it fails to open and
+  says so. When the database changes, in its write-ahead log (`.wal`) too, `vastgrid-duckdb` tells
+  `fileChanged` and reads it again only on `reload` (§7.6), so as not to lock it against the program that writes
+  it. Written values stay in the session, as for Parquet files.
 - `vastgrid-spec`, `vastgrid-js`, `vastgrid-sql`, `vastgrid-duckdb` and the Python package `vastgrid`: dates are
   the days from `-290308-12-22` to `+294247-01-10`, DuckDB's timestamps' dates, where they were the years 0001 to
   9999 (§2.2). The years 0000 to 9999 keep four digits, others have a sign and six digits (`+010000-01-01`), and

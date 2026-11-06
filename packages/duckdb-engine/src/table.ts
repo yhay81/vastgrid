@@ -378,10 +378,10 @@ export class LoadedTable {
   }
 
   /**
-   * Loads a table or view of a DuckDB database: the database is attached read only while it loads, and its tables
-   * and views are its sheets, those of the schema `main` by their names and others as `schema.name`. Its rows are
-   * loaded into a table of the session, so that row IDs are positions (§1) and the file is free again for programs
-   * that write it.
+   * Loads a table of a DuckDB database: the database is attached read only while it loads, and its tables are its
+   * sheets, those of the schema `main` by their names and others as `schema.name`. Its views are not: they are SQL
+   * of the database's author, which reads whatever it names. The rows are loaded into a table of the session, so
+   * that row IDs are positions (§1) and the file is free again for programs that write it.
    */
   private async loadDatabase() {
     const catalog = this.session.createName("vg_db");
@@ -390,7 +390,8 @@ export class LoadedTable {
         connection.run(`ATTACH $1 AS ${quoteIdentifier(catalog)} (TYPE duckdb, READ_ONLY)`, [this.path]),
       );
     } catch (error) {
-      if (/could not set lock/i.test(errorMessage(error))) {
+      // DuckDB's words on POSIX, and on Windows, where it also names the programs that have the file open.
+      if (/could not set lock|already open in|being used by another process/i.test(errorMessage(error))) {
         throw new EngineError(
           "load_failed",
           "Another program has the database open to write it; close it there first.",
@@ -404,7 +405,7 @@ export class LoadedTable {
     try {
       const tables = await this.session.withConnection(undefined, async (connection) => {
         const reader = await connection.runAndReadAll(
-          "SELECT table_schema, table_name FROM information_schema.tables WHERE table_catalog = $1 ORDER BY table_schema <> 'main', table_schema, table_name",
+          "SELECT table_schema, table_name FROM information_schema.tables WHERE table_catalog = $1 AND table_type = 'BASE TABLE' ORDER BY table_schema <> 'main', table_schema, table_name",
           [catalog],
         );
         return reader.getRowsJS().map(([schema, name]) => {

@@ -1238,6 +1238,8 @@ modification time and first bytes) does; a save of the engine itself is not a ch
 - A table with written values stays as it was read, so that they are not lost: its `TableInfo`, its `changed`
   event and `changes` carry `fileChanged: true`. Its handles read and write it as before, and `save` fails with
   `file_changed`. A file that is removed is the same, until it comes back.
+- A DuckDB database (§8.2) is not read again by itself, since reading it locks it against the program that
+  writes it: its table stays as it was read, with `fileChanged: true`, until `reload`.
 - `reload` moves a handle to the file as it is now, with a new revision and without the written values, which
   stay with the other handles of the old table until the last one closes. When the file has not changed, it
   answers the handle's `TableInfo` and changes nothing.
@@ -1305,10 +1307,11 @@ an `internal` error.
   is tab or one printable ASCII character other than `"`; the default is comma for CSV and tab for TSV.
   Standard double quoting and doubled-quote escaping apply regardless of the sampled records. These options
   also apply when saving and reloading the file. Workbook options retain their workbook meanings.
-- For DuckDB databases (`.duckdb`, `.ddb`) in `vastgrid-duckdb`, `sheets` are the database's tables and views,
-  those of the schema `main` by their names and others as `schema.name`, and `read.sheet` chooses one, by default
-  the first. The table is read as it is when it opens, so that its row IDs are its positions; written values stay
-  with the table and are not saved into the database.
+- For DuckDB databases (`.duckdb`, `.ddb`) in `vastgrid-duckdb`, `sheets` are the database's tables, those of the
+  schema `main` by their names and others as `schema.name`, and `read.sheet` chooses one, by default the first.
+  Views are not sheets: they are SQL of the database's author, which reads whatever it names. The table is read
+  as it is when it opens, so that its row IDs are its positions; written values stay with the table and are not
+  saved into the database.
 - `rows` reads positions `[start, end)` of the plan's view: `columns` are names of the view's columns, at most
   1,000,000 rows and 1,000,000 cells. Positions beyond the view are left out: the answer's `end` is at most the
   view's row count, and a request whose `start` is at or beyond it is answered with no rows (`end` equal to

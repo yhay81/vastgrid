@@ -68,12 +68,13 @@ temporary folder.
   every record as data, and a larger value skips records before that header. These options also apply to saves
   and reloads; a grid passes them through its `open` prop. Parent folders named `key=value` never add or replace
   columns. Long records raise the reader's buffer limit as needed, subject to the engine's memory limit.
-- **Databases.** The tables and views of a DuckDB database (`.duckdb`, `.ddb`) are its `sheets`, those of the
-  schema `main` by their names and others as `schema.name`, and `read: { sheet }` chooses one, by default the
-  first. The database is attached read only while the table is copied, so that row IDs are positions and a program
-  that writes the database can open it again once the table has loaded; a database that another program has open
-  to write it fails to open. Its views read only what the engine may read, and its changes, those in its
-  write-ahead log included, are followed as a file's are.
+- **Databases.** The tables of a DuckDB database (`.duckdb`, `.ddb`) are its `sheets`, those of the schema `main`
+  by their names and others as `schema.name`, and `read: { sheet }` chooses one, by default the first. Views are
+  not: their SQL reads whatever it names. The database is attached read only while the table is copied, so that
+  row IDs are positions and a program that writes the database can open it again once the table has loaded; a
+  database that another program has open to write it fails to open. Its changes, those in its write-ahead log
+  included, are told with `fileChanged`, and `reload` reads it again: reading it by itself would lock it
+  against the program that writes it.
 - **Reading.** `rows`, `locate`, `summarize` and `find` read the views of plans that
   [`vastgrid-sql`](https://www.npmjs.com/package/vastgrid-sql) compiles. Every column is read as its logical type
   (§2.1), and a view without `where`, `aggregate` and `sort` is read by row IDs. Other views save their total order once and read ranges of

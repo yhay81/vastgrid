@@ -81,7 +81,7 @@ test("DuckDB databases are recognised by their extension", () => {
   assert.equal(tableFormatOf("shop.db"), null);
 });
 
-test("the tables and views of a database are its sheets; the first is read and others can be chosen", async () => {
+test("the tables of a database are its sheets, not its views; the first is read and others can be chosen", async () => {
   const file = await database("shop.duckdb", [
     "CREATE TABLE cities (id INTEGER, name VARCHAR, population BIGINT, founded DATE)",
     "INSERT INTO cities VALUES (1, 'Tokyo', 14000000, '1457-01-01'), (2, 'Osaka', 2700000, NULL), (3, 'Nara', 360000, '0710-01-01'), (4, 'Kobe', 1500000, NULL)",
@@ -94,20 +94,12 @@ test("the tables and views of a database are its sheets; the first is read and o
     'CREATE TABLE "rowid" ("rowid" INTEGER)',
     'INSERT INTO "rowid" VALUES (7)',
   ]);
-  const first = await readAll(file);
-  assert.equal(first.info.format, "duckdb");
-  assert.deepEqual(first.info.sheets, [
-    { name: "big_cities" },
-    { name: "cities" },
-    { name: "rowid" },
-    { name: "sales.orders" },
-  ]);
-  assert.equal(first.info.sheet, "big_cities");
-  assert.deepEqual(first.rows, [["Tokyo"], ["Kobe"]]);
-  assert.equal((first.info.capabilities as Json).save, false);
-
-  const cities = await readAll(file, { sheet: "cities" });
+  const cities = await readAll(file);
+  assert.equal(cities.info.format, "duckdb");
+  // A view is SQL of the database's author, which reads whatever it names.
+  assert.deepEqual(cities.info.sheets, [{ name: "cities" }, { name: "rowid" }, { name: "sales.orders" }]);
   assert.equal(cities.info.sheet, "cities");
+  assert.equal((cities.info.capabilities as Json).save, false);
   assert.deepEqual(
     cities.info.columns.map((column) => [column.name, column.type]),
     [
@@ -131,10 +123,12 @@ test("the tables and views of a database are its sheets; the first is read and o
   // A column named like DuckDB's own row numbers is a column like any other.
   assert.deepEqual((await readAll(file, { sheet: "rowid" })).rows, [[7]]);
 
-  const missing = await client.open(file, { sheet: "nowhere" });
-  assert.equal(missing.status, "error");
-  assert.equal(missing.error, 'The database has no table named "nowhere".');
-  assert.equal(missing.sheets?.length, 4);
+  for (const sheet of ["nowhere", "big_cities"]) {
+    const missing = await client.open(file, { sheet });
+    assert.equal(missing.status, "error");
+    assert.equal(missing.error, `The database has no table named "${sheet}".`);
+    assert.equal(missing.sheets?.length, 3);
+  }
 });
 
 test("cells of a database's table are written in memory; the file is not saved (§7.2)", async () => {
@@ -162,16 +156,19 @@ test("databases without tables, and files that are not databases, fail to open",
   assert.equal(fake.error, "The file is not a DuckDB database.");
 });
 
-test("a view that reads a file outside the allowed folders fails like any read of it", async () => {
-  const secret = path.join(context.root, "secret.csv");
-  await writeFile(secret, "word\nhidden\n");
+test("the views of a database are not read, even when asked for: their SQL reads whatever it names", async () => {
+  // A file of the allowed folder that is not a table, which a view would show.
+  const secret = path.join(workspace, "secret.env");
+  await writeFile(secret, "TOKEN=hidden\n");
   const file = await database("leak.duckdb", [
-    `CREATE VIEW leak AS SELECT * FROM read_csv('${secret.replaceAll("'", "''")}')`,
+    `CREATE VIEW leak AS SELECT content FROM read_text('${secret.replaceAll("'", "''")}')`,
   ]);
-  const info = await client.open(file);
-  assert.equal(info.status, "error");
-  assert.match(info.error ?? "", /Permission Error/);
-  assert.doesNotMatch(info.error ?? "", /hidden/);
+  for (const read of [undefined, { sheet: "leak" }]) {
+    const info = await client.open(file, read);
+    assert.equal(info.status, "error");
+    assert.equal(info.error, "The database has no tables.");
+    assert.deepEqual(info.sheets, []);
+  }
 });
 
 test("changes in the write-ahead log are read, and count in the file's revision", async () => {
@@ -209,16 +206,22 @@ test("the database is free once its table has loaded, and one that another progr
   assert.deepEqual((await readAll(file, { sheet: "busy" })).rows, [[1]]);
 });
 
-test("a table follows its database when another program changes it (§7.6)", async () => {
+test("a database that another program changes is told, and read again on reload (§7.6)", async () => {
   const file = await database("follow.duckdb", ["CREATE TABLE items AS SELECT 1 AS n"]);
   const first = await readAll(file);
   await database(file, ["INSERT INTO items VALUES (2)"]);
-  let now: TableInfo = first.info;
+  // Reading the database by itself would lock it against the program that writes it.
+  type Followed = TableInfo & { fileChanged?: boolean };
+  let now: Followed = first.info;
   await until(async () => {
-    now = await client.result<TableInfo>("info", { table: first.info.table });
-    return now.revision !== first.info.revision && now.status === "ready";
-  }, "the new revision");
+    now = await client.result<Followed>("info", { table: first.info.table });
+    return now.fileChanged === true;
+  }, "fileChanged");
+  assert.equal(now.revision, first.info.revision);
+  assert.deepEqual((await client.rows(now)).rows, [[1]]);
+  const reloaded = await client.result<Followed>("reload", { table: first.info.table });
+  assert.notEqual(reloaded.revision, first.info.revision);
+  assert.equal(reloaded.fileChanged, undefined);
   await context.engine.whenLoaded(first.info.table);
-  now = await client.result<TableInfo>("info", { table: first.info.table });
-  assert.deepEqual((await client.rows(now)).rows, [[1], [2]]);
+  assert.deepEqual((await client.rows(reloaded)).rows, [[1], [2]]);
 });

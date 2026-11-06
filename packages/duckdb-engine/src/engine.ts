@@ -512,8 +512,9 @@ export class DuckDBEngine {
   /**
    * Follows the file of a table that handles use when it changed on disk (§7.6): a table without written cells is
    * read again, and its handles move to the new table once it has loaded; one with written cells stays, with
-   * `fileChanged`, and so does one whose file cannot be read now (removed, or half written). The checks run between
-   * writes and saves, so that a save of the engine itself is not a change.
+   * `fileChanged`, and so does one whose file cannot be read now (removed, or half written). So does a database's
+   * table: reading the database locks it against the program that writes it, so it is read again only on `reload`.
+   * The checks run between writes and saves, so that a save of the engine itself is not a change.
    */
   private async follow(table: LoadedTable): Promise<void> {
     const key = tableKey(table.path, table.read);
@@ -531,7 +532,9 @@ export class DuckDBEngine {
         return "told" as const;
       }
       const size = revision === null ? null : await fileSize(table.path);
-      if (revision === null || size === null || table.edits.state.cells > 0) return told();
+      if (revision === null || size === null || table.edits.state.cells > 0 || table.format === "duckdb") {
+        return told();
+      }
       return { revision, size };
     });
     if (checked === null) return;

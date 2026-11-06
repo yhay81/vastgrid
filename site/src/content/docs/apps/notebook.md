@@ -49,7 +49,7 @@ notebooks, Google Colab, marimo) are not tested yet.
 | JSON, JSON Lines | `.json`, `.jsonl`, `.ndjson` (also `.gz`, `.zst`) | edited |
 | Parquet | `.parquet`, `.pq` | edited; read in place, a row range at a time |
 | Excel | `.xlsx`, `.xlsm` | edited; the sheets of the workbook, hidden ones marked, and `sheet` chooses one |
-| DuckDB | `.duckdb`, `.ddb` | edited; the tables and views of the database are its sheets, `schema.name` outside `main` |
+| DuckDB | `.duckdb`, `.ddb` | edited; the tables of the database are its sheets (not its views), `schema.name` outside `main` |
 | DataFrames | pandas, Polars, PyArrow tables, DuckDB relations | edited |
 
 A DataFrame is copied into DuckDB in its row order when the grid opens; the DataFrame itself does not change.

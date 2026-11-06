@@ -182,7 +182,7 @@ Returns a promise of the engine.
 | `resolve` | `(ref) => string \| Promise<string>` | a path; relative ones inside the first allowed folder | The file that a `ref` of `open` names. Throw to refuse it (`not_allowed`). |
 | `resolveTarget` | `(target) => string \| Promise<string>` | | The file that the `target` of `export` names, inside the allowed folders and not a file a table reads. Without it, exports name no target and the engine keeps them (`exportFile`). |
 | `saveFiles` | `boolean` | `false` | Lets `save` write written cells into the CSV and TSV files they came from, keeping every byte that holds no edited field. Off, the engine never changes a file. |
-| `watchFiles` | `boolean` | `true` | Follows the files of open tables: a file that changes on disk is read again, or reported with `fileChanged` when its table has written cells. |
+| `watchFiles` | `boolean` | `true` | Follows the files of open tables: a file that changes on disk is read again, or reported with `fileChanged` when its table has written cells or is a database's. |
 | `memoryLimit` | `string` | a fifth of the system's memory, 1–4 GB | DuckDB's memory limit, such as `"4GB"`. |
 | `maxTempDirectorySize` | `string` | `"8GB"` | The most that DuckDB's spill files may take (not the database or converted files). |
 | `threads` | `number` | CPUs minus one | DuckDB's threads. |
@@ -238,7 +238,7 @@ middleware: requests to other paths go to `next`, or get 404 without it.
 | JSON | `.json`, `.json.gz` | into DuckDB |
 | Parquet | `.parquet`, `.pq` | in place, by row numbers |
 | Excel | `.xlsx`, `.xlsm` | a sheet into DuckDB; `open`'s `read` chooses `sheet`, `headerRow`, `keepEmptyRows` and `keepEmptyColumns` |
-| DuckDB | `.duckdb`, `.ddb` | a table or view into DuckDB, the database attached read only meanwhile; its tables and views are the `sheets`, `schema.name` outside `main`, and `open`'s `read.sheet` chooses one |
+| DuckDB | `.duckdb`, `.ddb` | a table into DuckDB, the database attached read only meanwhile; its tables are the `sheets` (not its views), `schema.name` outside `main`, and `open`'s `read.sheet` chooses one |
 
 CSV uses comma and TSV uses tab, with standard double quotes. Single quotes, semicolons and pipes in CSV values
 stay as data. `open.read.delimiter` selects another separator (one printable ASCII character except double quote,
