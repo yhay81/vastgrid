@@ -1,6 +1,7 @@
 import { startTransition, useLayoutEffect, useState } from "react";
 import type { ActiveCell, CellRange, DisplayedColumn, SortKey } from "vastgrid-spec";
 import type { GridCanvas, Settled } from "../canvas/grid-canvas.js";
+import type { CellHooks, ColumnGroup } from "../canvas/hooks.js";
 import type { GridStore } from "../core/store.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 
@@ -85,6 +86,10 @@ function readRow(
   shown: readonly number[],
   row: number,
   onScreen: boolean,
+  _locale: string | undefined,
+  _cellText: CellHooks["cellText"],
+  _cellStyle: CellHooks["cellStyle"],
+  _cellAction: CellHooks["cellAction"],
 ): ShownRow {
   const { geometry } = canvas;
   const y = onScreen ? geometry.rowY(row) : geometry.headerHeight;
@@ -105,8 +110,9 @@ function readRow(
 
 /**
  * Where the headers and the cells on screen are, in the scroller's content, and their text. The canvas and the
- * cache change inside their objects, so `settled` is an argument: they are read again when scrolling pauses or
- * rows arrive (memoization, React Compiler's included, keys on it), and not when the selection moves.
+ * cache change inside their objects, so `settled` and the formatting/hook inputs are arguments: they are read
+ * again when scrolling pauses, rows arrive or cell presentation changes (memoization, React Compiler's included,
+ * keys on them), and not when the selection moves.
  */
 function readScreen(
   canvas: GridCanvas,
@@ -114,7 +120,13 @@ function readScreen(
   settled: Settled,
   columns: readonly DisplayedColumn[],
   extraColumn: number,
+  locale: string | undefined,
+  columnGroups: readonly ColumnGroup[] | undefined,
+  cellText: CellHooks["cellText"],
+  cellStyle: CellHooks["cellStyle"],
+  cellAction: CellHooks["cellAction"],
 ) {
+  void columnGroups;
   const { geometry } = canvas;
   const shown = shownColumns(settled, columns, extraColumn);
   const header = shown.map((column) => ({
@@ -126,7 +138,9 @@ function readScreen(
   }));
   const rows: ShownRow[] = [];
   const end = Math.min(settled.top + settled.rows, settled.top + MAX_ROWS);
-  for (let row = settled.top; row < end; row++) rows.push(readRow(canvas, store, columns, shown, row, true));
+  for (let row = settled.top; row < end; row++) {
+    rows.push(readRow(canvas, store, columns, shown, row, true, locale, cellText, cellStyle, cellAction));
+  }
   return { header, rows, shown, end };
 }
 
@@ -188,7 +202,23 @@ function AccessibleRow({ id, row, selected }: { id: string; row: ShownRow; selec
  * stand for and drawn transparent, with the row of the active cell when it is elsewhere. They follow the canvas
  * when scrolling pauses, in a Transition: one commit at a lower priority than anything the person does.
  */
-export function AccessibleRows({ canvas, id }: { canvas: GridCanvas; id: string }) {
+export function AccessibleRows({
+  canvas,
+  id,
+  locale,
+  columnGroups,
+  cellText,
+  cellStyle,
+  cellAction,
+}: {
+  canvas: GridCanvas;
+  id: string;
+  locale?: string;
+  columnGroups?: readonly ColumnGroup[];
+  cellText?: CellHooks["cellText"];
+  cellStyle?: CellHooks["cellStyle"];
+  cellAction?: CellHooks["cellAction"];
+}) {
   const { geometry } = canvas;
   const store = useGridStore();
   const [settled, setSettled] = useState(() => canvas.getSettled());
@@ -206,11 +236,22 @@ export function AccessibleRows({ canvas, id }: { canvas: GridCanvas; id: string 
   const active = useGridSelector((snapshot) => snapshot.session.active);
   const totals = useGridSelector((snapshot) => snapshot.totals);
   const extraColumn = extraColumnOf(settled, columns, active);
-  const screen = readScreen(canvas, store, settled, columns, extraColumn);
+  const screen = readScreen(
+    canvas,
+    store,
+    settled,
+    columns,
+    extraColumn,
+    locale,
+    columnGroups,
+    cellText,
+    cellStyle,
+    cellAction,
+  );
   const activeRow = active?.row ?? 0;
   const elsewhere =
     rowCount > 0 && columns.length > 0 && (activeRow < settled.top || activeRow >= screen.end) && activeRow < rowCount
-      ? readRow(canvas, store, columns, screen.shown, activeRow, false)
+      ? readRow(canvas, store, columns, screen.shown, activeRow, false, locale, cellText, cellStyle, cellAction)
       : null;
   const rows = elsewhere ? [...screen.rows, elsewhere].sort((a, b) => a.row - b.row) : screen.rows;
   return (

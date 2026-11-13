@@ -2,8 +2,7 @@
 import { parseHtmlTable, parseTsv } from "../clipboard.js";
 import { editText, readCellText } from "../input.js";
 import type { Editor, HistoryUpdate } from "../state.js";
-import type { JsonValue } from "../types.js";
-import { isBlank, sameType, textOf } from "../values.js";
+import { isBlank, sameCellValue, sameType, textOf } from "../values.js";
 import { type CommandRequest, choice, fail, optionalString, stringArgument, takes } from "./command.js";
 import { type Handlers, type Run, span, type Target } from "./run.js";
 import { DIRECTIONS } from "./selection.js";
@@ -17,7 +16,13 @@ function historyWrite(run: Run, updates: readonly HistoryUpdate[], values: "befo
     op: "write",
     revision: run.context.revision,
     updates: updates.map((update) => ({
-      key: update.key,
+      key:
+        values === "before" &&
+        update.column === run.document.rowKey &&
+        "value" in update.key &&
+        (typeof update.after === "string" || typeof update.after === "number" || typeof update.after === "boolean")
+          ? { value: update.after }
+          : update.key,
       column: update.column,
       value: values === "before" ? update.before : update.after,
       previous: values === "before" ? update.after : update.before,
@@ -77,14 +82,39 @@ function selectionUpdates(run: Run, editor: Editor) {
   const selected = run.cellsOf(grid, grid.ranges, editorInSelection ? WRITE_LIMIT : WRITE_LIMIT - 1);
   const targets = editorInSelection ? selected : [{ row: editor.row, column: editor.column }, ...selected];
   run.need([{ cells: targets.filter((cell) => !isEditor(cell)), keyed: true }]);
-  // The text reads the same in every cell of a column: once per column, failing at its first cell.
-  const values = new Map<string, JsonValue>();
-  return targets.map((cell) => {
-    if (!values.has(cell.column)) values.set(cell.column, readTyped(run, editor.text, cell));
-    const value = values.get(cell.column) ?? null;
-    if (isEditor(cell)) return { row: cell.row, key: editor.key, column: cell.column, value, previous: editor.value };
-    return { row: cell.row, key: run.keyAt(cell.row), column: cell.column, value, previous: run.valueAt(cell) };
+  const rowKey = run.document.rowKey;
+  let changesKey = false;
+  let firstError: (() => never) | undefined;
+  const parsed = new Map<string, ReturnType<typeof readCellText>>();
+  const updates = targets.map((cell) => {
+    let read = parsed.get(cell.column);
+    if (!read) {
+      read = readCellText(editor.text, run.typeOf(cell.column), { timeZone: run.timeZoneOf(cell.column) });
+      parsed.set(cell.column, read);
+    }
+    const previous = isEditor(cell) ? editor.value : run.valueAt(cell);
+    if (!read.ok) {
+      if (cell.column === rowKey) changesKey = true;
+      const err = read.error;
+      firstError ??= () =>
+        fail("", "invalid_value", `The text is not a value of "${cell.column}".`, {
+          row: cell.row,
+          column: cell.column,
+          error: err,
+        });
+    } else if (cell.column === rowKey && !sameCellValue(read.value, previous, run.typeOf(cell.column))) {
+      changesKey = true;
+    }
+    const key = isEditor(cell) ? editor.key : run.keyAt(cell.row);
+    return { row: cell.row, key, column: cell.column, value: read.ok ? read.value : null, previous };
   });
+  if (changesKey && targets.length > 1) {
+    run.need([
+      { cells: targets.filter((cell) => !isEditor(cell) || "value" in editor.key), keyed: false, rowId: true },
+    ]);
+  }
+  firstError?.();
+  return updates;
 }
 
 export const EDITING_HANDLERS = {
@@ -187,17 +217,18 @@ export const EDITING_HANDLERS = {
       };
     });
     run.writable(new Set(areas.flatMap((area) => area.cols.map((col) => grid.columns[col]))));
-    const stride = grid.columns.length;
+    const stride = BigInt(grid.columns.length);
     const targets: (Target & { text: string })[] = [];
-    const seen = areas.length > 1 ? new Set<number>() : null;
+    const seen = areas.length > 1 ? new Set<bigint>() : null;
     for (const area of areas) {
       if (!seen && Math.max(0, area.end - area.top) * area.cols.length > WRITE_LIMIT) {
         fail("", "too_many_cells", "A write holds at most 100,000 cells.");
       }
       for (let row = area.top; row < area.end; row++) {
+        const rowOffset = seen ? BigInt(row) * stride : 0n;
         area.cols.forEach((col, index) => {
           if (seen) {
-            const id = row * stride + col;
+            const id = rowOffset + BigInt(col);
             if (seen.has(id)) return;
             seen.add(id);
           }
@@ -208,26 +239,38 @@ export const EDITING_HANDLERS = {
       }
     }
     run.need([{ cells: targets, keyed: true }]);
+    const rowKey = run.document.rowKey;
+    let changesKey = false;
+    let firstError: (() => never) | undefined;
     const updates = targets.map((cell) => {
-      const read = readCellText(cell.text, run.typeOf(cell.column), {
+      const type = run.typeOf(cell.column);
+      const read = readCellText(cell.text, type, {
         grouping: true,
         timeZone: run.timeZoneOf(cell.column),
       });
+      const previous = run.valueAt(cell);
       if (!read.ok) {
-        fail("", "invalid_value", `"${cell.text}" is not a value of "${cell.column}".`, {
-          row: cell.row,
-          column: cell.column,
-          error: read.error,
-        });
+        if (cell.column === rowKey) changesKey = true;
+        const err = read.error;
+        firstError ??= () =>
+          fail("", "invalid_value", `"${cell.text}" is not a value of "${cell.column}".`, {
+            row: cell.row,
+            column: cell.column,
+            error: err,
+          });
+      } else if (cell.column === rowKey && !sameCellValue(read.value, previous, type)) {
+        changesKey = true;
       }
       return {
         row: cell.row,
         key: run.keyAt(cell.row),
         column: cell.column,
-        value: read.value,
-        previous: run.valueAt(cell),
+        value: read.ok ? read.value : null,
+        previous,
       };
     });
+    if (changesKey && targets.length > 1) run.need([{ cells: targets, keyed: false, rowId: true }]);
+    firstError?.();
     run.write(updates);
     run.output = { cutRows: Math.max(0, cutRows), cutColumns };
   },
@@ -252,18 +295,19 @@ export const EDITING_HANDLERS = {
       return from < 0 ? [] : [{ from, rowStart: start, rowEnd: end, cols: fillCols }];
     });
     run.writable(new Set(areas.flatMap((area) => area.cols.map((col) => grid.columns[col]))));
-    const stride = grid.columns.length;
+    const stride = BigInt(grid.columns.length);
     const targets: { target: Target; source: Target }[] = [];
-    const seen = areas.length > 1 ? new Set<number>() : null;
+    const seen = areas.length > 1 ? new Set<bigint>() : null;
     for (const area of areas) {
       if (!seen && (area.rowEnd - area.rowStart) * area.cols.length > WRITE_LIMIT) {
         fail("", "too_many_cells", "A write holds at most 100,000 cells.");
       }
       // Row by row, and in a row column by column, as every write lists its cells.
       for (let row = area.rowStart; row < area.rowEnd; row++) {
+        const rowOffset = seen ? BigInt(row) * stride : 0n;
         for (const col of area.cols) {
           if (seen) {
-            const id = row * stride + col;
+            const id = rowOffset + BigInt(col);
             if (seen.has(id)) continue;
             seen.add(id);
           }
@@ -279,30 +323,45 @@ export const EDITING_HANDLERS = {
       { cells: targets.map((item) => item.target), keyed: true },
       { cells: targets.map((item) => item.source), keyed: false },
     ]);
+    const rowKey = run.document.rowKey;
+    let changesKey = false;
+    let firstError: (() => never) | undefined;
     const updates = targets.map(({ target, source }) => {
       const value = run.valueAt(source);
       const from = run.typeOf(source.column);
       const to = run.typeOf(target.column);
+      const previous = run.valueAt(target);
       let next = value;
       if (value !== null && !sameType(from, to)) {
         const read = readCellText(textOf(value, from) ?? "", to, { timeZone: run.timeZoneOf(target.column) });
         if (!read.ok) {
-          fail("", "invalid_value", `A value of "${source.column}" is not a value of "${target.column}".`, {
-            row: target.row,
-            column: target.column,
-            error: read.error,
-          });
+          if (target.column === rowKey) changesKey = true;
+          const err = read.error;
+          firstError ??= () =>
+            fail("", "invalid_value", `A value of "${source.column}" is not a value of "${target.column}".`, {
+              row: target.row,
+              column: target.column,
+              error: err,
+            });
+        } else {
+          next = read.value;
+          if (target.column === rowKey && !sameCellValue(next, previous, to)) changesKey = true;
         }
-        next = read.value;
+      } else if (target.column === rowKey && !sameCellValue(next, previous, to)) {
+        changesKey = true;
       }
       return {
         row: target.row,
         key: run.keyAt(target.row),
         column: target.column,
         value: next,
-        previous: run.valueAt(target),
+        previous,
       };
     });
+    if (changesKey && targets.length > 1) {
+      run.need([{ cells: targets.map((item) => item.target), keyed: false, rowId: true }]);
+    }
+    firstError?.();
     run.write(updates);
   },
 

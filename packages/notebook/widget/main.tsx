@@ -3,8 +3,9 @@
  * output, with the engine in the kernel (the Python package `vastgrid`). Messages travel over the widget's comm as
  * custom messages; the bytes of blocks and exports travel as its buffers, which a mark stands for in the message.
  */
+import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { createGridStore, DataGrid, type WorkerLike, workerTransport } from "vastgrid";
+import { createGridStore, DataGrid, type Transport, type WorkerLike, workerTransport } from "vastgrid";
 import { messagesFor } from "vastgrid/locales";
 import "vastgrid/styles.css";
 import "./notebook.css";
@@ -70,19 +71,113 @@ function kernelPort(model: Model): WorkerLike & { close(): void } {
   };
 }
 
+const EMPTY_DOCUMENT: GridDocument = { kind: "vastgrid/document", version: 2 };
+
+function SheetGrid({
+  model,
+  transport,
+  table,
+  sheet,
+  locale,
+  height,
+  name,
+}: {
+  model: Model;
+  transport: Transport;
+  table: string;
+  sheet: string | null;
+  locale: string;
+  height: number;
+  name: string;
+}) {
+  const sending = useRef(false);
+  const [store] = useState(() => {
+    const initial = (model.get("document") as GridDocument | null) ?? undefined;
+    return createGridStore({
+      transport,
+      table,
+      ...(sheet === null ? {} : { open: { sheet } }),
+      ...(initial === undefined ? {} : { document: initial }),
+    });
+  });
+
+  useEffect(() => store.connect(), [store]);
+
+  useEffect(() => {
+    const onDocument = () => {
+      if (sending.current) return;
+      const next = (model.get("document") as GridDocument | null) ?? EMPTY_DOCUMENT;
+      store.setDocument(next);
+    };
+    model.on("change:document", onDocument);
+    return () => model.off("change:document", onDocument);
+  }, [model, store]);
+
+  return (
+    <DataGrid
+      store={store}
+      locale={locale}
+      messages={messagesFor(locale)}
+      style={{ height: `${height}px` }}
+      aria-label={name}
+      // The notebook reads the plan and the columns' settings of the grid (`Grid.document`).
+      onDocumentChange={(next) => {
+        sending.current = true;
+        try {
+          model.set("document", next);
+          model.save_changes();
+        } finally {
+          sending.current = false;
+        }
+      }}
+    />
+  );
+}
+
+function NotebookGrid({ model, transport }: { model: Model; transport: Transport }) {
+  const [table, setTable] = useState(() => model.get("ref") as string);
+  const [sheet, setSheet] = useState(() => model.get("sheet") as string | null);
+  const [locale, setLocale] = useState(() => (model.get("locale") as string | undefined) || "en");
+  const [height, setHeight] = useState(() => model.get("height") as number);
+  const [name, setName] = useState(() => model.get("name") as string);
+
+  useEffect(() => {
+    const onRef = () => setTable(model.get("ref") as string);
+    const onSheet = () => setSheet(model.get("sheet") as string | null);
+    const onLocale = () => setLocale((model.get("locale") as string | undefined) || "en");
+    const onHeight = () => setHeight(model.get("height") as number);
+    const onName = () => setName(model.get("name") as string);
+    model.on("change:ref", onRef);
+    model.on("change:sheet", onSheet);
+    model.on("change:locale", onLocale);
+    model.on("change:height", onHeight);
+    model.on("change:name", onName);
+    return () => {
+      model.off("change:ref", onRef);
+      model.off("change:sheet", onSheet);
+      model.off("change:locale", onLocale);
+      model.off("change:height", onHeight);
+      model.off("change:name", onName);
+    };
+  }, [model]);
+
+  return (
+    <SheetGrid
+      key={`${table}\u0000${sheet ?? ""}`}
+      model={model}
+      transport={transport}
+      table={table}
+      sheet={sheet}
+      locale={locale}
+      height={height}
+      name={name}
+    />
+  );
+}
+
 function render({ model, el }: { model: Model; el: HTMLElement }) {
   const port = kernelPort(model);
   const transport = workerTransport(port);
-  const sheet = model.get("sheet") as string | null;
-  const document = (model.get("document") as GridDocument | null) ?? undefined;
-  const store = createGridStore({
-    transport,
-    table: model.get("ref") as string,
-    ...(sheet === null ? {} : { open: { sheet } }),
-    ...(document === undefined ? {} : { document }),
-  });
-  const disconnect = store.connect();
-  const locale = (model.get("locale") as string | undefined) || "en";
   el.classList.add("vastgrid-notebook");
   // Lumino's shortcut dispatcher respects this boundary in both notebook UIs, including Notebook 7's capture
   // handler. Keep cell commands and notebook undo/redo from taking keys meant for the grid or its editors.
@@ -94,27 +189,13 @@ function render({ model, el }: { model: Model; el: HTMLElement }) {
   };
   window.addEventListener("focusin", keepKeys);
   const root = createRoot(el);
-  root.render(
-    <DataGrid
-      store={store}
-      locale={locale}
-      messages={messagesFor(locale)}
-      style={{ height: `${model.get("height") as number}px` }}
-      aria-label={model.get("name") as string}
-      // The notebook reads the plan and the columns' settings of the grid (`Grid.document`).
-      onDocumentChange={(next) => {
-        model.set("document", next);
-        model.save_changes();
-      }}
-    />,
-  );
+  root.render(<NotebookGrid model={model} transport={transport} />);
   // The output's grid ends with the output (a cell run again, cleared or closed): its tables are closed, and the
   // kernel keeps the written cells for the `Grid` until it is closed.
   return () => {
     window.removeEventListener("focusin", keepKeys);
     el.removeAttribute("data-lm-suppress-shortcuts");
     root.unmount();
-    disconnect();
     transport.close();
     port.close();
   };

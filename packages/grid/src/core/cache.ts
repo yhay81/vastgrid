@@ -13,10 +13,12 @@ export interface Read {
 /** Rows of a view that the engine gave, by column. */
 interface Block {
   readonly index: number;
-  /** Rows held: `BLOCK_ROWS`, fewer at the end of the view; 0 until a read answers. */
+  /** Contiguous rows from offset 0 whose row IDs (or existence, when `rowIds` is null) have been read. */
   length: number;
-  /** Row IDs of the rows; null for views without them, undefined until a read answers. */
-  rowIds: number[] | null | undefined;
+  /** Row IDs of the rows by block offset; null for views without them, undefined until a read answers. */
+  rowIds: (number | undefined)[] | null | undefined;
+  /** Contiguous rows from offset 0 read for each column. */
+  readonly lengths: Map<string, number>;
   readonly values: Map<string, JsonValue[]>;
   /** Offsets of the values that the engine cut to the text limit (§8.4), by column. */
   readonly cut: Map<string, Set<number>>;
@@ -55,6 +57,7 @@ export class ViewCache {
         index,
         length: 0,
         rowIds: undefined,
+        lengths: new Map(),
         values: new Map(),
         cut: new Map(),
         reading: new Set(),
@@ -69,8 +72,9 @@ export class ViewCache {
   /** The value of a cell; undefined while it is not read. */
   value(row: number, column: string): JsonValue | undefined {
     const block = this.block(row);
-    const offset = row - (block?.index ?? 0) * BLOCK_ROWS;
-    if (!block || offset >= block.length) return undefined;
+    if (!block) return undefined;
+    const offset = row - block.index * BLOCK_ROWS;
+    if (offset < 0 || offset >= BLOCK_ROWS) return undefined;
     return block.values.get(column)?.[offset];
   }
 
@@ -90,10 +94,25 @@ export class ViewCache {
   /** A row as commands read it (§6.1): its key and its values, or undefined while it is not read. */
   loaded(row: number, rowKey: string | undefined): LoadedRow | undefined {
     const block = this.block(row);
-    const offset = row - (block?.index ?? 0) * BLOCK_ROWS;
-    if (!block || block.rowIds === undefined || offset >= block.length) return undefined;
-    let key: RowKey | undefined;
+    if (!block || block.rowIds === undefined) return undefined;
+    const offset = row - block.index * BLOCK_ROWS;
+    if (offset < 0 || offset >= BLOCK_ROWS) return undefined;
     const id = block.rowIds?.[offset];
+    if (block.rowIds !== null) {
+      if (id === undefined) return undefined;
+    } else {
+      let anyLoaded = offset < block.length;
+      if (!anyLoaded) {
+        for (const colValues of block.values.values()) {
+          if (colValues[offset] !== undefined) {
+            anyLoaded = true;
+            break;
+          }
+        }
+      }
+      if (!anyLoaded) return undefined;
+    }
+    let key: RowKey | undefined;
     if (id !== undefined) {
       if (rowKey === undefined) key = { rowId: id };
       else {
@@ -106,7 +125,7 @@ export class ViewCache {
     return {
       key,
       rowId: id,
-      has: (column) => values.has(column),
+      has: (column) => values.get(column)?.[offset] !== undefined,
       get: (column) => values.get(column)?.[offset] ?? null,
     };
   }
@@ -131,15 +150,13 @@ export class ViewCache {
     };
     for (let index = Math.floor(start / BLOCK_ROWS); index <= last; index++) {
       const block = this.blocks.get(index);
-      // A block read while the view was shorter (a table or view still being made, §9) is read again whole.
-      const short =
-        block !== undefined &&
-        block.rowIds !== undefined &&
-        block.length < Math.min(BLOCK_ROWS, rowCount - index * BLOCK_ROWS);
-      const missing =
-        block && !short
-          ? columns.filter((column) => !block.values.has(column) && !block.reading.has(column))
-          : columns.filter((column) => !block?.reading.has(column));
+      const expected = Math.min(BLOCK_ROWS, rowCount - index * BLOCK_ROWS);
+      // A block read while the view was shorter (a table or view still being made, §9) is read again whole,
+      // and each column tracks its own contiguous loaded length so partial column reads never shadow others.
+      const shortIds = block === undefined || block.rowIds === undefined || block.length < expected;
+      const missing = columns.filter(
+        (column) => !block?.reading.has(column) && (shortIds || (block.lengths.get(column) ?? 0) < expected),
+      );
       if (missing.length === 0) {
         flush();
         continue;
@@ -185,12 +202,18 @@ export class ViewCache {
       const before = block.bytes;
       const first = Math.max(start, index * BLOCK_ROWS);
       const stop = Math.min(end, (index + 1) * BLOCK_ROWS);
-      block.length = Math.max(block.length, stop - index * BLOCK_ROWS);
+      const firstOffset = first - index * BLOCK_ROWS;
+      const stopOffset = stop - index * BLOCK_ROWS;
       // A view that is still being made may have more rows in its last block at a later read (§9).
-      const ids = rowIds === null ? null : rowIds.slice(first - start, stop - start);
-      if (block.rowIds === undefined || (ids !== null && block.rowIds !== null && ids.length > block.rowIds.length)) {
-        block.rowIds = ids;
+      if (rowIds === null) {
+        block.rowIds = null;
+      } else {
+        if (!block.rowIds) block.rowIds = new Array<number | undefined>(BLOCK_ROWS);
+        for (let row = first; row < stop; row++) {
+          block.rowIds[row - index * BLOCK_ROWS] = rowIds[row - start];
+        }
       }
+      if (firstOffset <= block.length) block.length = Math.max(block.length, stopOffset);
       columns.forEach((column, position) => {
         let values = block.values.get(column);
         if (!values) {
@@ -205,15 +228,24 @@ export class ViewCache {
           values[offset] = value;
           block.bytes += sizeOf(value);
         }
+        const prevLength = block.lengths.get(column) ?? 0;
+        if (firstOffset <= prevLength) block.lengths.set(column, Math.max(prevLength, stopOffset));
         block.reading.delete(column);
-        const offsets = cut?.[column];
+        const existingCut = block.cut.get(column);
+        if (existingCut) {
+          for (let offset = firstOffset; offset < stopOffset; offset++) existingCut.delete(offset);
+        }
+        const offsets = cut && Object.hasOwn(cut, column) ? cut[column] : undefined;
         if (offsets) {
-          const set = block.cut.get(column) ?? new Set<number>();
+          const set = existingCut ?? new Set<number>();
           for (const offset of offsets) {
             const row = start + offset;
             if (row >= first && row < stop) set.add(row - index * BLOCK_ROWS);
           }
-          block.cut.set(column, set);
+          if (set.size > 0) block.cut.set(column, set);
+          else block.cut.delete(column);
+        } else if (existingCut && existingCut.size === 0) {
+          block.cut.delete(column);
         }
       });
       this.bytes += block.bytes - before;

@@ -45,8 +45,9 @@ _INT32_MAX = 2147483647
 _INT64_MIN = -(2**63)
 _INT64_MAX = 2**63 - 1
 
-_INTEGER_TEXT = re.compile(r"-?(0|[1-9][0-9]*)")
+_INTEGER_TEXT = re.compile(r"-?(?:0|[1-9][0-9]*)")
 _DECIMAL_TEXT = re.compile(r"-?(0|[1-9][0-9]*)(?:\.([0-9]+))?")
+_NEGATIVE_ZERO_DECIMAL = re.compile(r"-0(?:\.0+)?")
 _UUID_TEXT = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _BASE64_TEXT = re.compile(r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?")
 _DATE_TEXT = re.compile(r"([0-9]{4}|[+-][0-9]{6})-([0-9]{2})-([0-9]{2})")
@@ -139,8 +140,8 @@ def number_text(value: int | float) -> str:
 
 
 def exact_number_text(value: int | float) -> str | None:
-    """The fixed-point decimal digits of a finite number whose exponent is in `[-38, 20]` (expanding JS's `1e-7` to
-    `"0.0000001"`), or None outside that range."""
+    """The fixed-point decimal digits of a finite number whose exponent is in `[-38, 37]` (expanding JS's `1e-7` to
+    `"0.0000001"` and `1e+21` to `"1000000000000000000000"`), or None outside that range."""
     number = js_float(value)
     if not math.isfinite(number):
         return None
@@ -150,9 +151,11 @@ def exact_number_text(value: int | float) -> str | None:
     if "e" not in text.lower():
         return text
     digits, exponent = _digits(abs(number))
-    if exponent < -38 or exponent >= 21:
+    if exponent < -38 or exponent >= 38:
         return None
     sign = "-" if number < 0 else ""
+    if exponent >= 0:
+        return f"{sign}{digits}{'0' * (exponent - len(digits) + 1)}"
     return f"{sign}0.{'0' * (-exponent - 1)}{digits}"
 
 
@@ -517,8 +520,10 @@ def from_base64(text: str) -> bytes:
 
 
 def _bytes_text(data: bytes) -> str:
-    """DuckDB's text of bytes: printable ASCII as it is, and `\\xHH` for a backslash and the other bytes."""
-    return "".join(chr(byte) if 0x20 <= byte <= 0x7E and byte != 0x5C else f"\\x{byte:02X}" for byte in data)
+    """DuckDB's text of bytes: printable ASCII as it is, and `\\xHH` for quotes, a backslash and the other bytes."""
+    return "".join(
+        chr(byte) if 0x20 <= byte <= 0x7E and byte not in (0x22, 0x27, 0x5C) else f"\\x{byte:02X}" for byte in data
+    )
 
 
 _HEX_BYTE = re.compile(r"[0-9A-Fa-f]{2}")
@@ -587,6 +592,14 @@ def same_cell_value(a: Any, b: Any, type: dict[str, Any]) -> bool:
     if type["type"] in ("integer", "bigint"):
         x, y = _whole_of(a), _whole_of(b)
         return x is not None and x == y
+    if type["type"] == "decimal":
+        if not isinstance(a, str) or not isinstance(b, str):
+            return False
+        if not _DECIMAL_TEXT.fullmatch(a) or not _DECIMAL_TEXT.fullmatch(b):
+            return False
+        na = a[1:] if _NEGATIVE_ZERO_DECIMAL.fullmatch(a) else a
+        nb = b[1:] if _NEGATIVE_ZERO_DECIMAL.fullmatch(b) else b
+        return na == nb
     if type["type"] == "float":
         if not (is_number(a) or a in _FLOAT_TOKENS) or not (is_number(b) or b in _FLOAT_TOKENS):
             return False

@@ -25,27 +25,29 @@ import {
   readAttached,
   readCellText,
   repairDocument,
+  sameCellValue,
   searchImplies,
   StateError,
   textOf,
   upperText,
   valueOfText,
 } from "../src/index.ts";
-import { blobSource, convertSheet } from "../src/workbook.ts";
+import { blobSource, convertSheet, DateStyle, readWorkbook, serialDate, WorkbookError } from "../src/workbook.ts";
 import { excelSerial, writeXlsx } from "../src/xlsx.ts";
 
 test("valueOfText and exactNumberText round-trip §2.4 text forms", () => {
   assert.equal(exactNumberText(1e-7), "0.0000001");
   assert.equal(exactNumberText(125e-2), "1.25");
-  assert.equal(exactNumberText(1e21), null);
+  assert.equal(exactNumberText(1e21), "1000000000000000000000");
+  assert.equal(exactNumberText(1e38), null);
   assert.equal(fromTemporalTextForm("0045-03-15 (BC)"), "-000044-03-15");
   assert.equal(fromTemporalTextForm("10000-01-01 00:00:00+00"), "+010000-01-01 00:00:00+00");
   assert.equal(valueOfText("0045-03-15 (BC)", { type: "date" }), "-000044-03-15");
   assert.equal(valueOfText("10000-01-01 00:00:00", { type: "timestamp" }), "+010000-01-01 00:00:00");
   assert.equal(valueOfText("9007199254740993", { type: "bigint" }), "9007199254740993");
   assert.equal(valueOfText("42", { type: "bigint" }), 42);
-  const bytesBase64 = valueOfText("\\x00AB\\x5C", { type: "binary" });
-  assert.equal(textOf(bytesBase64, { type: "binary" }), "\\x00AB\\x5C");
+  const bytesBase64 = valueOfText("\\x00AB\\x22\\x27\\x5C", { type: "binary" });
+  assert.equal(textOf(bytesBase64, { type: "binary" }), "\\x00AB\\x22\\x27\\x5C");
 });
 
 test("lowerText, upperText and searchImplies follow §3.4 simple case mapping", () => {
@@ -363,4 +365,206 @@ test("plan, state, message, input and xlsx edge cases stay consistent", async ()
   }
   const sheet = await convertSheet(blobSource(new Blob([Buffer.concat(historyChunks)])), () => {});
   assert.equal(sheet.sheet, "Sheet1");
+});
+
+test("workbook bounds inflated parts, malformed ZIP64 headers, PIs, serial rollover and large xlsx integers", async () => {
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of writeXlsx([{ name: "d", type: "decimal" }], [[["100000000000000000000000"]]])) {
+    chunks.push(chunk);
+  }
+  const raw = Buffer.concat(chunks);
+  assert.match(raw.toString("utf8"), /inlineStr.*100000000000000000000000/);
+
+  const base = blobSource(new Blob([raw]));
+  const bombSource = {
+    size: base.size,
+    bytes: (start: number, end: number) => base.bytes(start, end),
+    async *text(start: number, end: number, deflated: boolean, onRead?: (bytes: number) => void) {
+      for await (const chunk of base.text(start, end, deflated, onRead)) {
+        if (chunk.includes("<workbook")) {
+          const million = " ".repeat(1024 * 1024);
+          for (let i = 0; i < 130; i++) yield million;
+        }
+        yield chunk;
+      }
+    },
+  };
+  await assert.rejects(() => readWorkbook(bombSource), WorkbookError);
+
+  const piSource = {
+    size: base.size,
+    bytes: (start: number, end: number) => base.bytes(start, end),
+    async *text(start: number, end: number, deflated: boolean, onRead?: (bytes: number) => void) {
+      for await (const chunk of base.text(start, end, deflated, onRead)) {
+        yield chunk.replace('<?xml version="1.0" encoding="UTF-8"?>', "<?pi unmatched 'quote > still inside?>");
+      }
+    },
+  };
+  assert.equal((await readWorkbook(piSource)).sheets[0]?.name, "Sheet1");
+
+  assert.deepEqual(serialDate(0.999999999, DateStyle.Time, false), { kind: 32, text: "23:59:59.999" });
+  assert.deepEqual(serialDate(2_958_465.999999999, DateStyle.Date, false), { kind: 8, text: "+010000-01-01" });
+});
+
+test("editing rowKey single-cell commit without context.rows, not_loaded precedence, and >53-bit range dedup", () => {
+  const table = [
+    { name: "id", type: "integer" as const },
+    { name: "qty", type: "integer" as const },
+  ];
+  const doc = { ...emptyDocument(), rowKey: "id" };
+  const evictedCommit = applyCommand(
+    {
+      document: doc,
+      session: {
+        ...emptySession(),
+        active: { row: 0, column: "id", key: { value: 1 } },
+        editor: { row: 0, column: "id", key: { value: 1 }, text: "99", value: 1 },
+      },
+    },
+    { command: "edit.commit" },
+    { table, revision: "r1", view: { columns: table, rowCount: 1, rowIds: true }, rows: [], page: 10 },
+  );
+  assert.deepEqual(evictedCommit.requests, [
+    {
+      op: "write",
+      revision: "r1",
+      rowKey: "id",
+      updates: [{ key: { value: 1 }, column: "id", value: 99, previous: 1 }],
+    },
+  ]);
+  const pushed = applyCommand(
+    evictedCommit,
+    { command: "history.push", updates: [{ key: { value: 1 }, column: "id", before: 1, after: 99 }] },
+    { table, revision: "r1", view: { columns: table, rowCount: 1, rowIds: true }, rows: [], page: 10 },
+  );
+  const undone = applyCommand(
+    pushed,
+    { command: "history.undo" },
+    { table, revision: "r1", view: { columns: table, rowCount: 1, rowIds: true }, rows: [], page: 10 },
+  );
+  assert.deepEqual(undone.requests, [
+    {
+      op: "write",
+      revision: "r1",
+      rowKey: "id",
+      updates: [{ key: { value: 99 }, column: "id", value: 1, previous: 99 }],
+    },
+  ]);
+
+  assert.throws(
+    () =>
+      applyCommand(
+        { document: doc, session: emptySession() },
+        { command: "edit.paste" },
+        {
+          table,
+          revision: "r1",
+          view: { columns: table, rowCount: 1, rowIds: true },
+          rows: [{ start: 0, keys: [{ value: 1 }], columns: ["id", "qty"], values: [[1, 3]] }],
+          clipboard: { text: "2\tbad" },
+          page: 10,
+        },
+      ),
+    (error: unknown) => error instanceof CommandError && error.reason === "not_loaded",
+  );
+
+  const hugeRow = 4_503_599_627_370_496; // 2^52; with 2 columns, row * 2 === 2^53 where Number loses +1!
+  const multiRange = applyCommand(
+    {
+      document: emptyDocument(),
+      session: {
+        ...emptySession(),
+        selection: [
+          { rows: [hugeRow, hugeRow + 1], columns: ["id"] },
+          { rows: [hugeRow, hugeRow + 1], columns: ["qty"] },
+        ],
+      },
+    },
+    { command: "edit.clear" },
+    {
+      table,
+      revision: "r1",
+      view: { columns: table, rowCount: hugeRow + 10, rowIds: true },
+      rows: [{ start: hugeRow, keys: [{ rowId: hugeRow }], columns: ["id", "qty"], values: [[10, 20]] }],
+      page: 10,
+    },
+  );
+  assert.equal(multiRange.requests[0]?.op === "write" ? (multiRange.requests[0].updates as unknown[]).length : 0, 2);
+});
+
+test("BIN round-trips large widths, rejects lossy widths, equates -0.00 cells, and validates style expressions", () => {
+  assert.equal(isValueOf("-0", { type: "bigint" }), true);
+  assert.equal(isValueOf("-0.00", { type: "decimal", precision: 4, scale: 2 }), true);
+  assert.equal(sameCellValue("-0.00", "0.00", { type: "decimal", precision: 4, scale: 2 }), true);
+  assert.deepEqual(readCellText("45-03-15 BC", { type: "date" }), { ok: true, value: "-000044-03-15" });
+
+  const cols = [
+    { name: "f", type: "float" as const },
+    { name: "d", type: "decimal" as const, precision: 38, scale: 2 },
+    { name: "w", type: "decimal" as const, precision: 38, scale: 0 },
+  ];
+  const floatBin = compileFormula("BIN(f, 1e20)", cols);
+  assert.deepEqual(compileFormula(formulaText(floatBin.expr), cols).expr, floatBin.expr);
+  const wideBin = compileFormula("BIN(w, 1e21)", cols);
+  assert.deepEqual(compileFormula(formulaText(wideBin.expr), cols).expr, wideBin.expr);
+  assert.throws(() => compileFormula("BIN(d, 10000000000000000.25)", cols));
+
+  const nullChecked = checkPlan(
+    {
+      derive: [
+        {
+          name: "a",
+          expr: {
+            fn: "coalesce",
+            args: [
+              { lit: null, type: "decimal" },
+              { lit: null, type: "integer" },
+            ],
+          },
+        },
+        {
+          name: "b",
+          expr: {
+            fn: "coalesce",
+            args: [
+              { lit: null, type: "integer" },
+              { lit: null, type: "decimal" },
+            ],
+          },
+        },
+      ],
+    },
+    cols,
+  );
+  assert.deepEqual(nullChecked.columns.slice(-2), [
+    { name: "a", type: "decimal", precision: 11, scale: 0 },
+    { name: "b", type: "decimal", precision: 11, scale: 0 },
+  ]);
+
+  assert.throws(
+    () =>
+      checkDocument({
+        kind: "vastgrid/document",
+        version: 2,
+        columns: [{ name: "f", format: { styles: [{ when: { bogus: 1 } as never, color: "red" }] } }],
+      }),
+    StateError,
+  );
+
+  const migrated = migrateGridState(
+    {
+      version: 1,
+      schema: ["x"],
+      formulas: [
+        { name: "dup", expression: "[x] + 1" },
+        { name: "dup", expression: "[x] + 2" },
+        { name: "uses_dup", expression: "[dup] * 2" },
+      ],
+    },
+    [{ name: "x", type: "integer" }],
+  );
+  assert.deepEqual(
+    migrated.document.plan?.derive?.map((item) => item.name),
+    ["dup", "uses_dup"],
+  );
 });

@@ -170,17 +170,28 @@ export class GridCanvas {
 
   /** Text, colors, drawing and actions of cells from the host (§5.1: they win over the document). */
   setHooks(hooks: CellHooks) {
+    const textChanged = hooks.cellText !== this.hooks.cellText;
+    const a11yChanged =
+      textChanged || hooks.cellStyle !== this.hooks.cellStyle || hooks.cellAction !== this.hooks.cellAction;
+    const drawChanged = a11yChanged || hooks.drawCell !== this.hooks.drawCell;
     this.hooks = hooks;
-    this.texts.clear();
-    this.schedule();
+    if (textChanged) {
+      this.texts.clear();
+      this.measure();
+    }
+    if (a11yChanged && !this.scrolling && this.elements) this.bumpSettled();
+    if (drawChanged) this.schedule();
   }
 
   /** Groups of columns in header rows above the names, each `groupHeight` pixels high (or the CSS's). */
   setColumnGroups(groups: readonly ColumnGroup[] | undefined, groupHeight: number | undefined) {
-    this.groups = groups ?? [];
+    const next = groups ?? [];
+    if (this.groups === next && this.options.groupHeaderHeight === groupHeight) return;
+    this.groups = next;
     this.options = { ...this.options, groupHeaderHeight: groupHeight };
     this.refreshTheme();
     this.relayout();
+    if (!this.scrolling && this.elements) this.bumpSettled();
   }
 
   /** How many lines rows have while a displayed column wraps its text. */
@@ -203,6 +214,7 @@ export class GridCanvas {
     if (this.locale === locale) return;
     this.locale = locale;
     this.relayout();
+    if (!this.scrolling && this.elements) this.bumpSettled();
   }
 
   /** The row height for displayed columns: room for `WRAP_LINES` lines when one of them wraps. */
@@ -468,6 +480,11 @@ export class GridCanvas {
     clearTimeout(this.settleTimer);
     this.settleTimer = setTimeout(() => {
       this.scrolling = false;
+      const activeScroller = this.elements?.scroller;
+      if (activeScroller) {
+        if (this.geometry.scrollX.pinnedAtEdge) activeScroller.scrollLeft = this.geometry.scrollX.recenter();
+        if (this.geometry.scrollY.pinnedAtEdge) activeScroller.scrollTop = this.geometry.scrollY.recenter();
+      }
       this.bumpSettled();
       this.reportScroll();
     }, SETTLE_MS);

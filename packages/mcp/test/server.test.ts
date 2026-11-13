@@ -474,3 +474,149 @@ test("open_grid keeps the chosen sheet in GridState so the App opens the same sh
   });
   assert.deepEqual(cancelled, {});
 });
+
+test("vastgrid_message restricts open to the grid's file and sheet and isolates table handles per client", async () => {
+  await writeFile(path.join(folder, "other.csv"), "id\n1\n");
+  const openedCsv = await open();
+  // Opening a sibling file in the allowed folder through this grid's App channel is refused.
+  const wrongRef = (await callTool(app, "vastgrid_message", {
+    grid: openedCsv.grid,
+    client: "c1",
+    message: { v: 2, id: 1, op: "open", ref: "other.csv" },
+  })) as Json;
+  assert.deepEqual([wrongRef.id, (wrongRef.error as Json).code], [1, "not_allowed"]);
+  // Passing unrequested read options on a CSV grid is refused too.
+  const wrongRead = (await callTool(app, "vastgrid_message", {
+    grid: openedCsv.grid,
+    client: "c1",
+    message: { v: 2, id: 2, op: "open", ref: "orders.csv", read: { headerRow: 0 } },
+  })) as Json;
+  assert.deepEqual([wrongRead.id, (wrongRead.error as Json).code], [2, "not_allowed"]);
+
+  // On a workbook grid pinned to sheet "Second", opening without read.sheet or with another sheet is refused.
+  const openedBook = await call("open_grid", { file: "book.xlsx", sheet: "Second" });
+  assert.equal(openedBook.error, false);
+  const bookGrid = String(openedBook.content.grid);
+  for (const [id, read] of [
+    [3, undefined],
+    [4, { sheet: "First" }],
+  ] as const) {
+    const denied = (await callTool(app, "vastgrid_message", {
+      grid: bookGrid,
+      client: "c1",
+      message: { v: 2, id, op: "open", ref: "book.xlsx", ...(read ? { read } : {}) },
+    })) as Json;
+    assert.deepEqual([denied.id, (denied.error as Json).code], [id, "not_allowed"]);
+  }
+
+  // Client c1 opens its own handle; client c2 cannot close or read c1's handle, nor guess t1 (the server store's handle).
+  const c1Open = (await callTool(app, "vastgrid_message", {
+    grid: openedCsv.grid,
+    client: "c1",
+    message: { v: 2, id: 5, op: "open", ref: "orders.csv" },
+  })) as Json & { result: { table: string } };
+  assert.equal(typeof c1Open.result?.table, "string");
+  for (const [id, target] of [
+    [6, c1Open.result.table],
+    [7, "t1"],
+  ] as const) {
+    const crossClose = (await callTool(app, "vastgrid_message", {
+      grid: openedCsv.grid,
+      client: "c2",
+      message: { v: 2, id, op: "close", table: target },
+    })) as Json;
+    assert.deepEqual([crossClose.id, (crossClose.error as Json).code], [id, "table_not_found"]);
+  }
+  // The server's own store still works cleanly after those attempts.
+  const rows = await call("grid_rows", { grid: openedCsv.grid, columns: ["id"], count: 1 });
+  assert.equal(rows.error, false);
+  assert.deepEqual((rows.content as { rows: unknown[] }).rows, [[1]]);
+});
+
+test("reloading in the App after an external file change moves the server grid and sibling Apps to the reloaded table", async () => {
+  const file = path.join(folder, "reload-sync.csv");
+  await writeFile(file, "id,name\n1,Ann\n2,Bob\n");
+  const opened = await call("open_grid", { file: "reload-sync.csv" });
+  assert.equal(opened.error, false, JSON.stringify(opened.content));
+  const gridId = String(opened.content.grid);
+  const initialDoc = opened.content.document as GridDocument;
+
+  const linkA = { grid: gridId, client: "reload-a" };
+  const transportA = mcpTransport(app, linkA);
+  const storeA = new GridStore({ transport: transportA, table: "reload-sync.csv", document: initialDoc });
+  const stopA = storeA.connect();
+
+  const linkB = { grid: gridId, client: "reload-b" };
+  const transportB = mcpTransport(app, linkB);
+  const storeB = new GridStore({ transport: transportB, table: "reload-sync.csv", document: initialDoc });
+  const stopB = storeB.connect();
+
+  try {
+    await until(
+      () =>
+        storeA.getSnapshot().status === "ready" &&
+        storeA.getSnapshot().view !== null &&
+        storeB.getSnapshot().status === "ready" &&
+        storeB.getSnapshot().view !== null,
+      "both App stores to open reload-sync.csv",
+    );
+
+    // Dirty the table through the agent so external modification leaves it in `fileChanged` state with unsaved edits.
+    for (const command of [
+      { command: "select", row: 0, column: "name" },
+      { command: "edit.begin", text: "Dirty" },
+      { command: "edit.commit" },
+    ]) {
+      const res = await call("grid_command", { grid: gridId, command });
+      assert.equal(res.error, false, JSON.stringify(res.content));
+    }
+
+    // Modify the CSV externally on disk; saving now fails with `file_changed` and marks `fileChanged`.
+    await writeFile(file, "id,name\n1,Ada\n2,Ben\n3,Cal\n");
+    const conflictSave = await call("grid_command", { grid: gridId, command: { command: "save" } });
+    assert.equal(conflictSave.error, true);
+    assert.equal((conflictSave.content.error as Json).code, "file_changed");
+
+    // App A discards edits and reloads, just like clicking "Discard edits and reload" in the toolbar.
+    await storeA.reload();
+
+    // Server-side `grid_state` and `grid_rows` now see the reloaded 3-row file with 0 edits and `fileChanged: false`.
+    const stateAfter = (await call("grid_state", { grid: gridId })).content as {
+      table: { edits: number; fileChanged: boolean; rowCount: number };
+      session: GridSession;
+    };
+    assert.deepEqual(stateAfter.table, { rowCount: 3, status: "ready", edits: 0, fileChanged: false });
+    assert.equal(stateAfter.session.history, undefined);
+
+    const rowsAfter = await call("grid_rows", { grid: gridId });
+    assert.deepEqual((rowsAfter.content as { rows: unknown[] }).rows, [
+      [1, "Ada"],
+      [2, "Ben"],
+      [3, "Cal"],
+    ]);
+
+    // Sibling App B receives the reload event and cleared history through `grid_sync`, and reads the new rows.
+    const syncB = await sync(app, linkB, { version: -1 });
+    transportB.deliver(syncB.events);
+    if (syncB.session) storeB.setSession(syncB.session);
+    await until(() => {
+      storeB.ensure(0, 3, ["name"]);
+      return storeB.cell(2, "name") === "Cal";
+    }, "sibling App B to read reloaded rows");
+
+    // Subsequent agent edits + `save` succeed against the reloaded file on disk.
+    for (const command of [
+      { command: "select", row: 2, column: "name" },
+      { command: "edit.begin", text: "Cara" },
+      { command: "edit.commit" },
+      { command: "save" },
+    ]) {
+      const res = await call("grid_command", { grid: gridId, command });
+      assert.equal(res.error, false, JSON.stringify(res.content));
+    }
+    assert.equal(await readFile(file, "utf8"), "id,name\n1,Ada\n2,Ben\n3,Cara\n");
+  } finally {
+    stopA();
+    stopB();
+  }
+});

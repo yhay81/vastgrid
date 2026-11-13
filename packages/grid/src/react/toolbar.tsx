@@ -1,5 +1,5 @@
-import { lazy, use, useDeferredValue, useEffect, useState, useTransition } from "react";
-import { type Expr, type Fold, type GridCommand, partsOf, type Search } from "vastgrid-spec";
+import { type KeyboardEvent, lazy, use, useDeferredValue, useEffect, useState, useTransition } from "react";
+import { type Expr, type Fold, type GridCommand, partsOf, type Search, trimSpaces } from "vastgrid-spec";
 import { isApple } from "../canvas/keys.js";
 import { offers } from "../core/measures.js";
 import { LocaleContext, SaveContext } from "./context.js";
@@ -28,6 +28,11 @@ const FOLDS: Fold[] = ["width", "kana"];
 /** `search.set` with the text of the box, folding width and kana when the switch is on. */
 function searchSet(text: string, fold: boolean): GridCommand {
   return fold ? { command: "search.set", text, fold: FOLDS } : { command: "search.set", text };
+}
+
+/** The search string stored in `plan.where` by `search.set`: whitespace-only input clears the search. */
+function canonicalSearch(text: string): string {
+  return trimSpaces(text) === "" ? "" : text;
 }
 
 /**
@@ -64,6 +69,7 @@ export function Toolbar({ announce }: { announce: (text: string) => void }) {
   );
   const [text, setText] = useState(current);
   const [folds, setFolds] = useState(currentFolds);
+  const [composing, setComposing] = useState(false);
   const [shown, setShown] = useState(current);
   const [shownFolds, setShownFolds] = useState(currentFolds);
   const [sent, setSent] = useState<{ text: string; folds: boolean } | null>(null);
@@ -79,21 +85,33 @@ export function Toolbar({ announce }: { announce: (text: string) => void }) {
     }
   }
   const deferred = useDeferredValue(text);
+  const effective = canonicalSearch(deferred);
   useEffect(() => {
-    if (deferred === current) return;
+    if (composing || effective === current) return;
     const timer = setTimeout(() => {
-      setSent({ text: deferred, folds });
+      setSent({ text: effective, folds });
       void store.dispatch(searchSet(deferred, folds));
     }, SEARCH_DELAY);
     return () => clearTimeout(timer);
-  }, [store, deferred, current, folds]);
+  }, [store, composing, deferred, effective, current, folds]);
   const toggleFolds = () => {
     const next = !folds;
     setFolds(next);
     // A search that is set changes at once; the switch alone waits for text.
-    if (current !== "" && deferred === current) {
+    if (!composing && current !== "" && effective === current) {
       setSent({ text: current, folds: next });
       void store.dispatch(searchSet(current, next));
+    }
+  };
+  const onSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    setComposing(false);
+    const next = canonicalSearch(text);
+    if (next !== current || (next !== "" && folds !== currentFolds)) {
+      setSent({ text: next, folds });
+      void store.dispatch(searchSet(text, folds));
     }
   };
   const showsSave = saves && saving !== null;
@@ -121,6 +139,9 @@ export function Toolbar({ announce }: { announce: (text: string) => void }) {
           aria-label={messages.search}
           placeholder={messages.search}
           value={text}
+          onCompositionStart={() => setComposing(true)}
+          onCompositionEnd={() => setComposing(false)}
+          onKeyDown={onSearchKeyDown}
           onChange={(event) => setText(event.target.value)}
         />
       )}

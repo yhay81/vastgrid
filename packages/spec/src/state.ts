@@ -3,10 +3,13 @@
  * repair of a document for a table.
  */
 import { type CheckOptions, checkPlan } from "./check.js";
+import { FOLDS, type Fold } from "./fold.js";
 import { canonicalJson } from "./hash.js";
 import {
   type Derived,
   type Expr,
+  FUNCTIONS,
+  LIMITS,
   MEASURES,
   type Measure,
   type MeasureName,
@@ -14,7 +17,7 @@ import {
   PlanError,
   type SortKey,
 } from "./plan.js";
-import type { Column, JsonValue, ValueType } from "./types.js";
+import { type Column, type JsonValue, LOGICAL_TYPES, type ValueType } from "./types.js";
 import { isObject } from "./values.js";
 
 /** How a column shows numbers: 0.1's `NumberFormat`. */
@@ -235,8 +238,52 @@ function position(value: unknown, path: string): number {
   return value;
 }
 
-function expression(value: unknown, path: string): Expr {
-  if (!isObject(value)) fail(path, "syntax", "An expression is an object (§4.3).");
+function expression(value: unknown, root: string, allowSearch = true): Expr {
+  let nodes = 0;
+  const visit = (node: unknown, path: string, depth: number) => {
+    if (depth > LIMITS.depth) fail(path, "limit", `An expression is nested at most ${LIMITS.depth} levels deep.`);
+    if (++nodes > LIMITS.nodes) fail(root, "limit", `An expression has at most ${LIMITS.nodes} nodes.`);
+    if (!isObject(node)) fail(path, "syntax", "An expression is an object (§4.3).");
+    if ("col" in node) {
+      members(node, ["col"], path);
+      name(node.col, `${path}/col`);
+      return;
+    }
+    if ("lit" in node) {
+      members(node, ["lit", "type"], path);
+      checkValue(node.lit, `${path}/lit`);
+      if (node.type !== undefined) oneOf(node.type, LOGICAL_TYPES, `${path}/type`);
+      return;
+    }
+    if ("search" in node) {
+      if (!allowSearch) fail(path, "syntax", "A style's when does not search (§5.1).");
+      members(node, ["search", "fold"], path);
+      if (typeof node.search !== "string" || node.search.length === 0) {
+        fail(`${path}/search`, "syntax", "A search is a non-empty string.");
+      }
+      if (node.fold !== undefined) {
+        if (!Array.isArray(node.fold) || node.fold.length === 0) {
+          fail(`${path}/fold`, "syntax", "fold is a list of folds (§3.5).");
+        }
+        let last = -1;
+        node.fold.forEach((fold, index) => {
+          const at = FOLDS.indexOf(fold as Fold);
+          if (at < 0 || at <= last) fail(`${path}/fold/${index}`, "syntax", "fold is width, kana or both (§3.5).");
+          last = at;
+        });
+      }
+      return;
+    }
+    if ("fn" in node) {
+      members(node, ["fn", "args"], path);
+      oneOf(node.fn, FUNCTIONS, `${path}/fn`);
+      if (!Array.isArray(node.args)) fail(`${path}/args`, "syntax", "args is an array.");
+      node.args.forEach((arg, index) => visit(arg, `${path}/args/${index}`, depth + 1));
+      return;
+    }
+    fail(path, "syntax", "An expression is { col }, { lit }, { fn, args } or { search } (§4.3).");
+  };
+  visit(value, root, 1);
   return value as unknown as Expr;
 }
 
@@ -377,7 +424,7 @@ export function checkColumnFormat(value: unknown, path: string): ColumnFormat {
       const at = `${path}/styles/${index}`;
       if (!isObject(rule)) fail(at, "syntax", "A style is an object: { when, color?, background?, description? }.");
       members(rule, ["when", "color", "background", "description"], at);
-      expression(rule.when, `${at}/when`);
+      expression(rule.when, `${at}/when`, false);
       for (const key of ["color", "background", "description"]) {
         if (rule[key] !== undefined && typeof rule[key] !== "string")
           fail(`${at}/${key}`, "syntax", `${key} is a string.`);

@@ -1,6 +1,7 @@
 // The extension in VS Code (scripts/test-vscode.mjs): the editor's life with VS Code's commands, and the grid's
 // commands through the extension's `dispatch`, which the page applies as its keys and menus do.
 const assert = require("node:assert/strict");
+const { createHash } = require("node:crypto");
 const { readdir, readFile, writeFile } = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
@@ -43,7 +44,8 @@ async function closeAll() {
 
 /** The engines' folders that are there now. */
 async function engineFolders() {
-  return readdir(path.join(os.tmpdir(), "vastgrid-vscode")).catch(() => []);
+  const user = process.getuid?.() ?? createHash("sha256").update(os.homedir()).digest("hex").slice(0, 16);
+  return readdir(path.join(os.tmpdir(), `vastgrid-vscode-${user}`)).catch(() => []);
 }
 
 exports.run = async () => {

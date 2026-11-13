@@ -184,3 +184,48 @@ def test_a_cell_run_again_closes_the_grids_it_made(monkeypatch: pytest.MonkeyPat
         first.to_arrow()
     widget._close_all()
     assert other._closed and again._closed
+
+
+def test_view_to_arrow_respects_displayed_columns_pivot_and_export_timezone(no_cell: None, tmp_path: Path) -> None:
+    grid = Grid(
+        pa.table(
+            {
+                "k": ["A", "A", "B"],
+                "p": ["x", "y", "x"],
+                "v": pa.array([1.5, 2.5, 3.0], type=pa.float32()),
+                "ts": pa.array([0, 0, 0], type=pa.timestamp("us", tz="UTC")),
+            }
+        ),
+        document={
+            "timeZone": "Asia/Tokyo",
+            "columns": [{"name": "p", "hidden": True}],
+        },
+    )
+    try:
+        shown = grid.to_arrow(view=True)
+        assert shown.column_names == ["k", "v", "ts"]
+        assert shown.schema.field("v").type == pa.float32()
+
+        grid.document = {
+            "timeZone": "Asia/Tokyo",
+            "plan": {
+                "aggregate": {
+                    "keys": ["k"],
+                    "measures": [{"name": "s", "fn": "sum", "column": "v"}],
+                    "pivot": {"columns": ["p"]},
+                }
+            },
+        }
+        pivoted = grid.to_arrow(view=True)
+        assert pivoted.column_names == ["k", "x / s", "y / s"]
+        assert pivoted.to_pydict() == {"k": ["A", "B"], "x / s": [1.5, 3.0], "y / s": [2.5, None]}
+
+        grid.document = {"columns": [{"name": "v", "format": {"number": {"fractionDigits": 3}}}]}
+        xlsx_path = tmp_path / "formatted.xlsx"
+        grid.export(xlsx_path)
+        import zipfile
+
+        with zipfile.ZipFile(xlsx_path) as zf:
+            assert "0.000" in zf.read("xl/styles.xml").decode("utf-8")
+    finally:
+        grid.close()

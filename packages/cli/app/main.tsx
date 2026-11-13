@@ -68,10 +68,21 @@ function addressOf(place: { file: string | null; sheet: string | null }) {
   return `/?${params}`;
 }
 
+function persistedSession(session: GridSession | undefined): GridSession | undefined {
+  if (!session) return undefined;
+  const { history: _history, editor: _editor, ...rest } = session;
+  return rest;
+}
+
 function readView(id: string): View {
   try {
     const text = sessionStorage.getItem(`vastgrid:${id}`);
-    return text === null ? {} : (JSON.parse(text) as View);
+    if (text === null) return {};
+    const parsed = JSON.parse(text) as View;
+    return {
+      ...(parsed.document ? { document: parsed.document } : {}),
+      ...(parsed.session ? { session: persistedSession(parsed.session) } : {}),
+    };
   } catch {
     return {};
   }
@@ -79,7 +90,11 @@ function readView(id: string): View {
 
 function writeView(id: string, view: View) {
   try {
-    sessionStorage.setItem(`vastgrid:${id}`, JSON.stringify(view));
+    const clean: View = {
+      ...(view.document ? { document: view.document } : {}),
+      ...(view.session ? { session: persistedSession(view.session) } : {}),
+    };
+    sessionStorage.setItem(`vastgrid:${id}`, JSON.stringify(clean));
   } catch {
     // A full or closed storage keeps nothing; the page still works.
   }

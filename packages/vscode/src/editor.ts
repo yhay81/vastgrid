@@ -4,7 +4,6 @@
  * file; each write of a grid is an edit on VS Code's stack, which the grid that wrote it undoes and redoes.
  */
 import { randomBytes } from "node:crypto";
-import os from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
 import { type FileView, readBackup, TableFile } from "./table-file.js";
@@ -46,6 +45,7 @@ export class TableEditorProvider implements vscode.CustomEditorProvider<TableDoc
   /** The editors of each file, by its URI. */
   private readonly editors = new Map<string, Set<Editor>>();
   private readonly documents = new Set<TableDocument>();
+  private readonly reloaded = new Set<TableDocument>();
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -59,7 +59,6 @@ export class TableEditorProvider implements vscode.CustomEditorProvider<TableDoc
       ? readBackup(new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.parse(context.backupId))))
       : null;
     const file = new TableFile(uri.fsPath, {
-      tempDirectory: path.join(os.tmpdir(), "vastgrid-vscode"),
       editable: vscode.workspace.isTrusted,
       exportTo: async (kept) => {
         const target = await vscode.window.showSaveDialog({
@@ -95,6 +94,13 @@ export class TableEditorProvider implements vscode.CustomEditorProvider<TableDoc
     file.onKey((key) => {
       if (key === "save") void vscode.workspace.save(uri);
       else void vscode.commands.executeCommand(key);
+    });
+    file.onReload(() => {
+      if (![...(this.editors.get(uri.toString()) ?? [])].some(({ panel }) => panel.active)) return;
+      this.reloaded.add(document);
+      void Promise.resolve(vscode.commands.executeCommand("workbench.action.files.revert"))
+        .catch(() => {})
+        .finally(() => this.reloaded.delete(document));
     });
     return document;
   }
@@ -162,6 +168,7 @@ export class TableEditorProvider implements vscode.CustomEditorProvider<TableDoc
   }
 
   async revertCustomDocument(document: TableDocument): Promise<void> {
+    if (this.reloaded.delete(document)) return;
     await document.file.revert();
   }
 

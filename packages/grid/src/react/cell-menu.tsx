@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type ToggleEvent, use, useLayoutEffect, useRef } from "react";
+import { type KeyboardEvent, type ToggleEvent, use, useEffect, useLayoutEffect, useRef } from "react";
 import { type GridCommand, isBlank, type JsonValue, joinParts } from "vastgrid-spec";
 import { filterParts } from "../core/filters.js";
 import { LocaleContext } from "./context.js";
@@ -65,18 +65,22 @@ export function CellMenu({
     columns: target && column ? [column.name] : [],
   });
   const value: JsonValue | undefined = values?.[0];
-  const loaded = value !== undefined;
+  const loaded = Boolean(target && column && value !== undefined);
+
+  useEffect(() => {
+    if (target && !column) onClose();
+  }, [target, column, onClose]);
 
   useLayoutEffect(() => {
     const menu = ref.current;
-    if (!menu || !target) return;
+    if (!menu || !target || !loaded) return;
     if (!menu.matches(":popover-open")) menu.showPopover();
-    menu.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
+    (menu.querySelector<HTMLElement>("button:not(:disabled)") ?? menu).focus();
   }, [target, loaded]);
 
   useLayoutEffect(() => {
     const menu = ref.current;
-    if (!menu || !target) return;
+    if (!menu || !target || !loaded) return;
     const rect = menu.getBoundingClientRect();
     menu.style.left = `${Math.max(8, Math.min(target.x, window.innerWidth - rect.width - 8))}px`;
     menu.style.top = `${Math.max(8, Math.min(target.y, window.innerHeight - rect.height - 8))}px`;
@@ -86,9 +90,19 @@ export function CellMenu({
     if (event.newState === "closed") onClose();
   };
 
-  if (!target || !column || value === undefined) {
-    return <div ref={ref} popover="auto" className="vg-menu vg-cell-menu" onToggle={onToggle} />;
-  }
+  useEffect(() => {
+    if (!target || !loaded) return;
+    const onFocusIn = (event: FocusEvent) => {
+      const menu = ref.current;
+      if (menu && event.target instanceof Node && !menu.contains(event.target) && menu.matches(":popover-open")) {
+        menu.hidePopover();
+      }
+    };
+    document.addEventListener("focusin", onFocusIn);
+    return () => document.removeEventListener("focusin", onFocusIn);
+  }, [target, loaded]);
+
+  if (!target || !column || value === undefined) return null;
   const close = () => ref.current?.hidePopover();
   const run = (command: GridCommand) => {
     close();
@@ -109,6 +123,7 @@ export function CellMenu({
       ref={ref}
       popover="auto"
       role="dialog"
+      tabIndex={-1}
       className="vg-menu vg-cell-menu"
       aria-label={messages.cellMenu}
       onToggle={onToggle}

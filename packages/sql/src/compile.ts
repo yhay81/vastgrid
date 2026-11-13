@@ -14,6 +14,7 @@ import {
   type Fold,
   foldAll,
   infinityOf,
+  isValueOf,
   type LiteralExpr,
   parseTimestampText,
   sameType,
@@ -257,6 +258,52 @@ function exactParts(sql: string, type: ExprType): { whole: string; fraction: str
   };
 }
 
+/** Inserts a fixed decimal point into an unscaled signed integer text at `scale` fractional digits. */
+function scaledDigitsText(digitsSql: string, scale: number): string {
+  if (scale === 0) return digitsSql;
+  return letSql(digitsSql, (value) => {
+    const magnitude = `ltrim(${value}, '-')`;
+    const padded = `lpad(${magnitude}, CAST(greatest(length(${magnitude}), ${scale + 1}) AS INTEGER), '0')`;
+    const sign = `(CASE WHEN starts_with(${value}, '-') THEN '-' ELSE '' END)`;
+    return `(${sign} || regexp_replace(${padded}, '([0-9]{${scale}})$', '.\\1'))`;
+  });
+}
+
+/** An exact value as an unscaled BIGNUM at `targetScale` fractional digits. */
+function unscaledBignum(sql: string, type: ExprType, targetScale: number): string {
+  if (type.type === "null") return "CAST(NULL AS BIGNUM)";
+  const { s } = exactDigits(type);
+  const raw = s > 0 ? `replace(CAST(${sql} AS VARCHAR), '.', '')` : `CAST(${sql} AS VARCHAR)`;
+  const zeros = targetScale > s ? ` || '${"0".repeat(targetScale - s)}'` : "";
+  return `CAST((${raw}${zeros}) AS BIGNUM)`;
+}
+
+function bignumDecimal(bignumSql: string, type: ValueType): string {
+  return tryCast(scaledDigitsText(`CAST(${bignumSql} AS VARCHAR)`, type.scale ?? 0), type);
+}
+
+/** Exact decimal remainder when scale-aligned precision exceeds 38 digits (where DuckDB's `%` promotes to DOUBLE). */
+function wideMod(leftSql: string, s1: number, rightSql: string, s2: number, type: ValueType): string {
+  const scale = type.scale ?? 0;
+  let body: string;
+  if (s1 <= s2) {
+    const shift = s2 - s1;
+    const rem =
+      shift === 0
+        ? "(vg_m.ua % vg_m.ub)"
+        : `list_reduce(CAST(range(${shift}) AS INTEGER[]), lambda vg_r, vg_i: ((((((vg_r * 2) % vg_m.ub) * 2) % vg_m.ub + vg_r) % vg_m.ub) * 2) % vg_m.ub, vg_m.ua % vg_m.ub)`;
+    const signed = `((CASE WHEN vg_m.neg AND vg_d > 0 THEN '-' ELSE '' END) || CAST(vg_d AS VARCHAR))`;
+    body = `list_transform([${rem}], lambda vg_d: ${tryCast(scaledDigitsText(signed, scale), type)})[1]`;
+  } else {
+    const shift = s1 - s2;
+    const pow = `CAST('1${"0".repeat(shift)}' AS UHUGEINT)`;
+    const digits = `(CASE WHEN vg_d.hi = 0 THEN CAST(vg_d.lo AS VARCHAR) ELSE CAST(vg_d.hi AS VARCHAR) || lpad(CAST(vg_d.lo AS VARCHAR), ${shift}, '0') END)`;
+    const signed = `((CASE WHEN vg_m.neg AND (vg_d.hi > 0 OR vg_d.lo > 0) THEN '-' ELSE '' END) || ${digits})`;
+    body = `list_transform([struct_pack(hi := (vg_m.ua // ${pow}) % vg_m.ub, lo := vg_m.ua % ${pow})], lambda vg_d: ${tryCast(scaledDigitsText(signed, scale), type)})[1]`;
+  }
+  return `list_transform([struct_pack(a := ${leftSql}, b := ${rightSql})], lambda vg_a: CASE WHEN vg_a.a IS NOT NULL AND vg_a.b IS NOT NULL THEN list_transform([struct_pack(ua := CAST(ltrim(replace(CAST(vg_a.a AS VARCHAR), '.', ''), '-') AS UHUGEINT), ub := CAST(ltrim(replace(CAST(vg_a.b AS VARCHAR), '.', ''), '-') AS UHUGEINT), neg := vg_a.a < 0)], lambda vg_m: CASE WHEN vg_m.ub > 0 THEN ${body} END)[1] END)[1]`;
+}
+
 function needsMixedNsCompare(types: readonly ExprType[]): boolean {
   let hasNs = false;
   let hasWider = false;
@@ -296,7 +343,9 @@ class IdentifierScope {
   constructor(reserved: Iterable<string> = []) {
     // DuckDB also binds quoted column references to lambda parameters of the same name.
     this.used = new Set(
-      ["vg_v", "vg_l", "vg_r", "vg_w", "vg_c", "vg_a", "vg_n", ...reserved].map((name) => name.toLowerCase()),
+      ["vg_v", "vg_l", "vg_r", "vg_w", "vg_c", "vg_a", "vg_n", "vg_m", "vg_i", "vg_d", ...reserved].map((name) =>
+        name.toLowerCase(),
+      ),
     );
   }
 
@@ -641,8 +690,32 @@ class Compiler {
         return `list_transform([struct_pack(${fields})], lambda vg_c: CASE ${cases.join(" ")} END)[1]`;
       }
       case "least":
-      case "greatest":
+      case "greatest": {
+        const argTypes = args.map((item) => item.type);
+        if (needsMixedNsCompare(argTypes)) {
+          const chosen = `${node.fn}(${args.map((item) => temporalNanos(this.expression(item), item.type)).join(", ")})`;
+          return letSql(
+            chosen,
+            (val) =>
+              `(CASE WHEN ${val} = ${NANOS_INFINITY} THEN TIMESTAMP_NS 'infinity' WHEN ${val} = -${NANOS_INFINITY} THEN TIMESTAMP_NS '-infinity' WHEN ${val} BETWEEN -9223372036854775806 AND 9223372036854775806 THEN make_timestamp_ns(CAST(${val} AS BIGINT)) END)`,
+            "vg_n",
+          );
+        }
+        if (type.type === "decimal") {
+          const maxWhole = (type.precision ?? 38) - (type.scale ?? 0);
+          const canOverflow = args.some((item) => {
+            if (item.type.type === "null") return false;
+            const { p, s } = exactDigits(item.type);
+            return p - s > maxWhole;
+          });
+          if (canOverflow) {
+            const scale = type.scale ?? 0;
+            const chosen = `${node.fn}(${args.map((item) => unscaledBignum(this.expression(item), item.type, scale)).join(", ")})`;
+            return bignumDecimal(chosen, type);
+          }
+        }
         return `${node.fn}(${typed()})`;
+      }
       case "add":
       case "sub":
       case "mul":
@@ -650,6 +723,21 @@ class Compiler {
         const operator = { add: "+", sub: "-", mul: "*", mod: "%" }[node.fn];
         if (type.type === "float") return finite(`(${this.double(args[0])} ${operator} ${this.double(args[1])})`);
         if (type.type === "bigint") return `TRY(CAST(${arg(0)} AS BIGINT) ${operator} CAST(${arg(1)} AS BIGINT))`;
+        if (type.type === "decimal" && node.fn !== "mul") {
+          const x = exactDigits(args[0].type as ValueType);
+          const y = exactDigits(args[1].type as ValueType);
+          const whole = Math.max(x.p - x.s, y.p - y.s);
+          const scale = Math.max(x.s, y.s);
+          if (node.fn === "mod" && whole + scale > 38) {
+            return wideMod(arg(0), x.s, arg(1), y.s, type);
+          }
+          if ((node.fn === "add" || node.fn === "sub") && whole + scale + 1 > 38) {
+            return bignumDecimal(
+              `(${unscaledBignum(arg(0), args[0].type, scale)} ${operator} ${unscaledBignum(arg(1), args[1].type, scale)})`,
+              type,
+            );
+          }
+        }
         // DuckDB multiplies two decimals of at most 18 digits in 18 digits and fails past them; a left operand of
         // 19 digits makes it keep every digit of the product.
         const wide = node.fn === "mul" && type.type === "decimal" && (type.precision ?? 38) > 18;
@@ -787,14 +875,7 @@ class Compiler {
     const column = this.column(decimal.name);
     const scale = decimal.scale ?? 0;
     const digits = `CAST(replace(CAST(${column} AS VARCHAR), '.', '') AS BIGNUM)`;
-    const sum = `CAST(sum(${digits})${filter} AS VARCHAR)`;
-    if (scale === 0) return sum;
-    return letSql(sum, (value) => {
-      const magnitude = `ltrim(${value}, '-')`;
-      const padded = `lpad(${magnitude}, CAST(greatest(length(${magnitude}), ${scale + 1}) AS INTEGER), '0')`;
-      const sign = `(CASE WHEN starts_with(${value}, '-') THEN '-' ELSE '' END)`;
-      return `(${sign} || regexp_replace(${padded}, '([0-9]{${scale}})$', '.\\1'))`;
-    });
+    return scaledDigitsText(`CAST(sum(${digits})${filter} AS VARCHAR)`, scale);
   }
 
   /** A measure (§3.8, §4.5), optionally over the rows of a pivot's combination. */
@@ -860,9 +941,19 @@ function sortTerms(sql: string, type: ValueType, direction: "asc" | "desc") {
   return type.type === "string" ? [`NULLIF(${sql}, '') ${order} NULLS LAST`] : [`${sql} ${order} NULLS LAST`];
 }
 
-/** The value of a group's key: DuckDB keeps the first row's, which may be −0.0 where §3.9 reads 0.0. */
+/** The value of a group's key: DuckDB keeps the first row's, which may be −0.0 where §3.9 reads 0.0, and source dates/times outside §2.2 read as null. */
 function keySql(sql: string, column: Column): string {
-  return column.type === "float" ? `(${sql} + CAST(0 AS ${duckdbType(column)}))` : sql;
+  if (column.type === "float") return `(${sql} + CAST(0 AS ${duckdbType(column)}))`;
+  if (column.type === "date") {
+    return letSql(
+      sql,
+      (val) => `(CASE WHEN ${val} BETWEEN ${FIRST_DATE} AND ${LAST_DATE} OR NOT isfinite(${val}) THEN ${val} END)`,
+    );
+  }
+  if (column.type === "time") {
+    return letSql(sql, (val) => `(CASE WHEN ${val} < TIME '24:00:00' THEN ${val} END)`);
+  }
+  return sql;
 }
 
 /** ORDER BY terms of group keys (§3.9): ascending, blanks last, the empty string before null. */
@@ -924,12 +1015,16 @@ export function pivotQuery(plan: CheckedPlan, source: SqlSource): SqlQuery {
   const compiler = new Compiler(new Params(source.params));
   const { entries } = rowsWith(plan, source, compiler, rowIdName(plan));
   const ids = pivot.columns.map((column) => compiler.column(column.name));
+  const distinct = pivot.columns.map((column, index) => {
+    const expr = keySql(ids[index], column);
+    return expr === ids[index] ? ids[index] : `${expr} AS ${ids[index]}`;
+  });
   const texts = pivot.columns.map(
-    (column, index) => `${textSql(keySql(`vg_distinct.${ids[index]}`, column), column)} AS "vg_value${index}"`,
+    (column, index) => `${textSql(`vg_distinct.${ids[index]}`, column)} AS "vg_value${index}"`,
   );
   const order = pivot.columns.flatMap((column, index) => keyTerms(`vg_distinct.${ids[index]}`, column));
   const limit = Math.floor(pivot.maxColumns / plan.aggregate.measures.length) + 1;
-  const sql = `WITH ${entries.join(", ")} SELECT ${texts.join(", ")} FROM (SELECT DISTINCT ${ids.join(", ")} FROM vg_rows) vg_distinct ORDER BY ${order.join(", ")} LIMIT ${limit}`;
+  const sql = `WITH ${entries.join(", ")} SELECT ${texts.join(", ")} FROM (SELECT DISTINCT ${distinct.join(", ")} FROM vg_rows) vg_distinct ORDER BY ${order.join(", ")} LIMIT ${limit}`;
   return { sql, params: compiler.params.values };
 }
 
@@ -964,11 +1059,20 @@ export function compileView(plan: CheckedPlan, source: SqlSource, combinations?:
     }
     const taken = new Set(columns.map((column) => column.name));
     for (const combination of combinations) {
-      const jsonValues = combination.map((text, index) => valueOfText(text, pivot.columns[index]));
+      if (combination.length !== pivot.columns.length) {
+        throw new RangeError("Each pivot combination must match pivot.columns.");
+      }
+      const jsonValues = combination.map((text, index) => {
+        const val = valueOfText(text, pivot.columns[index]);
+        if (!isValueOf(val, pivot.columns[index])) {
+          throw new RangeError(`Invalid pivot combination value for ${pivot.columns[index].name}.`);
+        }
+        return val;
+      });
       const condition = pivot.columns
         .map((column, index) => {
           const value = compiler.literal({ kind: "literal", value: jsonValues[index], type: column });
-          return `(${rowIds[column.name]} IS NOT DISTINCT FROM ${value})`;
+          return `(${keySql(rowIds[column.name], column)} IS NOT DISTINCT FROM ${value})`;
         })
         .join(" AND ");
       const labels = combination.map((text) => (text === null ? "(null)" : text === "" ? "(empty)" : text));
@@ -990,7 +1094,9 @@ export function compileView(plan: CheckedPlan, source: SqlSource, combinations?:
       outputs.push(`${compiler.measure(measure)} AS ${groupScope.allocate(measure.name)}`);
     }
   }
-  const groupBy = keys.length > 0 ? ` GROUP BY ${keys.map((key) => rowIds[key.name]).join(", ")}` : "";
+  const groupKey = (key: Column) =>
+    key.type === "date" || key.type === "time" ? keySql(rowIds[key.name], key) : rowIds[key.name];
+  const groupBy = keys.length > 0 ? ` GROUP BY ${keys.map(groupKey).join(", ")}` : "";
   // A pivot without keys whose rows make no combination has no columns, and one group.
   if (outputs.length === 0) outputs.push("count(*) AS vg_none");
   entries.push(`vg_groups AS (SELECT ${outputs.join(", ")} FROM vg_rows${groupBy})`);

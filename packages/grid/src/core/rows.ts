@@ -59,6 +59,7 @@ export class RowReader {
   /** What the canvas shows, as `setViewport` was told last. */
   viewport: Viewport = { top: 0, rows: 0, columns: [] };
   private scheduled = false;
+  private deferred: { start: number; end: number; columns: string[] }[] = [];
 
   constructor(
     private readonly host: ReadHost,
@@ -82,9 +83,28 @@ export class RowReader {
 
   /** Reads rows `[start, end)` of `columns` of the view on screen if they are not read, for cells React renders. */
   ensure(start: number, end: number, columns: readonly string[]) {
+    if (end <= start || columns.length === 0) return;
     const view = this.host.current();
-    if (!view?.info || !this.host.opened() || this.host.next() || view.abort.signal.aborted) return;
-    for (const read of view.cache.reads(start, end, this.withKey(columns), view.info.rowCount)) {
+    if (!view?.info || !this.host.opened() || this.host.next() || view.abort.signal.aborted) {
+      if (this.deferred.length < 32) this.deferred.push({ start, end, columns: [...columns] });
+      return;
+    }
+    const wanted = this.withKey(columns);
+    const reads = view.cache.reads(start, end, wanted, view.info.rowCount);
+    if (reads.length === 0) {
+      // A read currently in flight for a shorter building view may finish without covering `[start, end)`.
+      const missingAfterInFlight = wanted.some((column) => {
+        for (let row = start; row < Math.min(end, view.info?.rowCount ?? 0); row++) {
+          if (view.cache.value(row, column) === undefined) return true;
+        }
+        return false;
+      });
+      if (missingAfterInFlight && this.deferred.length < 32) {
+        this.deferred.push({ start, end, columns: [...columns] });
+      }
+      return;
+    }
+    for (const read of reads) {
       void this.read(view, read).catch(() => {});
     }
   }
@@ -178,7 +198,10 @@ export class RowReader {
           view.info && sameColumns(view.info.columns, info.columns) ? { ...info, columns: view.info.columns } : info;
         if (view === this.host.current()) this.host.showView(view.info);
       }
-      if (view === this.host.current()) this.host.showRows();
+      if (view === this.host.current()) {
+        this.host.showRows();
+        if (this.deferred.length > 0) this.schedule();
+      }
     } catch (error) {
       view.cache.reading(read, false);
       if (view === this.host.current() || view === this.host.next()) this.host.fail(error);
@@ -199,6 +222,10 @@ export class RowReader {
   private readVisible() {
     const view = this.host.current();
     if (!view?.info || !this.host.opened() || this.host.next() || view.abort.signal.aborted) return;
+    if (this.deferred.length > 0) {
+      const pending = this.deferred.splice(0);
+      for (const item of pending) this.ensure(item.start, item.end, item.columns);
+    }
     const { top, rows, columns } = this.viewport;
     if (columns.length === 0) return;
     const margin = Math.max(rows, 32);

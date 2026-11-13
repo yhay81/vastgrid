@@ -7,6 +7,7 @@ import uuid
 import zipfile
 from typing import Any
 from xml.etree import ElementTree
+from zlib import error as zlib_error
 
 import duckdb
 
@@ -45,17 +46,58 @@ def file_format(path: str) -> str | None:
     return FILE_FORMATS.get(os.path.splitext(name)[1])
 
 
+_MAX_ZIP_ENTRIES = 10_000
+_MAX_WORKBOOK_XML = 32 * 1024 * 1024
+_MAX_PART_BASE = 128 * 1024 * 1024
+_MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024
+
+
+def _read_bounded(archive: zipfile.ZipFile, info: zipfile.ZipInfo, limit: int, keep: bool) -> bytes:
+    """Reads or measures a ZIP entry while bounding actual inflated bytes, regardless of header claims."""
+    total = 0
+    chunks: list[bytes] = []
+    with archive.open(info) as stream:
+        while chunk := stream.read(262_144):
+            total += len(chunk)
+            if total > limit:
+                raise EngineError("load_failed", "The workbook exceeds the maximum uncompressed size.")
+            if keep:
+                chunks.append(chunk)
+    return b"".join(chunks) if keep else b""
+
+
 def workbook_sheets(path: str) -> list[Json]:
     """The sheets of a workbook in their order (§8.2 `sheets`), read from `xl/workbook.xml`."""
     main = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
     with zipfile.ZipFile(path) as archive:
-        root = ElementTree.fromstring(archive.read("xl/workbook.xml"))
+        infos = archive.infolist()
+        if len(infos) > _MAX_ZIP_ENTRIES:
+            raise EngineError("load_failed", "The workbook has too many archive entries.")
+        workbook_bytes: bytes | None = None
+        remaining = _MAX_ARCHIVE_BYTES
+        for info in infos:
+            part_limit = min(remaining, max(_MAX_PART_BASE, max(1, info.compress_size) * 1024))
+            if info.filename == "xl/workbook.xml":
+                workbook_bytes = _read_bounded(archive, info, min(part_limit, _MAX_WORKBOOK_XML), True)
+                remaining -= len(workbook_bytes)
+            else:
+                # Verify inflated size of every XML/data entry before DuckDB's read_xlsx inflates it.
+                total = 0
+                with archive.open(info) as stream:
+                    while chunk := stream.read(262_144):
+                        total += len(chunk)
+                        if total > part_limit:
+                            raise EngineError("load_failed", "The workbook exceeds the maximum uncompressed size.")
+                remaining -= total
+        if workbook_bytes is None:
+            raise KeyError("xl/workbook.xml")
+        root = ElementTree.fromstring(workbook_bytes)
     sheets: list[Json] = []
     for sheet in root.iter(f"{main}sheet"):
-        info: Json = {"name": sheet.get("name", "")}
+        info_item: Json = {"name": sheet.get("name", "")}
         if sheet.get("state") in ("hidden", "veryHidden"):
-            info["hidden"] = True
-        sheets.append(info)
+            info_item["hidden"] = True
+        sheets.append(info_item)
     return sheets
 
 
@@ -144,23 +186,32 @@ class Table:
             raise EngineError("load_failed", "The file does not exist.")
         self.byte_size = os.path.getsize(path)
         fmt = source.format
-        if fmt == "parquet" and self.session.run(running, lambda cursor: self._parquet_in_place(cursor, path)):
-            return
+        if fmt == "parquet":
+            try:
+                if self.session.run(running, lambda cursor: self._parquet_in_place(cursor, path)):
+                    return
+            except duckdb.Error as failure:
+                self.dispose()
+                raise EngineError("load_failed", str(failure).replace(path, os.path.basename(path))) from failure
         if fmt == "duckdb":
             try:
                 self.session.run(running, lambda cursor: self._load_database(cursor, path, source.sheet))
             except duckdb.Error as failure:
+                self.dispose()
                 raise EngineError("load_failed", str(failure).replace(path, os.path.basename(path))) from failure
             return
         if fmt == "xlsx":
             try:
                 self.sheets = workbook_sheets(path)
-            except (zipfile.BadZipFile, KeyError, ElementTree.ParseError) as error:
+            except EngineError:
+                raise
+            except (zipfile.BadZipFile, KeyError, ElementTree.ParseError, OSError, zlib_error) as error:
                 raise EngineError("load_failed", "The file is not an Excel workbook.") from error
             names = [sheet["name"] for sheet in self.sheets]
             if source.sheet is not None and source.sheet not in names:
                 raise EngineError("load_failed", f"The workbook has no sheet {quoted(source.sheet)}.")
-            self.sheet = source.sheet if source.sheet is not None else (names[0] if names else None)
+            default_sheet = next((s["name"] for s in self.sheets if not s.get("hidden")), names[0]) if names else None
+            self.sheet = source.sheet if source.sheet is not None else default_sheet
         attempts = 3 if fmt in ("csv", "tsv") else 2 if fmt in ("json", "ndjson") else 1
         error: Exception | None = None
         for attempt in range(attempts):
@@ -170,8 +221,10 @@ class Table:
                     self.notes.append("all_varchar")
                 return
             except EngineError:
+                self.dispose()
                 raise
             except duckdb.Error as failure:
+                self.dispose()
                 error = failure
         message = str(error).replace(path, os.path.basename(path))
         raise EngineError("load_failed", message)
@@ -217,15 +270,41 @@ class Table:
             options = "" if attempt == 0 else ", sample_size=-1"
             return f"read_json_auto($1, format='newline_delimited', hive_partitioning=false{options})"
         if fmt == "xlsx":
-            sheet = "" if self.sheet is None else f", sheet='{self.sheet.replace(chr(39), chr(39) * 2)}'"
-            return f"read_xlsx($1{sheet}, ignore_errors=true)"
+            xlsx_opts: list[str] = []
+            if self.sheet is not None:
+                xlsx_opts.append(f"sheet='{self.sheet.replace(chr(39), chr(39) * 2)}'")
+            if self.source.header_row is not None:
+                if self.source.header_row == 0:
+                    xlsx_opts.append("header=false")
+                else:
+                    xlsx_opts.append("header=true")
+                    if self.source.header_row > 1:
+                        xlsx_opts.append(f"range='A{self.source.header_row}:XFD1048576'")
+            if self.source.keep_empty_rows is True:
+                xlsx_opts.append("stop_at_empty=false")
+            if self.source.keep_empty_columns is True:
+                xlsx_opts.append("empty_as_varchar=true")
+            xlsx_opts.append("ignore_errors=true")
+            return f"read_xlsx($1, {', '.join(xlsx_opts)})"
         return f"read_csv($1{self._delimited_options(attempt, self.reading)})"
 
     def _delimited_options(self, attempt: int, reading: str) -> str:
         if reading == "plain" and attempt == 2:
             # Text without strict quotes is read with padding: unpadded, such a record would fail the read.
             reading = "sequential"
-        options = ", delim='\\t'" if self.source.format == "tsv" else ""
+        delim = (
+            self.source.delimiter
+            if self.source.delimiter is not None
+            else ("\t" if self.source.format == "tsv" else None)
+        )
+        if delim is not None:
+            escaped_delim = "\\t" if delim == "\t" else delim.replace("'", "''")
+            options = f", delim='{escaped_delim}'"
+        else:
+            options = ""
+        if self.source.header_row is not None:
+            header_flag = "true" if self.source.header_row > 0 else "false"
+            options += f", header={header_flag}, skip={max(0, self.source.header_row - 1)}"
         options += ", hive_partitioning=false"
         # Without null_padding, DuckDB's sniffer may settle on the last consistent part of a file whose rows have
         # different numbers of fields and silently skip the rest (`_reads_plain` rules that out).

@@ -539,16 +539,16 @@ export class Run {
    * Fails with `not_loaded` when the keys (with `keyed`) or the values of cells are not in `context.rows`;
    * `details` gives the spans of rows and the columns to read.
    */
-  need(groups: { cells: Iterable<Target>; keyed: boolean }[]) {
+  need(groups: { cells: Iterable<Target>; keyed: boolean; rowId?: boolean }[]) {
     const rows = new Set<number>();
     const columns = new Set<string>();
-    for (const { cells, keyed } of groups) {
+    for (const { cells, keyed, rowId } of groups) {
       for (const cell of cells) {
         const entry = this.lookup(cell.row);
         if (!entry?.has(cell.column)) {
           rows.add(cell.row);
           columns.add(cell.column);
-        } else if (keyed && entry.key === undefined) {
+        } else if ((keyed && entry.key === undefined) || (rowId && entry.rowId === undefined)) {
           rows.add(cell.row);
         }
       }
@@ -596,7 +596,7 @@ export class Run {
         const loaded = this.lookup(row);
         if (loaded?.rowId !== undefined && loaded.key && sameKey(loaded.key, key)) {
           key = { rowId: loaded.rowId };
-        } else {
+        } else if (changed.length > 1) {
           missing.add(row);
         }
       }
@@ -623,8 +623,8 @@ export class Run {
   /** The cells of ranges, range by range and row by row, once each; fails with `too_many_cells` past `limit`. */
   cellsOf(grid: Grid, rects: readonly Rect[], limit?: number): Target[] {
     const cells: Target[] = [];
-    const stride = grid.columns.length;
-    const seen = rects.length > 1 ? new Set<number>() : null;
+    const stride = BigInt(grid.columns.length);
+    const seen = rects.length > 1 ? new Set<bigint>() : null;
     for (const rect of rects) {
       const [start, end] = this.cellRows(rect);
       const cols = this.colsOf(rect, grid);
@@ -633,9 +633,10 @@ export class Run {
         fail("", "too_many_cells", "A write holds at most 100,000 cells.");
       }
       for (let row = start; row < end; row++) {
+        const rowOffset = seen ? BigInt(row) * stride : 0n;
         for (const col of cols) {
           if (seen) {
-            const id = row * stride + col;
+            const id = rowOffset + BigInt(col);
             if (seen.has(id)) continue;
             seen.add(id);
           }

@@ -312,10 +312,13 @@ export function GridBody({
   const toggleCheck = (row: number) => {
     const key = store.rowKey(row);
     if (!key) return;
-    const { session, document } = store.getSnapshot();
+    const session = store.currentSession();
+    const { document } = store.getSnapshot();
     const state = checkState(session.checked, document.plan, key);
     dispatchCheck({ command: state === "checked" ? "uncheck" : "check", keys: [key] });
   };
+
+  const finishEditor = () => (store.currentSession().editor && editor.current ? editor.current.finish() : true);
 
   const { onPointerDown, onPointerMove, onPointerUp, afterPointerUp } = useGridPointer({
     canvas,
@@ -324,6 +327,7 @@ export function GridBody({
     columns,
     toggleCheck,
     dispatchCheck,
+    finishEditor,
   });
 
   /** Opens the menu of a column under its header. */
@@ -339,6 +343,7 @@ export function GridBody({
   };
 
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (!finishEditor()) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const hit = geometry.hit(event.clientX - rect.left, event.clientY - rect.top);
     const column = nameOf(hit.column);
@@ -361,6 +366,7 @@ export function GridBody({
     const column = nameOf(hit.column);
     if ((hit.area !== "header" && hit.area !== "cell") || column === undefined) return;
     event.preventDefault();
+    if (!finishEditor()) return;
     const at = { x: event.clientX, y: event.clientY };
     let open: () => void;
     if (hit.area === "header") {
@@ -376,7 +382,7 @@ export function GridBody({
 
   /** Whether a cell is in the selection. */
   const isSelected = (row: number, column: string) => {
-    const { selection, active } = store.getSnapshot().session;
+    const { selection, active } = store.currentSession();
     if (!selection) return active?.row === row && active.column === column;
     return selection.some(
       (range) =>
@@ -404,7 +410,8 @@ export function GridBody({
   /** The active cell, or the first cell of a non-empty view before a cell has been selected. */
   const activeTarget = () => {
     const snapshot = store.getSnapshot();
-    if (snapshot.session.active) return snapshot.session.active;
+    const currentSession = store.currentSession();
+    if (currentSession.active) return currentSession.active;
     const first = snapshot.displayed[0]?.column.name;
     return (snapshot.view?.rowCount ?? 0) > 0 && first !== undefined ? { row: 0, column: first } : undefined;
   };
@@ -437,6 +444,7 @@ export function GridBody({
   };
 
   const onDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (!finishEditor()) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const hit = geometry.hit(event.clientX - rect.left, event.clientY - rect.top);
     const name = nameOf(hit.column);
@@ -456,13 +464,13 @@ export function GridBody({
       text === undefined ? { command: "edit.begin" } : { command: "edit.begin", text },
     );
     if (outcome.ok) {
-      if (store.getSnapshot().session.editor) editor.current?.open();
+      if (store.currentSession().editor) editor.current?.open();
       return true;
     }
     if (text === undefined && outcome.error instanceof CommandError && outcome.error.reason === "not_loaded") {
       void store.dispatch({ command: "edit.begin" }).then((later) => {
         if (later.ok) {
-          if (store.getSnapshot().session.editor) editor.current?.open();
+          if (store.currentSession().editor) editor.current?.open();
         } else if (later.error instanceof CommandError && later.error.reason === "read_only") {
           announce(messages.readOnly);
         } else {
@@ -510,7 +518,7 @@ export function GridBody({
     // Alt+Enter opens the detail panel of the active row, or closes it.
     if (!composing && event.altKey && event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
       event.preventDefault();
-      const open = store.getSnapshot().session.detail?.open === true;
+      const open = store.currentSession().detail?.open === true;
       void store.dispatch({ command: open ? "detail.close" : "detail.open" });
       return;
     }
@@ -578,7 +586,15 @@ export function GridBody({
         onContextMenu={onContextMenu}
       >
         <div className="vg-sizer" ref={sizerRef} />
-        <AccessibleRows canvas={canvas} id={id} />
+        <AccessibleRows
+          canvas={canvas}
+          id={id}
+          locale={locale}
+          columnGroups={columnGroups}
+          cellText={cellText}
+          cellStyle={cellStyle}
+          cellAction={cellAction}
+        />
       </div>
       <CellEditor canvas={canvas} scrollerRef={scrollerRef} announce={announce} ref={editor} />
       {menu && (

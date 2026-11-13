@@ -271,6 +271,74 @@ def _exact_parts(sql: str, type: dict[str, Any]) -> tuple[str, str]:
     )
 
 
+def _scaled_digits_text(digits_sql: str, scale: int) -> str:
+    """Inserts a fixed decimal point into an unscaled signed integer text at `scale` fractional digits."""
+    if scale == 0:
+        return digits_sql
+
+    def _scaled(value: str) -> str:
+        digits = f"ltrim({value}, '-')"
+        padded = f"lpad({digits}, CAST(greatest(length({digits}), {scale + 1}) AS INTEGER), '0')"
+        return (
+            f"((CASE WHEN starts_with({value}, '-') THEN '-' ELSE '' END) || "
+            f"regexp_replace({padded}, '([0-9]{{{scale}}})$', '.\\1'))"
+        )
+
+    return _let_sql(digits_sql, _scaled)
+
+
+def _unscaled_bignum(sql: str, type: dict[str, Any], target_scale: int) -> str:
+    """An exact value as an unscaled BIGNUM at `target_scale` fractional digits."""
+    if type["type"] == "null":
+        return "CAST(NULL AS BIGNUM)"
+    _, s = _exact_digits(type)
+    raw = f"replace(CAST({sql} AS VARCHAR), '.', '')" if s > 0 else f"CAST({sql} AS VARCHAR)"
+    zeros = f" || '{'0' * (target_scale - s)}'" if target_scale > s else ""
+    return f"CAST(({raw}{zeros}) AS BIGNUM)"
+
+
+def _bignum_decimal(bignum_sql: str, type: dict[str, Any]) -> str:
+    return _try_cast(_scaled_digits_text(f"CAST({bignum_sql} AS VARCHAR)", type.get("scale") or 0), type)
+
+
+def _wide_mod(left_sql: str, s1: int, right_sql: str, s2: int, type: dict[str, Any]) -> str:
+    """Exact decimal remainder when scale-aligned precision exceeds 38 digits (where DuckDB's `%` promotes to DOUBLE)."""
+    scale = type.get("scale") or 0
+    if s1 <= s2:
+        shift = s2 - s1
+        rem = (
+            "(vg_m.ua % vg_m.ub)"
+            if shift == 0
+            else (
+                f"list_reduce(CAST(range({shift}) AS INTEGER[]), "
+                "lambda vg_r, vg_i: ((((((vg_r * 2) % vg_m.ub) * 2) % vg_m.ub + vg_r) % vg_m.ub) * 2) % vg_m.ub, "
+                "vg_m.ua % vg_m.ub)"
+            )
+        )
+        signed = "((CASE WHEN vg_m.neg AND vg_d > 0 THEN '-' ELSE '' END) || CAST(vg_d AS VARCHAR))"
+        body = f"list_transform([{rem}], lambda vg_d: {_try_cast(_scaled_digits_text(signed, scale), type)})[1]"
+    else:
+        shift = s1 - s2
+        pow_sql = f"CAST('1{'0' * shift}' AS UHUGEINT)"
+        digits = (
+            "(CASE WHEN vg_d.hi = 0 THEN CAST(vg_d.lo AS VARCHAR) "
+            f"ELSE CAST(vg_d.hi AS VARCHAR) || lpad(CAST(vg_d.lo AS VARCHAR), {shift}, '0') END)"
+        )
+        signed = f"((CASE WHEN vg_m.neg AND (vg_d.hi > 0 OR vg_d.lo > 0) THEN '-' ELSE '' END) || {digits})"
+        body = (
+            f"list_transform([struct_pack(hi := (vg_m.ua // {pow_sql}) % vg_m.ub, lo := vg_m.ua % {pow_sql})], "
+            f"lambda vg_d: {_try_cast(_scaled_digits_text(signed, scale), type)})[1]"
+        )
+    return (
+        f"list_transform([struct_pack(a := {left_sql}, b := {right_sql})], lambda vg_a: "
+        "CASE WHEN vg_a.a IS NOT NULL AND vg_a.b IS NOT NULL THEN "
+        "list_transform([struct_pack("
+        "ua := CAST(ltrim(replace(CAST(vg_a.a AS VARCHAR), '.', ''), '-') AS UHUGEINT), "
+        "ub := CAST(ltrim(replace(CAST(vg_a.b AS VARCHAR), '.', ''), '-') AS UHUGEINT), "
+        f"neg := vg_a.a < 0)], lambda vg_m: CASE WHEN vg_m.ub > 0 THEN {body} END)[1] END)[1]"
+    )
+
+
 def _needs_mixed_ns_compare(types: Sequence[dict[str, Any]]) -> bool:
     has_ns = any(t["type"] == "timestamp" and t.get("unit") == "ns" for t in types)
     has_wider = any(t["type"] == "date" or (t["type"] == "timestamp" and t.get("unit") != "ns") for t in types)
@@ -307,7 +375,7 @@ class _IdentifierScope:
 
     def __init__(self, reserved: Iterable[str] = ()) -> None:
         # A lambda parameter shadows even a quoted column of the same name.
-        self.used = {"vg_v", "vg_l", "vg_r", "vg_c", "vg_w", "vg_a", "vg_n"}
+        self.used = {"vg_v", "vg_l", "vg_r", "vg_c", "vg_w", "vg_a", "vg_n", "vg_m", "vg_i", "vg_d"}
         self.used.update(name.lower() for name in reserved)
         self.map: dict[str, str] = {}
         self._next = 0
@@ -556,6 +624,29 @@ class _Compiler:
             )
             return f"list_transform([struct_pack({fields})], lambda vg_c: CASE {cases} END)[1]"
         if fn in ("least", "greatest"):
+            arg_types = [item.type for item in args]
+            if _needs_mixed_ns_compare(arg_types):
+                chosen = f"{fn}({', '.join(_temporal_nanos(self.expression(item), item.type) for item in args)})"
+                return _let_sql(
+                    chosen,
+                    lambda val: (
+                        f"(CASE WHEN {val} = {_NANOS_INFINITY} THEN TIMESTAMP_NS 'infinity' "
+                        f"WHEN {val} = -{_NANOS_INFINITY} THEN TIMESTAMP_NS '-infinity' "
+                        f"WHEN {val} BETWEEN -9223372036854775806 AND 9223372036854775806 "
+                        f"THEN make_timestamp_ns(CAST({val} AS BIGINT)) END)"
+                    ),
+                    "vg_n",
+                )
+            if type["type"] == "decimal":
+                precision = 38 if type.get("precision") is None else type["precision"]
+                scale = type.get("scale") or 0
+                max_whole = precision - scale
+                if any(
+                    item.type["type"] != "null" and (_exact_digits(item.type)[0] - _exact_digits(item.type)[1]) > max_whole
+                    for item in args
+                ):
+                    chosen = f"{fn}({', '.join(_unscaled_bignum(self.expression(item), item.type, scale) for item in args)})"
+                    return _bignum_decimal(chosen, type)
             return f"{fn}({typed()})"
         if fn in _OPERATORS:
             operator = _OPERATORS[fn]
@@ -563,6 +654,17 @@ class _Compiler:
                 return _finite(f"({self._double(args[0])} {operator} {self._double(args[1])})")
             if type["type"] == "bigint":
                 return f"TRY(CAST({arg(0)} AS BIGINT) {operator} CAST({arg(1)} AS BIGINT))"
+            if type["type"] == "decimal" and fn != "mul":
+                p1, s1 = _exact_digits(args[0].type)
+                p2, s2 = _exact_digits(args[1].type)
+                whole = max(p1 - s1, p2 - s2)
+                scale = max(s1, s2)
+                if fn == "mod" and whole + scale > 38:
+                    return _wide_mod(arg(0), s1, arg(1), s2, type)
+                if fn in ("add", "sub") and whole + scale + 1 > 38:
+                    left_big = _unscaled_bignum(arg(0), args[0].type, scale)
+                    right_big = _unscaled_bignum(arg(1), args[1].type, scale)
+                    return _bignum_decimal(f"({left_big} {operator} {right_big})", type)
             precision = type.get("precision")
             wide = fn == "mul" and type["type"] == "decimal" and (precision is None or precision > 18)
             return f"TRY({_cast(f'({self._exact(args[0], wide)} {operator} {self._exact(args[1])})', type)})"
@@ -702,19 +804,7 @@ class _Compiler:
             return None
         column = self.column(decimal["name"])
         total = f"CAST(sum(CAST(replace(CAST({column} AS VARCHAR), '.', '') AS BIGNUM)){where} AS VARCHAR)"
-        scale = decimal.get("scale") or 0
-        if scale == 0:
-            return total
-
-        def scaled(value: str) -> str:
-            digits = f"ltrim({value}, '-')"
-            padded = f"lpad({digits}, CAST(greatest(length({digits}), {scale + 1}) AS INTEGER), '0')"
-            return (
-                f"((CASE WHEN starts_with({value}, '-') THEN '-' ELSE '' END) || "
-                f"regexp_replace({padded}, '([0-9]{{{scale}}})$', '.\\1'))"
-            )
-
-        return _let_sql(total, scaled)
+        return _scaled_digits_text(total, decimal.get("scale") or 0)
 
     def measure(self, measure: CheckedMeasure, condition: str | None = None) -> str:
         """A measure (§3.8, §4.5), optionally over the rows of a pivot's combination."""
@@ -772,8 +862,17 @@ def _sort_terms(sql: str, type: dict[str, Any], direction: str) -> list[str]:
 
 
 def _key_sql(sql: str, column: Column) -> str:
-    """The value of a group's key: DuckDB keeps the first row's, which may be −0.0 where §3.9 reads 0.0."""
-    return f"({sql} + CAST(0 AS {duckdb_type(column)}))" if column["type"] == "float" else sql
+    """The value of a group's key: DuckDB keeps the first row's, which may be −0.0 where §3.9 reads 0.0, and source dates/times outside §2.2 read as null."""
+    if column["type"] == "float":
+        return f"({sql} + CAST(0 AS {duckdb_type(column)}))"
+    if column["type"] == "date":
+        return _let_sql(
+            sql,
+            lambda val: f"(CASE WHEN {val} BETWEEN {FIRST_DATE} AND {LAST_DATE} OR NOT isfinite({val}) THEN {val} END)",
+        )
+    if column["type"] == "time":
+        return _let_sql(sql, lambda val: f"(CASE WHEN {val} < TIME '24:00:00' THEN {val} END)")
+    return sql
 
 
 def _key_terms(sql: str, column: Column) -> list[str]:
@@ -826,8 +925,14 @@ def pivot_query(plan: CheckedPlan, source: SqlSource) -> SqlQuery:
     compiler = _Compiler(_Params(source.params))
     entries, _, _ = _rows_with(plan, source, compiler, _row_id_name(plan))
     ids = [compiler.column(column["name"]) for column in pivot.columns]
+    distinct = [
+        ids[index]
+        if (expr := _key_sql(ids[index], column)) == ids[index]
+        else f"{expr} AS {ids[index]}"
+        for index, column in enumerate(pivot.columns)
+    ]
     texts = [
-        f'{text_sql(_key_sql(f"vg_distinct.{ids[index]}", column), column)} AS "vg_value{index}"'
+        f'{text_sql(f"vg_distinct.{ids[index]}", column)} AS "vg_value{index}"'
         for index, column in enumerate(pivot.columns)
     ]
     limit = pivot.max_columns // len(plan.aggregate.measures) + 1
@@ -836,7 +941,7 @@ def pivot_query(plan: CheckedPlan, source: SqlSource) -> SqlQuery:
     )
     sql = (
         f"WITH {', '.join(entries)} SELECT {', '.join(texts)} "
-        f"FROM (SELECT DISTINCT {', '.join(ids)} FROM vg_rows) vg_distinct "
+        f"FROM (SELECT DISTINCT {', '.join(distinct)} FROM vg_rows) vg_distinct "
         f"ORDER BY {order} LIMIT {limit}"
     )
     return SqlQuery(sql, compiler.params.values)
@@ -892,7 +997,7 @@ def compile_view(plan: CheckedPlan, source: SqlSource, combinations: PivotCombin
                     raise ValueError(f"Invalid pivot combination value for {pivot.columns[index]['name']}.")
                 json_values.append(val)
             condition = " AND ".join(
-                f"({row_ids[column['name']]} IS NOT DISTINCT FROM "
+                f"({_key_sql(row_ids[column['name']], column)} IS NOT DISTINCT FROM "
                 f"{compiler._literal(LiteralExpr(json_values[index], column))})"
                 for index, column in enumerate(pivot.columns)
             )
@@ -913,7 +1018,10 @@ def compile_view(plan: CheckedPlan, source: SqlSource, combinations: PivotCombin
     else:
         for measure in measures:
             outputs.append(f"{compiler.measure(measure)} AS {group_scope.allocate(measure.name)}")
-    group_by = f" GROUP BY {', '.join(row_ids[key['name']] for key in keys)}" if keys else ""
+    group_terms = [
+        _key_sql(row_ids[key["name"]], key) if key["type"] in ("date", "time") else row_ids[key["name"]] for key in keys
+    ]
+    group_by = f" GROUP BY {', '.join(group_terms)}" if keys else ""
     if not outputs:
         outputs.append("count(*) AS vg_none")
     entries.append(f"vg_groups AS (SELECT {', '.join(outputs)} FROM vg_rows{group_by})")

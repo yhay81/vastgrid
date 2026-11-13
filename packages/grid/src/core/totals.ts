@@ -13,30 +13,47 @@ type Totals = NonNullable<GridSnapshot["totals"]>;
 export class TotalsReader {
   /** The revision, edits and plan of the totals read last; empty without them, null to read them again. */
   private key: string | null = "";
+  private failed = false;
   private abort: AbortController | null = null;
 
   constructor(
     private readonly measure: (plan: Plan, revision: string | null, signal: AbortSignal) => Promise<Totals>,
-    private readonly show: (totals: Totals | null) => void,
+    private readonly show: (totals: Totals | null, recovered?: boolean) => void,
     private readonly fail: (error: unknown) => void,
   ) {}
 
   /** Stops the read in flight, and reads the totals row again at the next `follow`, as for a new connection. */
   reset() {
     this.key = null;
+    this.failed = false;
     this.abort?.abort();
     this.abort = null;
+  }
+
+  /** Marks a failed totals read to be tried again at the next `follow`. */
+  retryIfFailed() {
+    if (this.failed) this.reset();
   }
 
   /** Reads the totals row again if the view on screen, its edits or the totals changed. */
   follow(view: View | null, snapshot: GridSnapshot) {
     const measures = totalMeasures(snapshot.displayed);
-    // A view that is being made is totalled once it is ready.
+    // A view that is being made, or a table still loading without partial views, is totalled once it is ready.
     if (view && measures.length > 0 && snapshot.view?.status !== "ready") return;
+    if (
+      view &&
+      measures.length > 0 &&
+      snapshot.table?.status === "loading" &&
+      !snapshot.table.capabilities.partialViews
+    ) {
+      return;
+    }
     const plan = view && measures.length > 0 ? measuresPlan(view.plan, measures) : null;
     const key = view && plan ? `${view.revision}\u0000${view.edits}\u0000${canonicalJson(plan)}` : "";
     if (key === this.key) return;
+    const recovering = this.failed;
     this.key = key;
+    this.failed = false;
     this.abort?.abort();
     this.abort = null;
     if (!view || !plan) {
@@ -48,10 +65,13 @@ export class TotalsReader {
     this.measure(plan, view.revision, abort.signal)
       .then(
         (totals) => {
-          if (!abort.signal.aborted) this.show(totals);
+          if (!abort.signal.aborted) this.show(totals, recovering);
         },
         (error) => {
-          if (!abort.signal.aborted) this.fail(error);
+          if (!abort.signal.aborted) {
+            if (this.abort === abort) this.failed = true;
+            this.fail(error);
+          }
         },
       )
       .catch(() => {});

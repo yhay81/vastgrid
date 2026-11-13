@@ -154,7 +154,115 @@ def _exact_number(text: str) -> float | None:
     if len(significant) > 15:
         return None
     number = float(text)
-    return number if math.isfinite(number) else None
+    return number if math.isfinite(number) and abs(number) < 1e15 else None
+
+
+_PATTERN_TOKENS = re.compile(r"'([^']|'')*'|yyyy|yy|MMMM|MMM|MM|M|dd|d|EEEE|EEE|HH|H|hh|h|a|mm|m|ss|s|S+|[A-Za-z]")
+_MAPPED_DATE_TOKENS = {
+    "yyyy": "yyyy",
+    "yy": "yy",
+    "MMMM": "mmmm",
+    "MMM": "mmm",
+    "MM": "mm",
+    "M": "m",
+    "dd": "dd",
+    "d": "d",
+    "EEEE": "dddd",
+    "EEE": "ddd",
+    "HH": "hh",
+    "H": "h",
+    "hh": "hh",
+    "h": "h",
+    "a": "AM/PM",
+    "mm": "mm",
+    "m": "m",
+    "ss": "ss",
+    "s": "s",
+}
+
+
+def _excel_quoted(text: str) -> str:
+    return '\\"'.join(f'"{part}"' if part else "" for part in text.split('"'))
+
+
+def _excel_date_code(pattern: str) -> str | None:
+    code = ""
+    literal = ""
+    last = 0
+    for match in _PATTERN_TOKENS.finditer(pattern):
+        literal += pattern[last : match.start()]
+        last = match.end()
+        token = match.group(0)
+        if token.startswith("'"):
+            literal += "'" if token == "''" else token[1:-1].replace("''", "'")
+            continue
+        if token.startswith("S"):
+            literal = re.sub(r"[.,]$", "", literal)
+        code += _excel_quoted(literal)
+        literal = ""
+        if token.startswith("S"):
+            code += "." + "0" * min(len(token), 3)
+        elif token in _MAPPED_DATE_TOKENS:
+            code += _MAPPED_DATE_TOKENS[token]
+        else:
+            return None
+    code += _excel_quoted(literal + pattern[last:])
+    if "h" in re.sub(r"'([^']|'')*'", "", pattern) and "AM/PM" not in code:
+        code += " AM/PM"
+    return code
+
+
+def excel_number_format(kind: str, fmt: dict[str, Any] | None) -> str | None:
+    """The Excel number format code for a column's display settings, matching `excelNumberFormat` in `vastgrid-spec`."""
+    if not isinstance(fmt, dict):
+        return None
+    num = fmt.get("number")
+    if kind in _NUMERIC and isinstance(num, dict) and num.get("notation") != "compact":
+        style = num.get("style", "decimal")
+        if style == "currency" and not num.get("currency"):
+            return None
+        integer = kind in ("integer", "bigint")
+        min_d = num.get("fractionDigits", num.get("minimumFractionDigits"))
+        max_d = num.get("fractionDigits", num.get("maximumFractionDigits"))
+        if min_d is None and max_d is None:
+            if style == "currency":
+                min_d = max_d = 0 if str(num.get("currency")).upper() in ("JPY", "KRW", "VND", "CLP", "ISK") else 2
+            elif style == "percent":
+                min_d = max_d = 0
+            elif not integer:
+                min_d, max_d = 0, 10
+        min_d = 0 if min_d is None else int(min_d)
+        max_d = max(min_d if max_d is None else int(max_d), min_d)
+        frac = "" if max_d <= 0 else f".{'0' * min_d}{'#' * max(0, max_d - min_d)}"
+        notation = num.get("notation")
+        if notation in ("scientific", "engineering"):
+            code = f"{'##' if notation == 'engineering' else ''}0{frac}E+00"
+        else:
+            grouping = num.get("grouping", True)
+            code = f"{'#,##0' if grouping else '0'}{frac}"
+        if style == "percent":
+            code += "%"
+        prefix = str(num.get("prefix") or "")
+        suffix = str(num.get("suffix") or "")
+        if style == "currency" and num.get("currency"):
+            currency = str(num["currency"])
+            symbols = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥"}
+            display = num.get("currencyDisplay", "symbol")
+            symbol = currency if display in ("code", "name") else symbols.get(currency, f"{currency} ")
+            prefix = f"{prefix}{symbol}"
+        positive = f"{_excel_quoted(prefix)}{code}{_excel_quoted(suffix)}"
+        sign = num.get("signDisplay")
+        if sign in ("always", "exceptZero"):
+            zero = f"{_excel_quoted('+' + prefix)}{code}{_excel_quoted(suffix)}" if sign == "always" else positive
+            return f"{_excel_quoted('+' + prefix)}{code}{_excel_quoted(suffix)};{_excel_quoted('-' + prefix)}{code}{_excel_quoted(suffix)};{zero}"
+        if sign == "never":
+            return f"{positive};{positive}"
+        return positive
+    date_fmt = fmt.get("date")
+    if isinstance(date_fmt, dict) and kind in ("date", "time", "timestamp", "timestamptz"):
+        pattern = date_fmt.get("pattern")
+        return _excel_date_code(pattern) if isinstance(pattern, str) else None
+    return None
 
 
 def _column_name(index: int) -> str:

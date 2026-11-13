@@ -3,7 +3,7 @@
  * whose grids talk to it by messages as the page does, and VS Code's save, save as, revert, undo and backups.
  */
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { type GridSnapshot, GridStore, type WorkerLike, workerTransport } from "vastgrid/core";
@@ -516,5 +516,62 @@ test("a symlinked file opens even when its target has no table extension, and sa
     assert.equal(await readFile(out, "utf8"), "b\n2\n3\n");
   } finally {
     await wb.dispose();
+  }
+});
+
+test("reload moves the extension's anchor to the reloaded table, clears backup writes, syncs sibling views, and uses a 0o700 private temp folder by default", async () => {
+  const csv = await csvFile("reload-anchor.csv");
+  // Omit tempDirectory so TableFile uses defaultTempDirectory("vastgrid-vscode").
+  const file = new TableFile(csv, { editable: true });
+  let reloads = 0;
+  file.onReload(() => reloads++);
+  const left = webview(file);
+  const right = webview(file);
+  try {
+    await settled(left.store);
+    await settled(right.store);
+    if (process.getuid) {
+      const privateDir = path.join(os.tmpdir(), `vastgrid-vscode-${process.getuid()}`);
+      const info = await lstat(privateDir);
+      assert.equal(info.uid, process.getuid());
+      assert.equal(info.mode & 0o077, 0);
+    }
+
+    assert.deepEqual(await write(left.store, 0, "region", "STALE"), { ok: true });
+    assert.equal(file.backup().writes.length, 1);
+
+    // External update on disk, followed by webview reload ("Discard edits and reload").
+    const updated = CSV.replace("3,EU,20", "3,APAC,25");
+    await writeFile(csv, updated);
+    await left.store.reload();
+    await settled(left.store);
+    assert.equal(reloads, 1);
+    assert.deepEqual(file.backup().writes, []);
+
+    // Sibling webview receives restart so it drops its stale handle and opens the reloaded table.
+    await eventually(() => right.own.some((message) => message.vastgrid === "restart"));
+    right.reopen();
+    await settled(right.store);
+    assert.equal(await cell(right.store, 2, "region"), "APAC");
+
+    // Post-reload edits can be saved, exported via saveAs, and survive reopening the webview.
+    assert.deepEqual(await write(left.store, 0, "price", "88.5"), { ok: true });
+    const exported = path.join(folder, "post-reload.csv");
+    assert.equal(await file.saveAs(exported), 3);
+    assert.equal(await readFile(exported, "utf8"), 'id,region,price\n1,EU,88.5\n2,"US, east",30.0\n3,APAC,25.0\n');
+
+    left.view.receive({ vastgrid: "ready" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    left.reopen();
+    await settled(left.store);
+    assert.equal(await cell(left.store, 0, "price"), 88.5);
+    assert.equal(await cell(left.store, 2, "region"), "APAC");
+
+    assert.equal(await file.save(), 1);
+    assert.equal(await readFile(csv, "utf8"), 'id,region,price\r\n1,EU,88.5\r\n2,"US, east",30\r\n3,APAC,25\r\n');
+  } finally {
+    left.close();
+    right.close();
+    await file.dispose();
   }
 });

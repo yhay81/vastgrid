@@ -75,9 +75,25 @@ export function tableColumn(source: SourceColumn): Column {
 export function sourceExpression(source: SourceColumn, column: Column): string {
   const name = quoteIdentifier(source.name);
   const target = duckdbType(column);
+  const sqlType = source.sqlType.toUpperCase();
   if (column.readOnly && column.type === "string") return `CAST(${name} AS VARCHAR)`;
-  if (source.sqlType.toUpperCase() === target) return name;
-  return column.type === "decimal" ? `TRY_CAST(${name} AS ${target})` : `CAST(${name} AS ${target})`;
+  if (sqlType === "TIMESTAMP_S" || sqlType === "TIMESTAMP_MS") {
+    // Even isfinite() widens to microseconds and can throw on valid 64-bit source counts.
+    return `(CASE WHEN TRY_CAST(${name} AS TIMESTAMP) IS NOT NULL THEN ${name} END)`;
+  }
+  const base =
+    sqlType === target
+      ? name
+      : column.type === "decimal"
+        ? `TRY_CAST(${name} AS ${target})`
+        : `CAST(${name} AS ${target})`;
+  if (column.type === "date") {
+    return `(CASE WHEN ${base} BETWEEN ${FIRST_DATE} AND ${LAST_DATE} OR NOT isfinite(${base}) THEN ${base} END)`;
+  }
+  if (column.type === "time") {
+    return `(CASE WHEN ${base} < TIME '24:00:00' THEN ${base} END)`;
+  }
+  return base;
 }
 
 /** The SQL of a timestamp's count of its unit since 1970-01-01 00:00:00. */

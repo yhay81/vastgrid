@@ -458,22 +458,44 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
     case "least":
     case "greatest": {
       const casts = types.map((from) => caster(from, type));
-      const compare = comparer(type, type);
       const greatest = expr.fn === "greatest";
+      if (type.type === "float") {
+        const compare = comparer(type, type);
+        return (row) => {
+          let best: JsonValue = null;
+          for (let index = 0; index < args.length; index++) {
+            const raw = args[index](row);
+            if (raw === null) continue;
+            const value = casts[index](raw);
+            if (value === null) continue;
+            if (best === null) best = value;
+            else {
+              const order = compare(value, best);
+              if (greatest ? order > 0 : order < 0) best = value;
+            }
+          }
+          return best;
+        };
+      }
+      const compares = types.map((left) => types.map((right) => comparer(left, right)));
       return (row) => {
         let best: JsonValue = null;
+        let bestIndex = -1;
         for (let index = 0; index < args.length; index++) {
           const raw = args[index](row);
           if (raw === null) continue;
-          const value = casts[index](raw);
-          if (value === null) continue;
-          if (best === null) best = value;
-          else {
-            const order = compare(value, best);
-            if (greatest ? order > 0 : order < 0) best = value;
+          if (bestIndex < 0) {
+            best = raw;
+            bestIndex = index;
+          } else {
+            const order = compares[index][bestIndex](raw, best);
+            if (greatest ? order > 0 : order < 0) {
+              best = raw;
+              bestIndex = index;
+            }
           }
         }
-        return best;
+        return bestIndex < 0 ? null : casts[bestIndex](best);
       };
     }
     case "add":

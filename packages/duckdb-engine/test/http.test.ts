@@ -328,6 +328,28 @@ test("handler forwards unexpected failures to next or returns 400/500 JSON, and 
     } finally {
       closedSrv.close();
     }
+
+    // DNS rebinding Host, cross-site Sec-Fetch-Site, and foreign Origin are rejected with 403.
+    const r403Origin = await fetch(`http://127.0.0.1:${addr.port}/api`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://evil.example" },
+      body: JSON.stringify({ v: 2, id: 10, op: "open", ref: "a.csv" }),
+    });
+    assert.equal(r403Origin.status, 403);
+    const r403FetchSite = await fetch(`http://127.0.0.1:${addr.port}/api/events`, {
+      headers: { "sec-fetch-site": "cross-site" },
+    });
+    assert.equal(r403FetchSite.status, 403);
+    const badHost = await new Promise<string>((resolve, reject) => {
+      const sock = connect(addr.port, "127.0.0.1", () => {
+        sock.write("GET /api/events HTTP/1.1\r\nHost: evil.example\r\nConnection: close\r\n\r\n");
+      });
+      const chunks: Buffer[] = [];
+      sock.on("data", (chunk) => chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk));
+      sock.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+      sock.on("error", reject);
+    });
+    assert.match(badHost, /^HTTP\/1\.1 403 /);
   } finally {
     srv.close();
   }

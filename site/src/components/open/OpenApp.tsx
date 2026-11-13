@@ -48,10 +48,16 @@ const texts = {
   },
 } satisfies Record<Language, Record<string, string>>;
 
+interface SheetItem {
+  name: string;
+  hidden?: boolean;
+}
+
 /** A file opened by an engine in its own worker, which ends when another file is opened. */
 interface Opened {
   store: GridStore;
   sheet?: string;
+  sheets?: readonly SheetItem[];
   name: string;
   size: number;
 }
@@ -103,10 +109,11 @@ export default function OpenApp({ language: pageLanguage }: { language: Language
   const selectSheet = (sheet: string) => {
     const active = shown.current;
     if (!active || !opened) return;
+    const sheets = opened.store.getSnapshot().table?.sheets ?? opened.sheets;
     active.disconnect?.();
     const store = createGridStore({ transport: active.transport, table: opened.name, open: { sheet } });
     active.disconnect = store.connect();
-    setOpened({ ...opened, sheet, store });
+    setOpened({ ...opened, sheet, sheets, store });
   };
 
   /**
@@ -161,7 +168,7 @@ export default function OpenApp({ language: pageLanguage }: { language: Language
         pending.current = null;
         close(shown.current);
         shown.current = active;
-        setOpened({ store, name, size: data.size ?? 0 });
+        setOpened({ store, sheets: table?.sheets, name, size: data.size ?? 0 });
         setReading(null);
       });
       const disconnect = store.connect();
@@ -213,7 +220,9 @@ export default function OpenApp({ language: pageLanguage }: { language: Language
             {t.another}
           </button>
         )}
-        {store && <SheetSelect sheet={opened?.sheet} onSheet={selectSheet} language={language} />}
+        {store && (
+          <SheetSelect sheet={opened?.sheet} knownSheets={opened?.sheets} onSheet={selectSheet} language={language} />
+        )}
         <div className="demo__options">
           <label>
             <span className="demo__hidden">{t.theme}</span>
@@ -298,16 +307,20 @@ export default function OpenApp({ language: pageLanguage }: { language: Language
 /** The sheets of a workbook, from the table's `TableInfo`, to choose the one shown. */
 function SheetSelect({
   sheet,
+  knownSheets,
   onSheet,
   language,
 }: {
   sheet?: string;
+  knownSheets?: readonly SheetItem[];
   onSheet: (sheet: string) => void;
   language: Language;
 }) {
-  // While a chosen sheet is read, the choice stays.
+  // While a chosen sheet is read (or if reading it fails), the workbook's list of sheets stays available.
   const sheets =
-    useGridSelector((snapshot) => snapshot.table?.sheets) ?? (sheet === undefined ? [] : [{ name: sheet }]);
+    useGridSelector((snapshot) => snapshot.table?.sheets) ??
+    knownSheets ??
+    (sheet === undefined ? [] : [{ name: sheet }]);
   const shown = useGridSelector((snapshot) => snapshot.table?.sheet);
   const t = texts[language];
   if (sheets.length < 2 && sheet === undefined) return null;

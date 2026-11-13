@@ -95,6 +95,7 @@ function FilterForm({ column, onDone }: { column: Column; onDone: () => void }) 
   const read = initial === "other" ? null : initial;
   const operators = operatorsFor(column.type);
   const [search, setSearch] = useState("");
+  const [composing, setComposing] = useState(false);
   const [list, setList] = useState<{ values: { value: JsonValue; count: number }[]; truncated: boolean } | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   // Values not toggled follow `base`; `toggled` holds the values changed from it.
@@ -116,7 +117,7 @@ function FilterForm({ column, onDone }: { column: Column; onDone: () => void }) 
   const [pending, startApply] = useTransition();
 
   useEffect(() => {
-    if (!lists) return;
+    if (!lists || composing) return;
     const abort = new AbortController();
     const timer = setTimeout(
       () => {
@@ -136,7 +137,7 @@ function FilterForm({ column, onDone }: { column: Column; onDone: () => void }) 
       clearTimeout(timer);
       abort.abort();
     };
-  }, [store, lists, column.name, search]);
+  }, [store, lists, composing, column.name, search]);
 
   // Blank values (null and the empty string) are one item.
   const items: { key: string; value: JsonValue; count: number }[] = [];
@@ -210,6 +211,8 @@ function FilterForm({ column, onDone }: { column: Column; onDone: () => void }) 
             placeholder={messages.valuesSearch}
             value={search}
             disabled={conditionOn}
+            onCompositionStart={() => setComposing(true)}
+            onCompositionEnd={() => setComposing(false)}
             onChange={(event) => setSearch(event.target.value)}
           />
           <fieldset
@@ -406,17 +409,27 @@ export function ColumnMenu({ target, onClose }: { target: MenuTarget | null; onC
   const capabilities = useGridSelector((snapshot) => snapshot.table?.capabilities);
   const ready = useGridSelector((snapshot) => snapshot.table?.status === "ready");
 
+  const hasItem = item !== undefined;
+
+  useEffect(() => {
+    if (target && !hasItem) onClose();
+  }, [target, hasItem, onClose]);
+
   useLayoutEffect(() => {
     const menu = ref.current;
-    if (!menu || !target) return;
+    if (!menu || !target || !hasItem) return;
     if (!menu.matches(":popover-open")) menu.showPopover();
-    menu.querySelector<HTMLElement>("button:not(:disabled), input, select")?.focus();
-  }, [target]);
+    if (!menu.contains(document.activeElement)) {
+      (
+        menu.querySelector<HTMLElement>("input:not(:disabled), select:not(:disabled), button:not(:disabled)") ?? menu
+      ).focus();
+    }
+  }, [target, hasItem, panel]);
 
   // The menu opens at its point, kept inside the window.
   useLayoutEffect(() => {
     const menu = ref.current;
-    if (!menu || !target) return;
+    if (!menu || !target || !hasItem) return;
     const rect = menu.getBoundingClientRect();
     menu.style.left = `${Math.max(8, Math.min(target.x, window.innerWidth - rect.width - 8))}px`;
     menu.style.top = `${Math.max(8, Math.min(target.y, window.innerHeight - rect.height - 8))}px`;
@@ -426,9 +439,19 @@ export function ColumnMenu({ target, onClose }: { target: MenuTarget | null; onC
     if (event.newState === "closed") onClose();
   };
 
-  if (!target || !item) {
-    return <div ref={ref} popover="auto" className="vg-menu vg-column-menu" onToggle={onToggle} />;
-  }
+  useEffect(() => {
+    if (!target || !hasItem) return;
+    const onFocusIn = (event: FocusEvent) => {
+      const menu = ref.current;
+      if (menu && event.target instanceof Node && !menu.contains(event.target) && menu.matches(":popover-open")) {
+        menu.hidePopover();
+      }
+    };
+    document.addEventListener("focusin", onFocusIn);
+    return () => document.removeEventListener("focusin", onFocusIn);
+  }, [target, hasItem]);
+
+  if (!target || !item) return null;
   const column = item.column;
   const close = () => ref.current?.hidePopover();
   const run = (command: GridCommand) => {
@@ -472,6 +495,7 @@ export function ColumnMenu({ target, onClose }: { target: MenuTarget | null; onC
       ref={ref}
       popover="auto"
       role="dialog"
+      tabIndex={-1}
       className="vg-menu vg-column-menu"
       aria-label={messages.columnMenu(column.name)}
       onToggle={onToggle}

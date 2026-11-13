@@ -21,6 +21,9 @@ from ._table import Table
 from ._views import Views
 
 
+_READ_OPERATIONS = {"info", "changes", "rows", "locate", "summarize", "find"}
+
+
 class Engine:
     """Answers the messages of §8.1 for tables of the sources it was given (`add`), by their refs."""
 
@@ -81,7 +84,8 @@ class Engine:
             self.running[request["id"]] = running
         try:
             result = self._answer(request, running)
-            running.check()
+            if request["op"] in _READ_OPERATIONS:
+                running.check()
             return {"v": 2, "id": request["id"], "result": result}
         except Exception as error:  # noqa: BLE001 - every error is answered (§8.7)
             code, text, members = self._error_of(error)
@@ -159,14 +163,57 @@ class Engine:
         source = self.sources.get(ref)
         if source is None:
             raise EngineError("not_allowed", "The notebook did not give a table by this name.")
-        if source.format in ("xlsx", "duckdb") and isinstance(read, dict) and isinstance(read.get("sheet"), str):
-            source = Source(path=source.path, format=source.format, sheet=read["sheet"])
-        key = f"{ref}\0{source.sheet or ''}"
+        if isinstance(read, dict) and source.path is not None:
+            sheet = (
+                read["sheet"]
+                if source.format in ("xlsx", "duckdb") and isinstance(read.get("sheet"), str)
+                else source.sheet
+            )
+            raw_header = read.get("headerRow")
+            header_row = (
+                raw_header
+                if source.format in ("xlsx", "csv", "tsv")
+                and isinstance(raw_header, int)
+                and not isinstance(raw_header, bool)
+                else source.header_row
+            )
+            delimiter = (
+                read["delimiter"]
+                if source.format in ("csv", "tsv") and isinstance(read.get("delimiter"), str)
+                else source.delimiter
+            )
+            keep_rows = (
+                read["keepEmptyRows"]
+                if source.format == "xlsx" and isinstance(read.get("keepEmptyRows"), bool)
+                else source.keep_empty_rows
+            )
+            keep_cols = (
+                read["keepEmptyColumns"]
+                if source.format == "xlsx" and isinstance(read.get("keepEmptyColumns"), bool)
+                else source.keep_empty_columns
+            )
+            source = Source(
+                path=source.path,
+                format=source.format,
+                sheet=sheet,
+                header_row=header_row,
+                delimiter=delimiter,
+                keep_empty_rows=keep_rows,
+                keep_empty_columns=keep_cols,
+            )
+        key = (
+            f"{ref}\0{source.sheet or ''}\0{source.header_row}\0"
+            f"{source.delimiter or ''}\0{source.keep_empty_rows}\0{source.keep_empty_columns}"
+        )
         with self.lock:
             table = self.tables.get(key)
         if table is None:
             table = Table(self.session, ref, source)
-            table.load(running)
+            try:
+                table.load(running)
+            except BaseException:
+                table.dispose()
+                raise
             with self.lock:
                 self.tables[key] = table
         with self.lock:
@@ -211,7 +258,11 @@ class Engine:
         stay with the other handles of the table it leaves."""
         old = self._table({"table": handle})
         fresh = Table(self.session, old.ref, old.source)
-        fresh.load(running)
+        try:
+            fresh.load(running)
+        except BaseException:
+            fresh.dispose()
+            raise
         with self.lock:
             if self.handles.get(handle) is not old:
                 fresh.dispose()
@@ -219,7 +270,10 @@ class Engine:
             self.handles[handle] = fresh
             fresh.handles = 1
             old.handles -= 1
-            key = f"{old.ref}\0{old.source.sheet or ''}"
+            key = (
+                f"{old.ref}\0{old.source.sheet or ''}\0{old.source.header_row}\0"
+                f"{old.source.delimiter or ''}\0{old.source.keep_empty_rows}\0{old.source.keep_empty_columns}"
+            )
             if self.tables.get(key) is old:
                 self.tables[key] = fresh
             left = old.handles == 0

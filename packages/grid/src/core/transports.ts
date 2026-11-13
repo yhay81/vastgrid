@@ -81,12 +81,31 @@ export function workerTransport(worker: WorkerLike): Transport & { close(): void
 /** Answers the requests that `workerTransport` sends, in a worker (`serveEngine(engine, self)`). */
 export function serveEngine(engine: Engine, scope: WorkerLike): () => void {
   const receive = (event: MessageEvent) => {
-    void engine.handle(event.data).then((response) => {
-      if (response === undefined) return;
-      const block = (response as { result?: { block?: { bytes?: unknown }; data?: { bytes?: unknown } } }).result;
-      const bytes = block?.block?.bytes ?? block?.data?.bytes;
-      scope.postMessage(response, bytes instanceof Uint8Array ? [bytes.buffer as ArrayBuffer] : []);
-    });
+    void engine
+      .handle(event.data)
+      .then((response) => {
+        if (response === undefined) return;
+        const block = (response as { result?: { block?: { bytes?: unknown }; data?: { bytes?: unknown } } }).result;
+        const bytes = block?.block?.bytes ?? block?.data?.bytes;
+        const transfer =
+          bytes instanceof Uint8Array &&
+          bytes.buffer instanceof ArrayBuffer &&
+          bytes.byteOffset === 0 &&
+          bytes.byteLength === bytes.buffer.byteLength
+            ? [bytes.buffer]
+            : [];
+        scope.postMessage(response, transfer);
+      })
+      .catch((error: unknown) => {
+        const data = event.data as { id?: unknown; op?: unknown } | null;
+        if (data !== null && typeof data === "object" && typeof data.id === "number" && data.op !== "cancel") {
+          scope.postMessage({
+            v: 2,
+            id: data.id,
+            error: { code: "internal", message: error instanceof Error ? error.message : String(error) },
+          });
+        }
+      });
   };
   scope.addEventListener("message", receive);
   scope.start?.();

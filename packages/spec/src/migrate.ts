@@ -252,7 +252,7 @@ class Migration {
       if (remaining <= 0) pendingCounts.delete(item.name);
       else pendingCounts.set(item.name, remaining);
       const fail = (reason: string) => {
-        failed.add(item.name);
+        if (!rows.some((column) => column.name === item.name)) failed.add(item.name);
         reasons[item.index] = reason;
       };
       if (ready < 0) {

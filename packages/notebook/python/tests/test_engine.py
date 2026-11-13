@@ -443,3 +443,86 @@ def test_mixed_in_and_lambda_column_bins(engine: Engine) -> None:
         ]
     }
     assert client.rows(opened, plan, ["matches", "bin"]) == [[True, 40.0], [False, -20.0], [None, None]]
+
+
+def test_wide_decimal_ops_overflow_summarize_corrupt_parquet_and_write_error_order(
+    engine: Engine, tmp_path: Path
+) -> None:
+    from decimal import Decimal
+    import zipfile
+
+    client = Client(engine)
+    wide = pa.table(
+        {
+            "big_i": pa.array([100000000000000001], type=pa.int64()),
+            "wide_d": pa.array([Decimal("3.00000000000000000000")], type=pa.decimal128(25, 20)),
+            "d38_0": pa.array([Decimal("10000000000000000000000000000")], type=pa.decimal128(38, 0)),
+            "d38_10": pa.array([Decimal("-5000000000000000000000000000.2500000000")], type=pa.decimal128(38, 10)),
+        }
+    )
+    engine.add("wide", Source(data=wide))
+    opened = client.result("open", ref="wide")
+    plan = {
+        "derive": [
+            {"name": "m", "expr": {"fn": "mod", "args": [{"col": "big_i"}, {"col": "wide_d"}]}},
+            {"name": "s", "expr": {"fn": "add", "args": [{"col": "d38_0"}, {"col": "d38_10"}]}},
+            {"name": "g", "expr": {"fn": "greatest", "args": [{"col": "d38_0"}, {"col": "d38_10"}]}},
+        ]
+    }
+    assert client.rows(opened, plan, ["m", "s", "g"]) == [
+        [Decimal("2.00000000000000000000"), Decimal("4999999999999999999999999999.7500000000"), None]
+    ]
+
+    # Summarize on [1e308, 1e308, -1e308, -1e308] never returns "NaN" and averages via scaled fallback.
+    engine.add("inf_sum", Source(data=pa.table({"f": [1e308, 1e308, -1e308, -1e308]})))
+    inf_info = client.result("open", ref="inf_sum")
+    summary = client.result(
+        "summarize",
+        table=inf_info["table"],
+        revision=inf_info["revision"],
+        plan={},
+        ranges=[[0, 4]],
+        columns=["f"],
+    )
+    assert summary == {"count": 4, "numericCount": 4, "sum": 0.0, "min": -1e308, "max": 1e308, "average": 0.0}
+
+    # Corrupt Parquet reports load_failed without internal path leak, and open.read delimiter works.
+    bad_pq = tmp_path / "corrupt.parquet"
+    bad_pq.write_bytes(b"not a parquet file")
+    engine.add("bad_pq", Source(path=str(bad_pq), format="parquet"))
+    bad_err = client.error("open", ref="bad_pq")
+    assert bad_err["code"] == "load_failed"
+
+    semi_csv = tmp_path / "semi.csv"
+    semi_csv.write_text("a;b\n1;2\n", "utf-8")
+    engine.add("semi", Source(path=str(semi_csv), format="csv"))
+    semi_info = client.result("open", ref="semi", read={"delimiter": ";"})
+    assert [c["name"] for c in semi_info["columns"]] == ["a", "b"]
+    assert client.rows(semi_info) == [[1, 2]]
+
+    # Oversized workbook XML is rejected as load_failed rather than reading unbounded memory.
+    bomb_xlsx = tmp_path / "bomb.xlsx"
+    with zipfile.ZipFile(bomb_xlsx, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("xl/workbook.xml", b"<workbook>" + b" " * (4 * 1024 * 1024) + b"</workbook>")
+    engine.add("bomb", Source(path=str(bomb_xlsx), format="xlsx"))
+    assert client.error("open", ref="bomb")["code"] == "load_failed"
+
+    # Mixed edit_conflict on update 0 + invalid_value on update 1 reports edit_conflict first, matching TS/JS.
+    engine.add("ord", Source(data=pa.table({"x": [1, 2]})))
+    ord_info = client.result("open", ref="ord")
+    err = client.error(
+        "write",
+        table=ord_info["table"],
+        revision=ord_info["revision"],
+        updates=[
+            {"key": {"rowId": 0}, "column": "x", "value": 10, "previous": 999},
+            {"key": {"rowId": 1}, "column": "x", "value": "bad"},
+        ],
+    )
+    assert err["code"] == "edit_conflict"
+    assert client.error(
+        "write",
+        table=ord_info["table"],
+        revision=ord_info["revision"],
+        updates=[{"key": {"rowId": 0}, "column": "x", "value": "1\n"}],
+    )["code"] == "invalid_value"

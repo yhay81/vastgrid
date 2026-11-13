@@ -145,7 +145,7 @@ export class GridStore {
   });
   private readonly totals = new TotalsReader(
     (plan, revision, signal) => this.measure(plan, revision, signal),
-    (totals) => this.publish({ totals }),
+    (totals, recovered) => this.publish(recovered ? { totals, error: null } : { totals }),
     (error) => this.readFailed(error),
   );
   private rowsVersion = 0;
@@ -184,6 +184,11 @@ export class GridStore {
   // ----- reading the state -----
 
   getSnapshot = (): GridSnapshot => this.snapshot;
+
+  /** The session that commands apply to, including controlled changes proposed during the current turn. */
+  currentSession(): GridSession {
+    return this.base("session");
+  }
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -398,6 +403,7 @@ export class GridStore {
       this.current = null;
       droppedSeed = true;
     } else if (seeded) this.current = { ...seeded, abort: new AbortController() };
+    this.totals.retryIfFailed();
     this.publish({ table: info, status: info.status === "error" ? "error" : "ready" });
     if (droppedSeed) this.emitRows();
     if (repaired.removed.length > 0) this.change(repaired.document, this.base("session"));
@@ -415,6 +421,7 @@ export class GridStore {
       const fileChanged = event.fileChanged === true;
       if (revision === table.revision) {
         if (edits.version === table.edits.version && fileChanged === (table.fileChanged === true)) return;
+        if (edits.version === 0 && table.edits.version > 0) this.writer.reset();
         const { fileChanged: _, ...rest } = table;
         this.publish({ table: fileChanged ? { ...rest, edits, fileChanged } : { ...rest, edits } });
         this.showPlan(this.base("document").plan ?? {});
@@ -431,6 +438,7 @@ export class GridStore {
           if (connection === this.connection && !isCancelled(error)) this.fail(asGridError(error));
         });
     } else if (event.event === "progress") {
+      if (event.status === "ready") this.totals.retryIfFailed();
       this.publish({
         table: {
           ...table,
@@ -650,8 +658,12 @@ export class GridStore {
     }
   }
 
-  private contextFor(view: View, table: TableInfo, info: ViewInfo | null = view.info): CommandContext {
-    const rowKey = this.base("document").rowKey;
+  private contextFor(
+    view: View,
+    table: TableInfo,
+    info: ViewInfo | null = view.info,
+    rowKey: string | undefined = this.base("document").rowKey,
+  ): CommandContext {
     return {
       table: table.columns,
       revision: view.revision,
@@ -679,28 +691,52 @@ export class GridStore {
     delete this.proposed.document;
     const previous = this.snapshot.document;
     if (document === previous) return;
-    const beforeSession = this.snapshot.session;
+    const beforeSession = this.base("session");
     let nextSession = beforeSession;
     const view = this.current;
     const table = this.snapshot.table;
     if (
-      document.columns !== previous.columns &&
-      !this.controlled.session &&
+      (document.columns !== previous.columns || document.rowKey !== previous.rowKey) &&
       view?.info &&
       table &&
       planKey(document.plan ?? {}) === view.key
     ) {
       try {
-        nextSession = applyCommand(
-          { document, session: beforeSession },
+        const fitBase =
+          beforeSession.view !== undefined && beforeSession.view !== view.info.hash
+            ? { ...beforeSession, view: view.info.hash }
+            : beforeSession;
+        let fitted = applyCommand(
+          { document, session: fitBase },
           { command: "view.update", hash: view.info.hash, located: [] },
-          this.contextFor(view, table, view.info),
+          this.contextFor(view, table, view.info, document.rowKey),
         ).session;
+        if (document.rowKey !== previous.rowKey && fitted.active) {
+          const loaded = this.writer.overlay(view.cache.loaded(fitted.active.row, document.rowKey), document.rowKey);
+          const nextKey = loaded?.key;
+          const prevKey = fitted.active.key;
+          if (
+            (nextKey === undefined) !== (prevKey === undefined) ||
+            (nextKey !== undefined && prevKey !== undefined && canonicalJson(nextKey) !== canonicalJson(prevKey))
+          ) {
+            fitted = {
+              ...fitted,
+              active: { row: fitted.active.row, column: fitted.active.column, ...(nextKey ? { key: nextKey } : {}) },
+            };
+          }
+        }
+        if (canonicalJson(fitted) !== canonicalJson(beforeSession)) nextSession = fitted;
       } catch (error) {
         if (!(error instanceof CommandError)) throw error;
       }
     }
-    this.publish(nextSession !== beforeSession ? { document, session: nextSession } : { document });
+    this.totals.retryIfFailed();
+    if (nextSession !== beforeSession && this.controlled.session) {
+      this.proposed.session = nextSession;
+      this.publish({ document });
+    } else {
+      this.publish(nextSession !== beforeSession ? { document, session: nextSession } : { document });
+    }
     if (nextSession !== beforeSession) this.emit("session", nextSession);
     if (document.plan !== previous.plan || this.next !== null || this.snapshot.error !== null) {
       this.showPlan(document.plan ?? {});
@@ -886,8 +922,11 @@ export class GridStore {
     ) {
       return;
     }
-    if (current && current.revision !== info.revision) this.writer.reset();
+    if (current && (current.revision !== info.revision || (current.edits.version > 0 && info.edits.version === 0))) {
+      this.writer.reset();
+    }
     const repaired = repairDocument(this.base("document"), info.columns, planOptions(info.capabilities));
+    this.totals.retryIfFailed();
     this.publish({ table: info, status: info.status === "error" ? "error" : "ready" });
     if (repaired.removed.length > 0) this.change(repaired.document, this.base("session"));
     this.showPlan(this.base("document").plan ?? {});
@@ -1011,7 +1050,8 @@ export class GridStore {
     return {
       value: block.rows[0]?.[0] ?? null,
       column: block.columns[0],
-      cut: (result.truncated?.[column]?.length ?? 0) > 0,
+      cut:
+        (result.truncated && Object.hasOwn(result.truncated, column) ? (result.truncated[column]?.length ?? 0) : 0) > 0,
     };
   }
 }

@@ -82,6 +82,9 @@ type Request = Json & { v: 2; id: number; op: Operation };
 /** How long a file must stay unchanged before the engine reads it again, in milliseconds. */
 const WATCH_DELAY = 100;
 
+/** Read-only requests that change no state and may still be reported as cancelled after completion. */
+const READ_OPERATIONS = new Set<Operation>(["info", "changes", "rows", "locate", "summarize", "find"]);
+
 /** The size of a file, or null when it is not there. */
 function fileSize(file: string): Promise<number | null> {
   return stat(file).then(
@@ -245,7 +248,9 @@ export class DuckDBEngine {
         this.running.set(request.id, controller);
         try {
           const result = await this.answer(request, controller.signal);
-          if (controller.signal.aborted) throw new EngineError("cancelled", "The request was cancelled.");
+          if (controller.signal.aborted && READ_OPERATIONS.has(request.op)) {
+            throw new EngineError("cancelled", "The request was cancelled.");
+          }
           return { v: 2, id: request.id, result };
         } catch (error) {
           const { code, message, ...extra } = this.errorOf(error);

@@ -2,16 +2,31 @@
 
 ## Unreleased
 
-- `vastgrid`, `vastgrid-js`, `vastgrid-spec`: pasting over row keys, undo and redo address the original rows.
-  Failed writes leave all cells unchanged. Renaming a derived column preserves its column settings, and
-  `migrateGridState` reports settings removed during repair.
-- `vastgrid-duckdb`, `vastgrid-cli`, `vastgrid-mcp`: large compressed Excel sheets open correctly. The CLI
-  checks the targets of file links, and the CLI and MCP server use private temporary directories per user.
-  Changing the MCP host's language keeps pending edits synchronized.
-- `vastgrid-sql`, `vastgrid-duckdb`, `vastgrid-js`, `vastgrid` (Python): mixed numeric comparisons preserve
-  exact values, exports preserve case-sensitive Parquet names, and wide decimal pivots and batch edits scale
-  to larger inputs. The notebook preserves row counts for zero-column Arrow tables and reports out-of-range timestamps.
-- `vastgrid` website: a failed attempt to open another file preserves the current file, sheet and edits.
+### Fixes
+
+- `vastgrid`, `vastgrid-js`, `vastgrid-spec`: pasting over row keys, undo and redo address the original rows,
+  and committing an open editor on a `rowKey` column succeeds even after scrolling its row out of cache.
+  Failed writes leave all cells unchanged, multi-range edits deduplicate beyond 2⁵³ virtual cell offsets,
+  `ViewCache` tracks loaded row spans per column without fabricating nulls, and `TotalsReader` retries after
+  transient errors. Renaming a derived column preserves its column settings, and `migrateGridState` reports
+  settings removed during repair without dropping valid duplicate-named formulas.
+- `vastgrid`: cell and column menus do not open empty popovers on unloaded or removed columns, controlled
+  `document` updates preserve selection and active row keys, toolbar search and cell editing guard IME
+  composition and controlled `session` updates, and scale-scrolling reaches the exact ends of billion-row views.
+- `vastgrid-duckdb`, `vastgrid-cli`, `vastgrid-mcp`, `vastgrid-vscode`: discarding edits and reloading in
+  VS Code or the MCP App moves the extension anchor, server grid and sibling views onto the reloaded table.
+  `DuckDBEngine`, `vastgrid-vscode`, `vastgrid-cli` and `vastgrid-mcp` enforce per-user `0700` temporary
+  directories, `createHttpHandler` and `vastgrid-cli` validate `Host`, `Origin` and `Sec-Fetch-*` headers,
+  `vastgrid-mcp` isolates table handles per App client, `vastgrid-cli` omits undo history and open editors
+  from `sessionStorage`, and completed mutations are never reported as `cancelled`.
+- `vastgrid-spec`, `vastgrid-sql`, `vastgrid-duckdb`, `vastgrid-js`, `vastgrid` (Python): Excel readers enforce
+  decompressed byte limits and ZIP64 bounds, `vastgrid-js` reads Parquet files with binary column statistics
+  and v2 `LIST`/`MAP` types, `summarize` normalizes `NaN` sums and averages to `null`, wide-decimal `+`, `-`
+  and `%` preserve exact precision, and `least`/`greatest`, `BIN`, `bytesText`, `"-0.00"` decimal writes and
+  out-of-range pivot keys agree across all engines. The notebook widget syncs Python-side trait updates,
+  reflects view plans in `to_arrow(view=True)` and `export`, and releases temporary session files and cursors.
+- `vastgrid` website: a failed attempt to open another file or a broken workbook sheet preserves the current
+  file, sheet selector and edits.
 
 ## 0.4.0 — 2026-11-06
 

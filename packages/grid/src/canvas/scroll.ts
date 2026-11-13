@@ -84,11 +84,51 @@ export class ScrollAxis {
     const delta = native - this.lastNative;
     this.lastNative = native;
     const virtualRange = this.virtualRange;
-    if (native <= 0) this.virtual = 0;
-    else if (native >= nativeRange) this.virtual = virtualRange;
-    else if (Math.abs(delta) > this.jumpThreshold()) this.virtual = (native / nativeRange) * virtualRange;
-    else this.virtual = clamp(this.virtual + delta, 0, virtualRange);
+    if (Math.abs(delta) > this.jumpThreshold()) {
+      if (native <= 0) this.virtual = 0;
+      else if (native >= nativeRange) this.virtual = virtualRange;
+      else this.virtual = (native / nativeRange) * virtualRange;
+    } else {
+      this.virtual = clamp(this.virtual + delta, 0, virtualRange);
+    }
     return this.virtual;
+  }
+
+  /** Whether native scroll reached an edge while virtual room remains, so resting scroll can restore runway. */
+  get pinnedAtEdge(): boolean {
+    if (!this.scaled || this.nativeRange <= 0) return false;
+    return (
+      (this.lastNative <= 0 && this.virtual > 0) ||
+      (this.lastNative >= this.nativeRange && this.virtual < this.virtualRange)
+    );
+  }
+
+  /** Restores native scroll runway for the current virtual position after small steps reached a native edge. */
+  recenter(): number {
+    if (!this.scaled || this.nativeRange <= 0) return this.lastNative;
+    const nativeRange = this.nativeRange;
+    const virtualRange = this.virtualRange;
+    let native: number;
+    if (this.virtual <= 0) native = 0;
+    else if (this.virtual >= virtualRange) native = nativeRange;
+    else if (this.lastNative <= 0) {
+      const buffer = Math.min(this.virtual, this.jumpThreshold());
+      native = clamp(Math.max(buffer, (this.virtual / virtualRange) * nativeRange), 1, Math.max(1, nativeRange - 1));
+    } else if (this.lastNative >= nativeRange) {
+      const remaining = virtualRange - this.virtual;
+      const buffer = Math.min(remaining, this.jumpThreshold());
+      native = clamp(
+        Math.min(nativeRange - buffer, (this.virtual / virtualRange) * nativeRange),
+        1,
+        Math.max(1, nativeRange - 1),
+      );
+    } else {
+      return this.lastNative;
+    }
+    this.expectedVirtual = this.virtual;
+    this.expectedNative = native;
+    this.lastNative = native;
+    return native;
   }
 
   /**
@@ -109,7 +149,11 @@ export class ScrollAxis {
       if (virtual === 0) native = 0;
       else if (virtual === virtualRange) native = nativeRange;
       else if (Math.abs(delta) <= this.jumpThreshold() && local > 0 && local < nativeRange) native = local;
-      else native = virtualRange === 0 ? 0 : (virtual / virtualRange) * nativeRange;
+      else if (virtualRange === 0 || nativeRange <= 0) native = 0;
+      else {
+        const proportional = (virtual / virtualRange) * nativeRange;
+        native = nativeRange >= 2 ? clamp(proportional, 1, nativeRange - 1) : proportional;
+      }
     }
     this.virtual = virtual;
     this.expectedVirtual = virtual;

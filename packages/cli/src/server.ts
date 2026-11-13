@@ -53,6 +53,7 @@ const PAGE_HEADERS = {
   "content-security-policy":
     "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; " +
     "font-src data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  "x-frame-options": "DENY",
   "x-content-type-options": "nosniff",
   "referrer-policy": "no-referrer",
 };
@@ -144,12 +145,57 @@ export async function serve(options: ServeOptions): Promise<Served> {
   let cookie = "";
 
   const route = async (request: IncomingMessage, response: ServerResponse) => {
+    response.setHeader("vary", "Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site");
+    const host = String(request.headers.host ?? "");
     // A name of another site that points at this computer is not this server's.
-    if (!hosts.has(String(request.headers.host))) {
+    if (!hosts.has(host)) {
       text(response, 403, "vastgrid answers at 127.0.0.1 and localhost only.\n");
       return;
     }
     const url = new URL(request.url ?? "/", "http://localhost");
+    const origin = typeof request.headers.origin === "string" ? request.headers.origin.trim() : undefined;
+    if (origin !== undefined) {
+      let sameOrigin = false;
+      if (origin !== "null") {
+        try {
+          const parsed = new URL(origin);
+          const expected = new URL(`http://${host}`);
+          sameOrigin = parsed.origin !== "null" && parsed.origin === expected.origin;
+        } catch {
+          sameOrigin = false;
+        }
+      }
+      if (!sameOrigin) {
+        text(response, 403, "Cross-origin requests are not allowed.\n");
+        return;
+      }
+    }
+    const fetchSite =
+      typeof request.headers["sec-fetch-site"] === "string"
+        ? request.headers["sec-fetch-site"].trim().toLowerCase()
+        : undefined;
+    if (fetchSite !== undefined && fetchSite !== "same-origin" && fetchSite !== "none") {
+      const fetchMode =
+        typeof request.headers["sec-fetch-mode"] === "string"
+          ? request.headers["sec-fetch-mode"].trim().toLowerCase()
+          : undefined;
+      const fetchDest =
+        typeof request.headers["sec-fetch-dest"] === "string"
+          ? request.headers["sec-fetch-dest"].trim().toLowerCase()
+          : undefined;
+      const topLevelPage =
+        url.pathname === "/" &&
+        request.method === "GET" &&
+        fetchMode === "navigate" &&
+        fetchDest !== "iframe" &&
+        fetchDest !== "frame" &&
+        fetchDest !== "object" &&
+        fetchDest !== "embed";
+      if (!topLevelPage) {
+        text(response, 403, "Cross-origin requests are not allowed.\n");
+        return;
+      }
+    }
     if (url.pathname === "/" && url.searchParams.has("token")) {
       if (!sameText(url.searchParams.get("token"), token)) {
         text(response, 401, "This is not the address that vastgrid printed.\n");

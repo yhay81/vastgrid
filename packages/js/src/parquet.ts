@@ -232,21 +232,25 @@ function hex(bytes: Uint8Array, start: number, end: number): string {
   return text;
 }
 
+const metadataParsers: Partial<ParquetParsers> = {
+  timestampFromMilliseconds: (count) => count,
+  timestampFromMicroseconds: (count) => count,
+  timestampFromNanoseconds: (count) => count,
+  dateFromDays: (days) => days,
+  uuidFromBytes: (bytes) =>
+    bytes && `${hex(bytes, 0, 4)}-${hex(bytes, 4, 6)}-${hex(bytes, 6, 8)}-${hex(bytes, 8, 10)}-${hex(bytes, 10, 16)}`,
+  geometryFromBytes: (bytes) => bytes,
+  geographyFromBytes: (bytes) => bytes,
+};
+
 /**
  * Values are given to the columns as hyparquet reads them, without its conversions: dates as days, timestamps as
  * counts of their unit, and strings checked as UTF-8 (§2.2 does not allow replacing text that is not).
  */
 const parsers: Partial<ParquetParsers> = {
-  timestampFromMilliseconds: (count) => count,
-  timestampFromMicroseconds: (count) => count,
-  timestampFromNanoseconds: (count) => count,
-  dateFromDays: (days) => days,
+  ...metadataParsers,
   stringFromBytes: (bytes) => bytes && utf8.decode(bytes),
   jsonFromBytes: (bytes) => bytes && utf8.decode(bytes),
-  uuidFromBytes: (bytes) =>
-    bytes && `${hex(bytes, 0, 4)}-${hex(bytes, 4, 6)}-${hex(bytes, 6, 8)}-${hex(bytes, 8, 10)}-${hex(bytes, 10, 16)}`,
-  geometryFromBytes: (bytes) => bytes,
-  geographyFromBytes: (bytes) => bytes,
 };
 
 /** Nested values (lists, structs and maps) as DuckDB casts them to text: `[1, 2]`, `{'a': 1}`, `{k=1}`. */
@@ -255,6 +259,8 @@ function nestedSpec(node: SchemaTree): { sourceType: string; format: (value: unk
   const logical = element.logical_type?.type;
   const converted = element.converted_type;
   if (converted === "LIST" || logical === "LIST") {
+    // hyparquet's `isListLike` checks `converted_type === "LIST"` even on Parquet v2 `logical_type: LIST`.
+    element.converted_type = "LIST";
     const repeated = children[0];
     const item = repeated && repeated.children.length === 1 && repeated.children[0] ? repeated.children[0] : repeated;
     const inner = item ? nestedSpec(item) : { sourceType: "NULL", format: () => "NULL" };
@@ -264,22 +270,38 @@ function nestedSpec(node: SchemaTree): { sourceType: string; format: (value: unk
     };
   }
   if (converted === "MAP" || converted === "MAP_KEY_VALUE" || logical === "MAP") {
+    element.converted_type = "MAP";
     const [key, val] = children[0]?.children ?? [];
+    const keyLogical = key?.element.logical_type?.type;
     const keySpec = key ? nestedSpec(key) : { sourceType: "NULL", format: String };
     const valSpec = val ? nestedSpec(val) : { sourceType: "NULL", format: () => "NULL" };
-    const numericKey = key?.element.type === "INT32" || key?.element.type === "FLOAT" || key?.element.type === "DOUBLE";
+    const numericKey =
+      key?.element.type === "INT32" ||
+      key?.element.type === "FLOAT" ||
+      key?.element.type === "DOUBLE" ||
+      keyLogical === "FLOAT16";
+    const binaryKey =
+      (key?.element.type === "BYTE_ARRAY" || key?.element.type === "FIXED_LEN_BYTE_ARRAY") &&
+      keySpec.sourceType !== "VARCHAR" &&
+      keySpec.sourceType !== "JSON" &&
+      keySpec.sourceType !== "UUID" &&
+      keyLogical !== "FLOAT16";
     const formatKey = (raw: unknown) => {
       if (key?.element.type === "BOOLEAN" && typeof raw === "string") return keySpec.format(raw === "true");
       if (typeof raw === "string" && numericKey) {
         const parsed = Number(raw);
         if (!Number.isNaN(parsed)) return keySpec.format(parsed);
       }
-      if (typeof raw === "string" && key?.element.type === "INT64") {
+      if (typeof raw === "string" && (key?.element.type === "INT64" || key?.element.type === "INT96")) {
         try {
           return keySpec.format(BigInt(raw));
         } catch {
           return raw;
         }
+      }
+      if (typeof raw === "string" && binaryKey) {
+        const bytes = raw === "" ? new Uint8Array(0) : new Uint8Array(raw.split(",").map(Number));
+        return keySpec.format(bytes);
       }
       return keySpec.format(raw);
     };
@@ -508,7 +530,10 @@ function kindOf(node: SchemaTree): Kind {
     return untyped({ name, type: "string", sourceType: '"NULL"', readOnly: true }, () => null);
   }
   if (converted === "JSON" || logical?.type === "JSON") {
-    return untyped({ name, type: "string", sourceType: "JSON", readOnly: true }, (value) => value as string);
+    element.converted_type = "JSON";
+    return untyped({ name, type: "string", sourceType: "JSON", readOnly: true }, (value) =>
+      value instanceof Uint8Array ? utf8.decode(value) : (value as string),
+    );
   }
   if (logical?.type === "UUID") return untyped({ name, type: "uuid", sourceType: "UUID" }, (value) => value as string);
   if (converted === "UTF8" || converted === "ENUM" || logical?.type === "STRING" || logical?.type === "ENUM") {
@@ -731,7 +756,7 @@ export class ParquetFile extends FileColumns {
     try {
       metadata = await parquetMetadataAsync(
         { byteLength: bytes.size, slice: async (start, end) => bufferOf(await bytes.read(start, end ?? bytes.size)) },
-        { parsers, geoparquet: false, initialFetchSize: Math.min(bytes.size, 64 * 1024) } as never,
+        { parsers: metadataParsers, geoparquet: false, initialFetchSize: Math.min(bytes.size, 64 * 1024) } as never,
       );
     } catch (error) {
       if (error instanceof TableProblem) throw error;

@@ -101,7 +101,7 @@ export function foldAll(text: string, folds: readonly Fold[] | undefined): strin
   return result;
 }
 
-// Simple case mappings that DuckDB 2.0 (utf8proc) makes where JavaScript maps a code point to several (§3.4).
+// Simple case mappings that DuckDB 2.0 (utf8proc, Unicode 15.x) makes where JavaScript differs (§3.4).
 const LOWER_SPECIAL = new Map<number, string>([[0x130, "i"]]);
 const UPPER_SPECIAL = new Map<number, string>([
   [0xdf, "ẞ"],
@@ -113,6 +113,17 @@ for (let code = 0x1f80; code <= 0x1faf; code++) {
   // Greek letters with ypogegrammeni map to the same letters with prosgegrammeni, 8 code points on.
   UPPER_SPECIAL.set(code, String.fromCodePoint((code & 0xf) < 8 ? code + 8 : code));
 }
+// Unicode 16.0 case pairs (added in Node 26 / ICU 76+) that utf8proc in DuckDB 2.0 leaves unchanged.
+for (const code of [0x1c89, 0xa7cb, 0xa7cc, 0xa7ce, 0xa7d2, 0xa7d4, 0xa7da, 0xa7dc]) {
+  LOWER_SPECIAL.set(code, String.fromCodePoint(code));
+}
+for (let code = 0x10d50; code <= 0x10d65; code++) LOWER_SPECIAL.set(code, String.fromCodePoint(code));
+for (let code = 0x16ea0; code <= 0x16eb8; code++) LOWER_SPECIAL.set(code, String.fromCodePoint(code));
+for (const code of [0x19b, 0x264, 0x1c8a, 0xa7cd, 0xa7cf, 0xa7d3, 0xa7d5, 0xa7db]) {
+  UPPER_SPECIAL.set(code, String.fromCodePoint(code));
+}
+for (let code = 0x10d70; code <= 0x10d85; code++) UPPER_SPECIAL.set(code, String.fromCodePoint(code));
+for (let code = 0x16ebb; code <= 0x16ed3; code++) UPPER_SPECIAL.set(code, String.fromCodePoint(code));
 const lowerCache = new Map<string, string>();
 const upperCache = new Map<string, string>();
 

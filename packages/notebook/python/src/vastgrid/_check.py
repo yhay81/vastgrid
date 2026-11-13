@@ -476,13 +476,16 @@ class _Checker:
             if _is_null(arg.type) or (isinstance(arg, LiteralExpr) and arg.value is None):
                 continue
             result = arg.type if result is None else self._unify(result, arg.type, path)
-        for arg in args:
-            if _is_null(arg.type) or not (isinstance(arg, LiteralExpr) and arg.value is None):
-                continue
+        typed_nulls = [
+            arg for arg in args if not _is_null(arg.type) and isinstance(arg, LiteralExpr) and arg.value is None
+        ]
+        mixed_decimal_null = result is not None or any(arg.type["type"] != "decimal" for arg in typed_nulls)
+        for arg in typed_nulls:
+            null_type = _decimal(1, 0) if mixed_decimal_null and arg.type["type"] == "decimal" else arg.type
             if result is None:
-                result = arg.type
-            elif result["type"] != arg.type["type"]:
-                result = self._unify(result, _decimal(1, 0) if arg.type["type"] == "decimal" else arg.type, path)
+                result = null_type
+            elif result["type"] != null_type["type"]:
+                result = self._unify(result, null_type, path)
         if result is None:
             _fail(path, "type", "The type of these values cannot be decided: give a null literal a type.")
         for arg in args:

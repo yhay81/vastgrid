@@ -3,7 +3,7 @@
  * the allowed folders, and a pool of connections.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { lstat, mkdir, readdir, realpath, rm } from "node:fs/promises";
+import { chmod, lstat, mkdir, readdir, realpath, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { type DuckDBConnection, DuckDBInstance, type DuckDBPreparedStatement } from "@duckdb/node-api";
@@ -33,12 +33,17 @@ function processAlive(pid: number) {
 }
 
 /** A shared system temp directory can serve several users. Only reclaim sessions from our own private folder. */
-async function defaultTempDirectory() {
+export async function defaultTempDirectory(prefix = "vastgrid"): Promise<string> {
+  if (!/^[a-z0-9-]+$/i.test(prefix)) throw new Error(`Invalid temporary directory prefix: ${prefix}`);
   const uid = process.getuid?.();
   const user = uid ?? createHash("sha256").update(os.homedir()).digest("hex").slice(0, 16);
-  const directory = path.join(os.tmpdir(), `vastgrid-${user}`);
+  const directory = path.join(os.tmpdir(), `${prefix}-${user}`);
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  const info = await lstat(directory);
+  let info = await lstat(directory);
+  if (info.isDirectory() && uid !== undefined && info.uid === uid && (info.mode & 0o077) !== 0) {
+    await chmod(directory, 0o700);
+    info = await lstat(directory);
+  }
   if (!info.isDirectory() || (uid !== undefined && (info.uid !== uid || (info.mode & 0o077) !== 0))) {
     throw new Error(`Cannot use ${directory} as a private temporary directory.`);
   }
@@ -47,12 +52,16 @@ async function defaultTempDirectory() {
 
 /** Deletes the session folders of engines whose process ended without cleaning up (for example a crash). */
 async function removeStaleSessions(directory: string) {
+  const uid = process.getuid?.();
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const match = /^session-(\d+)-/.exec(entry.name);
     if (!entry.isDirectory() || !match) continue;
+    const entryPath = path.join(directory, entry.name);
+    const info = await lstat(entryPath).catch(() => null);
+    if (!info?.isDirectory() || (uid !== undefined && info.uid !== uid)) continue;
     const pid = Number(match[1]);
     if (pid === process.pid || processAlive(pid)) continue;
-    await rm(path.join(directory, entry.name), { recursive: true, force: true });
+    await rm(entryPath, { recursive: true, force: true });
   }
 }
 
@@ -109,10 +118,11 @@ export class Session {
   static async create(options: SessionOptions): Promise<Session> {
     const temp =
       options.tempDirectory === undefined ? await defaultTempDirectory() : path.resolve(options.tempDirectory);
-    if (options.tempDirectory !== undefined) await mkdir(temp, { recursive: true });
+    if (options.tempDirectory !== undefined) await mkdir(temp, { recursive: true, mode: 0o700 });
     await removeStaleSessions(temp);
     const folder = path.join(temp, `session-${process.pid}-${randomBytes(4).toString("hex")}`);
-    await mkdir(folder, { recursive: true });
+    await mkdir(folder, { recursive: true, mode: 0o700 });
+    await chmod(folder, 0o700);
     // Tables live in a database file of the session: DuckDB compresses them there, which takes a fraction of the
     // memory and temporary disk space that tables in memory need once they spill.
     const instance = await DuckDBInstance.create(path.join(folder, "tables.duckdb"), {
@@ -177,8 +187,9 @@ export class Session {
     if (free) return free;
     if (this.connections < POOL_SIZE) {
       this.connections++;
+      let connection: DuckDBConnection | undefined;
       try {
-        const connection = await this.instance.connect();
+        connection = await this.instance.connect();
         this.live.add(connection);
         if (this.disposed) {
           this.closeConnection(connection);
@@ -188,6 +199,7 @@ export class Session {
         await connection.run("SET TimeZone = 'UTC'");
         return connection;
       } catch (error) {
+        if (connection) this.closeConnection(connection);
         if (!this.disposed) this.connections--;
         throw error;
       }
@@ -278,12 +290,14 @@ export class Session {
     if (this.disposed) throw new EngineError("internal", "The engine was closed.");
     const connection = await this.instance.connect();
     this.live.add(connection);
-    if (this.disposed) {
+    try {
+      if (this.disposed) throw new EngineError("internal", "The engine was closed.");
+      await connection.run("SET TimeZone = 'UTC'");
+      return connection;
+    } catch (error) {
       this.closeConnection(connection);
-      throw new EngineError("internal", "The engine was closed.");
+      throw error;
     }
-    await connection.run("SET TimeZone = 'UTC'");
-    return connection;
   }
 
   /** Closes a dedicated connection opened with `connect`. */

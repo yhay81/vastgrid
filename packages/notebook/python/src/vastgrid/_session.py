@@ -55,6 +55,7 @@ class Session:
         self._names = itertools.count(1)
         self._prefix = uuid.uuid4().hex[:8]
         self.folder = tempfile.mkdtemp(prefix="vastgrid-")
+        self._finalizer = weakref.finalize(self, shutil.rmtree, self.folder, True)
 
     def name(self, prefix: str) -> str:
         return f"{prefix}_{self._prefix}_{next(self._names)}"
@@ -95,4 +96,8 @@ class Session:
             cursor.close()
 
     def close(self) -> None:
-        shutil.rmtree(self.folder, ignore_errors=True)
+        self._finalizer()
+        try:
+            self.database.close()
+        except duckdb.Error:
+            pass

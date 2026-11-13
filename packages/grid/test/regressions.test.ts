@@ -1,16 +1,19 @@
 import assert from "node:assert/strict";
 import { expect, test } from "vite-plus/test";
 import { memoryEngine } from "vastgrid-js";
-import { decodeBlock } from "vastgrid-spec";
+import { decodeBlock, type GridSession } from "vastgrid-spec";
 import { Geometry } from "../src/canvas/geometry.ts";
 import { ColumnLayout } from "../src/canvas/layout.ts";
+import { ScrollAxis } from "../src/canvas/scroll.ts";
 import { TextFitter } from "../src/canvas/text.ts";
+import { ViewCache } from "../src/core/cache.ts";
 import {
   createGridStore,
   GridClient,
   GridError,
   httpTransport,
   localTransport,
+  serveEngine,
   type WorkerLike,
   workerTransport,
 } from "../src/core.ts";
@@ -181,6 +184,194 @@ test("setDocument fits session.active when hiding the active column on the curre
     assert.equal(store.getSnapshot().session.active?.column, "a");
     store.setDocument({ kind: "vastgrid/document", version: 2, columns: [{ name: "a", hidden: true }] });
     assert.equal(store.getSnapshot().session.active?.column, "b");
+  } finally {
+    disconnect();
+  }
+});
+
+test("ViewCache tracks per-column loaded lengths, does not fabricate null for unread cells, and clears stale cut flags", () => {
+  const cache = new ViewCache();
+  cache.receive(
+    0,
+    Array.from({ length: 100 }, (_, i) => i),
+    ["a"],
+    Array.from({ length: 100 }, (_, i) => [i]),
+    { a: [5] },
+  );
+  cache.receive(
+    0,
+    Array.from({ length: 256 }, (_, i) => i),
+    ["b"],
+    Array.from({ length: 256 }, (_, i) => [i * 10]),
+    undefined,
+  );
+
+  // Column "a" was only read for rows 0..100, so rows 100..256 are still unread and must be scheduled.
+  assert.equal(cache.value(150, "a"), undefined);
+  assert.equal(cache.loaded(150, undefined)?.has("a"), false);
+  assert.deepEqual(cache.reads(0, 256, ["a", "b"], 256), [{ start: 0, end: 256, columns: ["a"] }]);
+
+  // Re-reading row 5 without truncation clears its previous cut flag.
+  assert.equal(cache.isCut(5, "a"), true);
+  cache.receive(
+    0,
+    Array.from({ length: 256 }, (_, i) => i),
+    ["a"],
+    Array.from({ length: 256 }, (_, i) => [i]),
+    undefined,
+  );
+  assert.equal(cache.isCut(5, "a"), false);
+  assert.equal(cache.loaded(150, undefined)?.has("a"), true);
+  assert.deepEqual(cache.reads(0, 256, ["a", "b"], 256), []);
+});
+
+test("setDocument reconciles controlled sessions and updates rowKey without wiping active cell", async () => {
+  const engine = memoryEngine({
+    tables: {
+      items: {
+        columns: [
+          { name: "id", type: "integer" },
+          { name: "name", type: "string" },
+        ],
+        rows: [
+          [10, "Alpha"],
+          [20, "Beta"],
+        ],
+      },
+    },
+  });
+  const store = createGridStore({
+    transport: localTransport(engine),
+    table: "items",
+    session: { kind: "vastgrid/session", version: 2, active: { row: 1, column: "id" } },
+  });
+  store.control("session", true);
+  const reported: GridSession[] = [];
+  store.on("session", (next) => reported.push(next));
+  const disconnect = store.connect();
+  try {
+    await expect.poll(() => store.getSnapshot().view?.status).toBe("ready");
+    store.ensure(0, 2, ["id", "name"]);
+    await expect.poll(() => store.cell(1, "id")).toBe(20);
+
+    // Changing rowKey and hiding column "id" emits the reconciled controlled session and updates currentSession().
+    store.setDocument({
+      kind: "vastgrid/document",
+      version: 2,
+      rowKey: "id",
+      columns: [{ name: "id", hidden: true }],
+    });
+    assert.equal(store.currentSession().active?.row, 1);
+    assert.equal(store.currentSession().active?.column, "name");
+    assert.deepEqual(store.currentSession().active?.key, { value: 20 });
+    assert.equal(reported.at(-1)?.active?.column, "name");
+  } finally {
+    disconnect();
+  }
+});
+
+test("ScrollAxis does not warp to 0 or virtualRange on small steps at native edges and recenters runway", () => {
+  const axis = new ScrollAxis(8_000_000);
+  axis.resize(24_000_000_000, 600);
+  const native = axis.scrollTo(50_000);
+  assert.equal(axis.onNativeScroll(native), 50_000);
+
+  // Small wheel steps upward hit native === 0 while virtual is still > 0; must not warp to row 0.
+  let currentNative = native;
+  while (currentNative > 0) {
+    currentNative = Math.max(0, currentNative - 200);
+    axis.onNativeScroll(currentNative);
+  }
+  assert.equal(axis.native, 0);
+  assert.ok(axis.position > 40_000);
+  assert.equal(axis.pinnedAtEdge, true);
+
+  const recentered = axis.recenter();
+  assert.ok(recentered > 0);
+  assert.equal(axis.pinnedAtEdge, false);
+});
+
+test("serveEngine avoids detaching subarray buffers and answers internal errors on unexpected rejections", async () => {
+  const shared = new Uint8Array([10, 20, 30, 40]);
+  const subarray = shared.subarray(1, 3);
+  const posted: { message: unknown; transfer: Transferable[] | undefined }[] = [];
+  let handler: ((event: MessageEvent) => void) | undefined;
+  const scope: WorkerLike = {
+    postMessage(message, transfer) {
+      posted.push({ message, transfer });
+    },
+    addEventListener(_type, listener) {
+      handler = listener;
+    },
+    removeEventListener() {},
+  };
+  const stop = serveEngine(
+    {
+      async handle(message) {
+        const req = message as { id: number; op: string };
+        if (req.op === "boom") throw new Error("kaboom");
+        return { v: 2, id: req.id, result: { block: { bytes: subarray } } };
+      },
+    },
+    scope,
+  );
+  try {
+    handler?.({ data: { v: 2, id: 1, op: "rows" } } as MessageEvent);
+    await expect.poll(() => posted.length).toBe(1);
+    assert.deepEqual(posted[0].transfer, []);
+    assert.equal(shared.byteLength, 4);
+
+    handler?.({ data: { v: 2, id: 2, op: "boom" } } as MessageEvent);
+    await expect.poll(() => posted.length).toBe(2);
+    assert.deepEqual(posted[1].message, { v: 2, id: 2, error: { code: "internal", message: "kaboom" } });
+  } finally {
+    stop();
+  }
+});
+
+test("ensure called before connect is replayed once open, and TotalsReader recovers after transient failure", async () => {
+  const engine = memoryEngine({
+    tables: {
+      items: {
+        columns: [
+          { name: "id", type: "integer" },
+          { name: "val", type: "integer" },
+        ],
+        rows: [
+          [1, 10],
+          [2, 20],
+        ],
+      },
+    },
+  });
+  let failTotals = true;
+  const flaky = {
+    ...engine,
+    async handle(message: unknown) {
+      const req = message as { id: number; op: string; plan?: { aggregate?: unknown } };
+      if (failTotals && req.op === "rows" && req.plan?.aggregate) {
+        return { v: 2, id: req.id, error: { code: "internal", message: "transient" } };
+      }
+      return engine.handle(message);
+    },
+  };
+  const doc = {
+    kind: "vastgrid/document" as const,
+    version: 2 as const,
+    columns: [{ name: "val", total: { fn: "sum" as const } }],
+  };
+  const store = createGridStore({ transport: localTransport(flaky), table: "items", document: doc });
+  // Calling ensure before connect queues the read and replays it once the view opens.
+  store.ensure(0, 2, ["val"]);
+  const disconnect = store.connect();
+  try {
+    await expect.poll(() => store.cell(1, "val")).toBe(20);
+    await expect.poll(() => store.getSnapshot().error?.message).toBe("transient");
+
+    failTotals = false;
+    store.setDocument({ ...doc });
+    await expect.poll(() => store.getSnapshot().totals?.values.val).toBe("30");
+    assert.equal(store.getSnapshot().error, null);
   } finally {
     disconnect();
   }

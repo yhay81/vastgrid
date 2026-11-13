@@ -267,7 +267,7 @@ out instead.
   which the condition is true (not false, not null).
 - A function gives null when an argument is null, except `and`, `or`, `is_null`, `is_blank`,
   `coalesce`, `concat` (null counts as the empty string), `if` (a null condition takes the second value),
-  `least` and `greatest` (nulls are left out; the result is null only when every argument is null), and
+  `least` and `greatest` (nulls are left out; the result is null when every argument is null or the chosen value does not fit the common type), and
   `in` (§4.4).
 - **Errors give null.** Evaluating an expression for a row never makes a plan fail: overflow, a value out
   of a function's domain (`sqrt(-1)`, `ln(0)`) and a conversion that does not succeed give null.
@@ -1135,7 +1135,7 @@ A `write` request (§8.2) names cells by row key and column name, with typed val
   write fails with `edit_conflict`.
 - A write carries the revision its rows were read at; when the table has another revision, it fails with
   `revision_changed`.
-- Commands that change the key column address all cells in that write and its history step by source row ID,
+- Commands that write several cells and change the key column address all cells in that write and its history step by source row ID (a single-cell write uses the source row ID when loaded, or the new key on undo),
   so an earlier key change cannot redirect another update.
 - A write holds at most 100,000 updates.
 - Values are checked as their column's type without losing digits; one that does not fit fails the write
