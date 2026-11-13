@@ -21,7 +21,7 @@ Repository = "https://github.com/yhay81/vastgrid"
 Issues = "https://github.com/yhay81/vastgrid/issues"
 
 [dependency-groups]
-dev = ["pytest==9.2.0", "pandas==3.1.0", "polars==2.1.0", "ruff==0.17.3", "jupyterlab==4.6.5", "notebook==7.6.4"]
+dev = ["pytest==9.2.0", "pandas==3.1.1", "polars==2.1.0", "ruff==0.17.4", "jupyterlab==4.6.6", "notebook==7.6.5"]
 
 [build-system]
 requires = ["hatchling==1.33.0"]
