@@ -6,6 +6,7 @@ import itertools
 import os
 import threading
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 
 import duckdb
@@ -20,8 +21,8 @@ from ._session import Running, Session
 from ._table import Table
 from ._views import Views
 
-
 _READ_OPERATIONS = {"info", "changes", "rows", "locate", "summarize", "find"}
+TableKey = tuple[str, str | None, int | None, str | None, bool | None, bool | None]
 
 
 class Engine:
@@ -33,8 +34,9 @@ class Engine:
         self.session = Session(database)
         self.views = Views(self.session, text_limit, max_views)
         self.sources: dict[str, Source] = {}
-        self.tables: dict[str, Table] = {}
+        self.tables: dict[TableKey, Table] = {}
         self.handles: dict[str, Table] = {}
+        self._handle_sheets: dict[str, str | None] = {}
         self.listeners: list[Callable[[Json], None]] = []
         self.running: dict[int, Running] = {}
         self.lock = threading.Lock()
@@ -201,26 +203,37 @@ class Engine:
                 keep_empty_rows=keep_rows,
                 keep_empty_columns=keep_cols,
             )
-        key = (
-            f"{ref}\0{source.sheet or ''}\0{source.header_row}\0"
-            f"{source.delimiter or ''}\0{source.keep_empty_rows}\0{source.keep_empty_columns}"
-        )
-        with self.lock:
-            table = self.tables.get(key)
-        if table is None:
-            table = Table(self.session, ref, source)
-            try:
-                table.load(running)
-            except BaseException:
-                table.dispose()
-                raise
-            with self.lock:
-                self.tables[key] = table
-        with self.lock:
+        options = (source.header_row, source.delimiter, source.keep_empty_rows, source.keep_empty_columns)
+        key = (ref, source.sheet, *options)
+
+        def open_handle(table: Table) -> Json:
             table.handles += 1
             handle = f"t{next(self._handles)}"
             self.handles[handle] = table
-        return self._info(handle, table)
+            self._handle_sheets[handle] = source.sheet
+            return self._info(handle, table)
+
+        with self.lock:
+            if table := self.tables.get(key):
+                return open_handle(table)
+        table = Table(self.session, ref, source)
+        try:
+            table.load(running)
+            # A default sheet and the same sheet explicitly named share their edits.
+            named = (ref, table.sheet, *options) if table.sheet is not None else key
+            with self.lock:
+                if self.closed:
+                    raise EngineError("internal", "The engine was closed.")
+                existing = self.tables.get(named) or self.tables.get(key)
+                selected = existing or table
+                self.tables[key] = self.tables[named] = selected
+                info = open_handle(selected)
+        except BaseException:
+            table.dispose()
+            raise
+        if existing is not None:
+            table.dispose()
+        return info
 
     def _info(self, handle: str, table: Table) -> Json:
         capabilities: Json = {
@@ -256,8 +269,10 @@ class Engine:
     def _reload(self, handle: str, running: Running) -> Json:
         """Moves a handle to its source as it is now (§7.6): with a new revision and without the written cells, which
         stay with the other handles of the table it leaves."""
-        old = self._table({"table": handle})
-        fresh = Table(self.session, old.ref, old.source)
+        with self.lock:
+            old = self._table({"table": handle})
+            source = replace(old.source, sheet=self._handle_sheets[handle])
+        fresh = Table(self.session, old.ref, source)
         try:
             fresh.load(running)
         except BaseException:
@@ -270,12 +285,14 @@ class Engine:
             self.handles[handle] = fresh
             fresh.handles = 1
             old.handles -= 1
-            key = (
-                f"{old.ref}\0{old.source.sheet or ''}\0{old.source.header_row}\0"
-                f"{old.source.delimiter or ''}\0{old.source.keep_empty_rows}\0{old.source.keep_empty_columns}"
-            )
-            if self.tables.get(key) is old:
-                self.tables[key] = fresh
+            previous_keys = [key for key, item in self.tables.items() if item is old]
+            for key in previous_keys:
+                if key[1] == fresh.sheet or key[1] == fresh.source.sheet:
+                    self.tables[key] = fresh
+                else:
+                    del self.tables[key]
+            if previous_keys and fresh.sheet is not None:
+                self.tables[(fresh.ref, fresh.sheet, *previous_keys[0][2:])] = fresh
             left = old.handles == 0
         if left:
             self._release(old)
@@ -289,6 +306,7 @@ class Engine:
             table = self.handles.pop(handle, None)
             if table is None:
                 raise EngineError("table_not_found", "The table is closed or unknown.")
+            del self._handle_sheets[handle]
             table.handles -= 1
             left = table.handles == 0
             if left:
@@ -336,6 +354,7 @@ class Engine:
             tables = {id(table): table for table in [*self.tables.values(), *self.handles.values()]}
             self.tables.clear()
             self.handles.clear()
+            self._handle_sheets.clear()
         for item in running:
             item.cancel()
         for table in tables.values():

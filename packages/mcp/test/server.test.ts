@@ -466,6 +466,35 @@ test("open_grid keeps the chosen sheet in GridState so the App opens the same sh
     (opened.content.columns as Json[]).map((column) => column.name),
     ["second_col"],
   );
+  // The App echoes the resolved default sheet. Its writes must reach the table the agent already opened.
+  const auto = (await call("open_grid", { file: "book.xlsx" })).content;
+  assert.equal(auto.sheet, "First");
+  const link = { grid: auto.grid, client: "default-sheet" };
+  const openMessage = { v: 2, id: 1, op: "open", ref: "book.xlsx" };
+  const ui = await callTool(app, "vastgrid_message", {
+    ...link,
+    message: { ...openMessage, read: { sheet: auto.sheet } },
+  });
+  assert.ok(ui.result);
+  const { table, revision } = ui.result as Json;
+  const written = await callTool(app, "vastgrid_message", {
+    ...link,
+    message: {
+      v: 2,
+      id: 2,
+      op: "write",
+      table,
+      revision,
+      updates: [{ key: { rowId: 0 }, column: "first_col", value: 17 }],
+    },
+  });
+  assert.equal((written.result as Json).updated, 1);
+  assert.deepEqual((await call("grid_rows", { grid: auto.grid })).content.rows, [[17]]);
+  const denied = await callTool(app, "vastgrid_message", {
+    ...link,
+    message: { ...openMessage, id: 3, read: { sheet: "Second" } },
+  });
+  assert.equal((denied.error as Json).code, "not_allowed");
   // A `cancel` notification (§8.1) has no response object and does not throw in `vastgrid_message`.
   const cancelled = await callTool(app, "vastgrid_message", {
     grid: String(opened.content.grid),

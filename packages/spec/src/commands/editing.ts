@@ -12,17 +12,16 @@ export const WRITE_LIMIT = 100_000;
 
 /** The write of a step's values before (undo) or after (redo), each with the other as `previous` (§7.4). */
 function historyWrite(run: Run, updates: readonly HistoryUpdate[], values: "before" | "after"): CommandRequest {
+  // Older sessions can contain key-column writes addressed only by value. After a key changes, neither
+  // value identifies the original row unambiguously (another row may already have that value).
+  if (updates.some((update) => update.column === run.document.rowKey && "value" in update.key)) {
+    fail("", "unsupported", "This history step did not keep the source row ID of the changed row key.");
+  }
   const request: CommandRequest = {
     op: "write",
     revision: run.context.revision,
     updates: updates.map((update) => ({
-      key:
-        values === "before" &&
-        update.column === run.document.rowKey &&
-        "value" in update.key &&
-        (typeof update.after === "string" || typeof update.after === "number" || typeof update.after === "boolean")
-          ? { value: update.after }
-          : update.key,
+      key: update.key,
       column: update.column,
       value: values === "before" ? update.before : update.after,
       previous: values === "before" ? update.after : update.before,
@@ -128,7 +127,13 @@ export const EDITING_HANDLERS = {
     run.need([{ cells: [cell], keyed: true }]);
     const value = run.valueAt(cell);
     const text = given ?? editText(value, run.typeOf(cell.column), { timeZone: run.timeZoneOf(cell.column) });
-    run.session.editor = { row: cell.row, column: cell.column, key: run.keyAt(cell.row), text, value };
+    run.session.editor = {
+      row: cell.row,
+      column: cell.column,
+      key: run.keyAt(cell.row, cell.column === run.document.rowKey),
+      text,
+      value,
+    };
   },
 
   "edit.change"(run, command) {

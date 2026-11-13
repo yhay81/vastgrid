@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -39,6 +39,37 @@ test("recognizes compressed tab and JSON extensions", () => {
   assert.equal(tableFormatOf("rows.jsonl.zst"), "ndjson");
   assert.equal(tableFormatOf("rows.ndjson.zst"), "ndjson");
   assert.equal(tableFormatOf("rows.json.zst"), "json");
+});
+
+test("existing Parquet views keep the authorized file after its path becomes a symlink", async () => {
+  const local = await setUp({ allowFile: (file) => path.basename(file) === "visible.parquet" });
+  try {
+    const visible = path.join(local.workspace, "visible.parquet");
+    const hidden = path.join(local.workspace, "hidden.parquet");
+    const columns = [{ name: "n", type: "integer" }] as const;
+    await writeParquet(visible, { columns: [...columns], rows: [[10]] });
+    await writeParquet(hidden, { columns: [...columns], rows: [[99]] });
+    const info = await local.client.open("visible.parquet");
+    assert.equal(info.status, "ready");
+    await rename(visible, path.join(local.workspace, "moved.parquet"));
+    await symlink(hidden, visible);
+    assert.equal((await local.client.error("open", { ref: "visible.parquet" })).code, "not_allowed");
+    assert.equal((await local.client.error("reload", { table: info.table })).code, "not_allowed");
+    assert.deepEqual((await local.client.rows(info)).rows, [[10]]);
+    const answer = await local.client.result<{ target: string }>("export", {
+      table: info.table,
+      revision: info.revision,
+      plan: {},
+      format: "csv",
+    });
+    assert.equal(await readFile(local.engine.exportFile(answer.target)!.path, "utf8"), "n\n10\n");
+    await rm(visible);
+    await writeParquet(visible, { columns: [...columns], rows: [[11], [12]] });
+    const fresh = await local.client.result<typeof info>("reload", { table: info.table });
+    assert.deepEqual((await local.client.rows(fresh)).rows, [[11], [12]]);
+  } finally {
+    await local.tearDown();
+  }
 });
 
 test("tempDirectory is never allowed for open or export targets, and empty allowedDirectories refuses open", async () => {
@@ -397,7 +428,11 @@ test("memoryEngine Parquet reader matches DuckDB on BOM strings and nested LIST,
         [CAST(1.25 AS DECIMAL(6, 2)), CAST(-3.50 AS DECIMAL(6, 2))] AS decs,
         {a: 1, b: 'hi', c: 'x,y', d: CAST(NULL AS INTEGER)} AS st,
         MAP {'k': 10, 'x y': 20} AS mp,
-        MAP {false: 10, true: 20} AS flags
+        MAP {false: 10, true: 20} AS flags,
+        MAP([[1, 2], [3]], ['x', NULL]) AS by_list,
+        MAP([{a: 1}, {a: 2}], [10, 20]) AS by_struct,
+        MAP(['__proto__', '10', '2'], [30, 20, 10]) AS named,
+        [MAP([10, 2], [MAP([1], ['first']), MAP()]), NULL, MAP()] AS nested_maps
     ) TO '${file.replaceAll("'", "''")}' (FORMAT parquet)`,
   );
   connection.closeSync();

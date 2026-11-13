@@ -820,6 +820,7 @@ export class GridStore {
     // An undo or a redo takes the last step once the writes sent before it are in the history.
     if (given.command === "history.undo" || given.command === "history.redo") await this.writer.settled();
     let applied = this.applyNow(given, options);
+    const editTarget = given.command === "edit.begin" && applied.kind === "failed" ? this.editTarget() : undefined;
     for (
       let tries = 0;
       tries < 3 &&
@@ -838,6 +839,20 @@ export class GridStore {
         // the command applies to the new one.
         if (!isCancelled(failure) || view === this.current) return { ok: false, error: asGridError(failure) };
       }
+      if (editTarget !== undefined) {
+        const active = this.editTarget();
+        if (
+          view.key !== this.current?.key ||
+          (this.next && this.next.key !== view.key) ||
+          active.table !== editTarget.table ||
+          active.revision !== editTarget.revision ||
+          active.row !== editTarget.row ||
+          active.column !== editTarget.column ||
+          active.editor !== editTarget.editor
+        ) {
+          return { ok: false, error: new GridError("cancelled", "The cell being opened for editing changed.") };
+        }
+      }
       applied = this.applyNow(given, options);
     }
     if (applied.kind === "failed") return { ok: false, error: applied.error };
@@ -849,6 +864,17 @@ export class GridStore {
       return { ok: false, error: asGridError(error) };
     }
   };
+
+  private editTarget() {
+    const { active, editor } = this.currentSession();
+    return {
+      table: this.snapshot.table?.table,
+      revision: this.snapshot.table?.revision,
+      row: active?.row ?? 0,
+      column: active?.column ?? this.snapshot.displayed[0]?.column.name,
+      editor,
+    };
+  }
 
   /**
    * Applies a command synchronously, as a `copy` event needs (its clipboard is written before the handler

@@ -176,20 +176,38 @@ class Grid(anywidget.AnyWidget):
         super().__init__(ref=name, name=name, sheet=sheet, height=height, locale=locale, document=document)
         self._engine = Engine(_shared_database().cursor())
         self._engine.add(name, source)
-        # The kernel's own handle keeps the table, and its written cells, while the grid lives.
-        opened = self._engine.handle({"v": 2, "id": 0, "op": "open", "ref": name})
-        if opened is None or "error" in opened:
-            error = (opened or {}).get("error", {})
+        # Keep one handle per visited sheet so its edits survive when the page switches sheets.
+        try:
+            info = self._open_sheet(sheet)
+        except EngineError:
             self._engine.close()
             super().close()
-            raise EngineError(error.get("code", "load_failed"), error.get("message", "The table could not be read."))
-        self._table_id: str = opened["result"]["table"]
+            raise
+        self._default_sheet = info.get("sheet")
+        self._sheet_handles = {None: info["table"], self._default_sheet: info["table"]}
         self._pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="vastgrid")
         self._unsubscribe = self._engine.subscribe(self._event)
         self._closed = False
         self.on_msg(self._receive)
         _grids.add(self)
         self._follow_cell()
+
+    def _open_sheet(self, sheet: str | None) -> dict[str, Any]:
+        request = {"v": 2, "id": 0, "op": "open", "ref": self.ref}
+        if sheet is not None:
+            request["read"] = {"sheet": sheet}
+        opened = self._engine.handle(request)
+        if opened is None or "error" in opened:
+            error = (opened or {}).get("error", {})
+            raise EngineError(error.get("code", "load_failed"), error.get("message", "The table could not be read."))
+        return opened["result"]
+
+    @traitlets.validate("sheet")
+    def _check_sheet(self, proposal: dict[str, Any]) -> str | None:
+        sheet = proposal["value"]
+        if not self._closed and self._default_sheet is not None and sheet not in self._sheet_handles:
+            self._sheet_handles[sheet] = self._open_sheet(sheet)["table"]
+        return sheet
 
     def _follow_cell(self) -> None:
         """Closes the grids that this grid's cell made when it ran before."""
@@ -224,7 +242,7 @@ class Grid(anywidget.AnyWidget):
             self._post(response)
 
     def _event(self, event: dict[str, Any]) -> None:
-        if event.get("table") != self._table_id:
+        if event.get("table") not in self._sheet_handles.values():
             self._post(event)
 
     def _post(self, message: dict[str, Any]) -> None:
@@ -249,7 +267,8 @@ class Grid(anywidget.AnyWidget):
     def _table(self):
         if self._closed:
             raise ValueError("The grid is closed.")
-        return self._engine.handles[self._table_id]
+        sheet = self.sheet if self._default_sheet is not None else None
+        return self._engine.handles[self._sheet_handles[sheet]]
 
     def to_arrow(self, *, view: bool = False) -> pa.Table:
         """The table with the written cells, as a PyArrow table, in row order; with `view`, the grid's view: its

@@ -538,6 +538,7 @@ export class DuckDBEngine {
     }
     const table = new LoadedTable(this.session, file, format, revision, size, options, {
       previewRows: this.options.previewRows ?? 1000,
+      disposeSignal: this.disposeSignal,
       onChange: (changed, change) => this.changed(changed, change),
       log: this.options.log,
     });

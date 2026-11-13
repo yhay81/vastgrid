@@ -471,6 +471,8 @@ export function GridBody({
       void store.dispatch({ command: "edit.begin" }).then((later) => {
         if (later.ok) {
           if (store.currentSession().editor) editor.current?.open();
+        } else if (later.error.code === "cancelled") {
+          return;
         } else if (later.error instanceof CommandError && later.error.reason === "read_only") {
           announce(messages.readOnly);
         } else {

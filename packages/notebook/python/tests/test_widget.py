@@ -9,6 +9,7 @@ import struct
 from pathlib import Path
 from typing import Any
 
+import duckdb
 import pandas
 import polars
 import pyarrow as pa
@@ -17,6 +18,7 @@ import pytest
 
 import vastgrid._widget as widget
 from vastgrid import Grid, show
+from vastgrid._errors import EngineError
 
 
 class Page:
@@ -115,6 +117,48 @@ def test_the_notebook_reads_the_view_and_exports_it(no_cell: None, tmp_path: Pat
         with pytest.raises(ValueError):
             grid.export(tmp_path / "view.txt")
         assert sorted(path.name for path in tmp_path.iterdir()) == ["all.parquet", "view.csv"]
+    finally:
+        grid.close()
+
+
+@pytest.mark.parametrize("initial", [None, "First"])
+def test_sheet_switch_keeps_page_edits_and_python_exports_in_sync(
+    initial: str | None, no_cell: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "two.duckdb"
+    with duckdb.connect(str(path)) as db:
+        db.execute('CREATE TABLE "First" AS SELECT 11 AS n')
+        db.execute('CREATE TABLE "Second" AS SELECT 22 AS n')
+    grid = Grid(path, sheet=initial)
+    page = Page(grid, monkeypatch)
+    try:
+        for sheet, value in [("First", 111), ("Second", 222)]:
+            grid.sheet = sheet
+            info = page.request("open", ref=grid.ref, read={"sheet": sheet})["result"]
+            assert (
+                page.request(
+                    "write",
+                    table=info["table"],
+                    revision=info["revision"],
+                    updates=[{"key": {"rowId": 0}, "column": "n", "value": value}],
+                )["result"]["updated"]
+                == 1
+            )
+            assert page.request("close", table=info["table"])["result"] is None
+            assert grid.edits["cells"] == 1
+            assert grid.to_arrow(view=True)["n"].to_pylist() == [value]
+            assert grid.export(tmp_path / "view.csv") == 1
+            assert (tmp_path / "view.csv").read_text() == f"n\n{value}\n"
+        with pytest.raises(EngineError, match="Missing"):
+            grid.sheet = "Missing"
+        assert grid.sheet == "Second" and grid.to_arrow()["n"].to_pylist() == [222]
+        grid.sheet = None
+        assert grid.edits["cells"] == 1
+        assert grid.to_arrow()["n"].to_pylist() == [111]
+        again = page.request("open", ref=grid.ref)["result"]
+        assert again["sheet"] == "First" and again["edits"]["cells"] == 1
+        grid.sheet = "Second"
+        assert grid.to_arrow()["n"].to_pylist() == [222]
     finally:
         grid.close()
 

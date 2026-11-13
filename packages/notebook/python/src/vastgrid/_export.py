@@ -253,8 +253,9 @@ def excel_number_format(kind: str, fmt: dict[str, Any] | None) -> str | None:
         positive = f"{_excel_quoted(prefix)}{code}{_excel_quoted(suffix)}"
         sign = num.get("signDisplay")
         if sign in ("always", "exceptZero"):
-            zero = f"{_excel_quoted('+' + prefix)}{code}{_excel_quoted(suffix)}" if sign == "always" else positive
-            return f"{_excel_quoted('+' + prefix)}{code}{_excel_quoted(suffix)};{_excel_quoted('-' + prefix)}{code}{_excel_quoted(suffix)};{zero}"
+            plus = f"{_excel_quoted('+' + prefix)}{code}{_excel_quoted(suffix)}"
+            minus = f"{_excel_quoted('-' + prefix)}{code}{_excel_quoted(suffix)}"
+            return f"{plus};{minus};{plus if sign == 'always' else positive}"
         if sign == "never":
             return f"{positive};{positive}"
         return positive
@@ -265,7 +266,7 @@ def excel_number_format(kind: str, fmt: dict[str, Any] | None) -> str | None:
     return None
 
 
-def _column_name(index: int) -> str:
+def excel_column_name(index: int) -> str:
     name = ""
     rest = index + 1
     while rest > 0:
@@ -392,7 +393,7 @@ def _column_width(name: str, kind: str) -> int:
 def _sheet(
     columns: Sequence[dict[str, Any]], styles: list[int], batches: Rows, running: Running | None = None
 ) -> Iterator[str]:
-    refs = [_column_name(index) for index in range(len(columns))]
+    refs = [excel_column_name(index) for index in range(len(columns))]
     cols = "".join(
         f'<col min="{index + 1}" max="{index + 1}" width="{_column_width(column["name"], column["type"])}" '
         'customWidth="1"/>'

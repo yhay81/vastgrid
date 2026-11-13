@@ -4,6 +4,17 @@
 
 ### Fixes
 
+- `vastgrid-spec`, `vastgrid`: undoing an edit to a row key targets the original record even after it scrolls
+  out of cache. An edit waiting for data is cancelled if the active cell changes. Grouped views drop requests
+  for columns that were only present before grouping.
+- `vastgrid-duckdb`, `vastgrid-cli`: open Parquet tables keep reading the authorized file if its path is replaced.
+  The HTTP handler answers CORS preflight requests and allows browsers on configured origins to read its responses.
+- `vastgrid-mcp`: opening a workbook or database without specifying a sheet shows its default sheet and shares
+  edits between the App and the agent.
+- `vastgrid` (Python): switching sheets updates notebook exports and keeps each sheet's edits. Excel headers
+  below row one use the sheet's data bounds. pandas column names such as `to_frame` can be opened.
+- `vastgrid-js`: `REPLACE` treats dollar signs in replacement text literally, `LEAST` and `GREATEST` share
+  comparisons across arguments of the same type, and Parquet maps can display list keys.
 - `vastgrid`, `vastgrid-js`, `vastgrid-spec`: pasting over row keys, undo and redo address the original rows,
   and committing an open editor on a `rowKey` column succeeds even after scrolling its row out of cache.
   Failed writes leave all cells unchanged, multi-range edits deduplicate beyond 2⁵³ virtual cell offsets,

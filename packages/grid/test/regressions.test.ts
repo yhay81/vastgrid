@@ -189,6 +189,46 @@ test("setDocument fits session.active when hiding the active column on the curre
   }
 });
 
+test("pending detail and viewport reads use only columns of the new grouped view", async ({ onTestFinished }) => {
+  const engine = memoryEngine({
+    tables: {
+      items: {
+        columns: [
+          { name: "category", type: "string" },
+          { name: "qty", type: "integer" },
+        ],
+        rows: [["A", 2]],
+      },
+    },
+  });
+  const transport = localTransport(engine);
+  const requested: unknown[] = [];
+  const store = createGridStore({
+    table: "items",
+    transport: {
+      ...transport,
+      send: (request, options) => {
+        if (request.op === "rows" && (request.plan as { aggregate?: unknown }).aggregate) {
+          requested.push(...(request.columns as string[]));
+        }
+        return transport.send(request, options);
+      },
+    },
+  });
+  onTestFinished(store.connect());
+  store.setViewport({ top: 0, rows: 1, columns: ["qty"] });
+  await expect.poll(() => store.cell(0, "qty")).toBe(2);
+  store.setDocument({
+    ...store.getSnapshot().document,
+    plan: { aggregate: { keys: ["category"], measures: [{ name: "n", fn: "count" }] } },
+  });
+  assert.ok(store.getSnapshot().pending);
+  store.ensure(0, 1, ["qty", "n"]);
+  await expect.poll(() => store.cell(0, "n")).toBe(1);
+  assert.equal(requested.includes("qty"), false);
+  assert.equal(store.getSnapshot().error, null);
+});
+
 test("ViewCache tracks per-column loaded lengths, does not fabricate null for unread cells, and clears stale cut flags", () => {
   const cache = new ViewCache();
   cache.receive(
