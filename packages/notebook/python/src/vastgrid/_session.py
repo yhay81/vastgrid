@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import itertools
-import os
 import shutil
 import tempfile
 import threading
@@ -96,6 +95,4 @@ class Session:
             cursor.close()
 
     def close(self) -> None:
-        for name in os.listdir(self.folder):
-            os.remove(os.path.join(self.folder, name))
-        os.rmdir(self.folder)
+        shutil.rmtree(self.folder, ignore_errors=True)

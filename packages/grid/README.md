@@ -1,7 +1,7 @@
 # vastgrid
 
 A canvas data grid for React that opens tables of any size like a spreadsheet: huge CSV, TSV, Parquet, JSON Lines
-and Excel files, read a block of rows at a time as you scroll. People sort, filter, group, pivot, find, format,
+and Excel files and DuckDB databases, read a block of rows at a time as you scroll. People sort, filter, group, pivot, find, format,
 edit, undo and export; engines in the browser or on Node.js do the work, and save edited CSV and TSV files with
 every byte that was not edited kept as it is.
 

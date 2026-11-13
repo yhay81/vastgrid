@@ -33,7 +33,9 @@ import {
   Version,
 } from "@uwdata/flechette";
 import {
+  DATE_INFINITY,
   dateText,
+  floorDiv,
   intervalText,
   parseDateText,
   parseIntervalText,
@@ -108,9 +110,16 @@ function uuidBytes(value: JsonValue, into: Uint8Array, at: number) {
   for (let index = 0; index < 16; index++) into[at + index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
 }
 
+const HEX = Array.from({ length: 256 }, (_, byte) => byte.toString(16).padStart(2, "0"));
+
 function uuidText(bytes: Uint8Array): string {
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  return (
+    `${HEX[bytes[0]]}${HEX[bytes[1]]}${HEX[bytes[2]]}${HEX[bytes[3]]}-` +
+    `${HEX[bytes[4]]}${HEX[bytes[5]]}-` +
+    `${HEX[bytes[6]]}${HEX[bytes[7]]}-` +
+    `${HEX[bytes[8]]}${HEX[bytes[9]]}-` +
+    `${HEX[bytes[10]]}${HEX[bytes[11]]}${HEX[bytes[12]]}${HEX[bytes[13]]}${HEX[bytes[14]]}${HEX[bytes[15]]}`
+  );
 }
 
 function textOfValue(value: JsonValue, what: string): string {
@@ -150,120 +159,125 @@ function arrowType(type: ValueType) {
   }
 }
 
-/** Bytes of variable-length values and their offsets. */
-function variable(values: JsonValue[], bytesOf: (value: JsonValue) => Uint8Array) {
-  const offsets = new Int32Array(values.length + 1);
-  const parts: Uint8Array[] = [];
-  let length = 0;
-  values.forEach((value, index) => {
-    if (value !== null) {
-      const bytes = bytesOf(value);
-      parts.push(bytes);
-      length += bytes.length;
-      if (length > 2_147_483_647) throw new RangeError("A block holds at most 2 GiB of one column's text.");
-    }
-    offsets[index + 1] = length;
-  });
-  const bytes = new Uint8Array(length);
-  let at = 0;
-  for (const part of parts) {
-    bytes.set(part, at);
-    at += part.length;
-  }
-  return { offsets, bytes };
-}
-
 /** The validity bitmap and the buffers of one column's values. */
-function buffers(type: ValueType, values: JsonValue[]) {
-  const length = values.length;
+function buffers(column: Column, columnIndex: number, rows: readonly (readonly JsonValue[])[]) {
+  const length = rows.length;
   let nullCount = 0;
   const bitmap = new Uint8Array(Math.ceil(length / 8));
-  values.forEach((value, index) => {
+  const readCell = (at: number): JsonValue => {
+    const value = rows[at][columnIndex] ?? null;
+    if (!isValueOf(value, column)) throw new BlockValueError(`/rows/${at}/${columnIndex}`, column);
     if (value === null) nullCount++;
-    else bitmap[index >> 3] |= 1 << (index & 7);
-  });
-  const validity = nullCount === 0 ? new Uint8Array(0) : bitmap;
+    else bitmap[at >> 3] |= 1 << (at & 7);
+    return value;
+  };
+  const validityOf = () => (nullCount === 0 ? new Uint8Array(0) : bitmap);
   const fixed = (width: number, write: (view: DataView, at: number, value: JsonValue) => void) => {
     const bytes = new Uint8Array(length * width);
     const view = new DataView(bytes.buffer);
-    values.forEach((value, index) => {
-      if (value !== null) write(view, index * width, value);
-    });
+    for (let at = 0; at < length; at++) {
+      const value = readCell(at);
+      if (value !== null) write(view, at * width, value);
+    }
     return bytes;
   };
-  switch (type.type) {
+  switch (column.type) {
     case "boolean": {
       const bits = new Uint8Array(Math.ceil(length / 8));
-      values.forEach((value, index) => {
-        if (value === true) bits[index >> 3] |= 1 << (index & 7);
-      });
-      return { validity, nullCount, values: bits };
+      for (let at = 0; at < length; at++) {
+        if (readCell(at) === true) bits[at >> 3] |= 1 << (at & 7);
+      }
+      return { validity: validityOf(), nullCount, values: bits };
     }
-    case "integer":
-      return { validity, nullCount, values: Int32Array.from(values, (value) => (value === null ? 0 : Number(value))) };
-    case "bigint":
-      return {
-        validity,
-        nullCount,
-        values: BigInt64Array.from(values, (value) => (value === null ? 0n : BigInt(value as number | string))),
-      };
+    case "integer": {
+      const values = new Int32Array(length);
+      for (let at = 0; at < length; at++) {
+        const value = readCell(at);
+        if (value !== null) values[at] = Number(value);
+      }
+      return { validity: validityOf(), nullCount, values };
+    }
+    case "bigint": {
+      const values = new BigInt64Array(length);
+      for (let at = 0; at < length; at++) {
+        const value = readCell(at);
+        if (value !== null) values[at] = BigInt(value as number | string);
+      }
+      return { validity: validityOf(), nullCount, values };
+    }
     case "decimal": {
-      const scale = type.scale ?? 0;
+      const scale = column.scale ?? 0;
       const bytes = fixed(16, (view, at, value) => {
         const unscaled = BigInt.asUintN(128, unscaledOf(value, scale));
         view.setBigUint64(at, unscaled & 0xffff_ffff_ffff_ffffn, true);
         view.setBigUint64(at + 8, unscaled >> 64n, true);
       });
-      return { validity, nullCount, values: bytes };
+      return { validity: validityOf(), nullCount, values: bytes };
     }
     case "float": {
-      const numbers = values.map((value) => (value === null ? 0 : floatOf(value)));
-      return {
-        validity,
-        nullCount,
-        values: type.bits === 32 ? Float32Array.from(numbers) : Float64Array.from(numbers),
-      };
+      const values = column.bits === 32 ? new Float32Array(length) : new Float64Array(length);
+      for (let at = 0; at < length; at++) {
+        const value = readCell(at);
+        if (value !== null) values[at] = floatOf(value);
+      }
+      return { validity: validityOf(), nullCount, values };
     }
     case "string":
     case "binary": {
-      const { offsets, bytes } = variable(values, (value) =>
-        type.type === "string"
-          ? encoder.encode(textOfValue(value, "a string"))
-          : fromBase64(textOfValue(value, "base64")),
-      );
-      return { validity, nullCount, values: bytes, offsets };
+      const offsets = new Int32Array(length + 1);
+      const parts: Uint8Array[] = [];
+      let byteLength = 0;
+      for (let at = 0; at < length; at++) {
+        const value = readCell(at);
+        if (value !== null) {
+          const part =
+            column.type === "string"
+              ? encoder.encode(textOfValue(value, "a string"))
+              : fromBase64(textOfValue(value, "base64"));
+          parts.push(part);
+          byteLength += part.length;
+          if (byteLength > 2_147_483_647) throw new RangeError("A block holds at most 2 GiB of one column's text.");
+        }
+        offsets[at + 1] = byteLength;
+      }
+      const bytes = new Uint8Array(byteLength);
+      let pos = 0;
+      for (const part of parts) {
+        bytes.set(part, pos);
+        pos += part.length;
+      }
+      return { validity: validityOf(), nullCount, values: bytes, offsets };
     }
-    case "date":
-      return {
-        validity,
-        nullCount,
-        values: Int32Array.from(values, (value) => {
-          if (value === null) return 0;
-          const days = parseDateText(textOfValue(value, "a date"));
-          if (days === null) throw new TypeError(`${JSON.stringify(value)} is not a date.`);
-          return days;
-        }),
-      };
+    case "date": {
+      const values = new Int32Array(length);
+      for (let at = 0; at < length; at++) {
+        const value = readCell(at);
+        if (value === null) continue;
+        const days = parseDateText(textOfValue(value, "a date"));
+        if (days === null) throw new TypeError(`${JSON.stringify(value)} is not a date.`);
+        values[at] = days;
+      }
+      return { validity: validityOf(), nullCount, values };
+    }
     case "time":
     case "timestamp":
     case "timestamptz": {
-      const unit = type.type === "timestamp" ? (type.unit ?? "us") : "us";
-      return {
-        validity,
-        nullCount,
-        values: BigInt64Array.from(values, (value) => {
-          if (value === null) return 0n;
-          const text = textOfValue(value, `a ${type.type}`);
-          const count =
-            type.type === "time"
-              ? parseTimeText(text)
-              : type.type === "timestamptz"
-                ? parseTimestamptzText(text)
-                : parseTimestampText(text, unit);
-          if (count === null) throw new TypeError(`${JSON.stringify(value)} is not a ${type.type}.`);
-          return count;
-        }),
-      };
+      const unit = column.type === "timestamp" ? (column.unit ?? "us") : "us";
+      const values = new BigInt64Array(length);
+      for (let at = 0; at < length; at++) {
+        const value = readCell(at);
+        if (value === null) continue;
+        const text = textOfValue(value, `a ${column.type}`);
+        const count =
+          column.type === "time"
+            ? parseTimeText(text)
+            : column.type === "timestamptz"
+              ? parseTimestamptzText(text)
+              : parseTimestampText(text, unit);
+        if (count === null) throw new TypeError(`${JSON.stringify(value)} is not a ${column.type}.`);
+        values[at] = count;
+      }
+      return { validity: validityOf(), nullCount, values };
     }
     case "interval": {
       const bytes = fixed(16, (view, at, value) => {
@@ -273,14 +287,15 @@ function buffers(type: ValueType, values: JsonValue[]) {
         view.setInt32(at + 4, parts.days, true);
         view.setBigInt64(at + 8, parts.nanos, true);
       });
-      return { validity, nullCount, values: bytes };
+      return { validity: validityOf(), nullCount, values: bytes };
     }
     case "uuid": {
       const bytes = new Uint8Array(length * 16);
-      values.forEach((value, index) => {
-        if (value !== null) uuidBytes(value, bytes, index * 16);
-      });
-      return { validity, nullCount, values: bytes };
+      for (let at = 0; at < length; at++) {
+        const value = readCell(at);
+        if (value !== null) uuidBytes(value, bytes, at * 16);
+      }
+      return { validity: validityOf(), nullCount, values: bytes };
     }
   }
 }
@@ -297,12 +312,7 @@ export function encodeBlock(columns: readonly Column[], rows: readonly (readonly
   );
   const children = columns.map((column, index) => {
     const type = fields[index].type;
-    const values = rows.map((row, at) => {
-      const value = row[index] ?? null;
-      if (!isValueOf(value, column)) throw new BlockValueError(`/rows/${at}/${index}`, column);
-      return value;
-    });
-    const batch = new Batch({ length: rows.length, type, ...buffers(column, values) } as ConstructorParameters<
+    const batch = new Batch({ length: rows.length, type, ...buffers(column, index, rows) } as ConstructorParameters<
       typeof Batch
     >[0]);
     return new ArrowColumn([batch], type);
@@ -460,23 +470,23 @@ export function batchReader(arrow: ArrowField, batch: RawBatch, logical: ValueTy
       case Type.LargeBinary:
       case Type.BinaryView:
         return toBase64(variableBytes(index));
-      case Type.Date:
-        return dateText(
-          type.unit === DateUnit.DAY
-            ? view.getInt32(index * 4, true)
-            : Number(view.getBigInt64(index * 8, true) / 86_400_000n),
-        );
+      case Type.Date: {
+        if (type.unit === DateUnit.DAY) return dateText(view.getInt32(index * 4, true));
+        const millis = view.getBigInt64(index * 8, true);
+        if (millis === BigInt(DATE_INFINITY) || millis === -BigInt(DATE_INFINITY)) return dateText(Number(millis));
+        return dateText(Number(floorDiv(millis, 86_400_000n)));
+      }
       case Type.Time: {
         const count =
           (type.bitWidth ?? 64) === 32 ? BigInt(view.getInt32(index * 4, true)) : view.getBigInt64(index * 8, true);
-        const micros = (count * 1_000_000n) / perSecond(type.unit);
+        const micros = floorDiv(count * 1_000_000n, perSecond(type.unit));
         return timeText(micros);
       }
       case Type.Timestamp: {
         const count = view.getBigInt64(index * 8, true);
         if (logical.type === "timestamptz") {
           const infinite = count === TIMESTAMP_INFINITY || count === -TIMESTAMP_INFINITY;
-          return timestamptzText(infinite ? count : (count * 1_000_000n) / perSecond(type.unit));
+          return timestamptzText(infinite ? count : floorDiv(count * 1_000_000n, perSecond(type.unit)));
         }
         return timestampText(count, UNIT_NAMES[type.unit ?? 2]);
       }
@@ -508,6 +518,65 @@ export function batchReader(arrow: ArrowField, batch: RawBatch, logical: ValueTy
 }
 
 /**
+ * Reads top-level schema field names from an Arrow IPC stream or file with `ignoreBOM: true`, because
+ * Flechette's FlatBuffer string reader uses `new TextDecoder()` without `ignoreBOM` and strips leading U+FEFF.
+ */
+export function schemaFieldNames(bytes: Uint8Array): string[] | null {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let pos =
+    bytes.byteLength >= 8 &&
+    bytes[0] === 0x41 &&
+    bytes[1] === 0x52 &&
+    bytes[2] === 0x52 &&
+    bytes[3] === 0x4f &&
+    bytes[4] === 0x57 &&
+    bytes[5] === 0x31
+      ? 8
+      : 0;
+  if (pos + 8 > bytes.byteLength) return null;
+  let metaLength = view.getInt32(pos, true);
+  pos += 4;
+  if (metaLength === -1) {
+    if (pos + 4 > bytes.byteLength) return null;
+    metaLength = view.getInt32(pos, true);
+    pos += 4;
+  }
+  if (metaLength <= 0 || pos + metaLength > bytes.byteLength) return null;
+  const fieldOffset = (table: number, slot: number) => {
+    const vtable = table - view.getInt32(table, true);
+    const vtableLength = view.getUint16(vtable, true);
+    const offset = 4 + slot * 2;
+    if (offset >= vtableLength) return 0;
+    const relative = view.getUint16(vtable + offset, true);
+    return relative === 0 ? 0 : table + relative;
+  };
+  const message = pos + view.getInt32(pos, true);
+  const headerType = fieldOffset(message, 1);
+  if (headerType === 0 || view.getUint8(headerType) !== 1) return null;
+  const headerRef = fieldOffset(message, 2);
+  if (headerRef === 0) return null;
+  const schema = headerRef + view.getInt32(headerRef, true);
+  const fieldsRef = fieldOffset(schema, 1);
+  if (fieldsRef === 0) return [];
+  const vector = fieldsRef + view.getInt32(fieldsRef, true);
+  const count = view.getInt32(vector, true);
+  const names: string[] = [];
+  for (let index = 0; index < count; index++) {
+    const element = vector + 4 + index * 4;
+    const item = element + view.getInt32(element, true);
+    const nameRef = fieldOffset(item, 0);
+    if (nameRef === 0) {
+      names.push("");
+      continue;
+    }
+    const str = nameRef + view.getInt32(nameRef, true);
+    const length = view.getInt32(str, true);
+    names.push(decoder.decode(bytes.subarray(str + 4, str + 4 + length)));
+  }
+  return names;
+}
+
+/**
  * Reads a block (§8.4): its columns, with the logical types of their Arrow types, and its rows as typed JSON
  * (§2.2).
  */
@@ -516,14 +585,26 @@ export function decodeBlock(bytes: Uint8Array): { columns: Column[]; rows: JsonV
   const aligned = bytes.byteOffset % 8 === 0 ? bytes : bytes.slice();
   const table = tableFromIPC(aligned);
   const fields = table.schema.fields as unknown as ArrowField[];
-  const columns: Column[] = fields.map((arrow) => ({ name: arrow.name, ...logicalType(arrow) }));
-  const values = fields.map((arrow, index) =>
-    (table.children[index].data as unknown as RawBatch[]).flatMap((batch) => {
-      const read = batchReader(arrow, batch, columns[index]);
-      return Array.from({ length: batch.length }, (_, at) => read(at));
-    }),
-  );
-  const rowCount = values[0]?.length ?? 0;
-  const rows = Array.from({ length: rowCount }, (_, row) => values.map((column) => column[row]));
+  const names = schemaFieldNames(aligned);
+  const columns: Column[] = fields.map((arrow, index) => ({
+    name: names?.[index] ?? arrow.name,
+    ...logicalType(arrow),
+  }));
+  if (fields.length === 0) return { columns, rows: [] };
+  const firstBatches = table.children[0].data as unknown as RawBatch[];
+  let rowCount = 0;
+  for (const batch of firstBatches) rowCount += batch.length;
+  const colCount = fields.length;
+  const rows: JsonValue[][] = Array.from({ length: rowCount }, () => new Array<JsonValue>(colCount));
+  for (let col = 0; col < colCount; col++) {
+    const arrow = fields[col];
+    const column = columns[col];
+    const batches = table.children[col].data as unknown as RawBatch[];
+    let row = 0;
+    for (const batch of batches) {
+      const read = batchReader(arrow, batch, column);
+      for (let at = 0; at < batch.length; at++) rows[row++][col] = read(at);
+    }
+  }
   return { columns, rows };
 }

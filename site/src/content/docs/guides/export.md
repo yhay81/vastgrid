@@ -88,7 +88,11 @@ The Export menu dispatches the `export` command, which an app can dispatch too:
 const store = grid.current!.store; // a DataGrid's handle, or useGridStore() under a GridProvider
 const outcome = await store.dispatch({ command: "export", format: "csv", rows: "view", columns: "displayed" });
 if (outcome.ok) {
-  const { target, rows, data } = outcome.output as { target: string | null; rows: number; data?: { bytes: Uint8Array } };
+  const { target, rows, data } = outcome.output as {
+    target: string | null;
+    rows: number;
+    data?: { bytes: Uint8Array<ArrayBuffer> };
+  };
   if (data) {
     // The memory engine: the file's bytes, named like the menu names them.
     const file = new File([data.bytes], store.exportName("csv"));

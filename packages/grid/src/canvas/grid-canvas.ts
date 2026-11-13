@@ -288,8 +288,8 @@ export class GridCanvas {
     if (!elements || !this.context) return;
     const theme = resolveTheme(elements.root);
     this.theme = theme;
-    this.cellText = new TextFitter(this.context, theme.font);
-    this.headerText = new TextFitter(this.context, theme.headerFont);
+    if (this.cellText?.font !== theme.font) this.cellText = new TextFitter(this.context, theme.font);
+    if (this.headerText?.font !== theme.headerFont) this.headerText = new TextFitter(this.context, theme.headerFont);
     this.baseRowHeight = this.options.rowHeight ?? cssLength(elements.root, "--vg-row-height", 24);
     this.geometry.rowHeight = this.wrappedHeight(this.columns);
     this.geometry.nameHeight = this.options.headerHeight ?? cssLength(elements.root, "--vg-header-height", 32);
@@ -297,7 +297,6 @@ export class GridCanvas {
       this.options.groupHeaderHeight ?? cssLength(elements.root, "--vg-group-header-height", 24);
     this.geometry.groupRows = depthOf(this.groups);
     this.geometry.headerHeight = this.geometry.groupTop + this.geometry.nameHeight;
-    this.texts.clear();
     this.schedule();
   }
 
@@ -401,9 +400,18 @@ export class GridCanvas {
       elements.sizer.style.height = `${height}px`;
     }
     this.updateViewport();
-    // Columns that came or went (a derived column, a hidden one) change the columns on screen.
+    // Columns or rows that came or went change what is on screen.
+    const [top, bottom] = this.geometry.visibleRows();
     const [first, last] = this.geometry.visibleScrollColumns();
-    if (!this.scrolling && (first !== this.settled.left || last !== this.settled.right)) this.bumpSettled();
+    if (
+      !this.scrolling &&
+      (top !== this.settled.top ||
+        bottom - top !== this.settled.rows ||
+        first !== this.settled.left ||
+        last !== this.settled.right)
+    ) {
+      this.bumpSettled();
+    }
     this.schedule();
   }
 
@@ -435,7 +443,7 @@ export class GridCanvas {
         const text = this.text(row, item.column, value);
         if (text) widest = Math.max(widest, fitter.width(text.length > 120 ? text.slice(0, 120) : text) + PADDING * 2);
       }
-      const total = this.totalText(item.column.name);
+      const total = this.totalText(item);
       if (total) widest = Math.max(widest, fitter.width(total) + PADDING * 2);
       if (!loaded) return;
       // Columns grow to fit the rows that come on screen, and never shrink while the view stays.
@@ -844,13 +852,22 @@ export class GridCanvas {
     const rowCount = snapshot.view?.rowCount ?? 0;
     if (rowCount === 0) return;
     const ranges = session.selection ?? [];
-    const rect = (rows: [number, number], columns: number[]) => {
-      const visible = columns.filter((column) => column >= from && column <= to);
-      if (visible.length === 0) return null;
-      const x0 = Math.min(...visible.map((column) => this.geometry.columnX(column)));
-      const x1 = Math.max(
-        ...visible.map((column) => this.geometry.columnX(column) + this.geometry.layout.width(column)),
-      );
+    const rect = (rows: [number, number], columns: "all" | readonly number[], totalColumns: number) => {
+      let x0 = Number.POSITIVE_INFINITY;
+      let x1 = Number.NEGATIVE_INFINITY;
+      if (columns === "all") {
+        if (totalColumns === 0 || to < from) return null;
+        x0 = this.geometry.columnX(from);
+        x1 = this.geometry.columnX(to) + this.geometry.layout.width(to);
+      } else {
+        for (const column of columns) {
+          if (column < from || column > to) continue;
+          const left = this.geometry.columnX(column);
+          x0 = Math.min(x0, left);
+          x1 = Math.max(x1, left + this.geometry.layout.width(column));
+        }
+        if (!Number.isFinite(x0)) return null;
+      }
       // Cut to the canvas and a pixel past it: the edges of a range of many rows can be billions of pixels away,
       // where the canvas's single precision would misplace them by rows.
       const y0 = Math.max(this.geometry.rowY(rows[0]), -1);
@@ -861,13 +878,11 @@ export class GridCanvas {
     ranges.forEach((range, position) => {
       const rows: [number, number] =
         range.rows === "all" ? [0, rowCount] : [range.rows[0], Math.min(range.rows[1], rowCount)];
-      const columns =
-        range.columns === "all"
-          ? this.columns.map((_, index) => index)
-          : range.columns.flatMap((name) => this.index.get(name) ?? []);
-      const area = rect(rows, columns);
+      const columns = range.columns === "all" ? "all" : range.columns.flatMap((name) => this.index.get(name) ?? []);
+      const totalColumns = columns === "all" ? this.columns.length : columns.length;
+      const area = rect(rows, columns, totalColumns);
       if (!area) return;
-      const single = rows[1] - rows[0] === 1 && columns.length === 1 && ranges.length === 1;
+      const single = rows[1] - rows[0] === 1 && totalColumns === 1 && ranges.length === 1;
       if (!single) {
         ctx.fillStyle = theme.selection;
         ctx.fillRect(area.x, area.y, area.width, area.height);
@@ -1155,12 +1170,19 @@ export class GridCanvas {
     ctx.stroke();
   }
 
-  /** The text of a column's total; undefined while it is read. */
-  private totalText(name: string): string | undefined {
+  /** The text of a column's total, in the column's format when it keeps the column's unit; undefined while it is read. */
+  totalText(item: DisplayedColumn): string | undefined {
+    const fn = item.setting.total?.fn;
+    if (!fn) return undefined;
     const totals = this.snapshot?.totals;
-    const value = totals?.values[name];
-    const type = totals?.columns[name];
+    const value = totals?.values[item.column.name];
+    const type = totals?.columns[item.column.name];
     if (value === undefined || !type) return undefined;
+    if (value === null) return "";
+    if (fn !== "count" && fn !== "count_distinct") {
+      const formatted = formatterFor(type, item.setting.format, this.locale)?.(value);
+      if (formatted !== null && formatted !== undefined) return formatted;
+    }
     return textOf(value, type) ?? "";
   }
 
@@ -1189,7 +1211,7 @@ export class GridCanvas {
       if (!item?.setting.total) return;
       const x = this.geometry.columnX(column);
       const width = this.geometry.layout.width(column);
-      const text = this.totalText(item.column.name);
+      const text = this.totalText(item);
       if (text === undefined) {
         ctx.fillStyle = theme.placeholder;
         ctx.fillRect(x + PADDING, middle - 4, Math.max(0, Math.min(width - PADDING * 2, 64)), 8);

@@ -22,6 +22,7 @@ vastgrid 0.2 は、書かれた仕様の上にグリッドを作り直したも�
 ```tsx
 import { DataGrid, localTransport } from "vastgrid";
 import { memoryEngine } from "vastgrid-js";
+import "vastgrid/styles.css";
 
 const transport = localTransport(memoryEngine({ tables: { orders: { columns, rows } } }));
 
@@ -40,11 +41,11 @@ const transport = localTransport(memoryEngine({ tables: { orders: { columns, row
 import { migrateGridState } from "vastgrid-spec";
 
 // columns: the table's columns, as the engine reports them (snapshot.table.columns once it is open)
-const { document, dropped, reasons } = migrateGridState(savedState, columns);
+const { document, dropped, reasons, removed } = migrateGridState(savedState, columns);
 // <DataGrid … defaultDocument={document} />
 ```
 
-`dropped` は移せなかったものを 0.1 の状態の中の JSON Pointer で並べ、`reasons` はその理由を示します。左右に固定した列は `pin: "left"` と `pin: "right"` に、グループはプランの `aggregate` になります（[仕様の §5.6](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#56-versions-and-migration)）。
+`dropped` は移せなかったものを 0.1 の状態の中の JSON Pointer で並べ、`reasons` はその理由を示します。`removed` は、現在の表に合わせて修復した際に取り除いた設定を、修復前のドキュメント内の位置で示します。左右に固定した列は `pin: "left"` と `pin: "right"` に、グループはプランの `aggregate` になります（[仕様の §5.6](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#56-versions-and-migration)）。
 
 ## 数式
 

@@ -85,7 +85,7 @@ test("the generated table reads with the same columns and values in both engines
 
 test(`${PLANS} generated plans give the same answers in both engines (seed ${SEED})`, async () => {
   const failures: string[] = [];
-  const outcomes = { rows: 0, errors: 0, known: 0 };
+  const outcomes = { rows: 0, errors: 0 };
   const only = process.env.VASTGRID_ONLY;
   const seeds = only ? only.split(",").map(Number) : Array.from({ length: PLANS }, (_, index) => SEED * 1_000 + index);
   for (const seed of seeds) {
@@ -97,16 +97,13 @@ test(`${PLANS} generated plans give the same answers in both engines (seed ${SEE
       if (process.env.VASTGRID_DEBUG) console.log(JSON.stringify(plan), JSON.stringify(memory.error));
     } else outcomes.rows++;
     const parquet = await answer(parquetSend, parquetTable, plan);
-    const { known, problems } = compareInputs(memory, parquet, duckdb);
+    const problems = compareInputs(memory, parquet, duckdb);
     if (only) console.log(JSON.stringify({ plan, memory, duckdb }));
-    if (known) outcomes.known++;
     if (problems.length > 0) {
       failures.push(`plan ${seed}: ${JSON.stringify(plan)}\n  ${problems.join("\n  ")}`);
     }
   }
-  console.log(
-    `${outcomes.rows} plans answered with rows, ${outcomes.errors} with errors; ${outcomes.known} differ as KNOWN says`,
-  );
+  console.log(`${outcomes.rows} plans answered with rows, ${outcomes.errors} with errors`);
   assert.equal(failures.length, 0, `${failures.length} plans differ:\n${failures.slice(0, 10).join("\n")}`);
   // The generator makes plans that run, not only plans that fail.
   if (!only) assert.ok(outcomes.rows > PLANS * 0.8, `${outcomes.rows} of ${PLANS} plans ran`);
@@ -222,7 +219,7 @@ test("generated plans find the same cells and export the same files in both engi
 /** Rows `start` to `end` of a view: their row IDs and values. */
 async function page(
   send: Send,
-  table: { table: string; revision: string },
+  table: { table: string; revision: string | null },
   plan: Json,
   start: number,
   end: number,
@@ -271,7 +268,9 @@ test("reads a Parquet file over HTTP by range requests, the row groups of the ro
     response.end(bytes.subarray(start, end));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  onTestFinished(() => server.close());
+  onTestFinished(() => {
+    server.close();
+  });
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/groups.parquet`;
   const send = sender(memoryEngine({ tables: { groups: { parquet: url, editable: true } } }));
   const opened = await send("open", { ref: "groups" });
@@ -501,7 +500,9 @@ test("both engines read the same sheets of a workbook with the same read options
       tables: Object.fromEntries(
         [...files].map(([name, bytes], index) => [
           name,
-          index % 2 === 0 ? { file: new File([bytes], name) } : { file: new Blob([bytes]), format: "xlsx" },
+          index % 2 === 0
+            ? { file: new File([bytes as BlobPart], name) }
+            : { file: new Blob([bytes as BlobPart]), format: "xlsx" },
         ]),
       ),
     }),

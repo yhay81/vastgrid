@@ -10,12 +10,14 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, NoReturn
 
+from ._calendar import UNIT_DIGITS
 from ._fold import FOLDS
 from ._plan import FUNCTIONS, LIMITS, MEASURES, PlanError
 from ._values import (
     LOGICAL_TYPES,
     code_points,
     decimal_text_type,
+    exact_number_text,
     is_integer,
     is_number,
     is_safe_integer,
@@ -24,7 +26,6 @@ from ._values import (
     js_float,
     js_keys,
     json_text,
-    number_text,
     same_type,
     trim_spaces,
     type_name,
@@ -233,15 +234,18 @@ def _search_folds(folds: Any, path: str) -> list[str]:
 
 
 def _holds_exact(type: ValueType, value: float) -> bool:
-    """Whether an exact type holds a number: its digits (as `String` writes them) fit its scale and range."""
-    text = number_text(value)
-    if "e" in text.lower():
+    """Whether an exact type holds a number: its digits fit its scale and range."""
+    text = exact_number_text(value)
+    if text is None:
         return False
+    negative = text.startswith("-")
+    if negative:
+        text = text[1:]
     whole, _, fraction = text.partition(".")
     if type["type"] == "integer":
-        return fraction == "" and value <= 2147483647
+        return fraction == "" and -2147483648 <= value <= 2147483647
     if type["type"] == "bigint":
-        return fraction == "" and int(whole) <= 9223372036854775807
+        return fraction == "" and int(whole) <= (9223372036854775808 if negative else 9223372036854775807)
     precision, scale = _decimal_shape(type)
     return len(fraction) <= scale and len(whole.lstrip("0")) <= precision - scale
 
@@ -447,25 +451,43 @@ class _Checker:
         if not accepts(arg.type):
             _fail(path, "type", f"Expected {kind}, not {type_name(arg.type)}.")
 
+    def _unify(self, result: ValueType, type: ValueType, path: str) -> ValueType:
+        """The common type of two values (§4.4)."""
+        if same_type(result, type):
+            return result
+        if _is_number(result) and _is_number(type):
+            return FLOAT if "float" in (result["type"], type["type"]) else arithmetic_type("add", result, type)
+        if _is_date_like(result) and _is_date_like(type):
+            if result["type"] == "date":
+                return type
+            if type["type"] == "date":
+                return result
+            return (
+                result
+                if UNIT_DIGITS[_member(result, "unit", "us")] >= UNIT_DIGITS[_member(type, "unit", "us")]
+                else type
+            )
+        _fail(path, "type", f"{type_name(result)} and {type_name(type)} have no common type.")
+
     def _common(self, args: list[TypedExpr], path: str) -> ValueType:
-        """The common type of several values (§4.4), given to their untyped nulls."""
+        """The common type of several values (§4.4), given to their nulls."""
         result: ValueType | None = None
         for arg in args:
-            if _is_null(arg.type):
+            if _is_null(arg.type) or (isinstance(arg, LiteralExpr) and arg.value is None):
                 continue
-            type = arg.type
-            if result is None or same_type(result, type):
-                result = result or type
-            elif _is_number(result) and _is_number(type):
-                result = FLOAT if "float" in (result["type"], type["type"]) else arithmetic_type("add", result, type)
-            elif _is_date_like(result) and _is_date_like(type):
-                result = result if result["type"] == "timestamp" else type
-            else:
-                _fail(path, "type", f"{type_name(result)} and {type_name(type)} have no common type.")
+            result = arg.type if result is None else self._unify(result, arg.type, path)
+        for arg in args:
+            if _is_null(arg.type) or not (isinstance(arg, LiteralExpr) and arg.value is None):
+                continue
+            if result is None:
+                result = arg.type
+            elif result["type"] != arg.type["type"]:
+                result = self._unify(result, _decimal(1, 0) if arg.type["type"] == "decimal" else arg.type, path)
         if result is None:
             _fail(path, "type", "The type of these values cannot be decided: give a null literal a type.")
         for arg in args:
-            _settle(arg, result)
+            if _is_null(arg.type) or (isinstance(arg, LiteralExpr) and arg.value is None):
+                arg.type = result
         return result
 
     def _numbers(self, fn: str, args: list[TypedExpr], path: str) -> tuple[ValueType, ValueType]:

@@ -15,9 +15,10 @@ import {
   type PlanMember,
   type SortDirection,
 } from "./plan.js";
+import { UNIT_DIGITS } from "./calendar.js";
 import { type Fold, FOLDS } from "./fold.js";
 import { type Column, type JsonValue, LOGICAL_TYPES, type LogicalType, type ValueType } from "./types.js";
-import { decimalTextType, isObject, isValueOf, sameType, trimSpaces, typeName } from "./values.js";
+import { decimalTextType, exactNumberText, isObject, isValueOf, sameType, trimSpaces, typeName } from "./values.js";
 
 /** The type of an untyped null literal until its place gives it one (§2.5). */
 export interface NullType {
@@ -192,15 +193,17 @@ function searchFolds(folds: unknown, path: string): Fold[] {
   return folds as Fold[];
 }
 
-/** Whether an exact type holds a number: its digits (as `String` writes them) fit its scale and range. */
+/** Whether an exact type holds a number: its digits fit its scale and range. */
 function holdsExact(type: ValueType, value: number): boolean {
-  const text = String(value);
-  if (/e/i.test(text)) return false;
+  const text = exactNumberText(value);
+  if (text === null) return false;
   const [whole, fraction = ""] = text.split(".");
-  if (type.type === "integer") return fraction === "" && value <= 2147483647;
-  if (type.type === "bigint") return fraction === "" && BigInt(whole) <= 9223372036854775807n;
+  if (type.type === "integer") return fraction === "" && value >= -2147483648 && value <= 2147483647;
+  if (type.type === "bigint") {
+    return fraction === "" && BigInt(whole) >= -9223372036854775808n && BigInt(whole) <= 9223372036854775807n;
+  }
   const { p, s } = decimalShape(type);
-  return fraction.length <= s && whole.replace(/^0+/, "").length <= p - s;
+  return fraction.length <= s && whole.replace(/^-?0+/, "").length <= p - s;
 }
 
 /** Precision and scale of an exact number when it meets a decimal (§3.7). */
@@ -279,8 +282,9 @@ function members(value: Record<string, unknown>, allowed: readonly string[], pat
 
 function nameOf(value: unknown, path: string): string {
   if (typeof value !== "string") fail(path, "syntax", "A name is a string.");
-  const length = [...value].length;
-  if (length < 1 || length > LIMITS.name) fail(path, "syntax", `A name has 1 to ${LIMITS.name} characters.`);
+  if (value.length === 0 || (value.length > LIMITS.name && [...value].length > LIMITS.name)) {
+    fail(path, "syntax", `A name has 1 to ${LIMITS.name} characters.`);
+  }
   return value;
 }
 
@@ -423,24 +427,38 @@ class Checker {
     if (!accepts(arg.type)) fail(path, "type", `Expected ${kind}, not ${typeName(arg.type)}.`);
   }
 
-  /** The common type of several values (§4.4), given to their untyped nulls. */
+  /** The common type of two values (§4.4). */
+  private unify(result: ValueType, type: ValueType, path: string): ValueType {
+    if (sameType(result, type)) return result;
+    if (isNumber(result) && isNumber(type)) {
+      return result.type === "float" || type.type === "float" ? FLOAT : arithmeticType("add", result, type);
+    }
+    if (isDateLike(result) && isDateLike(type)) {
+      if (result.type === "date") return type;
+      if (type.type === "date") return result;
+      return UNIT_DIGITS[result.unit ?? "us"] >= UNIT_DIGITS[type.unit ?? "us"] ? result : type;
+    }
+    return fail(path, "type", `${typeName(result)} and ${typeName(type)} have no common type.`);
+  }
+
+  /** The common type of several values (§4.4), given to their nulls. */
   private common(args: TypedExpr[], path: string): ValueType {
     let result: ValueType | null = null;
     for (const arg of args) {
-      if (isNull(arg.type)) continue;
-      const type = arg.type;
-      if (result === null || sameType(result, type)) {
-        result = result ?? type;
-      } else if (isNumber(result) && isNumber(type)) {
-        result = result.type === "float" || type.type === "float" ? FLOAT : arithmeticType("add", result, type);
-      } else if (isDateLike(result) && isDateLike(type)) {
-        result = result.type === "timestamp" ? result : type;
-      } else {
-        fail(path, "type", `${typeName(result)} and ${typeName(type)} have no common type.`);
+      if (isNull(arg.type) || (arg.kind === "literal" && arg.value === null)) continue;
+      result = result === null ? arg.type : this.unify(result, arg.type, path);
+    }
+    for (const arg of args) {
+      if (isNull(arg.type) || !(arg.kind === "literal" && arg.value === null)) continue;
+      if (result === null) result = arg.type;
+      else if (result.type !== arg.type.type) {
+        result = this.unify(result, arg.type.type === "decimal" ? decimal(1, 0) : arg.type, path);
       }
     }
     if (result === null) fail(path, "type", "The type of these values cannot be decided: give a null literal a type.");
-    for (const arg of args) settle(arg, result);
+    for (const arg of args) {
+      if (isNull(arg.type) || (arg.kind === "literal" && arg.value === null)) arg.type = result;
+    }
     return result;
   }
 

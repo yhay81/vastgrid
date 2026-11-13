@@ -14,7 +14,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { GridDocument, GridSession } from "vastgrid-spec";
+import { canonicalJson, type GridDocument, type GridSession } from "vastgrid-spec";
 import type { CellHooks, ColumnGroup } from "../canvas/hooks.js";
 import type { Transport } from "../core/client.js";
 import { createGridStore, type GridStore } from "../core/store.js";
@@ -125,7 +125,7 @@ export function DataGrid(props: DataGridProps) {
   if (props.store) return <Frame {...props} store={props.store} />;
   const { transport, table } = props;
   if (!transport || table === undefined) throw new Error("DataGrid needs a store, or a transport and a table.");
-  const key = `${transportId(transport)}\u0000${table}`;
+  const key = `${transportId(transport)}\u0000${table}\u0000${props.open ? canonicalJson(props.open) : ""}`;
   if (isPromise(props.initial)) {
     return (
       <Suspense fallback={<div className="vg-root" aria-busy="true" />}>
@@ -209,10 +209,12 @@ function Frame({
   const label = ariaLabel ?? messages.grid;
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [notice, setNotice] = useState("");
+  const announce = (text: string) =>
+    setNotice((previous) => (text === "" || previous !== text ? text : `${text}\u200B`));
   const [finding, setFinding] = useState(false);
   const [viewing, setViewing] = useState<ViewerTarget | null>(null);
   const detailOpen = useGridSelectorOf(store, (snapshot) => snapshot.session.detail?.open === true);
-  const saving = useSaveAction(store, language, setNotice);
+  const saving = useSaveAction(store, language, announce);
   const status = useGridSelectorOf(store, (snapshot) => snapshot.status);
   useControlled(store, "document", document, onDocumentChange);
   useControlled(store, "session", session, onSessionChange);
@@ -232,7 +234,7 @@ function Frame({
       <LocaleContext value={language}>
         <SaveContext value={saving}>
           <div className={className ? `vg-root ${className}` : "vg-root"} style={style} data-status={status}>
-            {toolbar && <Toolbar announce={setNotice} />}
+            {toolbar && <Toolbar announce={announce} />}
             {finding && (
               <Suspense fallback={null}>
                 <FindBar onClose={() => setFinding(false)} scrollerRef={scrollerRef} />
@@ -253,7 +255,7 @@ function Frame({
                   onView={setViewing}
                   label={label}
                   scrollerRef={scrollerRef}
-                  announce={setNotice}
+                  announce={announce}
                 />
               </Suspense>
               {detailOpen && (
@@ -267,7 +269,7 @@ function Frame({
               )}
             </div>
             {statusBar && (
-              <StatusBar announce={setNotice} onDone={() => scrollerRef.current?.focus({ preventScroll: true })} />
+              <StatusBar announce={announce} onDone={() => scrollerRef.current?.focus({ preventScroll: true })} />
             )}
             {viewing && (
               <Suspense fallback={null}>

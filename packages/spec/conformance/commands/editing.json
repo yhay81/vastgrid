@@ -3283,6 +3283,99 @@
       }
     },
     {
+      "id": "editing.paste-changes-row-keys",
+      "section": "6.5.1",
+      "description": "When a paste changes the key column, all its changed cells use their source row IDs, including a row whose key is unchanged and becomes a duplicate.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "rowKey": "id"
+        }
+      },
+      "context": {
+        "extends": "orders",
+        "rows": [
+          {
+            "start": 0,
+            "keys": [
+              {
+                "value": 1
+              },
+              {
+                "value": 2
+              }
+            ],
+            "rowIds": [
+              4,
+              3
+            ],
+            "columns": [
+              "id",
+              "region"
+            ],
+            "values": [
+              [
+                1,
+                "Tokyo"
+              ],
+              [
+                2,
+                "Tokyo"
+              ]
+            ]
+          }
+        ],
+        "clipboard": {
+          "text": "2\tNara\n2\tOsaka"
+        }
+      },
+      "commands": [
+        {
+          "command": "edit.paste"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "rowKey": "id",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 4
+                },
+                "column": "id",
+                "value": 2,
+                "previous": 1
+              },
+              {
+                "key": {
+                  "rowId": 4
+                },
+                "column": "region",
+                "value": "Nara",
+                "previous": "Tokyo"
+              },
+              {
+                "key": {
+                  "rowId": 3
+                },
+                "column": "region",
+                "value": "Osaka",
+                "previous": "Tokyo"
+              }
+            ]
+          }
+        ],
+        "output": {
+          "cutRows": 0,
+          "cutColumns": 0
+        }
+      }
+    },
+    {
       "id": "editing.paste-repeats",
       "section": "6.5.1",
       "description": "A range that holds the values a whole number of times is filled with them.",

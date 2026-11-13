@@ -191,6 +191,38 @@
       }
     },
     {
+      "id": "response.reload",
+      "section": "8.2",
+      "kind": "response",
+      "op": "reload",
+      "message": {
+        "v": 2,
+        "id": 1,
+        "result": {
+          "table": "t1",
+          "revision": "r2",
+          "edits": {
+            "version": 0,
+            "cells": 0
+          },
+          "status": "ready",
+          "progress": 1,
+          "rowCount": 6,
+          "readableRows": 6,
+          "columns": [
+            {
+              "name": "id",
+              "type": "bigint"
+            }
+          ],
+          "capabilities": {}
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
       "id": "response.rows",
       "section": "8.2",
       "kind": "response",

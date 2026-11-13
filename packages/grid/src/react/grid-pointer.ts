@@ -112,9 +112,21 @@ export function useGridPointer({ canvas, store, scrollerRef, columns, toggleChec
 
   /** Extends the selection being dragged to the cell or the row at a point, kept within the body. */
   const extendTo = (scroller: HTMLElement, current: Drag, x: number, y: number) => {
+    if (geometry.rowCount <= 0 || geometry.layout.count <= 0) return;
+    const maxColumnX =
+      geometry.frozenRight > 0
+        ? scroller.clientWidth - 1
+        : Math.min(
+            scroller.clientWidth - 1,
+            geometry.gutterWidth + geometry.layout.total - geometry.scrollX.position - 1,
+          );
+    const maxRowY = Math.min(
+      geometry.bottom - 1,
+      geometry.headerHeight + geometry.rowCount * geometry.rowHeight - geometry.scrollY.position - 1,
+    );
     const hit = geometry.hit(
-      Math.max(geometry.gutterWidth + 1, Math.min(scroller.clientWidth - 1, x)),
-      Math.max(geometry.headerHeight + 1, Math.min(geometry.bottom - 1, y)),
+      Math.max(geometry.gutterWidth + 1, Math.min(maxColumnX, x)),
+      Math.max(geometry.headerHeight + 1, Math.min(maxRowY, y)),
     );
     if (current.kind === "cells" && hit.area === "cell") {
       const key = `${hit.row}:${hit.column}`;

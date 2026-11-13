@@ -145,6 +145,9 @@ export function CellEditor({ canvas, scrollerRef, announce, ref }: CellEditorPro
       const text = column === current.column ? messages.readOnly : messages.readOnlyColumn(column);
       setProblem({ editor: current, text });
     } else announce(messages.failed(outcome.error.message));
+    if (document.activeElement === scrollerRef.current || document.activeElement === document.body) {
+      textareaRef.current?.focus({ preventScroll: true });
+    }
     return false;
   };
 
@@ -199,7 +202,7 @@ export function CellEditor({ canvas, scrollerRef, announce, ref }: CellEditorPro
 
   // Leaving the editor for another place of the page saves it, as a spreadsheet does.
   const onBlur = (event: FocusEvent<HTMLTextAreaElement>) => {
-    if (open && event.relatedTarget !== null) void commit(null);
+    if (open && (event.relatedTarget !== null || document.activeElement !== event.currentTarget)) void commit(null);
   };
 
   return (

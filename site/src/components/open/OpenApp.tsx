@@ -1,12 +1,13 @@
-import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
-import { createGridStore, DataGrid, GridProvider, type Transport, useGridSelector, workerTransport } from "vastgrid";
+import { type DragEvent, useEffect, useRef, useState } from "react";
+import { createGridStore, DataGrid, GridProvider, type GridStore, useGridSelector, workerTransport } from "vastgrid";
 import { ja } from "vastgrid/locales/ja";
 import "vastgrid/styles.css";
-
-type Theme = "auto" | "light" | "dark";
-type Language = "en" | "ja";
+import { type Language, type Theme, useAppPrefs } from "../app-prefs.ts";
 
 const SAMPLE_ROWS = 1_000_000;
+
+const titles: Record<Language, string> = { en: "Open a file — vastgrid", ja: "ファイルを開く — vastgrid" };
+const paths: Record<Language, string> = { en: "/open/", ja: "/ja/open/" };
 
 const texts = {
   en: {
@@ -16,6 +17,7 @@ const texts = {
     sample: "Try a sample of 1,000,000 rows",
     another: "Open another file",
     reading: "Reading",
+    failed: "Could not read",
     note: "The file stays in your browser: vastgrid's memory engine reads it in a Web Worker. Open a column's menu to sort, filter or group, type over a cell or double-click it to edit, and export CSV, TSV, JSON or Excel from the toolbar. The file itself is not changed: export to keep your edits.",
     sheet: "Sheet",
     hidden: "hidden",
@@ -33,6 +35,7 @@ const texts = {
     sample: "100 万行のサンプルで試す",
     another: "別のファイルを開く",
     reading: "読み込み中",
+    failed: "読み込めませんでした",
     note: "ファイルはブラウザーの外へ出ません。vastgrid のメモリエンジンが Web Worker の中で読みます。列のメニューで並べ替え・絞り込み・グループ化、セルは上から入力するかダブルクリックで編集、ツールバーから CSV・TSV・JSON・Excel に書き出せます。元のファイルは変わらないので、編集を残すには書き出してください。",
     sheet: "シート",
     hidden: "非表示",
@@ -45,27 +48,24 @@ const texts = {
   },
 } satisfies Record<Language, Record<string, string>>;
 
-/** The theme Starlight stores, so that the documentation and this page share it. */
-const themeKey = "starlight-theme";
-
-function readTheme(): Theme {
-  try {
-    const stored = localStorage.getItem(themeKey);
-    return stored === "light" || stored === "dark" ? stored : "auto";
-  } catch {
-    return "auto";
-  }
-}
-
-/** The page's address in a language, as the documentation's. */
-const paths: Record<Language, string> = { en: "/open/", ja: "/ja/open/" };
-
 /** A file opened by an engine in its own worker, which ends when another file is opened. */
 interface Opened {
-  worker: Worker;
-  transport: Transport & { close(): void };
+  store: GridStore;
+  sheet?: string;
   name: string;
   size: number;
+}
+
+interface ActiveWorker {
+  worker: Worker;
+  transport: ReturnType<typeof workerTransport>;
+  disconnect?: () => void;
+}
+
+function close(active: ActiveWorker | null) {
+  active?.disconnect?.();
+  active?.transport.close();
+  active?.worker.terminate();
 }
 
 function formatSize(bytes: number, language: Language) {
@@ -80,76 +80,101 @@ function formatSize(bytes: number, language: Language) {
 }
 
 export default function OpenApp({ language: pageLanguage }: { language: Language }) {
-  const [language, setLanguage] = useState<Language>(pageLanguage);
-  const [theme, setTheme] = useState<Theme>(readTheme);
+  const { language, changeLanguage, theme, setTheme } = useAppPrefs(pageLanguage, paths, titles);
   const [opened, setOpened] = useState<Opened | null>(null);
   const [reading, setReading] = useState<string | null>(null);
-  const [sheet, setSheet] = useState<string | undefined>();
+  const [failure, setFailure] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  /** The worker of the file shown, and the one of a file being read. */
-  const shown = useRef<Worker | null>(null);
-  const pending = useRef<Worker | null>(null);
+  /** The worker and transport of the file shown, and the worker of a file being read. */
+  const shown = useRef<ActiveWorker | null>(null);
+  const pending = useRef<ActiveWorker | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const t = texts[language];
-  // One store for the grid and the choice of sheet, made again for another file or sheet.
-  const store = useMemo(
-    () =>
-      opened &&
-      createGridStore({
-        transport: opened.transport,
-        table: opened.name,
-        ...(sheet === undefined ? {} : { open: { sheet } }),
-      }),
-    [opened, sheet],
-  );
-  useEffect(() => store?.connect(), [store]);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    root.style.colorScheme = theme === "auto" ? "light dark" : theme;
-    root.dataset.theme = theme;
-    try {
-      localStorage.setItem(themeKey, theme === "auto" ? "" : theme);
-    } catch {
-      // Storage may be unavailable (private windows); the choice then lasts for this page.
-    }
-  }, [theme]);
-
-  useEffect(() => {
-    document.documentElement.lang = language;
-  }, [language]);
-
-  // The workers end with the page.
+  const store = opened?.store;
   useEffect(
     () => () => {
-      shown.current?.terminate();
-      pending.current?.terminate();
+      close(pending.current);
+      close(shown.current);
+      pending.current = shown.current = null;
     },
     [],
   );
+
+  const selectSheet = (sheet: string) => {
+    const active = shown.current;
+    if (!active || !opened) return;
+    active.disconnect?.();
+    const store = createGridStore({ transport: active.transport, table: opened.name, open: { sheet } });
+    active.disconnect = store.connect();
+    setOpened({ ...opened, sheet, store });
+  };
 
   /**
    * Starts an engine in a new worker for the file. The file before stays shown until the new one is read, and its
    * worker then ends; a file still being read is given up.
    */
   const open = (message: { file: File } | { sample: number }) => {
-    const worker = new Worker(new URL("./engine-worker.ts", import.meta.url), { type: "module" });
-    pending.current?.terminate();
-    pending.current = worker;
-    setReading("file" in message ? message.file.name : `sample-${message.sample}.csv`);
+    const name = "file" in message ? message.file.name : `sample-${message.sample}.csv`;
+    close(pending.current);
+    pending.current = null;
+    setFailure(null);
+    setReading(name);
+    const failed = (detail?: string) => {
+      setFailure(`${t.failed}: ${name}${detail ? `: ${detail}` : ""}`);
+      setReading(null);
+    };
+    let worker: Worker;
+    try {
+      worker = new Worker(new URL("./engine-worker.ts", import.meta.url), { type: "module" });
+    } catch (error) {
+      failed(error instanceof Error ? error.message : undefined);
+      return;
+    }
+    const active: ActiveWorker = { worker, transport: workerTransport(worker) };
+    pending.current = active;
+    const fail = (detail?: string) => {
+      if (pending.current !== active) return;
+      pending.current = null;
+      close(active);
+      failed(detail);
+    };
+    const workerError = (event: Event) => fail(event instanceof ErrorEvent ? event.message : undefined);
+    worker.addEventListener("error", workerError);
+    worker.addEventListener("messageerror", workerError);
     worker.addEventListener("message", function ready(event: MessageEvent) {
       const data = event.data as { ready?: string; size?: number };
-      if (data.ready === undefined) return;
+      if (data.ready === undefined || pending.current !== active) return;
       worker.removeEventListener("message", ready);
-      if (pending.current !== worker) return;
-      pending.current = null;
-      shown.current?.terminate();
-      shown.current = worker;
-      setOpened({ worker, transport: workerTransport(worker), name: data.ready, size: data.size ?? 0 });
-      setSheet(undefined);
-      setReading(null);
+      const store = createGridStore({ transport: active.transport, table: name });
+      const unsubscribe = store.subscribe(() => {
+        if (pending.current !== active) return;
+        const { error, table, view } = store.getSnapshot();
+        if (error || table?.status === "error") {
+          fail(error?.message ?? table?.error);
+          return;
+        }
+        // A first file can show a preview. Keep an existing file until its replacement has finished reading.
+        if (!view || (shown.current && table?.status !== "ready")) return;
+        unsubscribe();
+        worker.removeEventListener("error", workerError);
+        worker.removeEventListener("messageerror", workerError);
+        pending.current = null;
+        close(shown.current);
+        shown.current = active;
+        setOpened({ store, name, size: data.size ?? 0 });
+        setReading(null);
+      });
+      const disconnect = store.connect();
+      active.disconnect = () => {
+        unsubscribe();
+        disconnect();
+      };
     });
-    worker.postMessage(message);
+    try {
+      worker.postMessage(message);
+    } catch (error) {
+      fail(error instanceof Error ? error.message : undefined);
+    }
   };
 
   const drop = (event: DragEvent) => {
@@ -169,7 +194,7 @@ export default function OpenApp({ language: pageLanguage }: { language: Language
         setDragging(true);
       }}
       onDragLeave={(event) => {
-        if (event.currentTarget === event.target || !event.relatedTarget) setDragging(false);
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
       }}
       onDrop={drop}
     >
@@ -188,7 +213,7 @@ export default function OpenApp({ language: pageLanguage }: { language: Language
             {t.another}
           </button>
         )}
-        {store && <SheetSelect sheet={sheet} onSheet={setSheet} language={language} />}
+        {store && <SheetSelect sheet={opened?.sheet} onSheet={selectSheet} language={language} />}
         <div className="demo__options">
           <label>
             <span className="demo__hidden">{t.theme}</span>
@@ -206,16 +231,7 @@ export default function OpenApp({ language: pageLanguage }: { language: Language
           </label>
           <label>
             <span className="demo__hidden">{t.language}</span>
-            <select
-              value={language}
-              onChange={(event) => {
-                const next = event.target.value as Language;
-                setLanguage(next);
-                const url = new URL(location.href);
-                url.pathname = paths[next];
-                history.replaceState(null, "", url);
-              }}
-            >
+            <select value={language} onChange={(event) => changeLanguage(event.target.value as Language)}>
               <option value="en">English</option>
               <option value="ja">日本語</option>
             </select>
@@ -224,6 +240,11 @@ export default function OpenApp({ language: pageLanguage }: { language: Language
           <a href="https://github.com/yhay81/vastgrid">GitHub</a>
         </div>
         <p className="demo__note">{t.note}</p>
+        {failure && (
+          <p className="open__error" role="alert">
+            {failure}
+          </p>
+        )}
       </header>
       <main className="demo__grid open__main">
         {store && opened ? (
@@ -231,7 +252,6 @@ export default function OpenApp({ language: pageLanguage }: { language: Language
             store={store}
             locale={language}
             messages={language === "ja" ? ja : undefined}
-            style={{ height: "100%", colorScheme: theme === "auto" ? "light dark" : theme }}
             aria-label={opened.name}
           />
         ) : (
@@ -263,7 +283,7 @@ export default function OpenApp({ language: pageLanguage }: { language: Language
         ref={input}
         type="file"
         hidden
-        accept=".csv,.tsv,.tab,.txt,.jsonl,.ndjson,.parquet,.xlsx,.xlsm"
+        accept=".csv,.tsv,.tab,.txt,.jsonl,.ndjson,.parquet,.pq,.xlsx,.xlsm"
         onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = "";

@@ -3,13 +3,15 @@
  * writes.
  */
 import {
+  checkMembers,
+  checkName,
   checkRowKey,
   checkValue,
   HISTORY_LIMITS,
   type HistoryStep,
   type HistoryUpdate,
+  keyText,
   StateError,
-  sameKey,
 } from "../state.js";
 import { isObject } from "../values.js";
 import { checked, fail, stringArgument, takes } from "./command.js";
@@ -26,6 +28,7 @@ export const CORE_HANDLERS = {
       located.map((item, index) => {
         const at = `/located/${index}`;
         if (!isObject(item)) throw new StateError(at, "syntax", "A located key is { key, row }.");
+        checkMembers(item, ["key", "row"], at);
         const row = item.row;
         if (row !== null && (typeof row !== "number" || !Number.isSafeInteger(row) || row < 0)) {
           throw new StateError(`${at}/row`, "syntax", "row is a view position or null.");
@@ -48,7 +51,8 @@ export const CORE_HANDLERS = {
       if (session.active) {
         const active = run.own("active");
         const key = active.key;
-        const found = key ? positions.find((item) => sameKey(item.key, key)) : undefined;
+        const target = key ? keyText(key) : null;
+        const found = target !== null ? positions.find((item) => keyText(item.key) === target) : undefined;
         const row = found?.row ?? 0;
         if (found?.row === undefined || found.row === null) {
           // The key is not in the new view: the active cell is its first row, whose key the core may have read.
@@ -76,15 +80,10 @@ export const CORE_HANDLERS = {
       (command.updates as unknown[]).map((item, index): HistoryUpdate => {
         const at = `/updates/${index}`;
         if (!isObject(item)) throw new StateError(at, "syntax", "An update is { key, column, before, after }.");
-        for (const key of Object.keys(item)) {
-          if (!["key", "column", "before", "after"].includes(key)) {
-            throw new StateError(`${at}/${key}`, "syntax", `"${key}" is not a member here.`);
-          }
-        }
-        if (typeof item.column !== "string") throw new StateError(`${at}/column`, "syntax", "column is a name.");
+        checkMembers(item, ["key", "column", "before", "after"], at);
         return {
           key: checkRowKey(item.key, `${at}/key`),
-          column: item.column,
+          column: checkName(item.column, `${at}/column`),
           before: checkValue(item.before, `${at}/before`),
           after: checkValue(item.after, `${at}/after`),
         };

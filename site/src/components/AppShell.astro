@@ -1,0 +1,53 @@
+---
+import "../styles/demo.css";
+
+interface Props {
+  language: "en" | "ja";
+  paths: { en: string; ja: string };
+  title: string;
+  description: string;
+  noscript: string;
+}
+
+const site = "https://vastgrid.yhay81.com";
+const { language, paths, title, description, noscript } = Astro.props;
+const url = `${site}${paths[language]}`;
+const enUrl = `${site}${paths.en}`;
+const jaUrl = `${site}${paths.ja}`;
+---
+
+<!doctype html>
+<html lang={language}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <script is:inline>
+      // Apply the stored theme before the first paint, as the documentation does.
+      try {
+        const theme = localStorage.getItem("starlight-theme");
+        const meta = document.querySelector('meta[name="color-scheme"]');
+        if (meta && (theme === "light" || theme === "dark")) meta.setAttribute("content", theme);
+      } catch {}
+    </script>
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={url} />
+    <link rel="alternate" hreflang="en" href={enUrl} />
+    <link rel="alternate" hreflang="ja" href={jaUrl} />
+    <link rel="alternate" hreflang="x-default" href={enUrl} />
+    <meta property="og:url" content={url} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={`${site}/og.jpg`} />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="640" />
+    <meta property="og:image:alt" content="vastgrid: Open huge tables like a spreadsheet" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <slot />
+    <noscript>{noscript}</noscript>
+  </body>
+</html>

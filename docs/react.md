@@ -50,16 +50,14 @@ rows, server rendering (§7) and the checks of §10 and §11.
 | Feature | Since | Where | In the code |
 | --- | --- | --- | --- |
 | `useSyncExternalStore` | 18 | `useGridSelector` reads the store without tearing; the browser's language, with the server's value during hydration | yes |
-| `ref` as a prop | 19.0 | the handle of `DataGrid` (§5.5); no `forwardRef` | yes |
+| `ref` as a prop | 19.0 | the handle of `DataGrid` (§5.5) and `CellEditor`; no `forwardRef` | yes |
 | `<Context value>` | 19.0 | `GridProvider` and the grid's own contexts | yes |
-| `use` | 19.0 | contexts, and `initial` given as a promise, streamed from a Server Component (§7) | yes |
-| `useDeferredValue` | 18 | the accessibility rows and the search box (§6.2) | yes |
-| Actions (`useTransition` with an async function) | 19.0 | saving and exporting, with their pending state | with saving |
+| `use` | 19.0 | contexts, `browser()`, and `initial` given as a promise, streamed from a Server Component (§7) | yes |
+| `useDeferredValue` | 18 | the search box and the detail panel (§6.2) | yes |
+| `startTransition` | 18 | the accessibility rows following the canvas once scrolling pauses (§6.4) | yes |
+| Actions (`useTransition` with an async function) | 19.0 | saving, reloading, exporting, and applying filters, formats, groups and formulas, with their pending state | yes |
 | `useEffectEvent` | 19.2 | every callback prop (`onDocumentChange`, `onSessionChange`, `onError`) and the clipboard's announcements: read when called, never a dependency | yes |
-| `<Activity>` | 19.2 | panels keep their state while they are closed | with the panels |
 | Performance Tracks | 19.2 | React's own tracks, next to the grid's (§9) | yes |
-| `<ViewTransition>`, `addTransitionType` | 19.3 | panels opening and closing and switching between rows and groups, only inside Transitions and never with `prefers-reduced-motion: reduce` | with the panels |
-| Fragment refs | 19.3 | focus moves into and out of panels and menus (`focus`, `focusLast`) without wrapper elements | with the panels |
 | `browser()` | 19.3 | the canvas renders only in the browser; the server sends the first rows as HTML instead (§7) | yes |
 
 The package does not use `forwardRef`, `defaultProps`, class components, string refs, legacy context or
@@ -75,16 +73,32 @@ one.
 interface GridStore {
   getSnapshot(): GridSnapshot;
   subscribe(listener: () => void): () => void;
+  on<K extends "document" | "session" | "error">(event: K, listener: (value: Events[K]) => void): () => void;
   dispatch(command: GridCommand, options?: DispatchOptions): Promise<CommandOutcome>;
   dispatchSync(command: GridCommand, options?: DispatchOptions): CommandOutcome;
   connect(): () => void;
+  control(part: "document" | "session", controlled: boolean): void;
   setDocument(document: GridDocument): void;
   setSession(session: GridSession): void;
+  cell(row: number, column: string): JsonValue | undefined;
+  isCut(row: number, column: string): boolean;
+  rowKey(row: number): RowKey | undefined;
+  rowId(row: number): number | undefined;
+  getRowsVersion(): number;
+  subscribeRows(listener: () => void): () => void;
+  setViewport(viewport: Viewport): void;
+  ensure(start: number, end: number, columns: readonly string[]): void;
   reload(): Promise<void>;
   retryWrite(): Promise<CommandOutcome>;
   discardWrite(): void;
   exportUrl(target: string): string | null;
   downloadExport(target: string): Promise<boolean>;
+  exportName(format: string): string;
+  summarize(
+    ranges: [number, number][],
+    columns: string[],
+    signal?: AbortSignal,
+  ): Promise<{ count: number; numericCount: number; sum: unknown; min: unknown; max: unknown; average: unknown }>;
   values(
     column: string,
     options?: { search?: string; limit?: number },
@@ -94,6 +108,16 @@ interface GridStore {
     measures: Measure[],
     signal?: AbortSignal,
   ): Promise<{ values: Record<string, JsonValue>; columns: Record<string, Column> }>;
+  find(
+    text: string,
+    options: { from: { row: number; column: string }; direction?: 1 | -1; caseSensitive?: boolean },
+    signal?: AbortSignal,
+  ): Promise<{ row: number; column: string } | null>;
+  fullValue(
+    row: number,
+    column: string,
+    signal?: AbortSignal,
+  ): Promise<{ value: JsonValue; column: Column; cut: boolean }>;
 }
 ```
 
@@ -227,7 +251,7 @@ export function Orders() {
 
 | Prop | Value | Meaning |
 | --- | --- | --- |
-| `transport`, `table`, `open` | a transport, the `ref` to open, the `read` options of `open` | where the rows come from; a new transport or table makes a new store |
+| `transport`, `table`, `open` | a transport, the `ref` to open, the `read` options of `open` | where the rows come from; a new transport, table or `open` makes a new store |
 | `store` | a store | instead of `transport` and `table`, for a store made outside (§5.4) |
 | `document`, `defaultDocument`, `onDocumentChange` | §5.1 of the specification | the view and its columns (§5.2) |
 | `session`, `defaultSession`, `onSessionChange` | §5.2 of the specification | where the person is (§5.2) |
@@ -327,15 +351,15 @@ positions are computed when the document or the view changes, not per frame.
 
 ### 6.2 Concurrent features
 
-- React-rendered views that follow the active cell while they are open (the detail panel, statistics) read it
+- React-rendered views that follow the active cell while they are open (the detail panel) read it
   through `useDeferredValue`, so that holding an arrow key never waits for them. A deferred value costs a second
   commit at a lower priority, so the grid itself defers nothing that changes with each key: it commits once per
   key (§10), and the sum of the selection waits until the selection stays for 150 ms instead.
-- The accessibility rows follow the rows on screen through `useDeferredValue` once scrolling pauses.
-- Panels are code-split with `lazy`, open inside `startTransition`, and keep their state in `<Activity>` while
-  closed.
-- `save` and `export` run as Actions: `useTransition` gives their pending state, and errors reach the UI as
-  outcomes (§4.2).
+- The accessibility rows follow the rows on screen in a Transition (`startTransition`) once scrolling pauses.
+- Menus, the find bar, the detail panel and the value viewer are code-split with `lazy` and load when they first
+  open.
+- `save`, `reload`, `export`, and applying filters, formats, groups and formulas run as Actions: `useTransition`
+  gives their pending state, and errors reach the UI as outcomes (§4.2).
 - The search box keeps its text in React state, which updates at once, and dispatches `search.set` with the
   text from `useDeferredValue`; the store cancels the reads of views it no longer needs. A switch beside it
   (`aria-pressed`, labelled by `messages.searchFold`) adds `fold: ["width", "kana"]` (§3.5 of the
@@ -366,6 +390,14 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   While an IME composes, its keys are its own: none of these act. Menus and panels give the focus back to the grid
   when they close from the keyboard.
 - Results and failures are announced in a polite live region.
+
+### 6.5 Theming
+
+Colors, fonts and sizes are CSS custom properties on `.vg-root`, which the canvas reads (and reads again when the
+page's or the grid's class or style, or the color scheme, changes). Colors are `light-dark()` pairs, and the
+stylesheet declares `color-scheme: light dark` on `.vg-root` without specificity, so the grid follows the system's
+light or dark mode; `.vg-root { color-scheme: light }` keeps it light. The declaration also makes the colors work
+where a bundler turns `light-dark()` into variables for older browsers (Lightning CSS in Vite), which need it.
 
 ### 6.6 Editing
 
@@ -556,14 +588,6 @@ depth, and jumps of the scroll bar map proportionally. A hundred million rows of
   the column, or every column of a selection of whole columns that holds it, and dragging a group's header moves
   the group's columns (`column.move`): a line shows where they go, before the column under the pointer or after it
   past its middle, and they take the pin of where they go.
-
-### 6.5 Theming
-
-Colors, fonts and sizes are CSS custom properties on `.vg-root`, which the canvas reads (and reads again when the
-page's or the grid's class or style, or the color scheme, changes). Colors are `light-dark()` pairs, and the
-stylesheet declares `color-scheme: light dark` on `.vg-root` without specificity, so the grid follows the system's
-light or dark mode; `.vg-root { color-scheme: light }` keeps it light. The declaration also makes the colors work
-where a bundler turns `light-dark()` into variables for older browsers (Lightning CSS in Vite), which need it.
 
 ## 7. Server rendering and Server Components
 

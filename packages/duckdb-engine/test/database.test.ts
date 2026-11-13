@@ -37,7 +37,7 @@ async function database(name: string, statements: string[]) {
 
 async function readAll(ref: string, read?: Json) {
   const info = await client.open(ref, read);
-  assert.equal(info.status, "ready", info.error);
+  assert.equal(info.status, "ready", info.error ?? "");
   return { info, rows: (await client.rows(info)).rows };
 }
 

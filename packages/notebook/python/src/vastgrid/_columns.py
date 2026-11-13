@@ -9,15 +9,17 @@ from typing import Any
 from ._calendar import (
     DATE_INFINITY,
     TIMESTAMP_INFINITY,
+    IntervalParts,
     date_text,
     infinity_of,
+    interval_text,
+    normalize_interval,
     parse_timestamp_text,
     timestamp_text,
     timestamptz_text,
 )
-from ._json import MAX_SAFE_INTEGER, is_number, js_number
-from ._sql import FIRST_DATE, LAST_DATE, duckdb_type, quote_identifier, temporal_param, text_sql
-from ._values import float_json
+from ._sql import FIRST_DATE, LAST_DATE, duckdb_type, float_param, quote_identifier, temporal_param, text_sql
+from ._values import MAX_SAFE_INTEGER, float_json, is_number, is_value_of, number_text
 
 _INTEGERS = {"TINYINT", "SMALLINT", "INTEGER", "UTINYINT", "USMALLINT"}
 _WIDE = {"UBIGINT", "HUGEINT", "UHUGEINT"}
@@ -40,8 +42,11 @@ _SAME: dict[str, dict[str, Any]] = {
     "INTERVAL": {"type": "interval"},
     "UUID": {"type": "uuid"},
     "BLOB": {"type": "binary"},
+    '"NULL"': {"type": "string"},
+    "SQLNULL": {"type": "string"},
 }
 _DECIMAL = re.compile(r"^DECIMAL\((\d+),\s*(\d+)\)$")
+_DECIMAL_VALUE = re.compile(r"^(-?)([0-9]+)(?:\.([0-9]+))?$")
 
 
 def table_column(name: str, sql_type: str) -> dict[str, Any]:
@@ -62,13 +67,16 @@ def table_column(name: str, sql_type: str) -> dict[str, Any]:
     return {"name": name, **kind, "sourceType": sql_type}
 
 
-def source_expression(name: str, sql_type: str, column: dict[str, Any]) -> str:
+def source_expression(name: str, sql_type: str, column: dict[str, Any], source_sql: str | None = None) -> str:
     """The SQL that gives a source column as its table column: cast to the DuckDB type of its logical type, so that
     plans mean the same on every source (§3). Values of more than 38 digits read as null (§2.1)."""
-    quoted = quote_identifier(name)
+    quoted = quote_identifier(name) if source_sql is None else source_sql
     target = duckdb_type(column)
     if column.get("readOnly") and column["type"] == "string":
         return f"CAST({quoted} AS VARCHAR)"
+    if sql_type.upper() in ("TIMESTAMP_S", "TIMESTAMP_MS"):
+        # Even isfinite() widens to microseconds and can throw on valid 64-bit source counts.
+        return f"(CASE WHEN TRY_CAST({quoted} AS TIMESTAMP) IS NOT NULL THEN {quoted} END)"
     if sql_type.upper() == target:
         return quoted
     return f"TRY_CAST({quoted} AS {target})" if column["type"] == "decimal" else f"CAST({quoted} AS {target})"
@@ -147,6 +155,58 @@ def _temporal_json(column: dict[str, Any], count: int) -> str | None:
         return None
 
 
+def holds_duck_value(value: Any, column: dict[str, Any]) -> bool:
+    """Whether DuckDB can store a validated value of `column` without overflowing `TIMESTAMP_NS` infinities."""
+    if not is_value_of(value, column):
+        return False
+    if (
+        value is not None
+        and column["type"] == "timestamp"
+        and column.get("unit") == "ns"
+        and infinity_of(str(value)) == 0
+    ):
+        nanos = parse_timestamp_text(str(value), "ns")
+        return nanos is not None and -9_223_372_036_854_775_807 < nanos < 9_223_372_036_854_775_807
+    return True
+
+
+def accept_key_value(value: Any, column: dict[str, Any]) -> Any | None:
+    """Normalizes a row key's `value` (§5.3, §8.2) for `column` without rounding or cross-type coercion (§3.1), or
+    returns None when no value of `column` can equal it."""
+    if value is None:
+        return None
+    if column["type"] == "decimal":
+        if not isinstance(value, str):
+            return None
+        match = _DECIMAL_VALUE.match(value)
+        if not match:
+            return None
+        scale = column.get("scale") or 0
+        precision = 38 if column.get("precision") is None else column["precision"]
+        fraction = match[3] or ""
+        if len(fraction) > scale and fraction[scale:].strip("0"):
+            return None
+        scaled = fraction[:scale].ljust(scale, "0")
+        whole = match[2].lstrip("0") or "0"
+        significant = (whole + scaled).lstrip("0")
+        if len(significant) > precision:
+            return None
+        if not significant:
+            return f"0.{'0' * scale}" if scale > 0 else "0"
+        return f"{match[1]}{whole}.{scaled}" if scale > 0 else f"{match[1]}{whole}"
+    if column["type"] == "interval":
+        if not isinstance(value, str):
+            return None
+        parts = normalize_interval(value)
+        if parts is None:
+            return None
+        months, days, nanos = parts
+        if not (-2_147_483_648 <= months <= 2_147_483_647) or nanos % 1000 != 0:
+            return None
+        return interval_text(IntervalParts(months=months, days=days, nanos=nanos))
+    return value if holds_duck_value(value, column) else None
+
+
 def value_expression(value: Any, column: dict[str, Any], params: list[Any]) -> str:
     """The SQL of a typed JSON value of a column (§2.2), with its parameters: numbers as text, which DuckDB reads
     back exactly."""
@@ -155,14 +215,18 @@ def value_expression(value: Any, column: dict[str, Any], params: list[Any]) -> s
         return f"CAST(NULL AS {target})"
     if isinstance(value, bool):
         return "TRUE" if value else "FALSE"
-    params.append(js_number(value) if is_number(value) else str(value))
+    if is_number(value):
+        text = float_param(value) if column["type"] == "float" else number_text(value)
+    else:
+        text = str(value)
+    params.append(text)
     at = len(params)
     if column["type"] == "binary":
         return f"from_base64(CAST(${at} AS VARCHAR))"
     # DuckDB's VARCHAR cast overflows near the TIMESTAMP_NS limits: give it the exact count.
-    if column["type"] == "timestamp" and column.get("unit") == "ns" and infinity_of(str(value)) == 0:
-        params[-1] = str(parse_timestamp_text(str(value), "ns"))
+    if column["type"] == "timestamp" and column.get("unit") == "ns" and infinity_of(text) == 0:
+        params[-1] = str(parse_timestamp_text(text, "ns"))
         return f"make_timestamp_ns(CAST(${at} AS BIGINT))"
     if column["type"] in ("date", "timestamp", "timestamptz"):
-        params[-1] = temporal_param(str(value))
+        params[-1] = temporal_param(text)
     return f"CAST(CAST(${at} AS VARCHAR) AS {target})"

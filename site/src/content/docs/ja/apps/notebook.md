@@ -1,9 +1,9 @@
 ---
 title: ノートブック
-description: DataFrame や、どんな大きさの CSV・TSV・Parquet・JSON Lines・Excel のファイルを、Jupyter ノートブックの表に示します。DuckDB はカーネルで動き、編集した表を DataFrame で受け取れます。
+description: DataFrame や、どんな大きさの CSV・TSV・Parquet・JSON Lines・Excel のファイルと DuckDB データベースを、Jupyter ノートブックの表に示します。DuckDB はカーネルで動き、編集した表を DataFrame で受け取れます。
 ---
 
-Python のパッケージ `vastgrid` は、どんな大きさの表も Jupyter ノートブックの中の vastgrid の表に示します。pandas・Polars の DataFrame、PyArrow の表、DuckDB のリレーション、そして CSV・TSV・Parquet・JSON・JSON Lines・Excel のファイルです。データはカーネルの DuckDB が読みます。セルの出力の表は [anywidget](https://anywidget.dev) で、`DataGrid` を示し、ウィジェットのメッセージで行のブロックを範囲ごとに読みます。編集した表は、ノートブックが DataFrame として受け取るか、書き出します。
+Python のパッケージ `vastgrid` は、どんな大きさの表も Jupyter ノートブックの中の vastgrid の表に示します。pandas・Polars の DataFrame、PyArrow の表、DuckDB のリレーション、そして CSV・TSV・Parquet・JSON・JSON Lines・Excel のファイルや DuckDB データベースです。データはカーネルの DuckDB が読みます。セルの出力の表は [anywidget](https://anywidget.dev) で、`DataGrid` を示し、ウィジェットのメッセージで行のブロックを範囲ごとに読みます。編集した表は、ノートブックが DataFrame として受け取るか、書き出します。
 
 ## 使い方
 
@@ -26,7 +26,7 @@ grid
 
 | オプション | 既定 | 意味 |
 | --- | --- | --- |
-| `sheet` | 最初のシート | ブックのシート |
+| `sheet` | 最初のシートまたは表 | ブックのシート、または DuckDB データベースの表 |
 | `height` | 480 | 表の高さ（ピクセル） |
 | `locale` | `"en"` | 表示の言語と数値の書式の BCP 47 タグ。`"ja"`・`"zh-CN"`・`"zh-TW"`・`"ko"`・`"es"`・`"pt-BR"`・`"fr"`・`"de"`。ほかの言語の文言は英語 |
 | `name` | ファイルの名前、または `"table"` | 表の名前。スクリーンリーダーが読み上げる |
@@ -49,7 +49,7 @@ DataFrame は、表を開くときに行の順のまま DuckDB に写します�
 
 ## 編集と書き出し
 
-グリッドがエンジンとできることはすべて使えます。並べ替え・絞り込み・検索・グループ化・ピボット・数式・統計・セルの検索、そしてセルの編集（入力・貼り付け・消去・フィル・元に戻す・やり直し）です。[グリッドの使い方](/ja/guides/using-the-grid/)を参照してください。
+グリッドがエンジンとできることはすべて使えます。並べ替え・絞り込み・検索・グループ化・ピボット・数式・統計・セルの検索、そしてセルの編集（入力・切り取り・貼り付け・消去・フィル・元に戻す・やり直し）です。[グリッドの操作](/ja/guides/using-the-grid/)を参照してください。
 
 ノートブックはデータを変数として持つので、元のファイルには何も保存しません（エンジンは保存できないと答えます）。代わりに、書き込んだセルをノートブックが読みます。
 

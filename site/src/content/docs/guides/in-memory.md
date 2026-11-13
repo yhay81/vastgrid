@@ -113,7 +113,7 @@ only those. `MEMORY_CAPABILITIES` of `vastgrid-js` holds them:
 | `save` | no |
 | `export` | CSV, TSV, JSON and xlsx, as `data`: the bytes come back and the grid downloads them |
 | `preview`, `partialViews` | no |
-| `changes` | `"poll"`: the engine sends no events |
+| `changes` | `"poll"`: it watches no files on disk, though it sends `changed` after a write and `progress`, `view` and `changed` while loading a text file larger than `previewBytes` |
 
 ## How large
 

@@ -22,6 +22,13 @@ updates:
       development:
         dependency-type: development
         update-types: [minor, patch]
+  - package-ecosystem: uv
+    directory: /packages/notebook/python
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -20,15 +20,14 @@ export const suites = {
   mcp: {
     tests: ["mcp"],
     server: {
-      command: "pnpm --filter vastgrid-mcp build && vpx packages/mcp/host/serve.ts .data/mcp-e2e 5184",
+      command: "vpx packages/mcp/host/serve.ts .data/mcp-e2e 5184",
       url: "http://127.0.0.1:5184",
     },
   },
   cli: {
     tests: ["cli"],
     server: {
-      command:
-        "pnpm --filter vastgrid-cli build && node packages/cli/dist/cli.js --no-open --save --port 5186 .data/cli-e2e",
+      command: "node packages/cli/dist/cli.js --no-open --save --port 5186 .data/cli-e2e",
       env: { VASTGRID_TOKEN: "e2e-token-0123456789" },
       url: "http://127.0.0.1:5186",
     },

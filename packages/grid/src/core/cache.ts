@@ -104,7 +104,8 @@ export class ViewCache {
     }
     const values = block.values;
     return {
-      ...(key === undefined ? {} : { key }),
+      key,
+      rowId: id,
       has: (column) => values.has(column),
       get: (column) => values.get(column)?.[offset] ?? null,
     };

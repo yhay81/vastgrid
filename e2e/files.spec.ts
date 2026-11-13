@@ -74,7 +74,11 @@ for (const [extension, rows] of [
     await expect(grid).toHaveAttribute("aria-rowcount", String(rows + 1), { timeout: 180_000 });
     // A deterministic order makes the first, middle and last row independently checkable.
     await page.evaluate(() =>
-      window.files.handle?.store.setDocument({ plan: { sort: [{ column: "id", direction: "desc" }] } }),
+      window.files.handle?.store.setDocument({
+        kind: "vastgrid/document",
+        version: 2,
+        plan: { sort: [{ column: "id", direction: "desc" }] },
+      }),
     );
     await expect(page.getByRole("gridcell", { name: nameOf(rows - 1), exact: true })).toBeAttached({ timeout: 60_000 });
     await page.locator(".vg-scroller").evaluate((element) => {
@@ -114,6 +118,8 @@ for (const [extension, rows] of [
     await expect(page.getByRole("gridcell", { name: nameOf(0), exact: true })).toBeAttached({ timeout: 60_000 });
     await page.evaluate(() =>
       window.files.handle?.store.setDocument({
+        kind: "vastgrid/document",
+        version: 2,
         plan: {
           where: { fn: "eq", args: [{ col: "city" }, { lit: "Tokyo" }] },
           sort: [{ column: "id", direction: "desc" }],
@@ -135,9 +141,13 @@ for (const [extension, rows] of [
     // A new plan supersedes a sort that has just started; its late answer must not change the screen.
     await page.evaluate(async () => {
       const store = window.files.handle?.store;
-      store?.setDocument({ plan: { sort: [{ column: "price", direction: "asc" }] } });
+      store?.setDocument({
+        kind: "vastgrid/document",
+        version: 2,
+        plan: { sort: [{ column: "price", direction: "asc" }] },
+      });
       await Promise.resolve();
-      store?.setDocument({ plan: {} });
+      store?.setDocument({ kind: "vastgrid/document", version: 2, plan: {} });
     });
     await expect(grid).toHaveAttribute("aria-rowcount", String(rows + 1), { timeout: 60_000 });
     await page.locator(".vg-scroller").evaluate((element) => {

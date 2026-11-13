@@ -116,7 +116,12 @@ export function rowsEngine(name: string, columns: Column[], rows: JsonValue[][])
       if (request.table !== name) return errorResponse(id, "table_not_found", "The table is not open.");
       if (op === "info") return { v: 2, id, result: info };
       if (op === "close") return { v: 2, id, result: null };
-      if (op !== "rows") return errorResponse(id, "internal", `This engine does not answer ${op}.`);
+      if (op !== "rows") {
+        return errorResponse(id, "invalid_request", `This engine does not answer ${op}.`, {
+          path: "/op",
+          reason: "unknown_op",
+        });
+      }
 
       const [member] = Object.keys(request.plan as object);
       if (member !== undefined) {
@@ -197,7 +202,8 @@ does exactly this. `readMessageCorpus` and `runMessageCase` check messages the s
 When the host has its own channel, such as a webview's `postMessage` or a notebook's comm, `workerTransport` works
 over anything with `postMessage` and `addEventListener`, with `serveEngine` on the other side. Otherwise implement
 `Transport`: `send(request, { signal })` gives the engine's answer with blocks as bytes, and nothing for `cancel`.
-`subscribe`, `cancels` (`"signal"` when aborting the signal cancels the request) and `exportUrl` are optional.
+`subscribe`, `cancels` (`"signal"` when aborting the signal cancels the request), `exportUrl` and `downloadExport`
+are optional.
 
 ```ts
 import type { Transport } from "vastgrid";

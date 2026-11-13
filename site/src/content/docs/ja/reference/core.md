@@ -22,7 +22,7 @@ const disconnect = store.connect();
 | --- | --- | --- | --- |
 | `transport` | `Transport` | （必須） | エンジンのある場所。 |
 | `table` | `string` | （必須） | 開く表の `ref`（§8.2）。 |
-| `open` | `OpenOptions` | | `open` の `read` オプション。`sheet`、`headerRow`、`keepEmptyRows`、`keepEmptyColumns`。 |
+| `open` | `OpenOptions` | | `open` の `read` オプション。`sheet`、`delimiter`、`headerRow`、`keepEmptyRows`、`keepEmptyColumns`。 |
 | `document` | `GridDocument` | 空のドキュメント | 最初のドキュメント（[§5.1](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#51-document)）。 |
 | `session` | `GridSession` | 空のセッション | 最初のセッション（[§5.2](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#52-session)）。 |
 | `initial` | `InitialView` | | サーバーで読んだ行（`readInitialView`）。最初の読み込みの前に表示します。 |
@@ -48,7 +48,7 @@ const disconnect = store.connect();
 | `setDocument(document)`、`setSession(session)` | ホストが渡すドキュメントやセッションを表示します。制御された props、保存したビュー、エージェントなど。 |
 | `cell(row, column)` | 画面のビューのセルの値。読むまでは `undefined`。 |
 | `isCut(row, column)` | エンジンがセルのテキストを上限で切ったかどうか（§8.4）。 |
-| `fullValue(row, column, signal?)` | セルの値全体（テキストが切られていても）とその列：`{ value, column }`。 |
+| `fullValue(row, column, signal?)` | セルの値全体（テキストが切られていても）、その列、切られていたかどうか：`{ value, column, cut }`。 |
 | `rowKey(row)`、`rowId(row)` | 画面のビューの行のキー（§5.3）と行 ID。 |
 | `getRowsVersion()`、`subscribeRows(listener)` | 画面のビューの行が届いたり消えたりすると変わる数と、それを受け取る方法。行はスナップショットに入りません。 |
 | `setViewport({ top, rows, columns })` | 画面に見えているものを伝えます。ストアはその行と前後 1 ページを読みます。 |
@@ -111,7 +111,7 @@ if (!outcome.ok) console.warn(outcome.error.code, outcome.error.message);
 
 | `code` | いつ | HTTP |
 | --- | --- | ---: |
-| `invalid_request` | §8 に従わないメッセージ。`path` と `reason` 付き | 400 |
+| `invalid_request` | §8 に従わないメッセージ。`path` と `reason`（`syntax`、`unknown_op`、`version`、`limit`。未実装の `op` は `path: "/op"`、`reason: "unknown_op"`）付き | 400 |
 | `invalid_plan` | 検査を通らないプラン（§4.7）。`path` と `reason` 付き | 400 |
 | `table_not_found` | 表が閉じているか、知らない表 | 404 |
 | `not_ready` | 表を読み込み中で、リクエストが表全体を必要とする | 409 |

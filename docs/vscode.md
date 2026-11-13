@@ -1,7 +1,7 @@
 # vastgrid in VS Code
 
 `vastgrid-vscode` (`packages/vscode`) is an extension for VS Code: CSV, TSV, Parquet, JSON Lines and Excel files of any
-size open in a grid as a custom editor. DuckDB reads the file in the extension's process, in Node.js; the editor's
+size, and DuckDB databases, open in a grid as a custom editor. DuckDB reads the file in the extension's process, in Node.js; the editor's
 webview shows `DataGrid` (react.md) and reads rows from it through the webview's messages. Cells of CSV and TSV
 files are edited and saved with VS Code's own Save, with the bytes that were not edited kept as they are (§7.5 of
 the specification).
@@ -16,14 +16,14 @@ pnpm run build
 code --extensionDevelopmentPath="$PWD/packages/vscode" /path/to/data
 ```
 
-Parquet and Excel files open in vastgrid when they are opened. CSV, TSV and JSON Lines files open as text, as before:
+Parquet, Excel and DuckDB files open in vastgrid when they are opened. CSV, TSV and JSON Lines files open as text, as before:
 vastgrid opens them with "Open With…", the editor's "Open in vastgrid" button, or the explorer's "Open in vastgrid".
 
 | Format | Files | In vastgrid |
 | --- | --- | --- |
 | CSV, TSV | `.csv`, `.tsv`, `.tab` | edited and saved |
-| CSV, TSV compressed | `.csv.gz`, `.csv.zst`, `.tsv.gz`, `.tsv.zst` | read |
-| JSON Lines | `.jsonl`, `.ndjson` (also `.gz`) | read |
+| CSV, TSV compressed | `.csv.gz`, `.csv.zst`, `.tsv.gz`, `.tsv.zst`, `.tab.gz`, `.tab.zst` | read |
+| JSON Lines | `.jsonl`, `.ndjson` (also `.gz`, `.zst`) | read |
 | Parquet | `.parquet`, `.pq` | read, by default |
 | Excel | `.xlsx`, `.xlsm` | read, by default; a bar above the grid, or "vastgrid: Choose Sheet", chooses the sheet |
 | DuckDB | `.duckdb`, `.ddb` | read, by default; a bar above the grid, or "vastgrid: Choose Sheet", chooses the table |
@@ -124,7 +124,7 @@ Open VSX as well, by trusted publishing (`ovsx publish --trusted-publishing --pa
 `code --install-extension vastgrid-vscode-<version>-<target>.vsix`, and `VASTGRID_VSIX=<package>.vsix pnpm
 --filter vastgrid-vscode run test:vscode` runs the suite on it.
 
-Releases ship seven VSIX files: Linux x64/arm64, Alpine x64, macOS x64/arm64 and Windows x64/arm64. From 0.3.0
+Releases ship eight VSIX files: Linux x64/arm64, Alpine x64/arm64, macOS x64/arm64 and Windows x64/arm64. From 0.3.0
 they are on the Marketplace and Open VSX as `yhay81.vastgrid-vscode`; 0.2.x is only on the GitHub releases.
 
 ## The listing and the texts

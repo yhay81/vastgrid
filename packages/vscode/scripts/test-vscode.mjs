@@ -4,7 +4,7 @@
 // downloads into `.vscode-test`. With `VASTGRID_VSIX`, the extension is that package (scripts/package.mjs), which
 // VS Code installs as it installs one of the Marketplace.
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,9 +35,21 @@ await writeFile(
   path.join(folder, "orders.jsonl"),
   '{"id":1,"region":"EU","price":10.5}\n{"id":2,"region":"US, east","price":30}\n{"id":3,"region":"EU","price":20}\n',
 );
-// A file of a million rows, whose last row the grid shows.
-const big = Array.from({ length: 1_000_000 }, (_, index) => `${index + 1},${(index * 7) % 1000}`);
-await writeFile(path.join(folder, "big.csv"), `id,value\n${big.join("\n")}\n`);
+// A file of a million rows, whose last row the grid shows, written in chunks rather than a 1M-element array.
+{
+  const handle = await open(path.join(folder, "big.csv"), "w");
+  try {
+    await handle.write("id,value\n");
+    const step = 50_000;
+    for (let start = 0; start < 1_000_000; start += step) {
+      let chunk = "";
+      for (let index = start; index < start + step; index++) chunk += `${index + 1},${(index * 7) % 1000}\n`;
+      await handle.write(chunk);
+    }
+  } finally {
+    await handle.close();
+  }
+}
 // A workbook whose second sheet has 200,000 rows, which "Choose Sheet" shows.
 const header = row(1, [cell("A1", { t: "inlineStr", is: "id" }), cell("B1", { t: "inlineStr", is: "value" })]);
 function* rows(count) {

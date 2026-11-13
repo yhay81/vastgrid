@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from ._engine_types import Json
+from ._plan import FUNCTIONS, MEASURES
 
-EXPORT_FORMATS = ["csv", "tsv", "parquet", "json", "xlsx"]
+EXPORT_FORMATS = ("csv", "tsv", "parquet", "json", "xlsx")
 
 
 CAPABILITIES: Json = {
@@ -17,6 +18,8 @@ CAPABILITIES: Json = {
         "sort": True,
         "search": True,
     },
+    "functions": list(FUNCTIONS),
+    "measures": list(MEASURES),
     "summarize": True,
     "find": True,
     "locate": True,
@@ -24,7 +27,7 @@ CAPABILITIES: Json = {
     # The notebook has the edited table as a DataFrame (`Grid.to_pandas`, …), or exports it: nothing is saved
     # into a file in its place.
     "save": False,
-    "export": {"formats": EXPORT_FORMATS, "delivery": "data"},
+    "export": {"formats": list(EXPORT_FORMATS), "delivery": "data"},
     "preview": False,
     "partialViews": False,
     "changes": "push",

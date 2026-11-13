@@ -11,6 +11,8 @@ from __future__ import annotations
 import atexit
 import os
 import pathlib
+import shutil
+import tempfile
 import threading
 import weakref
 from concurrent.futures import ThreadPoolExecutor
@@ -18,13 +20,17 @@ from typing import Any
 
 import anywidget
 import duckdb
+import pyarrow as pa
 import traitlets
 
 from ._engine import Engine
-from ._engine_types import Source
+from ._engine_types import Source, relation_column
 from ._errors import EngineError
 from ._session import Running, new_database
+from ._sql import view_column
 from ._table import file_format
+from ._view_export import write_export
+from ._views import View
 
 _STATIC = pathlib.Path(__file__).parent / "static"
 _MARK = "vastgrid:buffer"
@@ -92,10 +98,38 @@ def _cell() -> tuple[str, str] | None:
     return (cell, request) if isinstance(cell, str) and isinstance(request, str) else None
 
 
+def _displayed_columns(
+    columns: list[dict[str, Any]], document: dict[str, Any] | None
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    """The view's displayed columns in display order (docs/spec.md §5.1.1), and their settings by name."""
+    raw_settings = (document or {}).get("columns") if isinstance(document, dict) else None
+    if not isinstance(raw_settings, list):
+        return list(columns), {}
+    settings_list = [item for item in raw_settings if isinstance(item, dict) and isinstance(item.get("name"), str)]
+    by_setting: dict[str, dict[str, Any]] = {item["name"]: item for item in settings_list}
+    by_name = {column["name"]: column for column in columns}
+    listed = [
+        (by_name[item["name"]], item)
+        for item in settings_list
+        if item["name"] in by_name and item.get("hidden") is not True
+    ]
+    left = [col for col, item in listed if item.get("pin") == "left"]
+    right = [col for col, item in listed if item.get("pin") == "right"]
+    middle = [
+        *[col for col, item in listed if item.get("pin") not in ("left", "right")],
+        *[col for col in columns if col["name"] not in by_setting],
+    ]
+    displayed = [*left, *middle, *right]
+    if not displayed and columns:
+        displayed.append(columns[0])
+    return displayed, by_setting
+
+
 class Grid(anywidget.AnyWidget):
-    """A table in vastgrid's grid: a pandas or Polars DataFrame, a PyArrow table, a DuckDB relation, or a file
-    (CSV, TSV, Parquet, JSON, JSON Lines or Excel), read into the kernel's DuckDB database. The grid filters, sorts,
-    groups and edits it; `to_pandas`, `to_polars` and `to_arrow` give the table with the written cells."""
+    """A table in vastgrid's grid: a pandas or Polars DataFrame or Series, a PyArrow table, a DuckDB relation, or a
+    file (CSV, TSV, Parquet, JSON, JSON Lines, Excel or DuckDB database), powered by DuckDB in the kernel. The grid
+    filters, sorts, groups and edits it; `to_pandas`, `to_polars` and `to_arrow` give the table with the written
+    cells."""
 
     _esm = _STATIC / "widget.js"
     _css = _STATIC / "widget.css"
@@ -210,31 +244,45 @@ class Grid(anywidget.AnyWidget):
             raise ValueError("The grid is closed.")
         return self._engine.handles[self._table_id]
 
-    def to_arrow(self, *, view: bool = False):
+    def to_arrow(self, *, view: bool = False) -> pa.Table:
         """The table with the written cells, as a PyArrow table, in row order; with `view`, the grid's view: its
-        rows, in its order, and its columns."""
-        if view and self.plan:
-            return self._arrow_of_view()
+        rows, in its order, and its visible columns."""
         table = self._table()
+        if view:
+            return self._arrow_of_view(table)
         relation = table.relation
-        from ._sql import quote_identifier
-
-        names = ", ".join(quote_identifier(column["name"]) for column in table.columns) or "NULL AS vg_none"
+        assert relation is not None
+        if not table.columns:
+            return pa.table({"_": pa.nulls(table.row_count)}).select([])
+        selected = ", ".join(
+            f"{relation_column(relation, column['name'])} AS c{index}" for index, column in enumerate(table.columns)
+        )
         cursor = self._engine.session.cursor()
         try:
-            return cursor.sql(f"SELECT {names} FROM {relation.sql} ORDER BY {relation.row_id}").to_arrow_table()
+            arrow = cursor.sql(f"SELECT {selected} FROM {relation.sql} ORDER BY {relation.row_id}").to_arrow_table()
+            return arrow.rename_columns([column["name"] for column in table.columns])
         finally:
             cursor.close()
 
-    def _arrow_of_view(self):
-        import tempfile
+    def _arrow_of_view(self, table: Any) -> pa.Table:
+        def read_arrow(v: View) -> pa.Table:
+            columns, _ = _displayed_columns(v.sql.columns, self.document)
+            if not columns:
+                return pa.table({"_": pa.nulls(v.row_count)}).select([])
+            selected = ", ".join(
+                f"{view_column(v.sql, column['name'])} AS c{index}" for index, column in enumerate(columns)
+            )
+            cursor = self._engine.session.cursor()
+            try:
+                arrow = cursor.sql(
+                    f"{v.sql.with_} SELECT {selected} FROM vg_view ORDER BY {v.position}",
+                    params=v.sql.params,
+                ).to_arrow_table()
+                return arrow.rename_columns([column["name"] for column in columns])
+            finally:
+                cursor.close()
 
-        import pyarrow.parquet as parquet
-
-        with tempfile.TemporaryDirectory(prefix="vastgrid-") as folder:
-            file = os.path.join(folder, "view.parquet")
-            self.export(file, view=True)
-            return parquet.read_table(file)
+        return self._engine.views.use(table, {"plan": self.plan}, Running(), read_arrow)
 
     def to_pandas(self, *, view: bool = False):
         """The table with the written cells as a pandas DataFrame (see `to_arrow`)."""
@@ -250,19 +298,35 @@ class Grid(anywidget.AnyWidget):
         """Writes the grid's view (with `view=False`, the whole table in row order) with the written cells into a
         file, as the grid's Export menu writes it: CSV, TSV, Parquet, JSON or Excel (`xlsx`), by `format` or the
         file's extension. Gives the rows written. An existing file is replaced once the new one is complete."""
+        table = self._table()
         target = os.path.abspath(os.fspath(path))
         fmt = format or os.path.splitext(target)[1].lstrip(".").lower()
         if fmt not in ("csv", "tsv", "parquet", "json", "xlsx"):
             raise ValueError(f"vastgrid exports CSV, TSV, Parquet, JSON and Excel (xlsx) files, not {fmt!r}.")
-        temporary = os.path.join(os.path.dirname(target), f".{os.path.basename(target)}.{os.getpid()}.tmp")
-        request = {"plan": self.plan if view else {}, "format": fmt}
+        parent = os.path.dirname(target) or "."
+        temp_dir = tempfile.mkdtemp(prefix=".vastgrid-", dir=parent)
+        temporary = os.path.join(temp_dir, f"export.{fmt}")
+        running = Running()
+
+        def write_view(v: View) -> int:
+            if view:
+                columns, settings = _displayed_columns(v.sql.columns, self.document)
+                headers = [
+                    (settings.get(column["name"], {}).get("format") or {}).get("label") or column["name"]
+                    for column in columns
+                ]
+            else:
+                columns = v.sql.columns
+                headers = [column["name"] for column in columns]
+            write_export(self._engine.session, v, fmt, columns, headers, None, temporary, running)
+            return v.row_count
+
         try:
-            rows = self._engine.views.export(self._table(), request, Running(), temporary)
+            rows = self._engine.views.use(table, {"plan": self.plan if view else {}}, running, write_view)
             os.replace(temporary, target)
             return rows
         finally:
-            if os.path.exists(temporary):
-                os.remove(temporary)
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     def close(self) -> None:
         """Closes the grid: its page, its tables and the written cells."""

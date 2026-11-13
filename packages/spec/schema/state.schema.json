@@ -26,7 +26,7 @@
         "schema": {
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/name"
           }
         },
         "rowKey": {
@@ -355,12 +355,14 @@
           "properties": {
             "undo": {
               "type": "array",
+              "maxItems": 100,
               "items": {
                 "$ref": "#/$defs/step"
               }
             },
             "redo": {
               "type": "array",
+              "maxItems": 100,
               "items": {
                 "$ref": "#/$defs/step"
               }
@@ -454,7 +456,8 @@
     },
     "position": {
       "type": "integer",
-      "minimum": 0
+      "minimum": 0,
+      "maximum": 9007199254740991
     },
     "name": {
       "type": "string",

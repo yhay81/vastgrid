@@ -49,11 +49,14 @@ export function firstInvalid(column: Column, numbers: ColumnNumbers, validity: U
       break;
     case "timestamp":
     case "timestamptz": {
-      const perSecond = UNIT_PER_SECOND[column.type === "timestamp" ? (column.unit ?? "us") : "us"];
-      // −2^63 is neither a timestamp nor an infinity.
+      const unit = column.type === "timestamp" ? (column.unit ?? "us") : "us";
+      const perSecond = UNIT_PER_SECOND[unit];
+      // −2^63 is neither a timestamp nor an infinity; s, ms and us also fit microsecond counts (§2.2).
       low = BigInt(FIRST_DAY) * DAY_SECONDS * perSecond;
-      if (low < -TIMESTAMP_INFINITY) low = -TIMESTAMP_INFINITY;
+      if (low <= -TIMESTAMP_INFINITY) low = -TIMESTAMP_INFINITY + 1n;
       high = (BigInt(LAST_DAY) + 1n) * DAY_SECONDS * perSecond - 1n;
+      const limit = unit === "ns" ? TIMESTAMP_INFINITY - 1n : (TIMESTAMP_INFINITY - 1n) / (1_000_000n / perSecond);
+      if (high > limit) high = limit;
       break;
     }
     default:

@@ -47,6 +47,7 @@ export default function ColumnsPanel() {
                 <input
                   type="checkbox"
                   checked
+                  disabled={displayed.length <= 1}
                   onChange={() => run({ command: "column.hide", names: [item.column.name] })}
                 />
                 <span className="vg-filter__label">{item.column.name}</span>

@@ -1,12 +1,12 @@
 ---
 title: Command line
-description: Open CSV, TSV, Parquet, JSON Lines and Excel files of any size in a grid in the browser with one command, read by DuckDB on your computer.
+description: Open CSV, TSV, Parquet, JSON Lines and Excel files and DuckDB databases of any size in a grid in the browser with one command, read by DuckDB on your computer.
 ---
 
-`vastgrid-cli` opens CSV, TSV, Parquet, JSON Lines and Excel files of any size in a grid in the browser with one
-command. DuckDB reads the files in the command, in Node.js, and the page reads blocks of rows from it over HTTP, as
-the grid does from any server. Nothing leaves the computer: the server answers on 127.0.0.1 only, to the browser
-that opened the address it printed.
+`vastgrid-cli` opens CSV, TSV, Parquet, JSON Lines and Excel files and DuckDB databases of any size in a grid in the
+browser with one command. DuckDB reads the files in the command, in Node.js, and the page reads blocks of rows from it
+over HTTP, as the grid does from any server. Nothing leaves the computer: the server answers on 127.0.0.1 only, to the
+browser that opened the address it printed.
 
 ## Running it
 
@@ -37,7 +37,7 @@ Options:
 
 The command prints the address of the page and opens it in the browser; with `--no-open`, or when no browser
 opens, open the printed address yourself. Ctrl+C stops the server and DuckDB, which deletes its folder of temporary
-files (`vastgrid-cli` in the system's temporary folder). A second Ctrl+C stops without waiting; folders left by a
+files inside the current user's private temporary directory. A second Ctrl+C stops without waiting; folders left by a
 command that was killed are deleted by the next one.
 
 ## Files
@@ -45,7 +45,7 @@ command that was killed are deleted by the next one.
 | Format | Files |
 | --- | --- |
 | CSV, TSV | `.csv`, `.tsv`, `.tab`, also compressed (`.gz`, `.zst`) |
-| JSON Lines, JSON | `.jsonl`, `.ndjson`, `.json`, also `.gz` |
+| JSON Lines, JSON | `.jsonl`, `.ndjson`, `.json`, also `.gz`, `.zst` |
 | Parquet | `.parquet`, `.pq` |
 | Excel | `.xlsx`, `.xlsm` |
 | DuckDB | `.duckdb`, `.ddb`: the tables of the database are its sheets (not its views) |
@@ -60,11 +60,11 @@ command that was killed are deleted by the next one.
 ## The page
 
 The page shows the first file with the toolbar, the status bar and a check box for each row. A list above the grid
-chooses another file, and the sheets of a workbook are buttons. The address keeps the file and the sheet
-(`?file=…&sheet=…`), so that the browser's back and forward move between them and a page loaded again shows the same
-file. The tab keeps the view of each of them, its sorts, filters, column widths, selection and scroll, and shows
-it again on the way back and when the page is loaded again (`sessionStorage`). Its texts follow the browser's language: English, Japanese, Chinese, Korean, Spanish, Portuguese, French or
-German.
+chooses another file, and the sheets of a workbook or the tables of a database are buttons. The address keeps the
+file and the sheet (`?file=…&sheet=…`), so that the browser's back and forward move between them and a page loaded
+again shows the same file. The tab keeps the view of each of them, its sorts, filters, column widths, selection and
+scroll, and shows it again on the way back and when the page is loaded again (`sessionStorage`). Its texts follow
+the browser's language: English, Japanese, Chinese, Korean, Spanish, Portuguese, French or German.
 
 Everything the grid does with an engine works: sorting, filtering, searching, grouping, pivots, formulas,
 statistics, editing cells. Written cells are kept by DuckDB until the command stops, also when the page is loaded
@@ -72,8 +72,9 @@ again. Exports are downloaded by the browser.
 
 With `--save`, ⌘S or Ctrl+S (or the toolbar's Save) writes the written cells into the CSV or TSV file they came
 from, keeping every byte that holds no edited field. Without it, the command never changes a file. Parquet, JSON
-Lines and Excel files are not saved; export them instead. A file changed on disk is read again, or, when it has
-written cells, the grid says so and keeps them until they are discarded.
+Lines and Excel files and DuckDB databases are not saved; export them instead. A file changed on disk is read again
+(a DuckDB database changed on disk notifies the grid and is read again on reload), or, when it has written cells,
+the grid says so and keeps them until they are discarded.
 
 ## The address and its token
 

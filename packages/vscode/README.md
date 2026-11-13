@@ -1,6 +1,6 @@
 # vastgrid for VS Code
 
-CSV, TSV, Parquet, JSON Lines and Excel files of any size open in a grid, read by DuckDB in the extension: scroll to
+CSV, TSV, Parquet, JSON Lines and Excel files of any size, and DuckDB databases, open in a grid, read by DuckDB in the extension: scroll to
 the last row of a file of 100,000,000 rows, sort, filter and group the whole file, and edit the cells of CSV and TSV
 files and save them with VS Code's Save, which rewrites only the edited fields and keeps every other byte.
 
@@ -11,8 +11,8 @@ files and save them with VS Code's Save, which rewrites only the edited fields a
 | Format | Files | In vastgrid |
 | --- | --- | --- |
 | CSV, TSV | `.csv`, `.tsv`, `.tab` | edited and saved |
-| CSV, TSV compressed | `.csv.gz`, `.csv.zst`, `.tsv.gz`, `.tsv.zst` | read |
-| JSON Lines | `.jsonl`, `.ndjson` (also `.gz`) | read |
+| CSV, TSV compressed | `.csv.gz`, `.csv.zst`, `.tsv.gz`, `.tsv.zst`, `.tab.gz`, `.tab.zst` | read |
+| JSON Lines | `.jsonl`, `.ndjson` (also `.gz`, `.zst`) | read |
 | Parquet | `.parquet`, `.pq` | read, by default |
 | Excel | `.xlsx`, `.xlsm` | read, by default; the bar above the grid, or "vastgrid: Choose Sheet", chooses the sheet |
 | DuckDB | `.duckdb`, `.ddb` | read, by default; the bar above the grid, or "vastgrid: Choose Sheet", chooses the table |

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile, symlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile, stat, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { formatDateStyle, serialDate } from "vastgrid-spec/workbook";
 import { afterAll, beforeAll, test } from "vite-plus/test";
@@ -29,7 +30,7 @@ async function workbook(name: string, content: FixtureWorkbook) {
 
 async function readAll(ref: string, read?: Json) {
   const info = await client.open(ref, read);
-  assert.equal(info.status, "ready", info.error);
+  assert.equal(info.status, "ready", info.error ?? "");
   const rows = (await client.rows(info)).rows;
   return { info, rows };
 }
@@ -48,6 +49,29 @@ test("workbook files are recognised by their extension", () => {
   assert.equal(tableFormatOf("Macro.XLSM"), "xlsx");
   assert.equal(tableFormatOf("old.xls"), null);
   assert.equal(tableFormatOf("binary.xlsb"), null);
+});
+
+test("deflated sheets larger than a read buffer preserve every cell", async () => {
+  const values = Array.from({ length: 6000 }, (_, index) =>
+    createHash("sha512").update(String(index)).digest("base64"),
+  );
+  const ref = await workbook("multichunk.xlsx", {
+    sheets: [
+      {
+        name: "Large",
+        rows: [
+          row(1, [cell("A1", { t: "inlineStr", is: "value" })]),
+          ...values.map((value, i) => row(i + 2, [cell(`A${i + 2}`, { t: "inlineStr", is: value })])),
+        ],
+      },
+    ],
+  });
+  assert.ok((await stat(path.join(workspace, ref))).size > 256 * 1024 + 4096);
+  const { rows } = await readAll(ref);
+  assert.deepEqual(
+    rows.map(([value]) => value),
+    values,
+  );
 });
 
 test("cells are read with one type per column, formulas show their saved values", async () => {

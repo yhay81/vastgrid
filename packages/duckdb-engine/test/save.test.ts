@@ -24,7 +24,7 @@ afterAll(async () => {
 async function opened(name: string, content: string | Buffer, target = client): Promise<TableInfo> {
   await writeFile(path.join(workspace, name), content);
   const info = await target.open(name);
-  assert.equal(info.status, "ready", info.error);
+  assert.equal(info.status, "ready", info.error ?? "");
   return info;
 }
 

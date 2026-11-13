@@ -46,7 +46,11 @@ export interface McpTransport extends Transport {
   deliver(events: readonly unknown[]): void;
 }
 
-export function mcpTransport(app: App, link: GridLink): McpTransport {
+export function mcpTransport(
+  app: App,
+  link: GridLink,
+  messages?: () => { noDownload?: string; exportFailed?: string },
+): McpTransport {
   const listeners = new Set<(event: unknown) => void>();
   return {
     send: (request) => callTool(app, "vastgrid_message", { grid: link.grid, client: link.client, message: request }),
@@ -63,7 +67,7 @@ export function mcpTransport(app: App, link: GridLink): McpTransport {
       if (!app.getHostCapabilities()?.downloadFile) {
         throw new ToolCallError(
           "not_allowed",
-          "The host does not download files: ask the agent to export into a folder.",
+          messages?.().noDownload ?? "The host does not download files: ask the agent to export into a folder.",
         );
       }
       const answer = await app.callServerTool({ name: "grid_export_file", arguments: { target } });
@@ -72,7 +76,10 @@ export function mcpTransport(app: App, link: GridLink): McpTransport {
         const error = ((answer.structuredContent ?? {}) as Json).error as
           | { code?: string; message?: string }
           | undefined;
-        throw new ToolCallError(error?.code ?? "internal", error?.message ?? "The export could not be read.");
+        throw new ToolCallError(
+          error?.code ?? "internal",
+          error?.message ?? messages?.().exportFailed ?? "The export could not be read.",
+        );
       }
       // The host asks the person where to save it; a refusal is theirs, and not a failure.
       await app.downloadFile({ contents: [file] });

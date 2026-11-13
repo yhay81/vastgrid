@@ -46,9 +46,9 @@ function start(event: MessageEvent) {
   if (!init?.file && !init?.sample) return;
   scope.removeEventListener("message", start);
   const file = init.file ?? sample(init.sample as number);
-  // Parquet files are read by row groups as the grid needs them; the others are read whole when they are opened,
-  // and a `.txt` file as CSV, with the separator that splits its first line best.
-  const table = /\.parquet$/i.test(file.name)
+  // Parquet files are read by row groups as the grid needs them; text files larger than `previewBytes` show their
+  // first rows while the rest loads, and a `.txt` file is read as CSV with the separator that splits its first line best.
+  const table = /\.(parquet|pq)$/i.test(file.name)
     ? { parquet: file, editable: true }
     : /\.txt$/i.test(file.name)
       ? { file, format: "csv" as const, editable: true }

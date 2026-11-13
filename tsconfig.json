@@ -14,6 +14,7 @@
     "packages/*/test",
     "packages/*/perf",
     "packages/*/bench",
+    "scripts/*.ts",
     "scripts/test",
     "e2e",
     "playwright.config.ts"

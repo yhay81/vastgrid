@@ -55,10 +55,19 @@ export function planView(checked: CheckedPlan, context: ViewContext): ViewShape 
     derived.set(item.name, { column: item.column, values: evaluate(item.expr, read, count) });
   }
   const filtered = checked.where ? filter(checked.where, read, count) : null;
-  const ranksOf = (columns: Map<string, ViewColumn>, name: string) => {
-    const made = columns.get(name);
-    return made ? context.rankColumn(made.column, vectorOf(made.values)) : context.ranks(name);
+  const ranksFrom = (columns: Map<string, ViewColumn>) => {
+    const cache = new Map<string, ColumnRanks>();
+    return (name: string): ColumnRanks => {
+      let ranks = cache.get(name);
+      if (!ranks) {
+        const made = columns.get(name);
+        ranks = made ? context.rankColumn(made.column, vectorOf(made.values)) : context.ranks(name);
+        cache.set(name, ranks);
+      }
+      return ranks;
+    };
   };
+  const derivedRanks = ranksFrom(derived);
   if (!checked.aggregate) {
     return {
       columns: checked.columns,
@@ -66,11 +75,7 @@ export function planView(checked: CheckedPlan, context: ViewContext): ViewShape 
       grouped: false,
       tableRows: count,
       rowCount: filtered ? filtered.length : count,
-      order: context.sortRows(
-        count,
-        context.sortKeys((name) => ranksOf(derived, name)),
-        filtered,
-      ),
+      order: context.sortRows(count, context.sortKeys(derivedRanks), filtered),
     };
   }
   const groups = groupRows(
@@ -80,7 +85,7 @@ export function planView(checked: CheckedPlan, context: ViewContext): ViewShape 
       rows: filtered,
       count,
       values: valuesOf,
-      ranks: (name) => ranksOf(derived, name),
+      ranks: derivedRanks,
     },
     checked.having,
   );
@@ -90,10 +95,6 @@ export function planView(checked: CheckedPlan, context: ViewContext): ViewShape 
     grouped: true,
     tableRows: groups.count,
     rowCount: groups.kept ? groups.kept.length : groups.count,
-    order: context.sortRows(
-      groups.count,
-      context.sortKeys((name) => ranksOf(groups.values, name)),
-      groups.kept,
-    ),
+    order: context.sortRows(groups.count, context.sortKeys(ranksFrom(groups.values)), groups.kept),
   };
 }

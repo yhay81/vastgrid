@@ -10,9 +10,11 @@
  * cell, never a formula, also when it starts with `=`, `+`, `-` or `@`. Text longer than 32,767 characters is cut.
  * `null` leaves the cell empty. Ported from 0.1's `xlsx-writer.ts`; both engines write workbooks with it.
  */
+import { civilFromDays, daysFromCivil } from "./calendar.js";
 import { columnLetters, serialOf } from "./excel.js";
 import { SpecError } from "./plan.js";
 import type { JsonValue, LogicalType } from "./types.js";
+import { isValueOf, textOf } from "./values.js";
 
 /** Rows of an Excel sheet, the header row included. */
 export const XLSX_MAX_ROWS = 1_048_576;
@@ -77,14 +79,20 @@ export function webDeflate(): ((chunks: AsyncIterable<Uint8Array>) => AsyncItera
           throw error;
         }
       })();
+      pump.catch(() => {});
       const reader = (stream.readable as ReadableStream<Uint8Array>).getReader();
+      let ended = false;
       try {
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) {
+            ended = true;
+            break;
+          }
           yield value;
         }
       } finally {
+        if (!ended) await reader.cancel().catch(() => {});
         reader.releaseLock();
       }
       await pump;
@@ -96,14 +104,17 @@ export function webDeflate(): ((chunks: AsyncIterable<Uint8Array>) => AsyncItera
 
 const temporal =
   /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?)?\s*(Z|[+-]\d{2}(?::?\d{2}){0,2})?$/i;
-const timeOfDay = /^(\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?\s*(?:Z|[+-]\d{2}(?::?\d{2}){0,2})?$/i;
+const timeOfDay = /^(\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?\s*(Z|[+-]\d{2}(?::?\d{2}){0,2})?$/i;
 
-/** Seconds east of UTC of an offset such as `Z`, `+09`, `+0930` or `-05:00`. */
-function offsetSeconds(offset: string | undefined) {
+/** Seconds east of UTC of an offset such as `Z`, `+09`, `+0930` or `-05:00`, or `null` when invalid. */
+function offsetSeconds(offset: string | undefined): number | null {
   if (!offset || /^z$/i.test(offset)) return 0;
   const digits = offset.slice(1).replaceAll(":", "");
-  const total =
-    Number(digits.slice(0, 2)) * 3600 + Number(digits.slice(2, 4) || 0) * 60 + Number(digits.slice(4, 6) || 0);
+  const hours = Number(digits.slice(0, 2));
+  const minutes = Number(digits.slice(2, 4) || 0);
+  const seconds = Number(digits.slice(4, 6) || 0);
+  if (hours > 23 || minutes > 59 || seconds > 59) return null;
+  const total = hours * 3600 + minutes * 60 + seconds;
   return offset[0] === "-" ? -total : total;
 }
 
@@ -112,20 +123,24 @@ export function excelSerial(value: string, type: LogicalType): number | null {
   if (type === "time") {
     const match = timeOfDay.exec(value.trim());
     if (!match) return null;
-    const seconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3] ?? 0) + Number(match[4] ?? 0);
+    const [hours, minutes, secs] = [Number(match[1]), Number(match[2]), Number(match[3] ?? 0)];
+    if (hours > 23 || minutes > 59 || secs > 59 || offsetSeconds(match[5]) === null) return null;
+    const seconds = hours * 3600 + minutes * 60 + secs + Number(match[4] ?? 0);
     return seconds < 86_400 ? seconds / 86_400 : null;
   }
   const match = temporal.exec(value.trim());
   if (!match) return null;
-  const [, year, month, day, hour = "0", minute = "0", second = "0", fraction = "0"] = match;
-  // `setUTCFullYear`, unlike `Date.UTC`, reads the years 0 to 99 as themselves. Days and months beyond their
-  // ranges roll over into the next ones.
-  const date = new Date(0);
-  date.setUTCFullYear(Number(year), Number(month) - 1, Number(day));
-  const days = date.getTime() / 86_400_000;
-  if (!Number.isFinite(days)) return null;
-  const seconds =
-    Number(hour) * 3600 + Number(minute) * 60 + Number(second) + Number(fraction) - offsetSeconds(match[8]);
+  if (type === "date" && (match[4] !== undefined || match[8] !== undefined)) return null;
+  const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  if (m < 1 || m > 12 || d < 1) return null;
+  const days = daysFromCivil(y, m, d);
+  const [cy, cm, cd] = civilFromDays(days);
+  if (cy !== y || cm !== m || cd !== d) return null;
+  const [hours, minutes, secs] = [Number(match[4] ?? 0), Number(match[5] ?? 0), Number(match[6] ?? 0)];
+  if (hours > 23 || minutes > 59 || secs > 59) return null;
+  const offset = offsetSeconds(match[8]);
+  if (offset === null) return null;
+  const seconds = hours * 3600 + minutes * 60 + secs + Number(match[7] ?? 0) - offset;
   return serialOf(days, seconds);
 }
 
@@ -187,11 +202,17 @@ function valueCell(ref: string, value: JsonValue, type: LogicalType, style: numb
   if (typeof value !== "string") return textCell(ref, JSON.stringify(value));
   if (type === "date" || type === "timestamp" || type === "timestamptz" || type === "time") {
     const serial = excelSerial(value, type);
-    return serial === null ? textCell(ref, value) : numberCell(ref, serial, style);
+    if (serial !== null) return numberCell(ref, serial, style);
+    const text = isValueOf(value, { type }) ? (textOf(value, { type }) ?? value) : value;
+    return textCell(ref, text);
   }
   if (NUMERIC.has(type)) {
     const number = exactNumber(value.trim());
     return number === null ? textCell(ref, value) : numberCell(ref, number, style);
+  }
+  if (type === "binary") {
+    const text = isValueOf(value, { type }) ? (textOf(value, { type }) ?? value) : value;
+    return textCell(ref, text);
   }
   return textCell(ref, value);
 }
@@ -332,12 +353,14 @@ class ZipWriter {
 const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
 
 function sheetNameOf(name: string | undefined) {
-  const cleaned = (name ?? "")
+  const replaced = (name ?? "")
     // oxlint-disable-next-line no-control-regex -- control characters are not allowed in sheet names.
     .replace(/[[\]:*?/\\\u0000-\u001f]/g, "_")
-    .replace(/^'+|'+$/g, "")
-    .slice(0, 31);
-  return cleaned.trim() ? cleaned : "Sheet1";
+    .replace(/^'+|'+$/g, "");
+  let cleaned = replaced.slice(0, 31);
+  if (/[\uD800-\uDBFF]$/.test(cleaned)) cleaned = cleaned.slice(0, -1);
+  cleaned = cleaned.replace(/^'+|'+$/g, "");
+  return cleaned.trim() && !/^history$/i.test(cleaned) ? cleaned : "Sheet1";
 }
 
 function staticParts(sheetName: string, formats: string[]) {

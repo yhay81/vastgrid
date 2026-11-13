@@ -25,7 +25,7 @@ export function Orders() {
 | --- | --- | --- | --- |
 | `transport` | `Transport` | | エンジンのある場所（[トランスポート](/ja/reference/core/#トランスポート)）。`table` と一緒に渡します。 |
 | `table` | `string` | | 開く表の `ref`。メモリエンジンの `tables` の名前か、DuckDB エンジンのファイル。 |
-| `open` | `OpenOptions` | | `open` の `read` オプション。`sheet`、`headerRow`、`keepEmptyRows`、`keepEmptyColumns`。 |
+| `open` | `OpenOptions` | | `open` の `read` オプション。`sheet`、`delimiter`、`headerRow`、`keepEmptyRows`、`keepEmptyColumns`。 |
 | `store` | `GridStore` | | 外で作ったストア。`transport` と `table` の代わりに渡します。 |
 
 グリッドは `transport`、`table`、`open` から自分のストアを一度だけ作り、マウントしている間だけ接続します。transport か table が変わると新しいストアを作ります。`store` も、`transport` と `table` もないときは例外を投げます。渡された `store` をグリッドは接続しません。接続まで行う `useCreateGridStore` で作るか、エフェクトの中で `connect()` を呼んでください。

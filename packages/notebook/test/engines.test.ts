@@ -82,7 +82,7 @@ test("the generated table reads with the same columns and values in both engines
 
 test(`${PLANS} generated plans give the same answers in both engines (seed ${SEED})`, { skip }, async () => {
   const failures: string[] = [];
-  const outcomes = { rows: 0, errors: 0, known: 0 };
+  const outcomes = { rows: 0, errors: 0 };
   for (let index = 0; index < PLANS; index++) {
     const seed = SEED * 1_000 + index;
     const plan = new Plans(generator(seed), tablePool()).plan();
@@ -90,12 +90,9 @@ test(`${PLANS} generated plans give the same answers in both engines (seed ${SEE
     const problems = differences(theirs, await answer(python, at("generated", "python"), plan));
     if (theirs.error) outcomes.errors++;
     else outcomes.rows++;
-    if (problems[0] === "known") outcomes.known++;
-    else if (problems.length > 0) failures.push(`plan ${seed}: ${JSON.stringify(plan)}\n  ${problems.join("\n  ")}`);
+    if (problems.length > 0) failures.push(`plan ${seed}: ${JSON.stringify(plan)}\n  ${problems.join("\n  ")}`);
   }
-  console.log(
-    `${outcomes.rows} plans answered with rows, ${outcomes.errors} with errors; ${outcomes.known} differ as KNOWN says`,
-  );
+  console.log(`${outcomes.rows} plans answered with rows, ${outcomes.errors} with errors`);
   assert.equal(failures.length, 0, `${failures.length} plans differ:\n${failures.slice(0, 10).join("\n")}`);
   assert.ok(outcomes.rows > PLANS * 0.8, `${outcomes.rows} of ${PLANS} plans ran`);
 });
@@ -153,8 +150,14 @@ test("generated plans find, summarize, locate and export alike in both engines",
         return [start, random.int(start + 1, count)];
       });
       const members = { plan, ranges, columns: columns.slice(0, random.int(1, columns.length)).map((c) => c.name) };
-      const a = await memory("summarize", { ...theirs, ...members });
-      const b = await python("summarize", { ...ours, ...members });
+      const a = (await memory("summarize", { ...theirs, ...members })) as {
+        result?: Json;
+        error?: { code?: string };
+      };
+      const b = (await python("summarize", { ...ours, ...members })) as {
+        result?: Json;
+        error?: { code?: string };
+      };
       if (a.error || b.error ? a.error?.code !== b.error?.code : !sameSummary(a.result as Json, b.result as Json)) {
         fail(
           `plan ${seed}: summarize ${JSON.stringify(members)}: ${JSON.stringify([a.result ?? a.error, b.result ?? b.error])}`,

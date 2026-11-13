@@ -19,8 +19,12 @@ export interface ErrorBody {
 export interface TableInfo {
   table: string;
   revision: string;
+  status: "loading" | "ready" | "error";
+  progress: number | null;
   rowCount: number;
+  readableRows: number;
   columns: Column[];
+  error?: string;
   capabilities: Json;
 }
 
@@ -28,7 +32,14 @@ export interface Rows {
   rowIds: number[] | null;
   rows: JsonValue[][];
   columns: Column[];
-  view: { hash: string; rowCount: number; columns: Column[] };
+  view: {
+    hash: string;
+    status: string;
+    rowCount: number;
+    rowCountExact: boolean;
+    readableRows: number;
+    columns: Column[];
+  };
   start: number;
   end: number;
   truncated?: Record<string, number[]>;

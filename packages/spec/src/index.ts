@@ -7,6 +7,8 @@ export {
   dateText,
   daysFromCivil,
   FIRST_DAY,
+  floorDiv,
+  fromTemporalTextForm,
   type IntervalParts,
   infinityOf,
   intervalText,
@@ -181,6 +183,7 @@ export {
 } from "./types.js";
 export {
   decimalTextType,
+  exactNumberText,
   floatJson,
   floatOf,
   floatText,
@@ -198,4 +201,4 @@ export {
   typeName,
   valueOfText,
 } from "./values.js";
-export { FOLD_TABLES, FOLDS, type Fold, foldAll, foldText, searchImplies } from "./fold.js";
+export { FOLD_TABLES, FOLDS, type Fold, foldAll, foldText, lowerText, searchImplies, upperText } from "./fold.js";

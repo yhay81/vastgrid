@@ -31,7 +31,7 @@ for (const materializeRows of [0, 20_000_000])
             const parquet = path.join(context.workspace, `${path.basename(file.file, ".json")}-${name}.parquet`);
             await writeParquet(parquet, table);
             const info = await client.open(parquet);
-            assert.equal(info.status, "ready", info.error);
+            assert.equal(info.status, "ready", info.error ?? "");
             assert.deepEqual(
               info.columns.map(({ sourceType: _sourceType, ...column }) => column),
               table.columns,

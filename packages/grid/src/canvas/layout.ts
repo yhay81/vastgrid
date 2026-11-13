@@ -19,15 +19,15 @@ export class ColumnLayout {
   }
 
   left(index: number) {
-    return this.offsets[index];
+    return index <= 0 ? 0 : index >= this.count ? this.total : this.offsets[index];
   }
 
   right(index: number) {
-    return this.offsets[index + 1];
+    return index < 0 ? 0 : index >= this.count ? this.total : this.offsets[index + 1];
   }
 
   width(index: number) {
-    return this.offsets[index + 1] - this.offsets[index];
+    return index < 0 || index >= this.count ? 0 : this.offsets[index + 1] - this.offsets[index];
   }
 
   /** The column containing `x`, clamped to the existing columns. Returns -1 when there are none. */
@@ -46,9 +46,6 @@ export class ColumnLayout {
     return low;
   }
 }
-
-/** Where a column is frozen: at the left, at the right, or not (`null`, it scrolls). */
-export type ColumnPin = "left" | "right" | null;
 
 /**
  * Share of the body's width (without the row header) that frozen columns may take together. Columns

@@ -824,7 +824,7 @@ test("cancel has no answer, and a request cancelled before its view is made answ
   const response = (await pending) as Json;
   checkResponse(response, "rows");
   assert.deepEqual([response.id, (response.error as Json).code], [51, "cancelled"]);
-  // The engine sends no events; subscribing and unsubscribing work.
+  // Reading rows sends no events; subscribing and unsubscribing work.
   const events: unknown[] = [];
   const unsubscribe = engine.subscribe((event) => events.push(event));
   await client.rows(info, {});

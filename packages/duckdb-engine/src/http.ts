@@ -6,7 +6,15 @@
  */
 import { createReadStream } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { ARROW_MEDIA_TYPE, ERROR_STATUS, type ErrorCode, frameAttached, toTextEncoding } from "vastgrid-spec";
+import { pipeline } from "node:stream/promises";
+import {
+  ARROW_MEDIA_TYPE,
+  answerId,
+  ERROR_STATUS,
+  type ErrorCode,
+  toStructuredEncoding,
+  toTextEncoding,
+} from "vastgrid-spec";
 import type { DuckDBEngine } from "./engine.js";
 
 export interface HttpHandlerOptions {
@@ -41,25 +49,60 @@ function invalid(response: ServerResponse, status: number, message: string, reas
   sendJson(response, status, { v: 2, id: null, error: { code: "invalid_request", message, path: "", reason } });
 }
 
+const utf8 = new TextDecoder("utf-8", { fatal: true });
+
+type BodyRead = { kind: "ok"; text: string } | { kind: "too_large" } | { kind: "invalid_utf8" };
+
 /**
- * The body of a request, or null when it is larger than `limit`. The rest of a body that is too large is read and
+ * The body of a request, or why it was refused before JSON parsing. The rest of a body that is too large is read and
  * dropped, up to twice the limit, so that the client has sent it all when the error is answered: a connection
  * closed while data still comes in is reset, and the client may lose the answer.
  */
-async function readBody(request: IncomingMessage, limit: number): Promise<string | null> {
+async function readBody(request: IncomingMessage, limit: number): Promise<BodyRead> {
+  const declared = request.headers["content-length"];
+  const overLimit = typeof declared === "string" && /^\d+$/.test(declared) && Number(declared) > limit;
   const chunks: Buffer[] = [];
   let length = 0;
   for await (const chunk of request) {
     length += (chunk as Buffer).length;
-    if (length > 2 * limit) return null;
-    if (length <= limit) chunks.push(chunk as Buffer);
+    if (length > 2 * limit) return { kind: "too_large" };
+    if (!overLimit && length <= limit) chunks.push(chunk as Buffer);
   }
-  return length > limit ? null : Buffer.concat(chunks).toString("utf8");
+  if (overLimit || length > limit) return { kind: "too_large" };
+  try {
+    return { kind: "ok", text: utf8.decode(chunks.length === 1 ? chunks[0] : Buffer.concat(chunks, length)) };
+  } catch {
+    return { kind: "invalid_utf8" };
+  }
 }
 
 function hasBlock(answer: Json) {
   const result = answer.result as { block?: unknown; data?: unknown } | null | undefined;
   return result !== null && typeof result === "object" && (result.block !== undefined || result.data !== undefined);
+}
+
+/** Writes an attached-block response (§8.8) without copying the Arrow block into a second buffer. */
+function sendAttached(response: ServerResponse, answer: Json) {
+  const structured = toStructuredEncoding(answer);
+  const result = structured.result as Json;
+  const member = result.block !== undefined ? "block" : "data";
+  const block = (result[member] as { bytes: Uint8Array }).bytes;
+  const json = Buffer.from(
+    JSON.stringify({ ...structured, result: { ...result, [member]: { attached: block.byteLength } } }),
+    "utf8",
+  );
+  const prefix = Buffer.allocUnsafe(4 + json.length);
+  prefix.writeUInt32LE(json.length, 0);
+  json.copy(prefix, 4);
+  response.writeHead(200, {
+    "content-type": ARROW_MEDIA_TYPE,
+    "content-length": prefix.length + block.byteLength,
+    "cache-control": "no-store",
+  });
+  response.cork();
+  response.write(prefix);
+  response.end(block);
+  response.uncork();
 }
 
 /**
@@ -72,7 +115,12 @@ export function createHttpHandler(engine: DuckDBEngine, options: HttpHandlerOpti
   const events = options.events ?? `${prefix}events`;
   const exportsPath = options.exports ?? `${prefix}exports/`;
   const limit = options.maxBody ?? 64 * 1024 * 1024;
-  const handle = async (request: IncomingMessage, response: ServerResponse, next?: (error?: unknown) => void) => {
+  const handle = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    onRequestId: (id: number | null) => void,
+    next?: (error?: unknown) => void,
+  ) => {
     let url: URL;
     let exportName: string | undefined;
     try {
@@ -102,20 +150,29 @@ export function createHttpHandler(engine: DuckDBEngine, options: HttpHandlerOpti
       invalid(response, 405, "Requests are POSTs of their JSON (§8.8).", "syntax");
       return;
     }
+    if (!/^\s*application\/json\s*(?:;|$)/i.test(String(request.headers["content-type"] ?? ""))) {
+      invalid(response, 415, "Requests have content-type: application/json (§8.8).", "syntax");
+      return;
+    }
     const body = await readBody(request, limit);
-    if (body === null) {
+    if (body.kind === "too_large") {
       // The connection closes once the answer is sent, also when the rest of the body was not read.
       response.setHeader("connection", "close");
       invalid(response, 413, "The request is too large.", "limit");
       return;
     }
+    if (body.kind === "invalid_utf8") {
+      invalid(response, 400, "The body is not valid UTF-8.", "syntax");
+      return;
+    }
     let message: unknown;
     try {
-      message = JSON.parse(body);
+      message = JSON.parse(body.text);
     } catch {
       invalid(response, 400, "The body is not JSON.", "syntax");
       return;
     }
+    onRequestId(answerId(message));
     // A client that goes away cancels its request (§8.6).
     const controller = new AbortController();
     response.on("close", () => {
@@ -135,7 +192,7 @@ export function createHttpHandler(engine: DuckDBEngine, options: HttpHandlerOpti
     }
     const accepts = String(request.headers.accept ?? "").includes(ARROW_MEDIA_TYPE);
     if (accepts && hasBlock(answer)) {
-      send(response, 200, ARROW_MEDIA_TYPE, frameAttached(answer));
+      sendAttached(response, answer);
       return;
     }
     sendJson(response, 200, toTextEncoding(answer));
@@ -143,14 +200,17 @@ export function createHttpHandler(engine: DuckDBEngine, options: HttpHandlerOpti
   // http.createServer does not consume a listener's rejected promise. In particular, an interrupted body
   // rejects readBody with ECONNRESET; it must only end that request, not the server process.
   return async (request: IncomingMessage, response: ServerResponse, next?: (error?: unknown) => void) => {
+    let requestId: number | null = null;
     try {
-      await handle(request, response, next);
+      await handle(request, response, (id) => (requestId = id), next);
     } catch (error) {
       if (response.destroyed) return;
-      if (response.headersSent) response.destroy();
+      if (response.headersSent || request.errored || (request.destroyed && !request.complete)) response.destroy();
       else if (next) next(error);
-      else {
-        sendJson(response, 500, { v: 2, id: null, error: { code: "internal", message: "The request failed." } });
+      else if (requestId !== null) {
+        sendJson(response, 500, { v: 2, id: requestId, error: { code: "internal", message: "The request failed." } });
+      } else {
+        invalid(response, 400, "The request could not be read.", "syntax");
       }
     }
   };
@@ -176,13 +236,15 @@ function sendExport(engine: DuckDBEngine, name: string, request: IncomingMessage
     response.end();
     return;
   }
-  const stream = createReadStream(kept.path);
-  stream.on("error", () => response.destroy());
-  stream.pipe(response);
+  void pipeline(createReadStream(kept.path), response).catch(() => response.destroy());
 }
 
-/** Sends the engine's events (§8.5) as Server-Sent Events until the client goes away. */
+/** Sends the engine's events (§8.5) as Server-Sent Events until the client goes away or the engine closes. */
 function streamEvents(engine: DuckDBEngine, response: ServerResponse, keepAlive: number) {
+  if (engine.disposeSignal.aborted) {
+    sendJson(response, 500, { v: 2, id: null, error: { code: "internal", message: "The engine was closed." } });
+    return;
+  }
   response.writeHead(200, {
     "content-type": "text/event-stream; charset=utf-8",
     "cache-control": "no-store",
@@ -194,8 +256,11 @@ function streamEvents(engine: DuckDBEngine, response: ServerResponse, keepAlive:
   });
   const timer = setInterval(() => response.write(": keep-alive\n\n"), keepAlive);
   timer.unref?.();
+  const onDispose = () => response.end();
+  engine.disposeSignal.addEventListener("abort", onDispose, { once: true });
   response.on("close", () => {
     clearInterval(timer);
+    engine.disposeSignal.removeEventListener("abort", onDispose);
     stop();
   });
 }

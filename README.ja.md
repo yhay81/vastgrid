@@ -4,7 +4,7 @@
 [![CI](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml/badge.svg)](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/yhay81/vastgrid)](LICENSE)
 
-vastgrid は、巨大な CSV・TSV・Parquet・JSON Lines・Excel のファイルを表計算ソフトのように開き、直し、安全に保存できるようにします。
+vastgrid は、巨大な CSV・TSV・Parquet・JSON Lines・Excel のファイルや DuckDB のデータベースを表計算ソフトのように開き、直し、安全に保存できるようにします。
 React のキャンバスのデータグリッドに、ブラウザーと Node.js のエンジンが付き、同じグリッドをコマンド・VS Code の拡張機能・MCP App・
 Jupyter のウィジェットとしても使えます。
 
@@ -82,7 +82,8 @@ export function Orders() {
 グループ、書き出し、テーマ、独自のエンジンは [ガイド](https://vastgrid.yhay81.com/ja/getting-started/) にあります。
 
 DuckDB エンジンは CSV をカンマ区切り・二重引用符で読みます。区切り文字や見出しを指定する場合は、グリッドに
-`open={{ read: { delimiter: ";", headerRow: 1 } }}` を渡します。`headerRow: 0` は見出しなしです。
+`open={{ delimiter: ";", headerRow: 1 }}` を渡します。`headerRow: 0` は見出しなしです。
+CLI と MCP サーバーでは、DuckDB の一時データをユーザー専用のフォルダーに保存します。
 詳しくは [エンジンの読み込み設定](packages/duckdb-engine#what-it-does) を参照してください。
 
 ## パッケージ

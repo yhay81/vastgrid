@@ -142,7 +142,7 @@ export class TableEditorProvider implements vscode.CustomEditorProvider<TableDoc
     <title>${escapeHtml(document.file.ref)}</title>
   </head>
   <body>
-    <div id="root" data-ref="${escapeHtml(document.file.ref)}" data-locale="${locale}" data-editable="${document.file.editable}"></div>
+    <div id="root" data-ref="${escapeHtml(document.file.ref)}" data-locale="${locale}"></div>
     <script type="module" nonce="${nonce}" src="${script.toString()}"></script>
   </body>
 </html>`;
@@ -158,7 +158,7 @@ export class TableEditorProvider implements vscode.CustomEditorProvider<TableDoc
     cancellation: vscode.CancellationToken,
   ): Promise<void> {
     if (destination.scheme !== "file") throw new Error("vastgrid saves files on disk only.");
-    await document.file.saveAs(destination.fsPath, signalOf(cancellation));
+    await document.file.saveAs(destination.fsPath, signalOf(cancellation), this.view(document.uri)?.sheets().sheet);
   }
 
   async revertCustomDocument(document: TableDocument): Promise<void> {

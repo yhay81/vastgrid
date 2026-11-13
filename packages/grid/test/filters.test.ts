@@ -6,7 +6,9 @@ import {
   conditionsOf,
   FilterTextError,
   filterParts,
+  operatorsFor,
   readFilter,
+  takesNoValue,
   valuesPlan,
 } from "../src/core/filters.ts";
 import { createGridStore, localTransport } from "../src/core.ts";
@@ -49,6 +51,13 @@ test("values become `in` and `is_blank`, and excluding them keeps the rows where
     filterParts({ kind: "values", values: ["12.50", "2024-01-31"].slice(0, 1), blank: false, exclude: false }, price),
     [{ fn: "in", args: [{ col: "price" }, { lit: "12.50", type: "decimal" }] }],
   );
+  assert.deepEqual(operatorsFor("string")[0], "contains");
+  assert.deepEqual(operatorsFor("boolean"), ["blank", "notBlank"]);
+  assert.deepEqual(operatorsFor("uuid"), ["eq", "ne", "blank", "notBlank"]);
+  assert.deepEqual(operatorsFor("integer")[0], "eq");
+  assert.equal(takesNoValue("blank"), true);
+  assert.equal(takesNoValue("notBlank"), true);
+  assert.equal(takesNoValue("eq"), false);
 });
 
 test("conditions read typed text as the column's values (§7.3) and fail on text that is not one", () => {

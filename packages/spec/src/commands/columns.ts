@@ -1,7 +1,7 @@
 /** The commands of columns (docs/spec.md §6.3): their widths, order, visibility, pins, formats and totals. */
 import { type ColumnSetting, checkColumnFormat, checkTotal, measureTakes } from "../state.js";
 import type { Column } from "../types.js";
-import { booleanArgument, checked, choice, fail, namesArgument, takes } from "./command.js";
+import { checked, choice, fail, namesArgument, stringArgument, takes } from "./command.js";
 import type { Handlers } from "./run.js";
 
 /** Inserts columns at a place of the ordered settings: before a displayed column, or at the end. */
@@ -13,11 +13,12 @@ function insertBefore(list: ColumnSetting[], moving: ColumnSetting[], before: Co
 export const COLUMN_HANDLERS = {
   "column.resize"(run, command) {
     takes(command, ["name", "width"]);
-    const name = run.viewName(command, "name");
+    const rawName = stringArgument(command, "name");
     const width = command.width;
     if (width !== null && (typeof width !== "number" || !(width >= 1 && width <= 100_000))) {
       fail("/width", "syntax", "width is from 1 to 100,000 pixels, or null.");
     }
+    const name = run.viewName(command, "name", "/name", rawName);
     const settings = run.settings();
     const setting = settings.find((item) => item.name === name) as ColumnSetting;
     if (width === null) delete setting.width;
@@ -28,21 +29,23 @@ export const COLUMN_HANDLERS = {
   "column.move"(run, command) {
     takes(command, ["names", "before"]);
     const names = namesArgument(command, "names");
+    const nameSet = new Set(names);
+    if (nameSet.size !== names.length) fail("/names", "syntax", "names lists each column once.");
+    const rawBefore = command.before === null ? null : stringArgument(command, "before");
+    if (rawBefore !== null && nameSet.has(rawBefore)) {
+      fail("/before", "syntax", "before is not one of the moved columns.");
+    }
     names.forEach((name, index) => {
       run.displayedName(command, "names", `/names/${index}`, name);
     });
-    if (new Set(names).size !== names.length) fail("/names", "syntax", "names lists each column once.");
-    let before: string | null = null;
-    if (command.before !== null) {
-      before = run.displayedName(command, "before");
-      if (names.includes(before)) fail("/before", "syntax", "before is not one of the moved columns.");
-    }
-    const displayed = run.displayed();
+    const before = rawBefore === null ? null : run.displayedName(command, "before", "/before", rawBefore);
+    const { columns: displayed, index: displayIndex } = run.displayedIndex();
+    const displayedSet = new Set(displayed);
     const settings = run.settings();
     const moving = settings
-      .filter((setting) => names.includes(setting.name))
-      .sort((a, b) => displayed.indexOf(a.name) - displayed.indexOf(b.name));
-    const rest = settings.filter((setting) => !names.includes(setting.name));
+      .filter((setting) => nameSet.has(setting.name))
+      .sort((a, b) => (displayIndex.get(a.name) ?? 0) - (displayIndex.get(b.name) ?? 0));
+    const rest = settings.filter((setting) => !nameSet.has(setting.name));
     const target = before === null ? undefined : rest.find((setting) => setting.name === before);
     const pin = target?.pin;
     for (const setting of moving) {
@@ -50,7 +53,7 @@ export const COLUMN_HANDLERS = {
       else delete setting.pin;
     }
     const at =
-      target ?? rest.find((setting) => setting.pin === "right" && displayed.includes(setting.name) && !setting.hidden);
+      target ?? rest.find((setting) => setting.pin === "right" && displayedSet.has(setting.name) && !setting.hidden);
     insertBefore(rest, moving, at);
     run.setColumns(rest);
   },
@@ -61,9 +64,10 @@ export const COLUMN_HANDLERS = {
     names.forEach((name, index) => {
       run.viewName(command, "names", `/names/${index}`, name);
     });
+    const nameSet = new Set(names);
     const settings = run.settings();
     for (const setting of settings) {
-      if (!names.includes(setting.name)) continue;
+      if (!nameSet.has(setting.name)) continue;
       setting.hidden = true;
       delete setting.pin;
     }
@@ -76,7 +80,8 @@ export const COLUMN_HANDLERS = {
 
   "column.show"(run, command) {
     takes(command, ["names", "all"]);
-    const all = booleanArgument(command, "all");
+    if (command.all !== undefined && command.all !== true) fail("/all", "syntax", "all is true.");
+    const all = command.all === true;
     if (all === (command.names !== undefined)) fail("", "syntax", "column.show takes names, or all: true.");
     const names = all ? run.context.view.columns.map((column) => column.name) : namesArgument(command, "names");
     if (!all) {
@@ -84,15 +89,17 @@ export const COLUMN_HANDLERS = {
         run.viewName(command, "names", `/names/${index}`, name);
       });
     }
+    const nameSet = new Set(names);
     const settings = run.settings();
-    for (const setting of settings) if (names.includes(setting.name)) delete setting.hidden;
+    for (const setting of settings) if (nameSet.has(setting.name)) delete setting.hidden;
     run.setColumns(settings);
   },
 
   "column.pin"(run, command) {
     takes(command, ["name", "side"]);
-    const name = run.displayedName(command, "name");
+    const rawName = stringArgument(command, "name");
     const side = command.side === null ? null : choice(command, "side", ["left", "right"] as const);
+    const name = run.displayedName(command, "name", "/name", rawName);
     const settings = run.settings();
     const setting = settings.find((item) => item.name === name) as ColumnSetting;
     const current = setting.pin ?? null;
@@ -116,9 +123,10 @@ export const COLUMN_HANDLERS = {
 
   "column.format"(run, command) {
     takes(command, ["name", "format"]);
-    const name = run.viewName(command, "name");
+    const rawName = stringArgument(command, "name");
     if (command.format === undefined) fail("/format", "syntax", "format is a format or null.");
     const format = command.format === null ? null : checked(() => checkColumnFormat(command.format, "/format"));
+    const name = run.viewName(command, "name", "/name", rawName);
     const settings = run.settings();
     const setting = settings.find((item) => item.name === name) as ColumnSetting;
     if (format === null) delete setting.format;
@@ -128,9 +136,10 @@ export const COLUMN_HANDLERS = {
 
   "column.total"(run, command) {
     takes(command, ["name", "total"]);
-    const name = run.viewName(command, "name");
+    const rawName = stringArgument(command, "name");
     if (command.total === undefined) fail("/total", "syntax", "total is { fn, p? } or null.");
     const total = command.total === null ? null : checked(() => checkTotal(command.total, "/total"));
+    const name = run.viewName(command, "name", "/name", rawName);
     const column = run.viewColumn(name) as Column;
     if (total && !measureTakes(total.fn, column)) {
       fail("/total/fn", "type", `${total.fn} does not measure the values of "${name}".`);

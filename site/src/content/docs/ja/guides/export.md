@@ -71,7 +71,11 @@ export const Orders = () => <DataGrid transport={transport} table="orders.parque
 const store = grid.current!.store; // DataGrid のハンドル。GridProvider の中なら useGridStore()
 const outcome = await store.dispatch({ command: "export", format: "csv", rows: "view", columns: "displayed" });
 if (outcome.ok) {
-  const { target, rows, data } = outcome.output as { target: string | null; rows: number; data?: { bytes: Uint8Array } };
+  const { target, rows, data } = outcome.output as {
+    target: string | null;
+    rows: number;
+    data?: { bytes: Uint8Array<ArrayBuffer> };
+  };
   if (data) {
     // メモリーエンジン：ファイルのバイト列。名前はメニューと同じ付け方
     const file = new File([data.bytes], store.exportName("csv"));

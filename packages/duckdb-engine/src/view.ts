@@ -6,6 +6,7 @@
  * it is read by them, which DuckDB looks up without reading the rows before them, at any depth of the file. Other
  * views store their total order once and read position ranges from that storage.
  */
+import { createHash } from "node:crypto";
 import type { DuckDBConnection } from "@duckdb/node-api";
 import {
   type Capabilities,
@@ -14,10 +15,11 @@ import {
   canonicalJson,
   checkPlan,
   encodeBlock,
+  FUNCTIONS,
   floatJson,
   type JsonValue,
+  MEASURES,
   normalizePlan,
-  planHash,
   planOptions,
   quoted,
   type RowKey,
@@ -31,26 +33,45 @@ import {
   type SqlSource,
   type SqlView,
   textSql,
+  viewColumn,
 } from "vastgrid-sql";
-import { readExpression, readValue, valueExpression } from "./columns.js";
+import { acceptKeyValue, readExpression, readValue, valueExpression } from "./columns.js";
 import { cancelled, EngineError } from "./errors.js";
 import { Gate, type Session } from "./session.js";
-import type { LoadedTable } from "./table.js";
+import type { LoadedTable, Relation } from "./table.js";
 import { type Build, ViewCache } from "./view-cache.js";
 
+const EXPORT_FORMAT_LIST: NonNullable<Capabilities["export"]>["formats"] = ["csv", "tsv", "parquet", "json", "xlsx"];
+Object.freeze(EXPORT_FORMAT_LIST);
+
+const FUNCTION_LIST: NonNullable<Capabilities["functions"]> = [...FUNCTIONS];
+const MEASURE_LIST: NonNullable<Capabilities["measures"]> = [...MEASURES];
+Object.freeze(FUNCTION_LIST);
+Object.freeze(MEASURE_LIST);
+
 /** What the engine evaluates (§4.10): every plan member, function and measure that `vastgrid-sql` compiles. */
-export const CAPABILITIES: Capabilities = {
-  plan: { derive: true, where: true, aggregate: true, pivot: true, having: true, sort: true, search: true },
+export const CAPABILITIES: Capabilities = Object.freeze({
+  plan: Object.freeze({
+    derive: true,
+    where: true,
+    aggregate: true,
+    pivot: true,
+    having: true,
+    sort: true,
+    search: true,
+  }),
+  functions: FUNCTION_LIST,
+  measures: MEASURE_LIST,
   summarize: true,
   find: true,
   locate: true,
   write: true,
   save: false,
-  export: { formats: ["csv", "tsv", "parquet", "json", "xlsx"], delivery: "file" },
+  export: Object.freeze({ formats: EXPORT_FORMAT_LIST, delivery: "file" }),
   preview: true,
   partialViews: false,
   changes: "push",
-};
+});
 
 export interface ViewOptions {
   /** Cached views per engine, excluding requests currently reading them. Default 8. */
@@ -82,8 +103,14 @@ type Json = Record<string, unknown>;
 const NUMERIC = new Set(["integer", "bigint", "decimal", "float"]);
 
 /** A name that no column of the view has, for a column that a query adds. */
-function freeName(base: string, columns: readonly Column[]) {
-  const names = new Set(columns.map((column) => column.name.toLowerCase()));
+function freeName(base: string, sql: SqlView) {
+  const names = new Set(
+    [
+      ...sql.columns.map((column) => column.name),
+      ...Object.values(sql.identifiers),
+      ...(sql.rowId ? [sql.rowId] : []),
+    ].map((item) => item.replace(/^"|"$/g, "").replaceAll('""', '"').toLowerCase()),
+  );
   let name = base;
   while (names.has(name)) name = `${name}_`;
   return quoteIdentifier(name);
@@ -134,14 +161,16 @@ export class Views {
       throw new EngineError("not_ready", "The table is still loading: until it has, only its rows are read (§9).");
     }
     // Views hold the values of one edits version (§8.3). A new relation replaces a file-loading preview.
-    const key = `${table.revision}\u0000${relation.sql}\u0000${table.edits.version}\u0000${canonicalJson(normal)}`;
+    const canonical = canonicalJson(normal);
+    const hash = `sha256:${createHash("sha256").update(canonical).digest("hex")}`;
+    const key = `${table.revision}\u0000${relation.sql}\u0000${table.edits.version}\u0000${canonical}`;
     return this.cache.use(
       table,
       key,
       request.table as string,
       request.preview === true,
       signal,
-      (signal) => this.make(table, checked, relation, request.preview === true, signal),
+      (signal) => this.make(table, checked, hash, relation, request.preview === true, signal),
       read,
     );
   }
@@ -149,7 +178,8 @@ export class Views {
   private make(
     table: LoadedTable,
     plan: CheckedPlan,
-    relation: { sql: string; rowId: string; rows: number },
+    hash: string,
+    relation: Relation,
     preview: boolean,
     signal: AbortSignal,
   ): Build<View> {
@@ -162,21 +192,32 @@ export class Views {
     });
     const done = this.builds.run(async () => {
       if (signal.aborted) throw cancelled();
-      const source = { relation: relation.sql, rowId: relation.rowId };
+      const source: SqlSource = {
+        relation: relation.sql,
+        rowId: relation.rowId,
+        ...(relation.columns ? { columns: relation.columns } : {}),
+      };
       let combinations: PivotCombinations | undefined;
       if (plan.aggregate?.pivot) {
         const query = pivotQuery(plan, source);
+        const selects = plan.aggregate.pivot.columns.map((_, index) => `'.' || "vg_value${index}"`);
         const read = await this.session.withConnection(signal, (connection) =>
-          connection.runAndReadAll(query.sql, query.params as never),
+          connection.runAndReadAll(`SELECT ${selects.join(", ")} FROM (${query.sql})`, query.params as never),
         );
-        combinations = read.getRowsJS().map((row) => row.map((value) => (value === null ? null : String(value))));
+        combinations = read
+          .getRowsJS()
+          .map((row) => row.map((value) => (value === null ? null : String(value).slice(1))));
       }
       const sql = compileView(plan, source, combinations);
       const positional = !plan.where && !plan.aggregate && plan.sort.length === 0;
-      const hash = await planHash(plan.plan);
-      const position = freeName("vg_position", sql.columns);
+      const position = freeName("vg_position", sql);
+      const canPreview =
+        !positional &&
+        preview &&
+        plan.sort.length > 0 &&
+        relation.rows >= (this.options.viewPreviewMinRows ?? 1_000_000);
       let rowCount = relation.rows;
-      if (plan.where || plan.aggregate) {
+      if (canPreview && (plan.where || plan.aggregate)) {
         const query = countQuery(sql);
         const read = await this.session.withConnection(signal, (connection) =>
           connection.runAndReadAll(query.sql, query.params as never),
@@ -198,8 +239,6 @@ export class Views {
         resolveFirst(base);
         return base;
       }
-      const canPreview =
-        preview && plan.sort.length > 0 && relation.rows >= (this.options.viewPreviewMinRows ?? 1_000_000);
       if (canPreview) {
         const head = await this.materialize(base, objects, false, this.options.viewPreviewRows ?? 1000, signal);
         head.ready = head.readableRows === rowCount;
@@ -235,25 +274,31 @@ export class Views {
     const name = quoteIdentifier(this.session.createName("vg_order"));
     objects.push(name);
     const sql = view.sql;
-    const outputs = orderOnly ? [] : sql.columns.map((column, index) => `${quoteIdentifier(column.name)} AS c${index}`);
+    const outputs = orderOnly ? [] : sql.columns.map((column, index) => `${viewColumn(sql, column.name)} AS c${index}`);
     if (sql.rowId) outputs.push(`${sql.rowId} AS source_id`);
     // A view without columns (a pivot without keys and combinations) still has its rows.
     if (outputs.length === 0) outputs.push("NULL AS vg_none");
     const order = sql.order.length ? ` ORDER BY ${sql.order.join(", ")}` : "";
     const suffix = limit === undefined ? "" : ` LIMIT ${limit}`;
-    await this.session.withConnection(signal, (connection) =>
-      connection.run(
+    const materializedRows = await this.session.withConnection(signal, async (connection) => {
+      await connection.run(
         `CREATE TABLE ${name} AS ${sql.with} SELECT ${outputs.join(", ")} FROM vg_view${order}${suffix}`,
         sql.params as never,
-      ),
-    );
+      );
+      const count = await connection.runAndReadAll(`SELECT count(*) FROM ${name}`);
+      return Number(count.getRowsJS()[0][0]);
+    });
     if (signal.aborted) throw cancelled();
     const position = view.position;
     let saved: SqlView;
     if (orderOnly) {
       // Derived columns are evaluated only for the rows being read. The filter and sort were already applied.
       const plain = compileView(checkPlan({ derive: view.plan.plan.derive }, view.plan.table), view.source);
-      const selected = sql.columns.map((column) => `s.${quoteIdentifier(column.name)}`);
+      const selected = sql.columns.map((column) => {
+        const alias = viewColumn(sql, column.name);
+        const source = viewColumn(plain, column.name);
+        return source === alias ? `s.${source}` : `s.${source} AS ${alias}`;
+      });
       saved = {
         ...sql,
         with: `WITH vg_view AS (SELECT ${[...selected, `s.${plain.rowId} AS ${sql.rowId}`, `o.rowid AS ${position}`].join(", ")} FROM ${name} o JOIN (${plain.with} SELECT * FROM vg_view) s ON o.source_id = s.${plain.rowId})`,
@@ -261,7 +306,7 @@ export class Views {
         order: [position],
       };
     } else {
-      const selected = sql.columns.map((column, index) => `c${index} AS ${quoteIdentifier(column.name)}`);
+      const selected = sql.columns.map((column, index) => `c${index} AS ${viewColumn(sql, column.name)}`);
       if (sql.rowId) selected.push(`source_id AS ${sql.rowId}`);
       selected.push(`rowid AS ${position}`);
       saved = {
@@ -271,10 +316,12 @@ export class Views {
         order: [position],
       };
     }
+    const rowCount = limit === undefined ? materializedRows : view.rowCount;
     return {
       ...view,
       sql: saved,
-      readableRows: Math.min(view.rowCount, limit ?? view.rowCount),
+      rowCount,
+      readableRows: materializedRows,
     };
   }
 
@@ -286,7 +333,6 @@ export class Views {
     return this.cache.forget(table);
   }
 
-  /** The answer of `rows` (§8.2): positions `[start, end)` of the view, cut at its row count, as a block (§8.4). */
   /**
    * Runs an export (§8.2) of the whole view of a request: `write` gets the view, once it is complete, and the
    * columns of `request.columns` (all of the view's by default).
@@ -297,11 +343,22 @@ export class Views {
     signal: AbortSignal | undefined,
     write: (view: View, columns: Column[]) => Promise<T>,
   ): Promise<T> {
-    return this.use(table, { ...request, preview: false }, signal, (view) =>
-      write(view, request.columns === undefined ? view.sql.columns : columnsOf(view, request.columns as string[])),
-    );
+    return this.use(table, { ...request, preview: false }, signal, (view) => {
+      const columns = request.columns === undefined ? view.sql.columns : columnsOf(view, request.columns as string[]);
+      for (const member of ["headers", "numberFormats"] as const) {
+        const list = request[member] as unknown[] | undefined;
+        if (list !== undefined && list.length !== columns.length) {
+          throw new EngineError("invalid_request", `${member} has one item per column.`, {
+            path: `/${member}`,
+            reason: "syntax",
+          });
+        }
+      }
+      return write(view, columns);
+    });
   }
 
+  /** The answer of `rows` (§8.2): positions `[start, end)` of the view, cut at its row count, as a block (§8.4). */
   async rows(table: LoadedTable, request: Json, signal?: AbortSignal): Promise<Json> {
     return this.use(table, request, signal, (view) => this.rowsOf(table, view, request, signal));
   }
@@ -347,7 +404,7 @@ export class Views {
     limit: number,
   ) {
     const select = (column: Column, sql: string) => readExpression(column, sql, limit);
-    const outputs = columns.map((column) => select(column, quoteIdentifier(column.name)));
+    const outputs = columns.map((column) => select(column, viewColumn(view.sql, column.name)));
     if (view.sql.rowId) outputs.push(view.sql.rowId);
     if (outputs.length === 0) outputs.push("NULL");
     const params = [...view.sql.params, start, end];
@@ -378,24 +435,47 @@ export class Views {
 
   /** The answer of `locate` (§8.2): the positions of rows by key, null for keys that the view does not have. */
   async locate(table: LoadedTable, request: Json, signal?: AbortSignal): Promise<Json> {
-    return this.use(table, request, signal, (view) => this.locateOf(view, request, signal));
+    return this.use(table, request, signal, (view) => this.locateOf(table, view, request, signal));
   }
 
-  private async locateOf(view: View, request: Json, signal?: AbortSignal): Promise<Json> {
+  private async locateOf(table: LoadedTable, view: View, request: Json, signal?: AbortSignal): Promise<Json> {
     const keys = request.keys as RowKey[];
-    const rows: (number | null)[] = keys.map(() => null);
     const byRowId = keys.flatMap((key, index) => ("rowId" in key ? [{ index, value: key.rowId as JsonValue }] : []));
     const byValue = keys.flatMap((key, index) => ("value" in key ? [{ index, value: key.value }] : []));
+    const rowKey = request.rowKey as string | undefined;
+    let keyColumn: Column | undefined;
+    if (rowKey !== undefined) {
+      keyColumn = table.columns.find((item) => item.name === rowKey);
+      if (!keyColumn) {
+        throw new EngineError("invalid_request", `The table has no column ${quoted(rowKey)}.`, {
+          path: "/rowKey",
+          reason: "syntax",
+        });
+      }
+    } else if (byValue.length > 0) {
+      throw new EngineError("invalid_request", "Keys by value need rowKey, the column of their values (§5.3).", {
+        path: "/rowKey",
+        reason: "syntax",
+      });
+    }
+    const rows: (number | null)[] = keys.map(() => null);
     if (view.positional) {
       for (const { index, value } of byRowId)
         rows[index] = (value as number) < view.rowCount ? (value as number) : null;
     } else if (view.sql.rowIds) {
       await this.positionsOf(view, byRowId, view.sql.rowId as string, { type: "bigint" }, rows, signal);
     }
-    const rowKey = request.rowKey as string | undefined;
-    const column = rowKey === undefined ? undefined : view.sql.columns.find((item) => item.name === rowKey);
-    if (column && byValue.length > 0)
-      await this.positionsOf(view, byValue, quoteIdentifier(column.name), column, rows, signal);
+    const inView =
+      keyColumn && (!view.plan.aggregate || view.plan.aggregate.keys.some((item) => item.name === keyColumn.name))
+        ? view.sql.columns.find((item) => item.name === keyColumn.name)
+        : undefined;
+    if (inView && byValue.length > 0) {
+      const accepted = byValue.flatMap(({ index, value }) => {
+        const normalized = acceptKeyValue(value, inView);
+        return normalized === null ? [] : [{ index, value: normalized }];
+      });
+      await this.positionsOf(view, accepted, viewColumn(view.sql, inView.name), inView, rows, signal);
+    }
     return { rows };
   }
 
@@ -434,7 +514,7 @@ export class Views {
     // Positions are integers that the request was checked to hold (§8.1), so they are written into the query.
     const within = ranges.map(([start, end]) => `(${position} >= ${start} AND ${position} < ${end})`).join(" OR ");
     const aggregates = columns.flatMap((column) => {
-      const sql = quoteIdentifier(column.name);
+      const sql = viewColumn(view.sql, column.name);
       const blank = column.type === "string" ? `(${sql} IS NULL OR ${sql} = '')` : `${sql} IS NULL`;
       const parts = [`count(*) FILTER (WHERE NOT ${blank})`];
       if (NUMERIC.has(column.type)) {
@@ -495,7 +575,7 @@ export class Views {
     const params: unknown[] = [...view.sql.params, text];
     const needle = sensitive ? `$${params.length}` : `lower($${params.length})`;
     const tests = columns.map((column) => {
-      const value = textSql(quoteIdentifier(column.name), column);
+      const value = textSql(viewColumn(view.sql, column.name), column);
       return `coalesce(contains(${sensitive ? value : `lower(${value})`}, ${needle}), false)`;
     });
     return this.session.withConnection(signal, async (connection) => {

@@ -7,10 +7,10 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "build": "pnpm run build:ts && node scripts/copy-assets.mjs && node scripts/compile-react.mjs packages/grid && pnpm --filter vastgrid-mcp build && node packages/vscode/scripts/build.mjs && node packages/cli/scripts/build-app.mjs && node packages/notebook/scripts/build.mjs",
+    "build": "pnpm run build:ts && node scripts/copy-assets.mjs && node scripts/compile-react.mjs packages/grid && node packages/mcp/scripts/build-app.mjs && node packages/vscode/scripts/build.mjs && node packages/cli/scripts/build-app.mjs && node packages/notebook/scripts/build.mjs",
     "build:ts": "tsc -b packages/spec packages/sql packages/duckdb-engine packages/js packages/grid packages/mcp packages/vscode packages/cli",
-    "clean": "rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo",
-    "typecheck": "pnpm run build:ts && tsc -p packages/mcp/app && tsc -p packages/mcp/host && tsc -p packages/vscode/webview && tsc -p packages/cli/app && tsc -p packages/notebook/widget && tsc -p examples/bench --noEmit && tsc -p examples/files --noEmit && tsc -p site --noEmit",
+    "clean": "rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo packages/notebook/python/src/vastgrid/static examples/*/dist site/dist",
+    "typecheck": "pnpm run build:ts && tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/app && tsc -p packages/mcp/host && tsc -p packages/vscode/webview && tsc -p packages/cli/app && tsc -p packages/notebook/widget && tsc -p examples/bench --noEmit && tsc -p examples/files --noEmit && tsc -p site --noEmit",
     "test": "vp test run --project unit",
     "test:coverage": "vp test run --project unit --coverage",
     "lint": "pnpm run build:ts && vp check",

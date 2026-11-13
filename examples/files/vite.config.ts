@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import react from "@vitejs/plugin-react";
 import { createHttpHandler, DuckDBEngine } from "vastgrid-duckdb";
-import { defineConfig, type Plugin, type PreviewServer, type ViteDevServer } from "vite-plus";
+import { defaultClientConditions, defineConfig, type Plugin, type PreviewServer, type ViteDevServer } from "vite-plus";
 
 /** The folder whose files the page opens: `VASTGRID_DATA`, or the benches' data (`.data/bench`). */
 const data = path.resolve(process.env.VASTGRID_DATA ?? path.join(import.meta.dirname, "..", "..", ".data", "bench"));
@@ -33,9 +33,10 @@ function engine(): Plugin {
   return { name: "vastgrid-duckdb", configureServer: mount, configurePreviewServer: mount };
 }
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react(), engine()],
+  ...(command === "serve" ? { resolve: { conditions: ["vastgrid-source", ...defaultClientConditions] } } : {}),
   build: { target: "es2022", sourcemap: true },
   server: { host: "127.0.0.1", port: 5182, strictPort: true },
   preview: { host: "127.0.0.1", port: 5183, strictPort: true },
-});
+}));

@@ -238,11 +238,11 @@ test("a preview is displayed before completion, and a normal read finishes it wi
   const done = new Promise<void>((resolve) => {
     finish = resolve;
   });
-  engine.handle = async (message, options) => {
+  engine.handle = async (message) => {
     const request = message as Record<string, unknown>;
     if (request.op === "rows" && (request.plan as { sort?: unknown }).sort) {
       if (!request.preview) await done;
-      const answer = (await original(message, options)) as { result: RowsResult };
+      const answer = (await original(message)) as { result: RowsResult };
       if (request.preview) {
         const result = answer.result;
         const decoded = decodeBlock(result.block.bytes);
@@ -253,13 +253,13 @@ test("a preview is displayed before completion, and a normal read finishes it wi
       }
       return answer;
     }
-    return original(message, options);
+    return original(message);
   };
   const store = createGridStore({ transport: localTransport(engine), table: "numbers" });
   const disconnect = store.connect();
   store.setViewport({ top: 0, rows: 20, columns: ["id", "name"] });
   await until(store, (snapshot) => snapshot.view !== null);
-  store.setDocument({ plan: { sort: [{ column: "id", direction: "desc" }] } });
+  store.setDocument({ kind: "vastgrid/document", version: 2, plan: { sort: [{ column: "id", direction: "desc" }] } });
   await until(store, (snapshot) => snapshot.view?.status === "building");
   assert.equal(store.cell(0, "id"), 999);
   assert.equal(store.cell(2, "id"), 997);
@@ -286,11 +286,11 @@ test("switching a building view cancels its completion read and ignores a late a
   const done = new Promise<void>((resolve) => {
     finish = resolve;
   });
-  engine.handle = async (message, options) => {
+  engine.handle = async (message) => {
     const request = message as Record<string, unknown>;
     const descending = (request.plan as { sort?: { direction: string }[] })?.sort?.[0]?.direction === "desc";
     if (request.op === "rows" && descending && !request.preview) await done;
-    const answer = (await original(message, options)) as { result: RowsResult };
+    const answer = (await original(message)) as { result: RowsResult };
     if (request.op === "rows" && descending && request.preview)
       answer.result.view = { ...answer.result.view, status: "building" };
     return answer;
@@ -299,9 +299,9 @@ test("switching a building view cancels its completion read and ignores a late a
   const disconnect = store.connect();
   store.setViewport({ top: 0, rows: 20, columns: ["id"] });
   await until(store, (snapshot) => snapshot.view !== null);
-  store.setDocument({ plan: { sort: [{ column: "id", direction: "desc" }] } });
+  store.setDocument({ kind: "vastgrid/document", version: 2, plan: { sort: [{ column: "id", direction: "desc" }] } });
   await until(store, (snapshot) => snapshot.view?.status === "building");
-  store.setDocument({ plan: { sort: [{ column: "id", direction: "asc" }] } });
+  store.setDocument({ kind: "vastgrid/document", version: 2, plan: { sort: [{ column: "id", direction: "asc" }] } });
   await until(store, (snapshot) => snapshot.view?.status === "ready" && snapshot.pending === null);
   const hash = store.getSnapshot().view?.hash;
   assert.equal(store.cell(0, "id"), 0);
@@ -317,9 +317,9 @@ test("a plan chosen while the table loads waits until ready when partialViews is
   const engine = fakeEngine(numbers(100));
   const original = engine.handle.bind(engine);
   let loading = true;
-  engine.handle = async (message, options) => {
+  engine.handle = async (message) => {
     const request = message as Record<string, unknown>;
-    const answer = (await original(message, options)) as { result: Record<string, unknown> };
+    const answer = (await original(message)) as { result: Record<string, unknown> };
     if (loading && (request.op === "open" || request.op === "info"))
       answer.result = { ...answer.result, status: "loading", rowCount: null };
     if (loading && request.op === "rows") {
@@ -332,7 +332,7 @@ test("a plan chosen while the table loads waits until ready when partialViews is
   const disconnect = store.connect();
   store.setViewport({ top: 0, rows: 20, columns: ["id"] });
   await until(store, (snapshot) => snapshot.view !== null);
-  store.setDocument({ plan: { sort: [{ column: "id", direction: "desc" }] } });
+  store.setDocument({ kind: "vastgrid/document", version: 2, plan: { sort: [{ column: "id", direction: "desc" }] } });
   await settle(5);
   assert.ok(store.getSnapshot().pending);
   assert.ok(!engine.requests.some((request) => request.op === "rows" && (request.plan as { sort?: unknown }).sort));
@@ -358,8 +358,8 @@ for (const initialPlan of [false, true]) {
   }) => {
     const engine = fakeEngine(numbers(100));
     const original = engine.handle.bind(engine);
-    engine.handle = async (message, options) => {
-      const answer = (await original(message, options)) as { result: Record<string, unknown> };
+    engine.handle = async (message) => {
+      const answer = (await original(message)) as { result: Record<string, unknown> };
       if ((message as { op: string }).op === "open") {
         // HTTP events and responses travel independently. The event can reach the store before the response
         // names its table, even when the event stream connected before the open request.
@@ -380,7 +380,7 @@ for (const initialPlan of [false, true]) {
     const store = createGridStore({
       transport: localTransport(engine),
       table: "numbers",
-      ...(initialPlan ? { document: { plan: { sort: keys } } } : {}),
+      ...(initialPlan ? { document: { kind: "vastgrid/document", version: 2, plan: { sort: keys } } } : {}),
     });
     onTestFinished(store.connect());
     store.setViewport({ top: 0, rows: 20, columns: ["id"] });

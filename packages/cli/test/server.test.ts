@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { request } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -52,7 +52,7 @@ function send(
 
 /** What the engine answers to `open` (§8.2). */
 interface Answer {
-  result: { columns: unknown[] };
+  result: { columns: unknown[]; table: string };
   error: { code: string };
 }
 
@@ -193,4 +193,41 @@ test("a stopped server answers nothing, and the engine leaves no temporary folde
   await Promise.all([stopping.close(), stopping.close()]);
   assert.deepEqual(await readdir(own), []);
   await assert.rejects(send("/files", { headers: { cookie: header }, port: stopping.port }));
+});
+
+test("a symlinked file named on the command line opens even when its target lies outside cwd or has no extension, without exposing siblings", async () => {
+  const annex = path.join(root, "annex");
+  await mkdir(annex, { recursive: true });
+  await writeFile(path.join(annex, "sha256-blob"), "id,name\n1,linked\n");
+  await writeFile(path.join(annex, "sibling.csv"), "id\n99\n");
+  const linked = path.join(data, "linked.csv");
+  const other = path.join(data, "other.csv");
+  await symlink(path.join(annex, "sibling.csv"), other);
+  await symlink(path.join(annex, "sha256-blob"), linked);
+  const server = await serve({
+    paths: [data, linked],
+    cwd: data,
+    token: TOKEN,
+    tempDirectory: temp,
+    html: async () => PAGE,
+  });
+  try {
+    const own = `vastgrid-${server.port}=${TOKEN}`;
+    assert.ok((await server.files()).includes("linked.csv"));
+    const opened = await post({ op: "open", ref: "linked.csv" }, server, own);
+    assert.equal(opened.status, 200, JSON.stringify(opened.json));
+    assert.equal(opened.json.result.columns.length, 2);
+    // An explicitly named link grants only its target, even through another link inside a named folder.
+    assert.equal((await post({ op: "open", ref: "other.csv" }, server, own)).status, 403);
+    await rm(path.join(annex, "sha256-blob"));
+    await symlink(path.join(annex, "sibling.csv"), path.join(annex, "sha256-blob"));
+    assert.equal((await post({ op: "reload", table: opened.json.result.table }, server, own)).status, 403);
+    await rm(linked);
+    await symlink(path.join(annex, "sibling.csv"), linked);
+    assert.equal((await post({ op: "open", ref: "linked.csv" }, server, own)).status, 403);
+    assert.equal((await post({ op: "open", ref: path.join(annex, "sibling.csv") }, server, own)).status, 403);
+  } finally {
+    await server.close();
+    await Promise.all([rm(linked, { force: true }), rm(other, { force: true })]);
+  }
 });

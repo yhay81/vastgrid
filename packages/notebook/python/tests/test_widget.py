@@ -5,6 +5,7 @@ cells, plans and exports."""
 from __future__ import annotations
 
 import queue
+import struct
 from pathlib import Path
 from typing import Any
 
@@ -98,17 +99,60 @@ def test_the_notebook_reads_the_view_and_exports_it(no_cell: None, tmp_path: Pat
             "plan": {
                 "where": {"fn": "gt", "args": [{"col": "n"}, {"lit": 1}]},
                 "sort": [{"column": "n", "direction": "desc"}],
-            }
+            },
+            "columns": [
+                {"name": "n", "format": {"label": "Count"}},
+                {"name": "city", "hidden": True},
+            ],
         }
-        assert grid.to_pandas(view=True)["city"].tolist() == ["Tokyo", "Kyoto"]
+        view = grid.to_pandas(view=True)
+        assert list(view.columns) == ["n"] and view["n"].tolist() == [3, 2]
         assert grid.to_arrow()["city"].to_pylist() == ["Tokyo", "Osaka", "Kyoto"]
         assert grid.export(tmp_path / "view.csv") == 2
-        assert (tmp_path / "view.csv").read_text("utf-8") == "city,n\nTokyo,3\nKyoto,2\n"
+        assert (tmp_path / "view.csv").read_text("utf-8") == "Count\n3\n2\n"
         assert grid.export(tmp_path / "all.parquet", view=False) == 3
         assert parquet.read_table(tmp_path / "all.parquet")["n"].to_pylist() == [3, 1, 2]
         with pytest.raises(ValueError):
             grid.export(tmp_path / "view.txt")
         assert sorted(path.name for path in tmp_path.iterdir()) == ["all.parquet", "view.csv"]
+    finally:
+        grid.close()
+
+
+def test_zero_column_and_case_colliding_views(no_cell: None, tmp_path: Path) -> None:
+    empty = Grid(pa.table({"removed": [1, 2, 3]}).drop(["removed"]))
+    colliding = Grid(pa.table({"a": [1, 2], "A": [10, 20]}))
+    try:
+        assert empty.to_arrow().shape == (3, 0)
+        assert empty.to_arrow(view=True).shape == (3, 0)
+        empty.document = {"plan": {"where": {"lit": False}}}
+        assert empty.to_arrow(view=True).shape == (0, 0)
+        table = colliding.to_arrow(view=True)
+        assert table.column_names == ["a", "A"]
+        assert [column.to_pylist() for column in table.columns] == [[1, 2], [10, 20]]
+        path = tmp_path / "case.parquet"
+        assert colliding.export(path) == 2
+        exported = parquet.read_table(path)
+        assert exported.column_names == ["a", "A"]
+        assert exported.column(0).equals(table.column(0))
+        assert exported.column(1).equals(table.column(1))
+    finally:
+        empty.close()
+        colliding.close()
+
+
+def test_parquet_keeps_distinct_intervals_with_case_colliding_names(no_cell: None, tmp_path: Path) -> None:
+    intervals = pa.array([(1, 0, 0), (0, 30, 0)], type=pa.month_day_nano_interval())
+    grid = Grid(pa.table({"span": intervals, "SPAN": [1, 2]}))
+    try:
+        path = tmp_path / "intervals.parquet"
+        assert grid.export(path) == 2
+        metadata = parquet.read_metadata(path)
+        assert metadata.schema.column(0).converted_type == "INTERVAL"
+        exported = parquet.read_table(path)
+        assert exported.column_names == ["span", "SPAN"]
+        # The Parquet INTERVAL stores months, days and milliseconds as three little-endian integers.
+        assert [struct.unpack("<III", value) for value in exported.column(0).to_pylist()] == [(1, 0, 0), (0, 30, 0)]
     finally:
         grid.close()
 

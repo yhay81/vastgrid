@@ -140,8 +140,14 @@
         "fold": {
           "type": "array",
           "minItems": 1,
+          "maxItems": 2,
           "uniqueItems": true,
           "items": { "enum": ["width", "kana"] },
+          "not": {
+            "prefixItems": [{ "const": "kana" }, { "const": "width" }],
+            "minItems": 2,
+            "items": false
+          },
           "description": "The folds of §3.4 on both sides, in the order width, kana."
         }
       }

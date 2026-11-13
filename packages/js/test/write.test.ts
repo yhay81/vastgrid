@@ -134,3 +134,83 @@ test("a write fails as a whole: conflicts, values of other types and cells that 
     "read_only",
   );
 });
+
+test("an invalid value discovered in a source column rolls back the whole write", async () => {
+  const client = new Client({
+    t: {
+      editable: true,
+      columns: [
+        { name: "a", type: "integer" },
+        { name: "b", type: "integer" },
+      ],
+      rows: [[1, "invalid"]],
+    },
+  });
+  const info = await client.open("t");
+  const error = await client.error("write", {
+    table: info.table,
+    revision: info.revision,
+    updates: [
+      { key: { rowId: 0 }, column: "a", value: 2 },
+      { key: { rowId: 0 }, column: "b", value: 3 },
+    ],
+  });
+  assert.equal(error.code, "load_failed");
+  assert.deepEqual((await client.rows(info, {}, { columns: ["a"] })).rows, [[1]]);
+  assert.deepEqual(await client.result("changes", { table: info.table }), {
+    revision: info.revision,
+    edits: { version: 0, cells: 0 },
+  });
+});
+
+test("batch key lookups track the first duplicate while rows enter, leave and re-enter a key", async () => {
+  const client = new Client({
+    t: {
+      editable: true,
+      columns: [
+        { name: "key", type: "integer" },
+        { name: "n", type: "integer" },
+      ],
+      rows: [
+        [1, 0],
+        [2, 0],
+        [2, 0],
+      ],
+    },
+  });
+  const info = await client.open("t");
+  await client.result("write", {
+    table: info.table,
+    revision: info.revision,
+    rowKey: "key",
+    updates: [
+      { key: { value: 1 }, column: "key", value: 2 },
+      { key: { value: 2 }, column: "n", value: 1, previous: 0 },
+      { key: { value: 2 }, column: "key", value: null },
+      { key: { value: 2 }, column: "n", value: 2, previous: 0 },
+      { key: { rowId: 0 }, column: "key", value: 2 },
+      { key: { value: 2 }, column: "n", value: 3, previous: 1 },
+    ],
+  });
+  assert.deepEqual((await client.rows(info, {})).rows, [
+    [2, 3],
+    [2, 2],
+    [2, 0],
+  ]);
+});
+
+test("concurrent writes see earlier changes to previous values and row keys", async () => {
+  const client = new Client({ t: orders() });
+  const info = await client.open("t");
+  const base = { table: info.table, revision: info.revision, rowKey: "id" };
+  const byValue = (value: number) => ({ key: { value }, column: "city", previous: "Tokyo", value: "Nara" });
+  const [first, second, third] = await Promise.all([
+    client.send("write", { ...base, updates: [{ key: { value: 10 }, column: "id", previous: 10, value: 11 }] }),
+    client.send("write", { ...base, updates: [byValue(10)] }),
+    client.send("write", { ...base, updates: [byValue(11)] }),
+  ]);
+  assert.ok(first.result);
+  assert.equal((second.error as { code: string }).code, "edit_conflict");
+  assert.ok(third.result);
+  assert.deepEqual((await client.rows(info, {}, { columns: ["id", "city"] })).rows[0], [11, "Nara"]);
+});

@@ -62,25 +62,28 @@ const colorTokens: Record<
   link: "--vg-link-fg",
 };
 
+const colorEntries = Object.entries(colorTokens) as [keyof typeof colorTokens, string][];
+
 /** Resolves the theme of `root`. Colors given as `light-dark()` or system colors resolve to concrete values. */
 export function resolveTheme(root: HTMLElement): GridTheme {
-  const probe = document.createElement("span");
-  probe.style.display = "none";
-  root.appendChild(probe);
+  const container = document.createElement("span");
+  container.style.display = "none";
+  const probes = colorEntries.map(([, token]) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${token})`;
+    container.appendChild(probe);
+    return probe;
+  });
+  root.appendChild(container);
   try {
-    const color = (token: string) => {
-      probe.style.color = `var(${token})`;
-      return getComputedStyle(probe).color;
-    };
     const style = getComputedStyle(root);
     const fontFamily = style.getPropertyValue("--vg-font-family").trim() || style.fontFamily || "system-ui, sans-serif";
     const fontSize =
       Number.parseFloat(style.getPropertyValue("--vg-font-size")) || Number.parseFloat(style.fontSize) || 13;
     const lineHeight = Number.parseFloat(style.getPropertyValue("--vg-line-height")) || Math.round(fontSize * 1.4);
-    const colors = Object.fromEntries(Object.entries(colorTokens).map(([key, token]) => [key, color(token)])) as Pick<
-      GridTheme,
-      keyof typeof colorTokens
-    >;
+    const colors = Object.fromEntries(
+      colorEntries.map(([key], index) => [key, getComputedStyle(probes[index]).color]),
+    ) as Pick<GridTheme, keyof typeof colorTokens>;
     return {
       ...colors,
       fontFamily,
@@ -91,7 +94,7 @@ export function resolveTheme(root: HTMLElement): GridTheme {
       smallFont: `${Math.max(9, fontSize - 2)}px ${fontFamily}`,
     };
   } finally {
-    probe.remove();
+    container.remove();
   }
 }
 

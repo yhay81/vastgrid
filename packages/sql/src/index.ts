@@ -16,4 +16,5 @@ export {
   type SqlView,
   temporalParam,
   textSql,
+  viewColumn,
 } from "./compile.js";

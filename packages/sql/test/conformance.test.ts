@@ -31,8 +31,9 @@ async function answer(connection: DuckDBConnection, file: CorpusFile, item: Corp
     let combinations: PivotCombinations | undefined;
     if (plan.aggregate?.pivot) {
       const query = pivotQuery(plan, source);
-      const rows = (await connection.runAndReadAll(query.sql, query.params)).getRowsJS();
-      combinations = rows.map((row) => row.map((value) => (value === null ? null : String(value))));
+      const marked = plan.aggregate.pivot.columns.map((_, index) => `'.' || "vg_value${index}"`).join(", ");
+      const rows = (await connection.runAndReadAll(`SELECT ${marked} FROM (${query.sql})`, query.params)).getRowsJS();
+      combinations = rows.map((row) => row.map((value) => (value === null ? null : String(value).slice(1))));
     }
     const view = compileView(plan, source, combinations);
     const count = countQuery(view);

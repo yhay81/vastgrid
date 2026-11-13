@@ -19,7 +19,7 @@ npm install vastgrid-spec
   `/rows/{row}/{column}` path instead of silently changing them.
 - **State** (§5): `checkDocument` and `checkSession` check the two parts of the state, `displayedColumns`
   gives the display order, `repairDocument` fits a document to a table, and `migrateGridState` migrates 0.1's
-  `GridState`.
+  `GridState`. Its `removed` array reports the parts of the migrated document discarded during repair.
 - **Commands** (§6, §7): `applyCommand(state, command, context)` applies a command and gives the new state,
   the requests the core sends and the output, or throws a `CommandError`. The new state keeps the objects of
   what the command does not change, and a command costs nothing for the parts it does not touch (an undo

@@ -437,21 +437,6 @@ export class Plans {
   }
 }
 
-/**
- * Differences of this engine from the specification, kept until they are fixed: plans whose rows the memory
- * engine answers and this engine fails, known by the message of its error.
- */
-export const KNOWN = [
-  {
-    message: /Overflow in HUGEINT addition/,
-    reason: "sum and avg of decimals of more than 18 digits overflow DuckDB's HUGEINT on the way (§3.8 sums exactly)",
-  },
-  {
-    message: /STDDEV_SAMP is out of range/,
-    reason: "stddev of floats near the largest overflows in DuckDB; the memory engine gives null",
-  },
-];
-
 export interface Answer {
   error?: { code: string; reason?: string; path?: string };
   columns?: Column[];
@@ -463,7 +448,11 @@ export interface Answer {
 export type Send = (op: Operation, members: Json) => Promise<Json>;
 
 /** A plan's view, read whole: its columns, row IDs and rows, or the error of either read. */
-export async function answer(send: Send, table: { table: string; revision: string }, plan: Json): Promise<Answer> {
+export async function answer(
+  send: Send,
+  table: { table: string; revision: string | null },
+  plan: Json,
+): Promise<Answer> {
   const at = { table: table.table, revision: table.revision, plan };
   const probe = await send("rows", { ...at, start: 0, end: 0, columns: [] });
   if (probe.error) return { error: probe.error as Answer["error"] };
@@ -481,10 +470,7 @@ export async function answer(send: Send, table: { table: string; revision: strin
 }
 
 /** The differences between the memory engine's answer and this engine's; empty when they agree. */
-export function differences(memory: Answer, duckdb: Answer, allowKnown = true): string[] {
-  const message = (duckdb.error as { message?: string } | undefined)?.message ?? "";
-  if (allowKnown && !memory.error && duckdb.error && KNOWN.some((known) => known.message.test(message)))
-    return ["known"];
+export function differences(memory: Answer, duckdb: Answer): string[] {
   if (memory.error || duckdb.error) {
     const shown = (item: Answer) =>
       item.error ? `${item.error.code} ${item.error.reason ?? ""} ${item.error.path ?? ""}`.trim() : "rows";
@@ -530,19 +516,17 @@ export function differences(memory: Answer, duckdb: Answer, allowKnown = true): 
   return problems;
 }
 
-/** Check each input independently. A known DuckDB limitation cannot excuse different memory-engine answers. */
-export function compareInputs(rows: Answer, parquet: Answer, duckdb: Answer) {
-  let known = false;
+/** Check each input independently. */
+export function compareInputs(rows: Answer, parquet: Answer, duckdb: Answer): string[] {
   const problems: string[] = [];
   for (const [label, found] of [
     ["rows", differences(rows, duckdb)],
     ["parquet", differences(parquet, duckdb)],
-    ["rows/parquet", differences(rows, parquet, false)],
+    ["rows/parquet", differences(rows, parquet)],
   ] as const) {
-    if (found.length === 1 && found[0] === "known") known = true;
-    else problems.push(...found.map((problem) => `${label}: ${problem}`));
+    problems.push(...found.map((problem) => `${label}: ${problem}`));
   }
-  return { known, problems };
+  return problems;
 }
 
 /** Sends requests to a memory engine, checking every response against §8. */

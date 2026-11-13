@@ -1,11 +1,11 @@
 ---
 title: MCP App
-description: An MCP server whose App shows CSV, TSV, Parquet, JSON Lines and Excel files of any size in a grid inside the chat, where the agent and the person work on the same view and cells.
+description: An MCP server whose App shows CSV, TSV, Parquet, JSON Lines and Excel files and DuckDB databases of any size in a grid inside the chat, where the agent and the person work on the same view and cells.
 ---
 
 `vastgrid-mcp` is an MCP server with an [MCP App](https://github.com/modelcontextprotocol/ext-apps): an agent
-opens a CSV, TSV, Parquet, JSON Lines or Excel file of any size in a grid that you see in the chat, and both of you
-work on the same grid. The agent reads the grid's state and rows and applies the grid's
+opens a CSV, TSV, Parquet, JSON Lines or Excel file or a DuckDB database of any size in a grid that you see in the
+chat, and both of you work on the same grid. The agent reads the grid's state and rows and applies the grid's
 [commands](/reference/commands/); you scroll, sort, filter, select and edit in the grid. What one does, the other
 sees. DuckDB reads the files on the server, in Node.js; the page in the host is plain JavaScript and canvas, with
 no WebAssembly, no workers and no network of its own.
@@ -39,9 +39,9 @@ calls `open_grid`, and the host shows the grid under its answer.
 | Tool | Who | What it does |
 | --- | --- | --- |
 | `list_files` | agent | lists the table files of the folders, two folders deep |
-| `open_grid` | agent, App | opens a file in a new grid, with a document to start with; its result shows the App |
-| `grid_state` | agent | the document, the session, the displayed columns, the view's row count and the unsaved edits |
-| `grid_rows` | agent | rows of the view as JSON values, at most 500 at once, strings cut to 1,000 characters |
+| `open_grid` | agent, App | opens a file (and a workbook's sheet or a database's table, `sheet`) in a new grid, with a document to start with; its result shows the App |
+| `grid_state` | agent | the sheet and sheets (if any), the document, the session, the displayed columns, the view's row count and the unsaved edits |
+| `grid_rows` | agent | rows of the view as JSON values, at most 500 at once, strings cut to 1,000 code points |
 | `grid_command` | agent | applies a command as the person's keys and menus do, and gives the new state |
 | `vastgrid_message` | App | carries a request of the grid to the engine |
 | `grid_sync` | App | keeps the App's document and session in step with the grid's, and brings the engine's events |
@@ -68,7 +68,7 @@ scroll back to it) gets the whole state of the grid again.
 
 The App is one HTML file with its script and styles inside, the menus and panels included: the host serves it as a UI
 resource, and it loads nothing. It declares no domains, so hosts give it their default Content Security Policy. The
-page is 1.2 MB, 330 KB with gzip; most of it is the MCP client of ext-apps and zod, then React and the grid. It takes
+page is about 900 KB, 270 KB with gzip: React and the grid, then the MCP client of ext-apps and zod. It takes
 the host's theme and locale (English, Japanese, Chinese, Korean, Spanish, Portuguese, French or German). It is 520
 pixels high in the conversation, less when the host allows less, and fills its frame when the host fixes its height;
 where the host offers the full screen, a button at the right end of the toolbar asks for it and back.

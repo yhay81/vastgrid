@@ -4,11 +4,13 @@
  */
 import {
   dateLength,
+  fromTemporalTextForm,
   infinityOf,
   parseDateText,
   parseIntervalText,
   parseTimestampText,
   temporalTextForm,
+  UNIT_DIGITS,
 } from "./calendar.js";
 import type { JsonValue, TimestampUnit, ValueType } from "./types.js";
 
@@ -25,9 +27,6 @@ const surrogate = /[\uD800-\uDFFF]/;
 const loneSurrogate = /\p{Cs}/u;
 // Unicode category Zs, which `trim` removes (§4.4).
 const spaceSeparators = /^[\p{Zs}]+|[\p{Zs}]+$/gu;
-
-/** Digits after the point that each unit of timestamps keeps. */
-const unitDigits: Record<TimestampUnit, number> = { s: 0, ms: 3, us: 6, ns: 9 };
 
 /** Whether a value is a JSON object: not null and not an array. */
 export function isObject(value: unknown): value is Record<string, unknown> {
@@ -113,9 +112,26 @@ export function isTimeText(text: string, digits = 6): boolean {
 /** Whether the text is a timestamp as §2.2 writes it, or an infinity, for a unit. */
 export function isTimestampText(text: string, unit: TimestampUnit = "us"): boolean {
   if (infinityOf(text) !== 0) return true;
-  if (!timestampAt(text, text.length, unitDigits[unit])) return false;
+  if (!timestampAt(text, text.length, UNIT_DIGITS[unit])) return false;
   // The ends of a 64-bit count: nanoseconds reach them in the years 1677 to 2262, other units only in signed years.
   return (unit !== "ns" && dateLength(text) === 10) || parseTimestampText(text, unit) !== null;
+}
+
+/**
+ * The fixed-point decimal digits of a finite number whose exponent is in `[-38, 20]` (expanding JS's `1e-7` to
+ * `"0.0000001"`), or null outside that range.
+ */
+export function exactNumberText(value: number): string | null {
+  if (!Number.isFinite(value)) return null;
+  if (value === 0) return "0";
+  const text = String(value);
+  if (!/e/i.test(text)) return text;
+  const sign = value < 0 ? "-" : "";
+  const [mantissa, expPart] = Math.abs(value).toExponential().split("e");
+  const exponent = Number(expPart);
+  if (exponent < -38 || exponent >= 21) return null;
+  const digits = mantissa.replace(".", "");
+  return `${sign}0.${"0".repeat(-exponent - 1)}${digits}`;
 }
 
 /** The precision and scale of a decimal written as text (§2.5), or null when the text is not a decimal. */
@@ -189,14 +205,29 @@ export function sameType(a: ValueType, b: ValueType): boolean {
   }
 }
 
+function wholeOf(value: JsonValue): bigint | null {
+  if (typeof value === "number") return Number.isInteger(value) ? BigInt(value) : null;
+  if (typeof value === "string" && integerText.test(value)) return BigInt(value);
+  return null;
+}
+
 /** Whether two values of a type are the same value (§3.1), whichever JSON writes them (§2.2). */
 export function sameCellValue(a: JsonValue, b: JsonValue, type: ValueType): boolean {
   if (a === null || b === null) return a === b;
   switch (type.type) {
     case "integer":
-    case "bigint":
-      return BigInt(a as number | string) === BigInt(b as number | string);
+    case "bigint": {
+      const x = wholeOf(a);
+      const y = wholeOf(b);
+      return x !== null && x === y;
+    }
     case "float": {
+      if (
+        (typeof a !== "number" && a !== "NaN" && a !== "Infinity" && a !== "-Infinity") ||
+        (typeof b !== "number" && b !== "NaN" && b !== "Infinity" && b !== "-Infinity")
+      ) {
+        return false;
+      }
       const x = floatOf(a);
       const y = floatOf(b);
       return Number.isNaN(x) ? Number.isNaN(y) : x === y;
@@ -307,13 +338,21 @@ export function valueOfText(text: string | null, type: ValueType): JsonValue {
       return text === "true";
     case "integer":
       return Number(text);
-    case "bigint":
-      return Number.isSafeInteger(Number(text)) ? Number(text) : text;
+    case "bigint": {
+      const value = Number(text);
+      return Number.isSafeInteger(value) && String(value) === text ? value : text;
+    }
     case "float":
       if (text === "nan") return "NaN";
       if (text === "inf") return "Infinity";
       if (text === "-inf") return "-Infinity";
       return type.bits === 32 ? Math.fround(Number(text)) : Number(text);
+    case "binary":
+      return toBase64(fromBytesText(text));
+    case "date":
+    case "timestamp":
+    case "timestamptz":
+      return fromTemporalTextForm(text);
     default:
       return text;
   }
@@ -363,6 +402,44 @@ function bytesText(bytes: Uint8Array): string {
         : `\\x${byte.toString(16).toUpperCase().padStart(2, "0")}`;
   }
   return text;
+}
+
+const utf8Bytes = new TextEncoder();
+
+function hexNibble(code: number): number {
+  if (code >= 0x30 && code <= 0x39) return code - 0x30;
+  if (code >= 0x41 && code <= 0x46) return code - 0x41 + 10;
+  if (code >= 0x61 && code <= 0x66) return code - 0x61 + 10;
+  return -1;
+}
+
+/** Reads DuckDB's text of bytes (`bytesText`) back into bytes. */
+function fromBytesText(text: string): Uint8Array {
+  const buffer = new Uint8Array(text.length * 3);
+  let length = 0;
+  for (let index = 0; index < text.length;) {
+    const code = text.charCodeAt(index);
+    if (code === 0x5c && text.charCodeAt(index + 1) === 0x78 && index + 3 < text.length) {
+      const hi = hexNibble(text.charCodeAt(index + 2));
+      const lo = hexNibble(text.charCodeAt(index + 3));
+      if (hi >= 0 && lo >= 0) {
+        buffer[length++] = (hi << 4) | lo;
+        index += 4;
+        continue;
+      }
+    }
+    if (code >= 0x20 && code <= 0x7e) {
+      buffer[length++] = code;
+      index += 1;
+    } else {
+      const point = String.fromCodePoint(text.codePointAt(index)!);
+      const encoded = utf8Bytes.encode(point);
+      buffer.set(encoded, length);
+      length += encoded.length;
+      index += point.length;
+    }
+  }
+  return buffer.subarray(0, length);
 }
 
 /** The text form of a value (§2.4), or null for null. */

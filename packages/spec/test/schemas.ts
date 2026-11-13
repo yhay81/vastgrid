@@ -2,7 +2,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import Ajv2020 from "ajv/dist/2020.js";
+import { Ajv2020 } from "ajv/dist/2020.js";
 
 const directory = fileURLToPath(new URL("../schema/", import.meta.url));
 const BASE = "https://vastgrid.yhay81.com/schema/0.2/";

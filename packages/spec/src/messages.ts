@@ -114,7 +114,17 @@ function isObject(value: unknown): value is Json {
 
 /** Whether a text holds more than `limit` code points. A string of no more UTF-16 units has no more code points. */
 function longer(text: string, limit: number) {
-  return text.length > limit && [...text].length > limit;
+  if (text.length <= limit) return false;
+  let count = 0;
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff && index + 1 < text.length) {
+      const next = text.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) index++;
+    }
+    if (++count > limit) return true;
+  }
+  return false;
 }
 
 /** A member name or an index as one step of a JSON Pointer. */
@@ -193,15 +203,29 @@ class Checker {
         this.fail(path, "limit", "A list or an object holds at most 1,000,000 items.");
       }
       if (keys === null) {
-        (value as unknown[]).forEach((child, index) => {
-          pending.push([child, `${path}${step(index)}`, level + 1]);
-        });
+        const list = value as unknown[];
+        for (let index = list.length - 1; index >= 0; index--) {
+          const child = list[index];
+          if (typeof child === "string") {
+            if (longer(child, MESSAGE_LIMITS.text)) pending.push([child, `${path}/${index}`, level + 1]);
+          } else if (child !== null && typeof child === "object" && !ArrayBuffer.isView(child)) {
+            pending.push([child, `${path}/${index}`, level + 1]);
+          }
+        }
         continue;
       }
       for (const key of keys) {
         // A pointer to a name that is too long would be too long itself: the error names the object.
         if (longer(key, MESSAGE_LIMITS.text)) this.fail(path, "limit", "A name holds at most 1,000,000 code points.");
-        pending.push([(value as Json)[key], `${path}${step(key)}`, level + 1]);
+      }
+      for (let index = keys.length - 1; index >= 0; index--) {
+        const key = keys[index];
+        const child = (value as Json)[key];
+        if (typeof child === "string") {
+          if (longer(child, MESSAGE_LIMITS.text)) pending.push([child, `${path}${step(key)}`, level + 1]);
+        } else if (child !== null && typeof child === "object" && !ArrayBuffer.isView(child)) {
+          pending.push([child, `${path}${step(key)}`, level + 1]);
+        }
       }
     }
   }
@@ -223,7 +247,7 @@ class Checker {
 
   string(value: unknown, path: string): string {
     if (typeof value !== "string") this.fail(path, "syntax", "Expected a string.");
-    if (value.length > MESSAGE_LIMITS.text && [...value].length > MESSAGE_LIMITS.text) {
+    if (longer(value, MESSAGE_LIMITS.text)) {
       this.fail(path, "limit", "A string holds at most 1,000,000 code points.");
     }
     return value;
@@ -556,13 +580,17 @@ export function checkRequest(message: unknown): Json & { v: 2; id: number; op: O
       check.choice(request.format, EXPORT_FORMATS, "/format");
       check.optionalString(request.target, "/target");
       const columns = request.columns === undefined ? null : check.names(request.columns, "/columns");
+      let expectedLength = columns ? columns.length : null;
       for (const member of ["headers", "numberFormats"]) {
         const list = request[member];
         if (list === undefined) continue;
-        if (!Array.isArray(list)) check.fail(`/${member}`, "syntax", `${member} is a list.`);
-        if (columns && list.length !== columns.length) {
+        if (!Array.isArray(list) || list.length === 0) {
+          check.fail(`/${member}`, "syntax", `${member} is a non-empty list.`);
+        }
+        if (expectedLength !== null && list.length !== expectedLength) {
           check.fail(`/${member}`, "syntax", `${member} has one item per column.`);
         }
+        expectedLength ??= list.length;
         list.forEach((item, index) => {
           if (member === "numberFormats" && item === null) return;
           check.string(item, `/${member}/${index}`);
@@ -645,7 +673,12 @@ function checkResult(check: Checker, op: Operation, value: unknown) {
       check.integer(result.numericCount, `${path}/numericCount`);
       for (const member of ["sum", "min", "max", "average"]) {
         const number = result[member];
-        if (number !== null && typeof number !== "number" && number !== "Infinity" && number !== "-Infinity") {
+        if (
+          number !== null &&
+          (typeof number !== "number" || !Number.isFinite(number)) &&
+          number !== "Infinity" &&
+          number !== "-Infinity"
+        ) {
           check.fail(`${path}/${member}`, "syntax", `${member} is a float (§2.2) or null.`);
         }
       }
@@ -699,6 +732,8 @@ function checkResult(check: Checker, op: Operation, value: unknown) {
     case "close":
       if (value !== null) check.fail(path, "syntax", "The result of close is null.");
       return;
+    default:
+      check.fail("/op", "unknown_op", `${JSON.stringify(op)} is not an operation.`);
   }
 }
 
@@ -765,8 +800,12 @@ export function checkEvent(message: unknown): Json & { v: 2; event: string } {
   return event as Json & { v: 2; event: string };
 }
 
+const utf8Encoder = new TextEncoder();
+const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
+
 /** The member of a response that holds its block: `block` of `rows`, `data` of `export`. */
-function blockSlot(message: Json): [Json, string] | null {
+function blockSlot(message: unknown): [Json, string] | null {
+  if (!isObject(message)) return null;
   const result = message.result;
   if (!isObject(result)) return null;
   if (result.block !== undefined) return [result, "block"];
@@ -809,9 +848,7 @@ export function toStructuredEncoding(message: Json): Json {
 export function frameAttached(message: Json): Uint8Array {
   const slot = blockSlot(message);
   const block = slot ? blockBytes(slot[0][slot[1]]) : new Uint8Array(0);
-  const json = new TextEncoder().encode(
-    JSON.stringify(slot ? withBlock(message, { attached: block.length }) : message),
-  );
+  const json = utf8Encoder.encode(JSON.stringify(slot ? withBlock(message, { attached: block.length }) : message));
   const bytes = new Uint8Array(4 + json.length + block.length);
   new DataView(bytes.buffer).setUint32(0, json.length, true);
   bytes.set(json, 4);
@@ -825,14 +862,20 @@ export function readAttached(bytes: Uint8Array): Json {
     throw new ProtocolError("invalid_response", "", "syntax", "The response is shorter than its length.");
   const length = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0, true);
   if (4 + length > bytes.length) throw new ProtocolError("invalid_response", "", "syntax", "The JSON is cut off.");
-  const message = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(4, 4 + length))) as Json;
-  const slot = blockSlot(message);
-  if (!slot) return message;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(utf8Decoder.decode(bytes.subarray(4, 4 + length)));
+  } catch {
+    throw new ProtocolError("invalid_response", "", "syntax", "The JSON is invalid.");
+  }
+  if (!isObject(parsed)) throw new ProtocolError("invalid_response", "", "syntax", "A message is an object.");
+  const slot = blockSlot(parsed);
+  if (!slot) return parsed;
   const attached = slot[0][slot[1]];
-  if (!isObject(attached) || typeof attached.attached !== "number") return message;
+  if (!isObject(attached) || typeof attached.attached !== "number") return parsed;
   const size = attached.attached;
-  if (4 + length + size !== bytes.length) {
+  if (!Number.isSafeInteger(size) || size < 0 || 4 + length + size !== bytes.length) {
     throw new ProtocolError("invalid_response", "", "syntax", "The attached block does not end the response.");
   }
-  return withBlock(message, { bytes: bytes.slice(4 + length, 4 + length + size) });
+  return withBlock(parsed, { bytes: bytes.slice(4 + length, 4 + length + size) });
 }

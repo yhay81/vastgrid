@@ -91,6 +91,13 @@ function planKey(plan: Plan): string {
   return canonicalJson(normalizePlan(plan));
 }
 
+function cloneCommand(command: GridCommand): GridCommand {
+  for (const value of Object.values(command)) {
+    if (value !== null && typeof value === "object") return structuredClone(command);
+  }
+  return { ...command };
+}
+
 /**
  * The grid without a screen (§4 of react.md): the state of the specification as immutable snapshots, the
  * commands that change it, and the rows of the view on screen, read through a transport. Making a store has
@@ -263,13 +270,17 @@ export class GridStore {
     const view = this.current;
     const value = view?.cache.value(row, column);
     if (!view || !this.writer.pending) return value;
-    const key = view.cache.loaded(row, this.base("document").rowKey)?.key;
-    return this.writer.value(key, column, value);
+    return this.writer.value(view.cache.loaded(row, this.base("document").rowKey), column, value);
   }
 
   /** Whether the engine cut a cell's value to the text limit (§8.4). */
   isCut(row: number, column: string) {
-    return this.current?.cache.isCut(row, column) ?? false;
+    const view = this.current;
+    if (!view) return false;
+    if (this.writer.pending && this.writer.has(view.cache.loaded(row, this.base("document").rowKey), column)) {
+      return false;
+    }
+    return view.cache.isCut(row, column);
   }
 
   /** The key of a row of the view on screen (§5.3); undefined while it is not read. */
@@ -378,11 +389,17 @@ export class GridStore {
   private opening(info: TableInfo) {
     const document = this.base("document");
     const repaired = repairDocument(document, info.columns, planOptions(info.capabilities));
+    const previousRevision = this.snapshot.table?.revision;
+    if (previousRevision !== undefined && previousRevision !== info.revision) this.writer.reset();
     const seeded = this.current;
+    let droppedSeed = false;
     // Rows read on a server stay when they belong to the same revision and plan.
-    if (seeded && (seeded.revision !== info.revision || seeded.edits !== info.edits.version)) this.current = null;
-    else if (seeded) this.current = { ...seeded, abort: new AbortController() };
+    if (seeded && (seeded.revision !== info.revision || seeded.edits !== info.edits.version)) {
+      this.current = null;
+      droppedSeed = true;
+    } else if (seeded) this.current = { ...seeded, abort: new AbortController() };
     this.publish({ table: info, status: info.status === "error" ? "error" : "ready" });
+    if (droppedSeed) this.emitRows();
     if (repaired.removed.length > 0) this.change(repaired.document, this.base("session"));
     this.showPlan(this.base("document").plan ?? {});
     this.reader.schedule();
@@ -519,7 +536,7 @@ export class GridStore {
       this.next = null;
     }
     if (fresh(this.current)) {
-      if (this.snapshot.pending) this.publish({ pending: null });
+      if (this.snapshot.pending || this.snapshot.error) this.publish({ pending: null, error: null });
       return;
     }
     if (this.next) return;
@@ -643,7 +660,7 @@ export class GridStore {
         rowCount: info?.rowCount ?? 0,
         rowIds: view.checked.rowIds,
       },
-      lookup: (row) => this.writer.overlay(view.cache.loaded(row, rowKey)),
+      lookup: (row) => this.writer.overlay(view.cache.loaded(row, rowKey), rowKey),
       page: Math.max(1, this.reader.viewport.rows - 1),
       capabilities: table.capabilities,
     };
@@ -662,8 +679,32 @@ export class GridStore {
     delete this.proposed.document;
     const previous = this.snapshot.document;
     if (document === previous) return;
-    this.publish({ document });
-    if (document.plan !== previous.plan) this.showPlan(document.plan ?? {});
+    const beforeSession = this.snapshot.session;
+    let nextSession = beforeSession;
+    const view = this.current;
+    const table = this.snapshot.table;
+    if (
+      document.columns !== previous.columns &&
+      !this.controlled.session &&
+      view?.info &&
+      table &&
+      planKey(document.plan ?? {}) === view.key
+    ) {
+      try {
+        nextSession = applyCommand(
+          { document, session: beforeSession },
+          { command: "view.update", hash: view.info.hash, located: [] },
+          this.contextFor(view, table, view.info),
+        ).session;
+      } catch (error) {
+        if (!(error instanceof CommandError)) throw error;
+      }
+    }
+    this.publish(nextSession !== beforeSession ? { document, session: nextSession } : { document });
+    if (nextSession !== beforeSession) this.emit("session", nextSession);
+    if (document.plan !== previous.plan || this.next !== null || this.snapshot.error !== null) {
+      this.showPlan(document.plan ?? {});
+    }
     this.reader.schedule();
   }
 
@@ -701,7 +742,12 @@ export class GridStore {
       if (part === "document") this.emit("document", value);
       else this.emit("session", value);
     }
-    if (shown.document && shown.document.plan !== previous.plan) this.showPlan(shown.document.plan ?? {});
+    if (
+      shown.document &&
+      (shown.document.plan !== previous.plan || this.next !== null || this.snapshot.error !== null)
+    ) {
+      this.showPlan(shown.document.plan ?? {});
+    }
   }
 
   /** Applies a command now, or tells why it cannot be applied (rows to read first included). */
@@ -734,7 +780,7 @@ export class GridStore {
    */
   readonly dispatch = async (command: GridCommand, options: DispatchOptions = {}): Promise<CommandOutcome> => {
     // The state never shares objects with a command that its caller may change later.
-    const given = structuredClone(command);
+    const given = cloneCommand(command);
     // An undo or a redo takes the last step once the writes sent before it are in the history.
     if (given.command === "history.undo" || given.command === "history.redo") await this.writer.settled();
     let applied = this.applyNow(given, options);
@@ -773,7 +819,7 @@ export class GridStore {
    * returns). A command that needs rows that are not read fails with `not_loaded`; its requests are sent.
    */
   dispatchSync(command: GridCommand, options: DispatchOptions = {}): CommandOutcome {
-    const given = structuredClone(command);
+    const given = cloneCommand(command);
     const applied = this.applyNow(given, options);
     if (applied.kind === "failed") return { ok: false, error: applied.error };
     if (applied.result.requests.length > 0) {
@@ -840,6 +886,7 @@ export class GridStore {
     ) {
       return;
     }
+    if (current && current.revision !== info.revision) this.writer.reset();
     const repaired = repairDocument(this.base("document"), info.columns, planOptions(info.capabilities));
     this.publish({ table: info, status: info.status === "error" ? "error" : "ready" });
     if (repaired.removed.length > 0) this.change(repaired.document, this.base("session"));

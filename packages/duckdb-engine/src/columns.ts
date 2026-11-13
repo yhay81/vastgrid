@@ -8,7 +8,10 @@ import {
   dateText,
   floatJson,
   infinityOf,
+  intervalText,
+  isValueOf,
   type JsonValue,
+  normalizeInterval,
   parseTimestampText,
   TIMESTAMP_INFINITY,
   type TimestampUnit,
@@ -16,7 +19,7 @@ import {
   timestamptzText,
   type ValueType,
 } from "vastgrid-spec";
-import { duckdbType, FIRST_DATE, LAST_DATE, quoteIdentifier, temporalParam, textSql } from "vastgrid-sql";
+import { duckdbType, FIRST_DATE, floatParam, LAST_DATE, quoteIdentifier, temporalParam, textSql } from "vastgrid-sql";
 
 /** A column of a source as DuckDB describes it. */
 export interface SourceColumn {
@@ -161,6 +164,48 @@ function temporalJson(column: Column, value: unknown): string | null {
   }
 }
 
+/** Whether DuckDB can store a validated value of `type` without overflowing `TIMESTAMP_NS` infinities. */
+export function holdsDuckValue(value: JsonValue, type: ValueType): boolean {
+  if (!isValueOf(value, type)) return false;
+  if (value !== null && type.type === "timestamp" && type.unit === "ns" && infinityOf(String(value)) === 0) {
+    const nanos = parseTimestampText(String(value), "ns");
+    return nanos !== -9_223_372_036_854_775_807n && nanos !== 9_223_372_036_854_775_807n;
+  }
+  return true;
+}
+
+/**
+ * Normalizes a row key's `value` (§5.3, §8.2) for `column` without rounding or cross-type coercion (§3.1), or
+ * returns null when no value of `column` can equal it.
+ */
+export function acceptKeyValue(value: JsonValue, column: Column): JsonValue | null {
+  if (value === null) return null;
+  if (column.type === "decimal") {
+    if (typeof value !== "string") return null;
+    const match = /^(-?)([0-9]+)(?:\.([0-9]+))?$/.exec(value);
+    if (!match) return null;
+    const scale = column.scale ?? 0;
+    const precision = column.precision ?? 38;
+    const fraction = match[3] ?? "";
+    if (fraction.length > scale && !/^0*$/.test(fraction.slice(scale))) return null;
+    const scaled = fraction.slice(0, scale).padEnd(scale, "0");
+    const whole = match[2].replace(/^0+(?=[0-9])/, "");
+    const significant = `${whole}${scaled}`.replace(/^0+/, "");
+    if (significant.length > precision) return null;
+    if (significant.length === 0) return scale > 0 ? `0.${"0".repeat(scale)}` : "0";
+    return scale > 0 ? `${match[1]}${whole}.${scaled}` : `${match[1]}${whole}`;
+  }
+  if (column.type === "interval") {
+    if (typeof value !== "string") return null;
+    const parts = normalizeInterval(value);
+    if (!parts) return null;
+    const [months, days, nanos] = parts;
+    if (months < -2_147_483_648n || months > 2_147_483_647n || nanos % 1000n !== 0n) return null;
+    return intervalText({ months: Number(months), days: Number(days), nanos });
+  }
+  return holdsDuckValue(value, column) ? value : null;
+}
+
 /**
  * The SQL of a typed JSON value of a column (§2.2), with its parameters: numbers as text, which DuckDB reads
  * back exactly (`@duckdb/node-api` binds whole numbers as BIGINT).
@@ -169,15 +214,16 @@ export function valueExpression(value: JsonValue, type: ValueType, params: unkno
   const target = duckdbType(type);
   if (value === null) return `CAST(NULL AS ${target})`;
   if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
-  params.push(String(value));
+  const text = typeof value === "number" && type.type === "float" ? floatParam(value) : String(value);
+  params.push(text);
   if (type.type === "binary") return `from_base64(CAST($${params.length} AS VARCHAR))`;
   // DuckDB's VARCHAR cast overflows near the TIMESTAMP_NS limits: give it the exact count.
-  if (type.type === "timestamp" && type.unit === "ns" && infinityOf(String(value)) === 0) {
-    params[params.length - 1] = String(parseTimestampText(String(value), "ns"));
+  if (type.type === "timestamp" && type.unit === "ns" && infinityOf(text) === 0) {
+    params[params.length - 1] = String(parseTimestampText(text, "ns"));
     return `make_timestamp_ns(CAST($${params.length} AS BIGINT))`;
   }
   if (type.type === "date" || type.type === "timestamp" || type.type === "timestamptz") {
-    params[params.length - 1] = temporalParam(String(value));
+    params[params.length - 1] = temporalParam(text);
   }
   return `CAST(CAST($${params.length} AS VARCHAR) AS ${target})`;
 }

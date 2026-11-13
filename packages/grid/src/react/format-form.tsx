@@ -78,12 +78,22 @@ function whenOf(rule: RuleDraft, columns: readonly Column[]): Expr | null | unde
 
 /** Whether Intl formats a currency code. */
 function knownCurrency(code: string) {
+  if (!/^[A-Z]{3}$/.test(code)) return false;
   try {
     new Intl.NumberFormat(undefined, { style: "currency", currency: code });
     return true;
   } catch {
     return false;
   }
+}
+
+/** Parses decimal-place input: `undefined` when empty, or `0..20`, or `null` when invalid. */
+function parseFractionDigits(raw: string): number | undefined | null {
+  const trimmed = raw.trim();
+  if (trimmed === "") return undefined;
+  if (!/^\d+$/.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return parsed >= 0 && parsed <= 20 ? parsed : null;
 }
 
 function formulaOf(expr: Expr) {
@@ -142,8 +152,14 @@ export function FormatForm({
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (style === "currency" && !knownCurrency(currency)) {
+    const normalizedCurrency = currency.trim().toUpperCase();
+    if (style === "currency" && !knownCurrency(normalizedCurrency)) {
       setError(messages.invalidCurrency);
+      return;
+    }
+    const fraction = numeric && style !== "" ? parseFractionDigits(digits) : undefined;
+    if (fraction === null) {
+      setError(messages.invalidValue(messages.fractionDigits));
       return;
     }
     const styles: StyleRule[] = [];
@@ -161,15 +177,41 @@ export function FormatForm({
         ...(rule.description.trim() ? { description: rule.description.trim() } : {}),
       });
     }
-    const fraction = digits.trim() === "" ? undefined : Math.min(20, Math.max(0, Math.round(Number(digits))));
+    const {
+      style: _style,
+      currency: _currency,
+      currencyDisplay: previousCurrencyDisplay,
+      fractionDigits: _fractionDigits,
+      minimumFractionDigits: previousMinDigits,
+      maximumFractionDigits: previousMaxDigits,
+      grouping: _grouping,
+      ...extraNumber
+    } = format.number ?? {};
     const number: NumberFormat | undefined =
       numeric && style
         ? {
+            ...extraNumber,
             style,
-            ...(style === "currency" ? { currency: currency.toUpperCase() } : {}),
-            ...(fraction === undefined || Number.isNaN(fraction) ? {} : { fractionDigits: fraction }),
+            ...(style === "currency"
+              ? {
+                  currency: normalizedCurrency,
+                  ...(previousCurrencyDisplay ? { currencyDisplay: previousCurrencyDisplay } : {}),
+                }
+              : {}),
+            ...(fraction !== undefined
+              ? { fractionDigits: fraction }
+              : {
+                  ...(previousMinDigits === undefined ? {} : { minimumFractionDigits: previousMinDigits }),
+                  ...(previousMaxDigits === undefined ? {} : { maximumFractionDigits: previousMaxDigits }),
+                }),
             ...(grouping ? {} : { grouping: false }),
           }
+        : undefined;
+    const { pattern: _pattern, ...extraDate } = format.date ?? {};
+    const nextDate = pattern.trim()
+      ? { ...extraDate, pattern: pattern.trim() }
+      : Object.keys(extraDate).length > 0
+        ? extraDate
         : undefined;
     const next: ColumnFormat = {
       ...format,
@@ -177,7 +219,7 @@ export function FormatForm({
       align: align === "" ? undefined : align,
       wrap: wrap ? true : undefined,
       number: numeric ? number : format.number,
-      date: temporal ? (pattern.trim() ? { ...format.date, pattern: pattern.trim() } : undefined) : format.date,
+      date: temporal ? nextDate : format.date,
       styles: styles.length > 0 ? styles : undefined,
     };
     const cleaned = Object.fromEntries(Object.entries(next).filter(([, value]) => value !== undefined)) as ColumnFormat;

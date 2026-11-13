@@ -102,7 +102,7 @@ try {
 
   /** Opens the folder's file named with Quick Open. */
   const open = async (name) => {
-    await page.keyboard.press("Meta+P");
+    await page.keyboard.press("ControlOrMeta+P");
     await page.locator(".quick-input-widget .quick-input-box input").first().fill(name);
     await page.locator(".quick-input-list .monaco-list-row", { hasText: name }).first().waitFor();
     await page.keyboard.press("Enter");
@@ -148,7 +148,7 @@ try {
   await until("sort", async () => (await price.getAttribute("aria-sort")) === "descending");
   await until("sorted rows", async () => !(await statusBar(table).textContent()).includes("Reading"));
   await click(cell(table, 0, 3));
-  await page.keyboard.press("Shift+Meta+ArrowDown");
+  await page.keyboard.press("Shift+ControlOrMeta+ArrowDown");
   await until("sum", async () => (await statusBar(table).textContent()).includes("Sum"));
   await shoot(path.join(repository, "docs", "images", "vscode.png"));
   // The walkthrough's parts are the editor's, without the side bar: here from the grid's header to its status bar.

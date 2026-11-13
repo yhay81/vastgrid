@@ -48,7 +48,7 @@ export interface GroupInput {
 }
 
 /** A column of groups: its values by group number. */
-export interface GroupColumn {
+interface GroupColumn {
   column: Column;
   values: JsonValue[];
 }
@@ -274,6 +274,7 @@ function temporalQuantile(column: Column): {
       } else {
         const value =
           (Number(first) / Number(divisor)) * (1 - weight) + (Number(high * multiplier) / Number(divisor)) * weight;
+        if (!Number.isFinite(value)) return null;
         count = BigInt(Math.sign(value) * Math.round(Math.abs(value)));
       }
       if (count <= -TIMESTAMP_INFINITY || count >= TIMESTAMP_INFINITY) return null;

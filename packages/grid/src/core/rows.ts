@@ -110,11 +110,12 @@ export class RowReader {
 
   /** The columns of a view to read: those asked for that it has and its row key column, at least one. */
   withKeyFor(view: View, columns: readonly string[]): string[] {
-    const names = new Set(view.checked.columns.map((column) => column.name));
+    const available = view.info?.columns ?? view.checked.columns;
+    const names = new Set(available.map((column) => column.name));
     const wanted = columns.filter((column) => names.has(column));
     const key = this.host.rowKey();
     if (key !== undefined && names.has(key) && !wanted.includes(key)) wanted.push(key);
-    if (wanted.length === 0 && view.checked.columns.length > 0) wanted.push(view.checked.columns[0].name);
+    if (wanted.length === 0 && available.length > 0) wanted.push(available[0].name);
     return wanted;
   }
 

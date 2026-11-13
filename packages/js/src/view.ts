@@ -2,13 +2,13 @@
  * Views of the memory engine's tables (docs/spec.md §4.2, §8.3): the rows of a plan in order, kept by the plan's
  * hash, and the positions of rows in them.
  */
-import { type CheckedPlan, type Column, checkPlan, planHash } from "vastgrid-spec";
+import { type CheckedPlan, type Column, checkPlan, planHash, type TypedExpr } from "vastgrid-spec";
 import { PLAN_OPTIONS } from "./capabilities.js";
 import { rankPausing, ranksOf, readColumns, type Table, valuesOf } from "./open-table.js";
 import { type ColumnRanks, type RankedKey, rankColumn, sortRows } from "./order.js";
 import type { ViewColumn, ViewShape } from "./plan.js";
 import { Failure, pause, type Running } from "./running.js";
-import { isObject, shown, type Vector, vectorOf } from "./table.js";
+import { shown, type Vector, vectorOf } from "./table.js";
 
 /** Views that a table keeps, the least recently used forgotten first (§8.3). */
 const KEPT_VIEWS = 8;
@@ -21,6 +21,8 @@ export interface View {
   derived: Map<string, ViewColumn>;
   /** Whether the view's rows are groups (§4.2), which have no row IDs. */
   grouped: boolean;
+  /** The names of the group keys in a view of groups; null otherwise. */
+  groupKeys: Set<string> | null;
   /** The rows of the table when the view was made; the groups of a view of groups. */
   tableRows: number;
   rowCount: number;
@@ -28,6 +30,8 @@ export interface View {
   order: Uint32Array | null;
   /** The position of each row ID, made when `locate` first needs it. */
   positions?: Uint32Array;
+  /** For each group key column that `locate` ranked, by its name: its ranks. */
+  groupRanks: Map<string, ColumnRanks>;
   /** For each column that `locate` looked values up in, by its name: the first position of each rank. */
   firsts: Map<string, Int32Array>;
 }
@@ -41,21 +45,41 @@ export interface Source {
   values: Vector | null;
 }
 
-/**
- * Adds the names of columns that a plan names (§4.1) to `names`: in expressions, keys, measures, pivots and sorts.
- * True when it searches (§3.5), which reads every column.
- */
-function planNames(value: unknown, names: Set<string>): boolean {
-  if (Array.isArray(value)) return value.reduce<boolean>((search, item) => planNames(item, names) || search, false);
-  if (!isObject(value)) return false;
-  let search = typeof value.search === "string";
-  for (const [key, item] of Object.entries(value)) {
-    if ((key === "col" || key === "column") && typeof item === "string") names.add(item);
-    else if ((key === "keys" || key === "columns") && Array.isArray(item)) {
-      for (const name of item) if (typeof name === "string") names.add(name);
-    } else if (planNames(item, names)) search = true;
+/** The indexes of the table's own columns that a checked plan reads whole (§4.1). */
+function referencedColumns(checked: CheckedPlan, index: Map<string, number>): number[] {
+  const derived = new Set<string>();
+  const used = new Set<number>();
+  const add = (name: string) => {
+    if (derived.has(name)) return;
+    const at = index.get(name);
+    if (at !== undefined) used.add(at);
+  };
+  const visit = (expr: TypedExpr) => {
+    if (expr.kind === "column") add(expr.name);
+    else if (expr.kind === "search") {
+      for (const column of expr.columns) {
+        const at = index.get(column.name);
+        if (at !== undefined) used.add(at);
+      }
+    } else if (expr.kind === "call") {
+      for (const arg of expr.args) visit(arg);
+    }
+  };
+  for (const item of checked.derive) {
+    visit(item.expr);
+    derived.add(item.name);
   }
-  return search;
+  if (checked.where) visit(checked.where);
+  if (checked.aggregate) {
+    for (const key of checked.aggregate.keys) add(key.name);
+    for (const column of checked.aggregate.pivot?.columns ?? []) add(column.name);
+    for (const measure of checked.aggregate.measures) {
+      if (measure.column) add(measure.column.name);
+    }
+  } else {
+    for (const key of checked.sort) add(key.column.name);
+  }
+  return [...used];
 }
 
 /** The position of a row that a view leaves out, in `View.positions`. */
@@ -89,14 +113,7 @@ export async function viewOf(table: Table, plan: unknown, running: Running): Pro
     return kept;
   }
   if (table.reader) {
-    const names = new Set<string>();
-    const every = planNames(checked.plan, names);
-    const named = [...names].filter((name) => table.index.has(name));
-    await readColumns(
-      table,
-      every ? table.columns.keys() : named.map((name) => table.index.get(name) as number),
-      running,
-    );
+    await readColumns(table, referencedColumns(checked, table.index), running);
   }
   // The columns that the view sorts or groups by are ranked first, which a cancel stops.
   for (const name of rankedNames(checked.plan)) {
@@ -126,7 +143,8 @@ export async function viewOf(table: Table, plan: unknown, running: Running): Pro
       order: sortRows(count, sortKeys(checked, ranks), null),
     };
   }
-  const view: View = { hash, ...shape, firsts: new Map() };
+  const groupKeys = checked.aggregate ? new Set(checked.aggregate.keys.map((key) => key.name)) : null;
+  const view: View = { hash, ...shape, groupKeys, groupRanks: new Map(), firsts: new Map() };
   table.views.set(hash, view);
   if (table.views.size > KEPT_VIEWS) table.views.delete(table.views.keys().next().value as string);
   // A view is made to its end, and kept; a cancel that came while it was made stops the request after it.
@@ -180,6 +198,16 @@ export function positionOf(view: View, rowId: number): number | null {
   }
   const position = view.positions[rowId];
   return position === NO_POSITION ? null : position;
+}
+
+/** The ranks of a group key column in a grouped view, cached on the view. */
+export function groupRanksOf(view: View, name: string, group: ViewColumn): ColumnRanks {
+  let ranks = view.groupRanks.get(name);
+  if (!ranks) {
+    ranks = rankColumn(group.column, vectorOf(group.values));
+    view.groupRanks.set(name, ranks);
+  }
+  return ranks;
 }
 
 /** The first position in a view of each rank of a column, −1 for ranks that no row of the view has. */

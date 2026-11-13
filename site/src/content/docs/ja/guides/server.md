@@ -1,6 +1,6 @@
 ---
 title: サーバーのファイル
-description: どんな大きさの CSV・TSV・Parquet・JSON Lines のファイルと Excel のブックも、vastgrid-duckdb の DuckDB エンジンで Node.js から配信します。
+description: どんな大きさの CSV・TSV・Parquet・JSON Lines のファイル、Excel のブック、DuckDB のデータベースも、vastgrid-duckdb の DuckDB エンジンで Node.js から配信します。
 ---
 
 `vastgrid-duckdb` は、表のファイルを Node.js の DuckDB で開き、グリッドのメッセージに答えます。行、並べ替え・絞り込みしたビュー、グループ化とピボット、集計、検索、書き込み、保存、書き出しです。ページが受け取るのは、表示する行だけです。Node.js 22.18 以降が必要で、DuckDB の Node.js バインディングが対応するプラットフォームで動きます。
@@ -106,7 +106,7 @@ export function Sales() {
 | `DuckDBEngine.create` | 既定 | |
 | --- | --- | --- |
 | `allowedDirectories` | 必須 | 開いてよいファイルのフォルダー。DuckDB はほかのファイルを読みません |
-| `tempDirectory` | 必須 | エンジンのデータベース、ディスクに書き出したデータ、変換したファイルを置く場所（専用のフォルダーを作ります） |
+| `tempDirectory` | ユーザー専用の一時フォルダー | エンジンのデータベース、ディスクに書き出したデータ、変換したファイルを置く場所（専用のフォルダーを作ります） |
 | `resolve` | パス。相対パスは最初の許可フォルダーの中 | `ref` が指すファイル。例外を投げると拒否（`not_allowed`） |
 | `resolveTarget` | なし：書き出しはダウンロード用に保持 | 書き出しの `target` が指すファイル |
 | `memoryLimit` | メモリの 5 分の 1（1〜4 GB） | DuckDB のメモリ上限（`"4GB"` など） |
@@ -132,10 +132,10 @@ export function Sales() {
 | 形式 | 名前 |
 | --- | --- |
 | CSV | `.csv`、`.csv.gz`、`.csv.zst` |
-| TSV | `.tsv`、`.tab`、`.tsv.gz`、`.tsv.zst` |
+| TSV | `.tsv`、`.tab`、`.tsv.gz`、`.tsv.zst`、`.tab.gz`、`.tab.zst` |
 | Parquet | `.parquet`、`.pq` |
-| JSON Lines | `.jsonl`、`.ndjson`、それぞれの `.gz` |
-| JSON | `.json`、`.json.gz` |
+| JSON Lines | `.jsonl`、`.ndjson`、それぞれの `.gz`・`.zst` |
+| JSON | `.json`、`.json.gz`、`.json.zst` |
 | Excel | `.xlsx`、`.xlsm` |
 | DuckDB | `.duckdb`、`.ddb` |
 
@@ -143,7 +143,8 @@ export function Sales() {
 
 - **Parquet** は、その場で行番号から読みます。1 億行のファイルでも、どのブロックも数十ミリ秒で読めます。
 - **区切り文字のファイル・JSON・Excel** は、エンジンのデータベースに読み込みます。最初の `previewRows` 行はすぐに読め、読み込みの進み具合は `progress` イベントで伝わります。UTF-16・Shift_JIS・EUC-JP などの文字コードは判別して変換し、表の `notes` にそのことが入ります（`encoding:shift_jis`）。
-- **Excel** は、最初の表示されているシートで開きます。別のシートはグリッドの `open` プロパティで選びます（`<DataGrid key={sheet} open={{ sheet }} … />`）。`headerRow`・`keepEmptyRows`・`keepEmptyColumns` も指定できます。`open` はグリッドがストアを作るときに読まれるので、`key` を一緒に渡します。
+- **Excel** は、最初の表示されているシートで開きます。別のシートはグリッドの `open` プロパティで選びます（`<DataGrid key={sheet} open={{ sheet }} … />`）。`delimiter`・`headerRow`・`keepEmptyRows`・`keepEmptyColumns` も指定できます。`open` はグリッドがストアを作るときに読まれるので、`key` を一緒に渡します。
+- **DuckDB** は、選んだ表（`open={{ sheet }}`、`main` 以外のスキーマは `schema.name`。ビューは除きます）をセッションへ複製する間だけ読み取り専用で接続するので、読み込みが終わればほかのプログラムがまたデータベースに書き込めます。
 
 ## 段階的な並べ替え
 
@@ -162,7 +163,7 @@ export function Sales() {
 
 書き込んだセルは、ファイルとは別にエンジンが持ちます。`saveFiles: true` にすると、グリッドの保存ボタン（または ⌘S、Ctrl+S）で、元の CSV・TSV ファイルに書き込みます。変わるのはそのフィールドだけで、引用符・改行・文字コードはそのままです。ファイルは一時的な名前で書いてから元のファイルに置き換えます。読んだ後に他の人が変更したファイルは上書きしません（`file_changed`）。Apple シリコンのノートパソコンで、2 つのセルの保存は 20 万行のファイルで約 60 ms、200 万行のファイルで 0.3 秒でした。
 
-`watchFiles`（既定でオン）では、エンジンが開いているファイルのフォルダーを監視します。変更されたファイルは読み直し、グリッドは並べ替えや絞り込みを保ったまま新しい内容に移ります。書き込んだセルがある表はそのまま残し、ファイルが変わったことをグリッドが知らせます。
+`watchFiles`（既定でオン）では、エンジンが開いているファイルのフォルダーを監視します。変更されたファイルは読み直し、グリッドは並べ替えや絞り込みを保ったまま新しい内容に移ります。書き込んだセルがある表と DuckDB データベースの表（`.wal` の変更も含む）はそのまま残し、ファイルが変わったことをグリッドが知らせ、`reload` のときだけ読み直します。
 
 書き出し（CSV・TSV・Parquet・JSON・xlsx）はサーバーで行います。`resolveTarget` がなければ、エンジンはファイルを 1 時間保持し、グリッドは `<path>/exports/<name>` からダウンロードします。同じノートパソコンで、100 万行 × 4 列の並べ替えたビューの書き出しは、CSV で 0.3 秒、xlsx で 2.2 秒でした。
 

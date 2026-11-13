@@ -41,10 +41,29 @@ function expressionText(expr: Expr): string {
   }
 }
 
+interface InvalidCondition {
+  node: number;
+  side: "first" | "second";
+}
+
+function compileConditions(
+  group: Group,
+  columns: readonly Column[],
+): { ok: true; where: Expr | null } | { ok: false; invalid: InvalidCondition } {
+  try {
+    return { ok: true, where: writeConditions(group, columns) };
+  } catch (failure) {
+    if (failure instanceof ConditionError) {
+      return { ok: false, invalid: { node: failure.node, side: failure.side } };
+    }
+    throw failure;
+  }
+}
+
 interface NodeProps {
   node: ConditionNode;
   columns: readonly Column[];
-  invalid: number | null;
+  invalid: InvalidCondition | null;
   messages: GridMessages;
   onChange: (id: number, change: (node: ConditionNode) => ConditionNode | null) => void;
 }
@@ -99,7 +118,7 @@ function ConditionRow({ node, columns, invalid, messages, onChange }: NodeProps 
           className="vg-input"
           aria-label={operator === "between" ? messages.minimum : messages.value}
           placeholder={operator === "between" ? messages.minimum : messages.value}
-          aria-invalid={invalid === node.id}
+          aria-invalid={invalid?.node === node.id && invalid.side === "first"}
           value={first}
           onChange={(event) => set({ first: event.target.value })}
         />
@@ -109,7 +128,7 @@ function ConditionRow({ node, columns, invalid, messages, onChange }: NodeProps 
           className="vg-input"
           aria-label={messages.maximum}
           placeholder={messages.maximum}
-          aria-invalid={invalid === node.id}
+          aria-invalid={invalid?.node === node.id && invalid.side === "second"}
           value={second}
           onChange={(event) => set({ second: event.target.value })}
         />
@@ -228,22 +247,20 @@ export default function ConditionsPanel({ close }: { close: () => void }) {
   const plan = useGridSelector((snapshot) => snapshot.document.plan);
   // The conditions as they are when the menu opens, an agent's or the column menu's included.
   const [draft, setDraft] = useState<Group>(() => readConditions(store.getSnapshot().document.plan?.where));
-  const [invalid, setInvalid] = useState<number | null>(null);
+  const [invalid, setInvalid] = useState<InvalidCondition | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startApply] = useTransition();
   if (!table) return null;
   const columns = rowColumns(plan, table);
 
   const apply = (group: Group) => {
-    let where: Expr | null;
-    try {
-      where = writeConditions(group, columns);
-    } catch (failure) {
-      if (!(failure instanceof ConditionError)) throw failure;
-      setInvalid(failure.node);
+    const compiled = compileConditions(group, columns);
+    if (!compiled.ok) {
+      setInvalid(compiled.invalid);
       setError(messages.invalidCondition);
       return;
     }
+    const { where } = compiled;
     startApply(async () => {
       const outcome = await store.dispatch({ command: "filter.set", where });
       if (!outcome.ok) {

@@ -47,7 +47,7 @@ The document's plan (derived columns, conditions, groups, sort) is a view, named
 When the plan changes, the store reads the new view while the old one stays on screen, then shows the new rows and
 moves the selection to the same records in one step: a sort never flashes empty rows.
 
-Every change is a command (`sort.set`, `filter.column`, `edit.set`, `select`, …), and `applyCommand` of
+Every change is a command (`sort.set`, `filter.column`, `edit.commit`, `select`, …), and `applyCommand` of
 `vastgrid-spec` applies it to the document and the session as a pure function. The grid's menus and keys, your
 own buttons, a VS Code extension and an AI agent all dispatch the same commands, so they all do the same thing.
 The [specification](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md) defines the plans, the
@@ -55,18 +55,20 @@ commands and the messages, and a conformance corpus checks that the engines give
 
 ## The memory engine
 
-`vastgrid-js` keeps a table as typed columns. A text file is read in slices into columns when it opens, if they fit
-in `maxBytes` (1 GiB by default); a larger one is indexed instead, and its rows are read from the file by blocks. A
-Parquet file, on disk or at a URL by HTTP ranges, opens by reading its footer, and rows come from the row groups
-that hold them. A sort, a filter or a group reads the columns it needs whole, and those least recently used are
-forgotten when others need the room. Sorting ranks a column's values once and sorts the ranks. In a Web Worker,
-the page keeps drawing while the worker sorts, and holds none of the table.
+`vastgrid-js` keeps a table as typed columns. A text file larger than `previewBytes` (4 MiB by default) shows its
+first rows at once while the rest is read in slices into columns, if they fit in `maxBytes` (1 GiB by default); a
+larger one is indexed instead, and its rows are read from the file by blocks. A Parquet file, on disk or at a URL by
+HTTP ranges, opens by reading its footer, and rows come from the row groups that hold them. A sort, a filter or a
+group reads the columns it needs whole, and those least recently used are forgotten when others need the room.
+Sorting ranks a column's values once and sorts the ranks. In a Web Worker, the page keeps drawing while the worker
+sorts, and holds none of the table.
 
 ## The DuckDB engine
 
-- **Opening.** Delimited and JSON Lines files and Excel sheets become DuckDB tables in a database of the session;
-  the first 1,000 rows are served from a preview while the file loads. Parquet files are read in place, with no
-  load. Encodings DuckDB cannot read (Shift_JIS, EUC-JP) are converted first.
+- **Opening.** Delimited and JSON Lines files, Excel sheets and tables of DuckDB databases become DuckDB tables in
+  a database of the session; the first 1,000 rows of text and JSON files are served from a preview while the file
+  loads, and a DuckDB database is attached read only only while the table is copied. Parquet files are read in
+  place, with no load. Encodings DuckDB cannot read (Shift_JIS, EUC-JP) are converted first.
 - **Views.** A sort or a filter builds a view: a sorted copy for tables up to 20 million rows, so that a block of
   rows takes milliseconds, or only the order of the rows for larger ones, which takes a fraction of the time and
   the temporary space. A sort of a million rows or more first reads its first 1,000 rows with a top-N query, in

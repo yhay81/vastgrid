@@ -37,8 +37,8 @@ Find the lines with `rg -n`, then read only those lines.
 
 - Over 1,000 lines: `packages/js/src/text.ts`, `packages/grid/src/canvas/grid-canvas.ts` and
   `packages/spec/src/workbook.ts`; check others with `wc -l` first.
-- Code and tests cite the specs by section (§2.4). `rg -n '^#' docs/spec.md` is the outline of its 1,400
+- Code and tests cite the specs by section (§2.4). `rg -n '^#' docs/spec.md` is the outline of its ~1,660
   lines; read only the section. The same goes for `docs/react.md`.
 - `packages/spec/conformance/` holds JSON files of up to 80 KB: query them with `jq` or `rg`.
-- Never read `pnpm-lock.yaml` (`pnpm why <name>` instead). README.md, README.ja.md, CHANGELOG.md and the
-  site's reference pages are 35–50 KB: read only the section you change.
+- Never read `pnpm-lock.yaml` (`pnpm why <name>` instead). CHANGELOG.md (~29 KB) and the site's reference pages
+  (13–20 KB) are long: read only the section you change.

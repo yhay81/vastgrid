@@ -95,7 +95,7 @@ const engine = memoryEngine({
 | `save` | なし |
 | `export` | CSV・TSV・JSON・xlsx を `data` で：バイト列が返り、グリッドがダウンロードさせます |
 | `preview`、`partialViews` | なし |
-| `changes` | `"poll"`：エンジンはイベントを送りません |
+| `changes` | `"poll"`：ディスク上のファイル監視はありません（書き込みの後に `changed`、`previewBytes` より大きいテキストファイルの読み込み中に `progress`・`view`・`changed` は送ります） |
 
 ## どれくらいの大きさまで
 

@@ -402,12 +402,14 @@
             },
             "headers": {
               "type": "array",
+              "minItems": 1,
               "items": {
                 "type": "string"
               }
             },
             "numberFormats": {
               "type": "array",
+              "minItems": 1,
               "items": {
                 "type": ["string", "null"]
               }
@@ -532,6 +534,7 @@
       "then": {
         "properties": {
           "error": {
+            "type": "object",
             "properties": {
               "code": {
                 "const": "invalid_request"

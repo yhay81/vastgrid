@@ -3,7 +3,7 @@
  * bytes (the structured encoding of §8.8), and sends events (§8.5) to its subscribers.
  */
 import { randomBytes } from "node:crypto";
-import { realpath, rename, rm, stat } from "node:fs/promises";
+import { lstat, realpath, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import {
   answerId,
@@ -35,6 +35,8 @@ export interface DuckDBEngineOptions extends ViewOptions {
    * inside the first allowed folder.
    */
   resolve?: (ref: string) => string | Promise<string>;
+  /** Further restrict opens to real file locations authorized by the host, after following links. */
+  allowFile?: (realFile: string) => boolean;
   /**
    * The file that the `target` of `export` names (§8.2), where the host lets exports be written: a path inside the
    * allowed folders, which is not a file that a table was read from. Throw to refuse it (`not_allowed`). Without
@@ -44,8 +46,9 @@ export interface DuckDBEngineOptions extends ViewOptions {
   /**
    * Where the engine keeps its database file, data spilled from memory and converted files: a folder of its own
    * inside, deleted by `dispose`; folders left by processes that ended without it are deleted on the next start.
+   * Defaults to a private folder for the current user in the system temporary directory.
    */
-  tempDirectory: string;
+  tempDirectory?: string;
   /** DuckDB's memory limit, such as `"4GB"`. A fifth of the system's memory (1–4 GB) by default. */
   memoryLimit?: string;
   /** Maximum spill files, default 8 GB. Does not include the session database or source files. */
@@ -100,6 +103,12 @@ export class DuckDBEngine {
   private readonly handles = new Map<string, LoadedTable>();
   private readonly listeners = new Set<(event: Json) => void>();
   private readonly running = new Map<number, AbortController>();
+  private readonly active = new Set<Promise<unknown>>();
+  private readonly disposeController = new AbortController();
+  /** Aborted when `dispose` closes the engine. */
+  get disposeSignal(): AbortSignal {
+    return this.disposeController.signal;
+  }
   /** What the last `view` event told of the view `{}` of each loading table. */
   private readonly told = new WeakMap<LoadedTable, string>();
   private readonly views: Views;
@@ -226,22 +235,37 @@ export class DuckDBEngine {
       this.running.get(request.request as number)?.abort();
       return undefined;
     }
-    const controller = new AbortController();
-    const abort = () => controller.abort();
-    options.signal?.addEventListener("abort", abort, { once: true });
-    if (options.signal?.aborted) controller.abort();
-    this.running.set(request.id, controller);
-    try {
-      const result = await this.answer(request, controller.signal);
-      if (controller.signal.aborted) throw new EngineError("cancelled", "The request was cancelled.");
-      return { v: 2, id: request.id, result };
-    } catch (error) {
-      const { code, message, ...extra } = this.errorOf(error);
-      return errorResponse(request.id, code as ErrorCode, message as string, extra);
-    } finally {
-      options.signal?.removeEventListener("abort", abort);
-      if (this.running.get(request.id) === controller) this.running.delete(request.id);
-    }
+    if (this.disposed) return errorResponse(request.id, "internal", "The engine was closed.");
+    return this.track(
+      (async () => {
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        options.signal?.addEventListener("abort", abort, { once: true });
+        if (options.signal?.aborted || this.disposed) controller.abort();
+        this.running.set(request.id, controller);
+        try {
+          const result = await this.answer(request, controller.signal);
+          if (controller.signal.aborted) throw new EngineError("cancelled", "The request was cancelled.");
+          return { v: 2, id: request.id, result };
+        } catch (error) {
+          const { code, message, ...extra } = this.errorOf(error);
+          return errorResponse(request.id, code as ErrorCode, message as string, extra);
+        } finally {
+          options.signal?.removeEventListener("abort", abort);
+          if (this.running.get(request.id) === controller) this.running.delete(request.id);
+        }
+      })(),
+    );
+  }
+
+  private track<T>(work: Promise<T>): Promise<T> {
+    const settled = work.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.active.add(settled);
+    void settled.finally(() => this.active.delete(settled));
+    return work;
   }
 
   private errorOf(error: unknown): Json {
@@ -295,7 +319,7 @@ export class DuckDBEngine {
           : { revision: table.revision, edits: table.edits.state };
       }
       case "reload":
-        return this.reload(request.table as string);
+        return this.reload(request.table as string, signal);
       case "close":
         await this.close(request.table as string);
         return null;
@@ -409,7 +433,17 @@ export class DuckDBEngine {
     });
     const destination = path.join(folder, path.basename(file));
     if (!this.session.allows(destination)) throw refuse("The target is outside the folders this engine may write.");
-    const real = await realpath(destination).catch(() => destination);
+    const existing = await lstat(destination).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (existing?.isDirectory()) throw refuse("The target is a folder.");
+    const real = existing
+      ? await realpath(destination).catch(() => {
+          throw refuse("The target is outside the folders this engine may write.");
+        })
+      : destination;
+    if (!this.session.allows(real)) throw refuse("The target is outside the folders this engine may write.");
     const tables = [...this.tables.values(), ...this.retired];
     if (tables.some((table) => table.path === real)) throw refuse("An export does not replace a file that is open.");
     return destination;
@@ -423,7 +457,10 @@ export class DuckDBEngine {
         throw new EngineError("not_allowed", errorMessage(error) || "The host does not open this.");
       }
     }
-    return path.resolve(this.options.allowedDirectories[0] ?? ".", ref);
+    if (this.options.allowedDirectories.length === 0) {
+      throw new EngineError("not_allowed", "The file is outside the folders this engine may read.");
+    }
+    return path.resolve(this.options.allowedDirectories[0], ref);
   }
 
   /**
@@ -442,7 +479,7 @@ export class DuckDBEngine {
     const file = await realpath(requested).catch((error: NodeJS.ErrnoException) => {
       throw error.code === "ENOENT" ? new EngineError("load_failed", "The file does not exist.") : error;
     });
-    if (!this.session.allows(file)) throw notAllowed();
+    if (!this.session.allows(file) || this.options.allowFile?.(file) === false) throw notAllowed();
     const info = await stat(file);
     if (!info.isFile()) throw new EngineError("load_failed", "Only files are opened as tables.");
     const revision = await fileRevision(file);
@@ -482,12 +519,17 @@ export class DuckDBEngine {
     size: number,
     options: ReadOptions,
   ): Promise<LoadedTable> {
-    const loaded = this.tables.get(key);
-    if (loaded && loaded.fileState === revision && loaded.status !== "error") return loaded;
-    if (loaded && loaded.handles === 0) await this.drop(key, loaded);
-    else if (loaded) {
-      this.tables.delete(key);
-      this.retired.add(loaded);
+    for (;;) {
+      const loaded = this.tables.get(key);
+      if (!loaded) break;
+      if (loaded.fileState === revision && loaded.status !== "error") return loaded;
+      if (loaded.handles === 0) {
+        await this.drop(key, loaded);
+      } else {
+        this.tables.delete(key);
+        this.retired.add(loaded);
+        break;
+      }
     }
     const table = new LoadedTable(this.session, file, format, revision, size, options, {
       previewRows: this.options.previewRows ?? 1000,
@@ -498,7 +540,9 @@ export class DuckDBEngine {
     table.start();
     if (this.options.watchFiles !== false) {
       const follow = () =>
-        void this.follow(table).catch((error: unknown) => this.options.log?.(`Could not follow ${file}`, error));
+        void this.track(this.follow(table)).catch((error: unknown) =>
+          this.options.log?.(`Could not follow ${file}`, error),
+        );
       const unwatch = [this.watcher.watch(file, follow)];
       // A database changes in its write-ahead log first.
       if (format === "duckdb") unwatch.push(this.watcher.watch(databaseLog(file), follow));
@@ -507,6 +551,14 @@ export class DuckDBEngine {
       });
     }
     return table;
+  }
+
+  /** The original canonical location may since have been replaced with a link to another file. */
+  private async currentRevision(table: LoadedTable) {
+    const real = await realpath(table.path).catch(() => null);
+    if (real === null) return null;
+    if (real !== table.path) throw new EngineError("not_allowed", "The open file now points to a different location.");
+    return fileRevision(real).catch(() => null);
   }
 
   /**
@@ -524,7 +576,7 @@ export class DuckDBEngine {
       return "told" as const;
     };
     const checked = await this.unlessLeft(table, async () => {
-      const revision = await fileRevision(table.path).catch(() => null);
+      const revision = await this.currentRevision(table);
       if (revision === table.fileState) {
         // A file that came back as it was read.
         if (!table.fileChanged) return null;
@@ -544,13 +596,21 @@ export class DuckDBEngine {
     }
     // The handles read the table as it was until the new one has loaded.
     const fresh = await this.tableOf(key, table.path, table.format, checked.revision, checked.size, table.read);
-    await this.untilLoaded(fresh);
+    try {
+      await this.untilLoaded(fresh);
+    } catch (error) {
+      if (this.disposed) return;
+      throw error;
+    }
     const moved = await this.unlessLeft(table, async () => {
       // A newer change made another table, which its own follow moves the handles to.
       if (this.tables.get(key) !== fresh) return null;
       if (fresh.status === "error" || table.edits.state.cells > 0) return told();
       return this.move(table, fresh, null);
     });
+    if (fresh.handles === 0 && (fresh.status === "error" || table.edits.state.cells > 0)) {
+      await this.drop(key, fresh);
+    }
     if (moved === null) return;
     if (moved === "told") {
       this.tellChanged(table);
@@ -595,32 +655,37 @@ export class DuckDBEngine {
    * the written cells, which stay with the other handles of the table it leaves. A handle whose file has not
    * changed stays.
    */
-  private async reload(id: string) {
+  private async reload(id: string, signal?: AbortSignal) {
     const table = this.table({ table: id });
     await this.follow(table);
-    const current = this.handles.get(id) as LoadedTable;
+    const current = this.handles.get(id);
+    if (!current) throw new EngineError("table_not_found", "The table is closed or unknown.");
     if (current !== table || (!table.fileChanged && table.status !== "error")) return this.info(id, current);
-    const revision = await fileRevision(table.path).catch(() => null);
+    const revision = await this.currentRevision(table);
     const size = revision === null ? null : await fileSize(table.path);
     if (revision === null || size === null) throw new EngineError("load_failed", "The file does not exist.");
     const key = tableKey(table.path, table.read);
     const fresh = await this.tableOf(key, table.path, table.format, revision, size, table.read);
-    await this.untilLoaded(fresh);
+    await this.untilLoaded(fresh, signal);
     if (fresh.status === "error") throw new EngineError("load_failed", fresh.error ?? "The file could not be read.");
     if (this.handles.get(id) === table && fresh !== table) {
       this.move(table, fresh, id);
       await this.leave(table);
     }
-    const now = this.handles.get(id) as LoadedTable;
+    const now = this.handles.get(id);
+    if (!now) throw new EngineError("table_not_found", "The table is closed or unknown.");
     this.emit(this.changedEvent(id, now));
     return this.info(id, now);
   }
 
   /** Waits until a table that handles are about to move to has loaded; it counts as used meanwhile, for `trim`. */
-  private async untilLoaded(table: LoadedTable) {
+  private async untilLoaded(table: LoadedTable, signal?: AbortSignal) {
     table.handles++;
     try {
-      await table.whenReady();
+      const combined = signal
+        ? AbortSignal.any([this.disposeController.signal, signal])
+        : this.disposeController.signal;
+      await untilReady(table, combined);
     } finally {
       table.handles--;
     }
@@ -637,7 +702,16 @@ export class DuckDBEngine {
       rowCount: ready ? table.rowCount : null,
       readableRows: table.status === "error" ? 0 : (table.relation?.rows ?? 0),
       columns: table.columns,
-      capabilities: { ...CAPABILITIES, save: this.options.saveFiles === true && isSavable(table) },
+      capabilities: {
+        ...CAPABILITIES,
+        plan: { ...CAPABILITIES.plan },
+        ...(CAPABILITIES.functions ? { functions: [...CAPABILITIES.functions] } : {}),
+        ...(CAPABILITIES.measures ? { measures: [...CAPABILITIES.measures] } : {}),
+        ...(CAPABILITIES.export
+          ? { export: { ...CAPABILITIES.export, formats: [...CAPABILITIES.export.formats] } }
+          : {}),
+        save: this.options.saveFiles === true && isSavable(table),
+      },
       format: table.format,
       byteSize: table.byteSize,
     };
@@ -699,12 +773,16 @@ export class DuckDBEngine {
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
+    this.watcher.dispose();
+    for (const [, stop] of this.unwatch) stop();
+    this.unwatch.clear();
+    this.disposeController.abort();
     for (const controller of this.running.values()) controller.abort();
+    await Promise.allSettled([...this.active]);
     await this.views.forget();
     for (const [key, table] of [...this.tables]) await this.drop(key, table);
     for (const table of this.retired) await this.release(table);
     this.retired.clear();
-    this.watcher.dispose();
     this.handles.clear();
     this.listeners.clear();
     await this.session.dispose();

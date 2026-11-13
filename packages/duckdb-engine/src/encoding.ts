@@ -9,13 +9,13 @@ import { Decompress } from "fzstd";
  * Text encodings of delimited files. Non-UTF-8 files, including both UTF-16 byte orders and Japanese
  * encodings common in spreadsheets exported on Windows (Shift_JIS, EUC-JP), are converted first.
  */
-export type TextEncoding = "utf-8" | "utf-16" | "utf-16le" | "utf-16be" | "shift_jis" | "euc-jp" | "latin-1";
+export type TextEncoding = "utf-8" | "utf-16le" | "utf-16be" | "shift_jis" | "euc-jp" | "latin-1";
 
 const SAMPLE_BYTES = 4 * 1024 * 1024;
 
-/** Zstandard on Node 20, which has no native decoder. */
-function zstdDecoder(): Transform {
-  if (typeof zlib.createZstdDecompress === "function") return zlib.createZstdDecompress();
+/** Zstandard on Node 20 (such as VS Code 1.100's extension host), which has no native decoder. */
+export function zstdDecoder(native = typeof zlib.createZstdDecompress === "function"): Transform {
+  if (native) return zlib.createZstdDecompress();
   const stream = new Transform({
     transform(chunk: Buffer, _encoding, callback) {
       try {
@@ -70,7 +70,7 @@ export async function detectEncoding(path: string): Promise<TextEncoding> {
   let bytes: Uint8Array;
   let partial: boolean;
   if (/\.(gz|zst)$/i.test(path)) {
-    const buffer = Buffer.alloc(SAMPLE_BYTES);
+    const buffer = Buffer.allocUnsafe(SAMPLE_BYTES);
     let length = 0;
     for await (const chunk of textBytes(path)) {
       const count = Math.min(chunk.length, SAMPLE_BYTES - length);
@@ -83,8 +83,9 @@ export async function detectEncoding(path: string): Promise<TextEncoding> {
   } else {
     const handle = await open(path, "r");
     try {
-      const buffer = Buffer.alloc(SAMPLE_BYTES);
-      const { bytesRead } = await handle.read(buffer, 0, SAMPLE_BYTES, 0);
+      const cap = Math.min(SAMPLE_BYTES, (await handle.stat()).size);
+      const buffer = Buffer.allocUnsafe(cap);
+      const { bytesRead } = await handle.read(buffer, 0, cap, 0);
       bytes = buffer.subarray(0, bytesRead);
       partial = bytesRead === SAMPLE_BYTES;
     } finally {

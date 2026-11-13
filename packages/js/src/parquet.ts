@@ -29,6 +29,7 @@ import {
   LAST_DAY,
   TIMESTAMP_INFINITY,
   type TimestampUnit,
+  textOf,
   timestampText,
   timestamptzText,
   timeText,
@@ -40,7 +41,10 @@ import { FileColumns } from "./lazy.js";
 import { type HttpFetch, type ParquetTable, TableProblem, type Vector, vectorOf } from "./table.js";
 
 // The page, Web Workers and Node.js all have these; the package is typed without the DOM or Node.js.
-declare const TextDecoder: new (label: string, options: { fatal: boolean }) => { decode(bytes: Uint8Array): string };
+declare const TextDecoder: new (
+  label: string,
+  options: { ignoreBOM?: boolean; fatal: boolean },
+) => { decode(bytes: Uint8Array): string };
 declare const fetch: HttpFetch;
 
 /** The memory that the columns read whole may take by default (`ParquetTable.maxBytes`). */
@@ -52,7 +56,7 @@ const CACHE_BYTES = 32 * 1024 * 1024;
 /** Cells of row groups decoded for reading rows, kept for reading again. */
 const CACHE_CELLS = 4_000_000;
 
-const utf8 = new TextDecoder("utf-8", { fatal: true });
+const utf8 = new TextDecoder("utf-8", { ignoreBOM: true, fatal: true });
 
 /** Bytes and reads of a file so far: what was taken from the disk or the network. */
 export interface Transfer {
@@ -246,18 +250,79 @@ const parsers: Partial<ParquetParsers> = {
 };
 
 /** Nested values (lists, structs and maps) as DuckDB casts them to text: `[1, 2]`, `{'a': 1}`, `{k=1}`. */
-function nestedText(value: unknown): string {
-  if (value === null || value === undefined) return "NULL";
-  if (typeof value === "string") return value;
-  if (value instanceof Uint8Array) return toBase64(value);
-  if (Array.isArray(value)) return `[${value.map(nestedText).join(", ")}]`;
-  if (value instanceof Map)
-    return `{${[...value].map(([key, item]) => `${nestedText(key)}=${nestedText(item)}`).join(", ")}}`;
-  if (typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>);
-    return `{${entries.map(([key, item]) => `'${key}': ${nestedText(item)}`).join(", ")}}`;
+function nestedSpec(node: SchemaTree): { sourceType: string; format: (value: unknown) => string } {
+  const { element, children } = node;
+  const logical = element.logical_type?.type;
+  const converted = element.converted_type;
+  if (converted === "LIST" || logical === "LIST") {
+    const repeated = children[0];
+    const item = repeated && repeated.children.length === 1 && repeated.children[0] ? repeated.children[0] : repeated;
+    const inner = item ? nestedSpec(item) : { sourceType: "NULL", format: () => "NULL" };
+    return {
+      sourceType: `${inner.sourceType}[]`,
+      format: (value) => (isNull(value) ? "NULL" : `[${(value as unknown[]).map(inner.format).join(", ")}]`),
+    };
   }
-  return String(value);
+  if (converted === "MAP" || converted === "MAP_KEY_VALUE" || logical === "MAP") {
+    const [key, val] = children[0]?.children ?? [];
+    const keySpec = key ? nestedSpec(key) : { sourceType: "NULL", format: String };
+    const valSpec = val ? nestedSpec(val) : { sourceType: "NULL", format: () => "NULL" };
+    const numericKey = key?.element.type === "INT32" || key?.element.type === "FLOAT" || key?.element.type === "DOUBLE";
+    const formatKey = (raw: unknown) => {
+      if (key?.element.type === "BOOLEAN" && typeof raw === "string") return keySpec.format(raw === "true");
+      if (typeof raw === "string" && numericKey) {
+        const parsed = Number(raw);
+        if (!Number.isNaN(parsed)) return keySpec.format(parsed);
+      }
+      if (typeof raw === "string" && key?.element.type === "INT64") {
+        try {
+          return keySpec.format(BigInt(raw));
+        } catch {
+          return raw;
+        }
+      }
+      return keySpec.format(raw);
+    };
+    return {
+      sourceType: `MAP(${keySpec.sourceType}, ${valSpec.sourceType})`,
+      format: (value) => {
+        if (isNull(value)) return "NULL";
+        const entries = value instanceof Map ? [...value] : Object.entries(value as Record<string, unknown>);
+        return `{${entries.map(([k, v]) => `${formatKey(k)}=${valSpec.format(v)}`).join(", ")}}`;
+      },
+    };
+  }
+  if (children.length > 0 || element.type === undefined) {
+    const fields = children.map((child) => ({ child, spec: nestedSpec(child) }));
+    const fieldName = (child: SchemaTree) =>
+      /^[a-z_][a-z0-9_]*$/.test(child.element.name) ? child.element.name : JSON.stringify(child.element.name);
+    return {
+      sourceType: `STRUCT(${fields.map(({ child, spec }) => `${fieldName(child)} ${spec.sourceType}`).join(", ")})`,
+      format: (value) => {
+        if (isNull(value)) return "NULL";
+        const record = value as Record<string, unknown>;
+        return `{${fields.map(({ child, spec }) => `'${child.element.name}': ${spec.format(record[child.element.name])}`).join(", ")}}`;
+      },
+    };
+  }
+  const leaf = kindOf(node);
+  const json = leaf.column.sourceType === "JSON";
+  return {
+    sourceType: leaf.column.sourceType ?? "BLOB",
+    format: (value) => {
+      const read = leaf.read(value);
+      if (read === null) return "NULL";
+      return json ? (read as string) : nestedVarchar(textOf(read, leaf.column) as string);
+    },
+  };
+}
+
+/** A nested value as DuckDB quotes it inside `LIST`, `STRUCT` and `MAP`. */
+function nestedVarchar(text: string): string {
+  if (text === "" || text.toLowerCase() === "null" || /^\s|\s$|[,[\]{}():=\\'"]/.test(text)) {
+    return `'${text.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
+  }
+  return text;
 }
 
 /** What typed arrays hold a column's values when it is read whole. */
@@ -310,28 +375,6 @@ function isNull(value: unknown): value is null | undefined {
   return value === null || value === undefined;
 }
 
-/** DuckDB's name of a nested type, as `sourceType`: `INTEGER[]`, `STRUCT(a INTEGER)`, `MAP(VARCHAR, INTEGER)`. */
-function nestedName(node: SchemaTree): string {
-  const { element, children } = node;
-  const logical = element.logical_type?.type;
-  const converted = element.converted_type;
-  if (converted === "LIST" || logical === "LIST") {
-    const repeated = children[0];
-    const item = repeated && repeated.children.length === 1 && repeated.children[0] ? repeated.children[0] : repeated;
-    return `${item ? nestedName(item) : "NULL"}[]`;
-  }
-  if (converted === "MAP" || converted === "MAP_KEY_VALUE" || logical === "MAP") {
-    const [key, value] = children[0]?.children ?? [];
-    return `MAP(${key ? nestedName(key) : "NULL"}, ${value ? nestedName(value) : "NULL"})`;
-  }
-  if (children.length > 0 || element.type === undefined) {
-    const name = (child: SchemaTree) =>
-      /^[a-z_][a-z0-9_]*$/.test(child.element.name) ? child.element.name : JSON.stringify(child.element.name);
-    return `STRUCT(${children.map((child) => `${name(child)} ${nestedName(child)}`).join(", ")})`;
-  }
-  return kindOf({ ...node, element: { ...node.element } }).column.sourceType ?? "BLOB";
-}
-
 /**
  * The kind of a top-level column of the file, with the type that DuckDB reads it as. Decimals, intervals and BSON
  * lose their annotations, so that hyparquet gives their stored values (it would make decimals floats and refuse
@@ -343,11 +386,22 @@ function kindOf(node: SchemaTree): Kind {
   const logical = element.logical_type;
   const converted = element.converted_type;
   if (children.length > 0 || element.type === undefined) {
-    return untyped({ name, type: "string", sourceType: nestedName(node), readOnly: true }, nestedText);
+    const spec = nestedSpec(node);
+    return untyped({ name, type: "string", sourceType: spec.sourceType, readOnly: true }, spec.format);
   }
   if (converted === "DECIMAL" || logical?.type === "DECIMAL") {
     const scale = element.scale ?? (logical?.type === "DECIMAL" ? logical.scale : 0) ?? 0;
     const precision = element.precision ?? (logical?.type === "DECIMAL" ? logical.precision : 18) ?? 18;
+    if (
+      !Number.isInteger(precision) ||
+      !Number.isInteger(scale) ||
+      precision < 1 ||
+      precision > 38 ||
+      scale < 0 ||
+      scale > precision
+    ) {
+      throw problem(`"${name}" has an invalid Parquet DECIMAL(${precision}, ${scale}) type.`);
+    }
     element.converted_type = undefined;
     element.logical_type = undefined;
     const column: Column = { name, type: "decimal", precision, scale, sourceType: `DECIMAL(${precision},${scale})` };
@@ -402,8 +456,9 @@ function kindOf(node: SchemaTree): Kind {
       (value) => {
         if (isNull(value)) return null;
         const count = BigInt(value as number | bigint);
+        if (count < 0n) return null;
         const micros = unit === "MILLIS" ? count * 1000n : unit === "NANOS" ? count / 1000n : count;
-        return micros >= 0n && micros < 86_400_000_000n ? micros : null;
+        return micros < 86_400_000_000n ? micros : null;
       },
       (value) => timeText(value as bigint),
     );
@@ -449,6 +504,9 @@ function kindOf(node: SchemaTree): Kind {
         : (value) => timestampText(value as bigint, unit),
     );
   }
+  if (logical?.type === "NULL") {
+    return untyped({ name, type: "string", sourceType: '"NULL"', readOnly: true }, () => null);
+  }
   if (converted === "JSON" || logical?.type === "JSON") {
     return untyped({ name, type: "string", sourceType: "JSON", readOnly: true }, (value) => value as string);
   }
@@ -493,7 +551,7 @@ function kindOf(node: SchemaTree): Kind {
     case "INT64":
       if (unsigned) {
         return untyped({ name, type: "decimal", precision: 38, scale: 0, sourceType: "UBIGINT" }, (value) =>
-          BigInt(value as bigint).toString(),
+          BigInt.asUintN(64, BigInt(value as bigint)).toString(),
         );
       }
       return typed(
@@ -615,6 +673,7 @@ function fromDictionary(meta: ColumnMetaData): boolean {
 export class ParquetFile extends FileColumns {
   /** The first row of each row group, and the row count after the last. */
   private readonly starts: number[];
+  private readonly columnBytes: number[];
   private readonly buffer: AsyncBuffer;
   /** Columns of row groups decoded for reading rows, by `group:column`, the most recently used last. */
   private readonly cache = new Map<string, Promise<JsonValue[]>>();
@@ -634,6 +693,21 @@ export class ParquetFile extends FileColumns {
     this.starts = [0];
     for (const group of metadata.row_groups)
       this.starts.push(this.starts[this.starts.length - 1] + Number(group.num_rows));
+    const indexByName = new Map(kinds.map((kind, index) => [kind.column.name, index]));
+    const totals = kinds.map((kind) =>
+      kind.column.type === "boolean" ? this.rowCount : kind.array !== null ? arrayBytes(kind.array, this.rowCount) : 0,
+    );
+    for (const group of metadata.row_groups) {
+      for (const chunk of group.columns) {
+        const meta = chunk.meta_data;
+        if (!meta) continue;
+        const index = indexByName.get(meta.path_in_schema[0]);
+        if (index !== undefined && kinds[index].column.type !== "boolean" && kinds[index].array === null) {
+          totals[index] += chunkBytes(meta);
+        }
+      }
+    }
+    this.columnBytes = totals;
     this.buffer = {
       byteLength: bytes.size,
       slice: async (start, end) => bufferOf(await bytes.read(start, end ?? bytes.size)),
@@ -685,6 +759,7 @@ export class ParquetFile extends FileColumns {
     set: (at: number, row: number, value: unknown) => void,
   ): Promise<void> {
     const positions = new Map(indexes.map((index, at) => [this.columns[index].name, at]));
+    let chunkError: unknown;
     try {
       await parquetRead({
         file: this.buffer,
@@ -699,17 +774,24 @@ export class ParquetFile extends FileColumns {
         useOffsetIndex: true,
         // Column by column: no rows are made.
         onChunk: (chunk) => {
+          if (chunkError !== undefined) return;
           const at = positions.get(chunk.columnName);
           if (at === undefined) return;
           const data = chunk.columnData;
-          for (let row = Math.max(start, chunk.rowStart); row < Math.min(end, chunk.rowEnd); row++) {
-            set(at, row, data[row - chunk.rowStart]);
+          try {
+            for (let row = Math.max(start, chunk.rowStart); row < Math.min(end, chunk.rowEnd); row++) {
+              set(at, row, data[row - chunk.rowStart]);
+            }
+          } catch (error) {
+            chunkError = error;
           }
         },
       });
+      if (chunkError !== undefined) throw chunkError;
     } catch (error) {
-      if (error instanceof TableProblem) throw error;
-      throw problem(`The file could not be read: ${errorText(error)}`);
+      const cause = chunkError ?? error;
+      if (cause instanceof TableProblem) throw cause;
+      throw problem(`The file could not be read: ${errorText(cause)}`);
     }
   }
 
@@ -760,31 +842,23 @@ export class ParquetFile extends FileColumns {
 
   protected async readCells(index: number, rows: ArrayLike<number>): Promise<JsonValue[]> {
     const groups = new Map<number, Promise<JsonValue[]>>();
+    const rowGroups = new Int32Array(rows.length);
     for (let at = 0; at < rows.length; at++) {
       const group = this.partOf(rows[at]);
+      rowGroups[at] = group;
       if (!groups.has(group)) groups.set(group, this.groupColumn(group, index));
     }
     const read = new Map<number, JsonValue[]>();
     for (const [group, values] of groups) read.set(group, await values);
-    return Array.from(rows, (row) => {
-      const group = this.partOf(row);
+    return Array.from(rows, (row, at) => {
+      const group = rowGroups[at];
       return (read.get(group) as JsonValue[])[row - this.starts[group]];
     });
   }
 
   /** About the memory that a column read whole takes. */
   protected sizeOf(index: number): number {
-    const kind = this.kinds[index];
-    if (kind.column.type === "boolean") return this.rowCount;
-    if (kind.array !== null) return arrayBytes(kind.array, this.rowCount);
-    const name = kind.column.name;
-    let bytes = 0;
-    for (const group of this.metadata.row_groups) {
-      for (const chunk of group.columns) {
-        if (chunk.meta_data?.path_in_schema[0] === name) bytes += chunkBytes(chunk.meta_data);
-      }
-    }
-    return bytes;
+    return this.columnBytes[index];
   }
 
   protected async readWhole(indexes: number[], pause: () => Promise<void>): Promise<Vector[]> {

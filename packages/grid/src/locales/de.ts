@@ -110,8 +110,8 @@ export const de: GridMessages = {
     median: "Median",
     stddev: "Standardabweichung",
   },
-  total: "Ergebniszeile",
-  noTotal: "Keine Ergebniszeile",
+  total: "Ergebnis",
+  noTotal: "Kein Ergebnis",
   measureNames: {
     count: "Anzahl",
     count_distinct: "Diskrete Anzahl",

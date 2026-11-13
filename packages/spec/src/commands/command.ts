@@ -22,6 +22,8 @@ export interface LoadedRows {
   start: number;
   /** The rows' keys (§5.3), absent for views without row IDs. */
   keys?: RowKey[];
+  /** Source row IDs, used by writes that change the key column. */
+  rowIds?: number[];
   /** The columns of `values`, by name: all the view's columns, in view order, when absent. */
   columns?: string[];
   /** One array of values per row. */
@@ -31,6 +33,7 @@ export interface LoadedRows {
 /** A row of the view that the core has read: its key, and the values of the columns it has. */
 export interface LoadedRow {
   key?: RowKey;
+  rowId?: number;
   has(column: string): boolean;
   /** The value of a column; null for a column the row does not have. */
   get(column: string): JsonValue;
@@ -195,7 +198,10 @@ export function fail(
 
 export function takes(command: Command, allowed: readonly string[]) {
   for (const key of Object.keys(command)) {
-    if (key !== "command" && !allowed.includes(key)) fail(`/${key}`, "syntax", `${command.command} takes no "${key}".`);
+    if (key !== "command" && !allowed.includes(key)) {
+      const escaped = key.replaceAll("~", "~0").replaceAll("/", "~1");
+      fail(`/${escaped}`, "syntax", `${command.command} takes no "${key}".`);
+    }
   }
 }
 

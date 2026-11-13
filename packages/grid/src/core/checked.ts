@@ -6,16 +6,29 @@ import { type Checked, canonicalJson, keyText, type Plan, partsOf, type RowKey, 
 
 export type CheckState = "checked" | "unchecked" | "unknown";
 
+const NO_PLAN = {};
+const coveredViews = new WeakMap<Checked, WeakMap<object, boolean>>();
+
 /** Whether the view's `where` implies the `where` of checked rows, so that every row of it is known (§5.2.1). */
 function coversView(checked: Checked | undefined, plan: Plan | undefined): boolean {
   if (!checked || checked.mode === "include" || checked.where === undefined) return true;
+  const planKey: object = plan ?? NO_PLAN;
+  let byPlan = coveredViews.get(checked);
+  const cached = byPlan?.get(planKey);
+  if (cached !== undefined) return cached;
   const view = partsOf(plan?.where).map((part) => ({ part, json: canonicalJson(part) }));
-  return partsOf(checked.where).every((part) => {
+  const result = partsOf(checked.where).every((part) => {
     const json = canonicalJson(part);
     return view.some(
       (item) => item.json === json || ("search" in part && "search" in item.part && searchImplies(item.part, part)),
     );
   });
+  if (!byPlan) {
+    byPlan = new WeakMap();
+    coveredViews.set(checked, byPlan);
+  }
+  byPlan.set(planKey, result);
+  return result;
 }
 
 const keySets = new WeakMap<Checked, Set<string>>();

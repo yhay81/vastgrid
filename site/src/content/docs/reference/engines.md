@@ -11,7 +11,7 @@ views of plans, reads blocks of rows, writes cells and exports files. The grid r
 | | `vastgrid-js` | `vastgrid-duckdb` |
 | --- | --- | --- |
 | Runs | in the page, in a Web Worker or in Node.js | in Node.js |
-| Tables | rows of typed JSON, Arrow, CSV, TSV, JSON Lines, Excel and Parquet files | CSV, TSV, JSON, JSON Lines and Parquet files, also compressed, and Excel workbooks |
+| Tables | rows of typed JSON, Arrow, CSV, TSV, JSON Lines, Excel and Parquet files | CSV, TSV, JSON, JSON Lines and Parquet files, also compressed, Excel workbooks and DuckDB databases |
 | Size | within the memory of the page (`maxBytes`); Parquet read by row groups | any: DuckDB spills to disk, Parquet is read in place |
 | Writes cells | tables given with `editable: true` | every file, kept apart from it |
 | Saves into the file | no | CSV and TSV, with `saveFiles: true` |
@@ -56,7 +56,7 @@ what they say: no Save button without `save`, no Group menu without `plan.aggreg
 | `export` | `csv`, `tsv`, `json`, `xlsx`; `data` | `csv`, `tsv`, `parquet`, `json`, `xlsx`; `file` |
 | `preview` | no | yes, for sorts of 1,000,000 rows or more |
 | `partialViews` | no | no |
-| `changes` | `poll` (it also sends `changed` after a write) | `push` |
+| `changes` | `poll` (it also sends `changed` after a write, and `progress`, `view` and `changed` while loading a text file larger than `previewBytes`) | `push` |
 
 ## The memory engine: `vastgrid-js`
 
@@ -130,7 +130,7 @@ otherwise. A workbook's sheet is chosen by `open`'s `read` (`sheet`, `headerRow`
 `keepEmptyColumns`), and `TableInfo` lists its `sheets`; its columns have the types the DuckDB engine gives them.
 Text that is not UTF-8, a UTF-16 file, and an encrypted or `.xls` workbook fail with `load_failed`.
 
-### Parquet files
+### Parquet files: `ParquetTable`
 
 | Member | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -149,7 +149,7 @@ fails with `file_changed`. See [Large files in the browser](/guides/browser/).
 ### What it exports
 
 `vastgrid-js` exports `memoryEngine`, `MEMORY_CAPABILITIES` and the types `MemoryEngine`, `MemoryEngineOptions`,
-`MemoryTable`, `ArrowTable`, `FileTable`, `TextFile` and `TextFormat`.
+`MemoryTable`, `ArrowTable`, `FileTable`, `ParquetTable`, `TextFile`, `TextFormat`, `HttpFetch` and `HttpResponse`.
 
 - `save` fails with `save_unsupported`: the engine writes no file, and the `File` a table came from stays as it was.
 - `export` answers the file's bytes (`delivery` `data`) and takes no `target`; the grid downloads them. Parquet
@@ -178,8 +178,9 @@ Returns a promise of the engine.
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `allowedDirectories` | `string[]` | (required) | Folders whose files may be opened. DuckDB reads no other files, by their real location, and this cannot change while it runs. |
-| `tempDirectory` | `string` | (required) | Where the engine keeps its database, data spilled from memory and converted files, in a folder of its own that `dispose` deletes. Folders left by processes that ended without it are deleted on the next start. |
+| `tempDirectory` | `string` | a private temporary folder for the current user | Where the engine keeps its database, data spilled from memory and converted files, in a folder of its own that `dispose` deletes. Folders left by processes that ended without it are deleted on the next start. |
 | `resolve` | `(ref) => string \| Promise<string>` | a path; relative ones inside the first allowed folder | The file that a `ref` of `open` names. Throw to refuse it (`not_allowed`). |
+| `allowFile` | `(realFile) => boolean` | | Checks the real location after following links. Return `false` to refuse the file. |
 | `resolveTarget` | `(target) => string \| Promise<string>` | | The file that the `target` of `export` names, inside the allowed folders and not a file a table reads. Without it, exports name no target and the engine keeps them (`exportFile`). |
 | `saveFiles` | `boolean` | `false` | Lets `save` write written cells into the CSV and TSV files they came from, keeping every byte that holds no edited field. Off, the engine never changes a file. |
 | `watchFiles` | `boolean` | `true` | Follows the files of open tables: a file that changes on disk is read again, or reported with `fileChanged` when its table has written cells or is a database's. |
@@ -233,9 +234,9 @@ middleware: requests to other paths go to `next`, or get 404 without it.
 | Format | Files | Read |
 | --- | --- | --- |
 | CSV | `.csv`, `.csv.gz`, `.csv.zst` | into DuckDB; the first rows are readable at once while the rest loads |
-| TSV | `.tsv`, `.tab`, `.tsv.gz`, `.tsv.zst` | as CSV |
-| JSON Lines | `.jsonl`, `.ndjson`, `.jsonl.gz`, `.ndjson.gz` | into DuckDB |
-| JSON | `.json`, `.json.gz` | into DuckDB |
+| TSV | `.tsv`, `.tab`, `.tsv.gz`, `.tsv.zst`, `.tab.gz`, `.tab.zst` | as CSV |
+| JSON Lines | `.jsonl`, `.ndjson`, `.jsonl.gz`, `.jsonl.zst`, `.ndjson.gz`, `.ndjson.zst` | into DuckDB |
+| JSON | `.json`, `.json.gz`, `.json.zst` | into DuckDB |
 | Parquet | `.parquet`, `.pq` | in place, by row numbers |
 | Excel | `.xlsx`, `.xlsm` | a sheet into DuckDB; `open`'s `read` chooses `sheet`, `headerRow`, `keepEmptyRows` and `keepEmptyColumns` |
 | DuckDB | `.duckdb`, `.ddb` | a table into DuckDB, the database attached read only meanwhile; its tables are the `sheets` (not its views), `schema.name` outside `main`, and `open`'s `read.sheet` chooses one |
@@ -244,7 +245,7 @@ CSV uses comma and TSV uses tab, with standard double quotes. Single quotes, sem
 stay as data. `open.read.delimiter` selects another separator (one printable ASCII character except double quote,
 or tab). Headers are detected by default; `open.read.headerRow: 1` uses the first record as the header, `0` reads
 every record as data, and a larger value skips records before that header. These options apply to saves and
-reloads too. A grid passes them as `open={{ read: { delimiter: ";", headerRow: 1 } }}`.
+reloads too. A grid passes them as `open={{ delimiter: ";", headerRow: 1 }}`.
 
 Folders named `key=value` do not add or replace columns, whatever the file's format. Quoted fields are decoded
 even when they first appear late in the file. Long records grow the reader's buffer as needed, subject to the
@@ -261,14 +262,13 @@ fall back to wider types. Exports write CSV, TSV, Parquet, JSON and Excel; an Ex
 | --- | --- |
 | `CAPABILITIES` | The engine's capabilities; `save` is true only for files that `saveFiles` lets it save. |
 | `findTableFiles(folders, limit)` | The table files of folders, as full paths, two folders deep, without hidden files and folders, at most `limit`. |
-| `tableFormatOf(file)` | The format of a file by its name (`TableFormat`: `csv`, `tsv`, `parquet`, `json`, `ndjson`, `xlsx`), or null. |
+| `tableFormatOf(file)` | The format of a file by its name (`TableFormat`: `csv`, `tsv`, `parquet`, `json`, `ndjson`, `xlsx`, `duckdb`), or null. |
 | `fileRevision(file)` | A file's revision: its size, modification time and a hash of its first 64 KiB. |
 | `EXPORT_MEDIA_TYPES` | The media type of each export format (`ExportFormat`). |
 | `EngineError` | The error of a failed request, with its `code` (§8.7). |
-| `readExpression`, `readValue`, `sourceExpression`, `tableColumn` | How the engine reads DuckDB's columns as logical types, for hosts that read DuckDB themselves. |
 
-The types `DuckDBEngineOptions`, `HttpHandlerOptions`, `KeptExport`, `ReadOptions` and `SheetInfo` are exported
-too.
+The types `DuckDBEngineOptions`, `ExportFormat`, `HttpHandlerOptions`, `KeptExport`, `ReadOptions`, `SheetInfo`
+and `TableFormat` are exported too.
 
 ### Limits and cleanup
 

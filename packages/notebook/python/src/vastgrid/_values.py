@@ -14,6 +14,7 @@ from typing import Any
 
 from ._calendar import (
     UNIT_DIGITS,
+    from_temporal_text_form,
     infinity_of,
     parse_date_text,
     parse_interval_text,
@@ -135,6 +136,24 @@ def number_text(value: int | float) -> str:
         mantissa = digits if len(digits) == 1 else f"{digits[0]}.{digits[1:]}"
         body = f"{mantissa}e{'+' if exponent >= 0 else '-'}{abs(exponent)}"
     return f"-{body}" if number < 0 else body
+
+
+def exact_number_text(value: int | float) -> str | None:
+    """The fixed-point decimal digits of a finite number whose exponent is in `[-38, 20]` (expanding JS's `1e-7` to
+    `"0.0000001"`), or None outside that range."""
+    number = js_float(value)
+    if not math.isfinite(number):
+        return None
+    if number == 0:
+        return "0"
+    text = number_text(number)
+    if "e" not in text.lower():
+        return text
+    digits, exponent = _digits(abs(number))
+    if exponent < -38 or exponent >= 21:
+        return None
+    sign = "-" if number < 0 else ""
+    return f"{sign}0.{'0' * (-exponent - 1)}{digits}"
 
 
 def number_of_text(text: str) -> float:
@@ -443,7 +462,7 @@ def value_of_text(text: str | None, type: dict[str, Any]) -> Any:
         return _json_number(number_of_text(text))
     if kind == "bigint":
         number = number_of_text(text)
-        return _json_number(number) if is_safe_integer(number) else text
+        return _json_number(number) if is_safe_integer(number) and number_text(number) == text else text
     if kind == "float":
         if text == "nan":
             return "NaN"
@@ -453,6 +472,10 @@ def value_of_text(text: str | None, type: dict[str, Any]) -> Any:
             return "-Infinity"
         number = number_of_text(text)
         return fround(number) if type.get("bits") == 32 else number
+    if kind == "binary":
+        return to_base64(_from_bytes_text(text))
+    if kind in ("date", "timestamp", "timestamptz"):
+        return from_temporal_text_form(text)
     return text
 
 
@@ -498,6 +521,34 @@ def _bytes_text(data: bytes) -> str:
     return "".join(chr(byte) if 0x20 <= byte <= 0x7E and byte != 0x5C else f"\\x{byte:02X}" for byte in data)
 
 
+_HEX_BYTE = re.compile(r"[0-9A-Fa-f]{2}")
+
+
+def _from_bytes_text(text: str) -> bytes:
+    """Reads DuckDB's text of bytes (`_bytes_text`) back into bytes."""
+    text = combine_pairs(text)
+    out = bytearray()
+    index = 0
+    while index < len(text):
+        char = text[index]
+        code = ord(char)
+        if (
+            code == 0x5C
+            and index + 3 < len(text)
+            and text[index + 1] == "x"
+            and _HEX_BYTE.fullmatch(text[index + 2 : index + 4])
+        ):
+            out.append(int(text[index + 2 : index + 4], 16))
+            index += 4
+        elif 0x20 <= code <= 0x7E:
+            out.append(code)
+            index += 1
+        else:
+            out.extend(char.encode("utf-8"))
+            index += 1
+    return bytes(out)
+
+
 def text_of(value: Any, type: dict[str, Any]) -> str | None:
     """The text form of a value (§2.4), or None for null."""
     if value is None:
@@ -514,20 +565,12 @@ def text_of(value: Any, type: dict[str, Any]) -> str | None:
     return js_string(value)
 
 
-def _big_int(value: Any) -> int:
-    """`BigInt(value)` of a number or a string."""
-    if is_number(value) or isinstance(value, bool):
-        if not is_integer(value) and not isinstance(value, bool):
-            raise ValueError(f"{json_text(value)} is not an integer.")
+def _whole_of(value: Any) -> int | None:
+    if is_integer(value):
         return int(js_float(value))
-    text = str(value).strip(_JS_SPACE)
-    if text == "":
-        return 0
-    if _JS_RADIX.fullmatch(text):
-        return int(text, 0)
-    if re.fullmatch(r"[+-]?[0-9]+", text):
-        return int(text)
-    raise ValueError(f"{json_text(value)} is not an integer.")
+    if isinstance(value, str) and _INTEGER_TEXT.fullmatch(value):
+        return int(value)
+    return None
 
 
 def _strict_equal(a: Any, b: Any) -> bool:
@@ -542,8 +585,11 @@ def same_cell_value(a: Any, b: Any, type: dict[str, Any]) -> bool:
     if a is None or b is None:
         return a is None and b is None
     if type["type"] in ("integer", "bigint"):
-        return _big_int(a) == _big_int(b)
+        x, y = _whole_of(a), _whole_of(b)
+        return x is not None and x == y
     if type["type"] == "float":
+        if not (is_number(a) or a in _FLOAT_TOKENS) or not (is_number(b) or b in _FLOAT_TOKENS):
+            return False
         x = float_of(a)
         y = float_of(b)
         return math.isnan(y) if math.isnan(x) else x == y

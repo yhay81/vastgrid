@@ -15,6 +15,7 @@ import {
   type GridSession,
   type GridState,
   joinParts,
+  sameKey,
   partsOf,
   type RowKey,
   SELECTION_RANGES,
@@ -135,6 +136,7 @@ function spansOf(rows: Iterable<number>): [number, number][] {
 /** A row of `context.rows`: what the blocks that hold it give, later blocks winning (§6.1). */
 class BlockRow implements LoadedRow {
   key?: RowKey;
+  rowId?: number;
   readonly values = new Map<string, JsonValue>();
 
   has(column: string) {
@@ -160,6 +162,8 @@ function blockLookup(blocks: readonly LoadedRows[], view: readonly Column[]): (r
       entry ??= new BlockRow();
       const key = block.keys?.[offset];
       if (key !== undefined && key !== null) entry.key = key;
+      const rowId = block.rowIds?.[offset];
+      if (rowId !== undefined) entry.rowId = rowId;
       const names = block.columns ?? viewNames;
       for (let index = 0; index < names.length && index < values.length; index++) {
         entry.values.set(names[index], values[index]);
@@ -250,12 +254,21 @@ export class Run {
     return entry;
   }
 
+  private tableColumns: Map<string, Column> | null = null;
+  private viewColumns: Map<string, Column> | null = null;
+
   displayed(): string[] {
     return this.displayedIndex().columns;
   }
 
+  private tableColumn(name: string): Column | undefined {
+    this.tableColumns ??= new Map(this.context.table.map((column) => [column.name, column]));
+    return this.tableColumns.get(name);
+  }
+
   viewColumn(name: string): Column | undefined {
-    return this.context.view.columns.find((column) => column.name === name);
+    this.viewColumns ??= new Map(this.context.view.columns.map((column) => [column.name, column]));
+    return this.viewColumns.get(name);
   }
 
   offers(capability: "write" | "save"): boolean {
@@ -264,7 +277,7 @@ export class Run {
 
   /** A column whose cells can be written by key (§7.1). */
   writableColumn(name: string): boolean {
-    const column = this.context.table.find((item) => item.name === name);
+    const column = this.tableColumn(name);
     return (
       this.offers("write") &&
       column !== undefined &&
@@ -358,7 +371,7 @@ export class Run {
   }
 
   displayedName(command: Command, member: string, path = `/${member}`, name = stringArgument(command, member)) {
-    if (!this.displayed().includes(name)) fail(path, "unknown_column", `"${name}" is not a displayed column.`);
+    if (!this.displayedIndex().index.has(name)) fail(path, "unknown_column", `"${name}" is not a displayed column.`);
     return name;
   }
 
@@ -406,7 +419,10 @@ export class Run {
   }
 
   colsOf(rect: Rect, grid: Grid): number[] {
-    return rect.cols === "all" ? span(0, grid.columns.length - 1) : rect.cols;
+    if (grid.columns.length === 0) return [];
+    return rect.cols === "all"
+      ? span(0, grid.columns.length - 1)
+      : rect.cols.filter((col) => col < grid.columns.length);
   }
 
   /** The active cell at a point, with its row's key when the core read it (or kept when the row is the same). */
@@ -562,18 +578,37 @@ export class Run {
   }
 
   typeOf(name: string): ValueType {
-    const column = this.viewColumn(name) ?? this.context.table.find((item) => item.name === name);
+    const column = this.viewColumn(name) ?? this.tableColumn(name);
     if (!column) throw new Error(`There is no column "${name}".`);
     return column;
   }
 
   /** Gives a `write` request of the updates whose value is not the cell's value (§6.5). */
-  write(updates: { key: RowKey; column: string; value: JsonValue; previous: JsonValue }[]) {
+  write(updates: { row: number; key: RowKey; column: string; value: JsonValue; previous: JsonValue }[]) {
     const changed = updates.filter(
       (update) => !sameCellValue(update.value, update.previous, this.typeOf(update.column)),
     );
     if (changed.length === 0) return;
-    const request: CommandRequest = { op: "write", revision: this.context.revision, updates: changed };
+    const changesKeys = changed.some((update) => update.column === this.document.rowKey);
+    const missing = new Set<number>();
+    const cells = changed.map(({ row, key, column, value, previous }) => {
+      if (changesKeys && "value" in key) {
+        const loaded = this.lookup(row);
+        if (loaded?.rowId !== undefined && loaded.key && sameKey(loaded.key, key)) {
+          key = { rowId: loaded.rowId };
+        } else {
+          missing.add(row);
+        }
+      }
+      return { key, column, value, previous };
+    });
+    if (missing.size) {
+      fail("", "not_loaded", "Changing row keys needs the original rows' IDs.", {
+        rows: spansOf(missing),
+        columns: [],
+      });
+    }
+    const request: CommandRequest = { op: "write", revision: this.context.revision, updates: cells };
     if (this.document.rowKey !== undefined) request.rowKey = this.document.rowKey;
     this.requests.push(request);
   }
@@ -585,19 +620,27 @@ export class Run {
     }
   }
 
-  /** The cells of ranges, range by range and row by row, once each. */
-  cellsOf(grid: Grid, rects: readonly Rect[]): Target[] {
+  /** The cells of ranges, range by range and row by row, once each; fails with `too_many_cells` past `limit`. */
+  cellsOf(grid: Grid, rects: readonly Rect[], limit?: number): Target[] {
     const cells: Target[] = [];
-    const seen = rects.length > 1 ? new Set<string>() : null;
+    const stride = grid.columns.length;
+    const seen = rects.length > 1 ? new Set<number>() : null;
     for (const rect of rects) {
       const [start, end] = this.cellRows(rect);
       const cols = this.colsOf(rect, grid);
+      if (end <= start || cols.length === 0) continue;
+      if (!seen && limit !== undefined && cells.length + (end - start) * cols.length > limit) {
+        fail("", "too_many_cells", "A write holds at most 100,000 cells.");
+      }
       for (let row = start; row < end; row++) {
         for (const col of cols) {
           if (seen) {
-            const id = `${row}:${col}`;
+            const id = row * stride + col;
             if (seen.has(id)) continue;
             seen.add(id);
+          }
+          if (limit !== undefined && cells.length >= limit) {
+            fail("", "too_many_cells", "A write holds at most 100,000 cells.");
           }
           cells.push({ row, column: grid.columns[col] });
         }

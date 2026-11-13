@@ -8,7 +8,7 @@ description: vastgrid-js のメモリエンジンと vastgrid-duckdb の DuckDB 
 | | `vastgrid-js` | `vastgrid-duckdb` |
 | --- | --- | --- |
 | 動く場所 | ページ、Web Worker、Node.js | Node.js |
-| 表 | 型付き JSON の行、Arrow、CSV、TSV、JSON Lines、Excel、Parquet のファイル | CSV、TSV、JSON、JSON Lines、Parquet のファイル（圧縮も）と Excel ブック |
+| 表 | 型付き JSON の行、Arrow、CSV、TSV、JSON Lines、Excel、Parquet のファイル | CSV、TSV、JSON、JSON Lines、Parquet のファイル（圧縮も）、Excel ブック、DuckDB データベース |
 | 大きさ | ページのメモリに収まる範囲（`maxBytes`）。Parquet は行グループごとに読む | 制限なし。DuckDB がディスクに退避し、Parquet はその場で読む |
 | セルの書き込み | `editable: true` を付けた表 | どのファイルも。書き込んだ値はファイルとは別に持つ |
 | ファイルへの保存 | なし | CSV と TSV（`saveFiles: true` のとき） |
@@ -49,7 +49,7 @@ interface Engine {
 | `export` | `csv`、`tsv`、`json`、`xlsx`。`data` | `csv`、`tsv`、`parquet`、`json`、`xlsx`。`file` |
 | `preview` | なし | 1,000,000 行以上の並べ替え |
 | `partialViews` | なし | なし |
-| `changes` | `poll`（書き込みの後に `changed` も送る） | `push` |
+| `changes` | `poll`（書き込みの後に `changed`、`previewBytes` より大きいテキストファイルの読み込み中に `progress`・`view`・`changed` も送る） | `push` |
 
 ## メモリエンジン：`vastgrid-js`
 
@@ -113,7 +113,7 @@ const engine = memoryEngine({
 
 ファイルは初めて開くときに型付きの列へ読み込みます。各列は `boolean`、`integer`、`bigint`、`float`、`time`、`date`、`timestamp`、`timestamptz` のうち、すべての値が収まる最初の型になり、どれにも収まらなければ `string` になります。ブックのシートは `open` の `read`（`sheet`、`headerRow`、`keepEmptyRows`、`keepEmptyColumns`）で選び、`TableInfo` の `sheets` に一覧が入ります。列の型は DuckDB エンジンと同じです。UTF-8 でないテキスト、UTF-16 のファイル、暗号化されたブックと `.xls` は `load_failed` になります。
 
-### Parquet ファイル
+### Parquet ファイル：`ParquetTable`
 
 | メンバー | 型 | 既定値 | 説明 |
 | --- | --- | --- | --- |
@@ -127,7 +127,7 @@ const engine = memoryEngine({
 
 ### エクスポートする名前
 
-`vastgrid-js` は `memoryEngine`、`MEMORY_CAPABILITIES` と、型 `MemoryEngine`、`MemoryEngineOptions`、`MemoryTable`、`ArrowTable`、`FileTable`、`TextFile`、`TextFormat` をエクスポートします。
+`vastgrid-js` は `memoryEngine`、`MEMORY_CAPABILITIES` と、型 `MemoryEngine`、`MemoryEngineOptions`、`MemoryTable`、`ArrowTable`、`FileTable`、`ParquetTable`、`TextFile`、`TextFormat`、`HttpFetch`、`HttpResponse` をエクスポートします。
 
 - `save` は `save_unsupported` で失敗します。このエンジンはファイルを書かず、表の元になった `File` もそのままです。
 - `export` はファイルのバイト列を返し（`delivery` が `data`）、`target` は受け取りません。グリッドがダウンロードします。Parquet の書き出しは `/format` の `invalid_request` になります。
@@ -153,8 +153,9 @@ Node.js 22.18 以降と、DuckDB（`@duckdb/node-api`）のバイナリがある
 | オプション | 型 | 既定値 | 説明 |
 | --- | --- | --- | --- |
 | `allowedDirectories` | `string[]` | （必須） | 開いてよいファイルのフォルダー。DuckDB は実際の場所がこれ以外のファイルを読まず、動いている間は変えられません。 |
-| `tempDirectory` | `string` | （必須） | エンジンのデータベース、メモリから退避したデータ、変換したファイルを置く場所。専用のフォルダーを作り、`dispose` で消します。これを呼ばずに終わったプロセスのフォルダーは次の起動で消します。 |
+| `tempDirectory` | `string` | ユーザー専用の一時フォルダー | エンジンのデータベース、メモリから退避したデータ、変換したファイルを置く場所。専用のフォルダーを作り、`dispose` で消します。これを呼ばずに終わったプロセスのフォルダーは次の起動で消します。 |
 | `resolve` | `(ref) => string \| Promise<string>` | パス。相対パスは最初の許可フォルダーの中 | `open` の `ref` が指すファイル。投げると拒否します（`not_allowed`）。 |
+| `allowFile` | `(realFile) => boolean` | | リンクを解決した後のパスを確認します。`false` を返すと、そのファイルを開く要求を拒否します。 |
 | `resolveTarget` | `(target) => string \| Promise<string>` | | `export` の `target` が指すファイル。許可フォルダーの中で、表が読むファイル以外。ないときは書き出しに target を付けず、エンジンが保持します（`exportFile`）。 |
 | `saveFiles` | `boolean` | `false` | `save` で書き込んだセルを元の CSV・TSV ファイルに保存できるようにします。編集したフィールドを含まないバイトはそのまま残します。オフならエンジンはファイルを一切変えません。 |
 | `watchFiles` | `boolean` | `true` | 開いている表のファイルを監視します。ディスク上で変わったファイルは読み直し、書き込んだセルがある表とデータベースの表では `fileChanged` で知らせます。 |
@@ -207,14 +208,14 @@ Node.js の `http` リクエストのハンドラー `(request, response, next?)
 | 形式 | ファイル | 読み方 |
 | --- | --- | --- |
 | CSV | `.csv`、`.csv.gz`、`.csv.zst` | DuckDB に読み込みます。残りを読み込む間も先頭の行はすぐ読めます |
-| TSV | `.tsv`、`.tab`、`.tsv.gz`、`.tsv.zst` | CSV と同じ |
-| JSON Lines | `.jsonl`、`.ndjson`、`.jsonl.gz`、`.ndjson.gz` | DuckDB に読み込みます |
-| JSON | `.json`、`.json.gz` | DuckDB に読み込みます |
+| TSV | `.tsv`、`.tab`、`.tsv.gz`、`.tsv.zst`、`.tab.gz`、`.tab.zst` | CSV と同じ |
+| JSON Lines | `.jsonl`、`.ndjson`、`.jsonl.gz`、`.jsonl.zst`、`.ndjson.gz`、`.ndjson.zst` | DuckDB に読み込みます |
+| JSON | `.json`、`.json.gz`、`.json.zst` | DuckDB に読み込みます |
 | Parquet | `.parquet`、`.pq` | その場で、行番号で読みます |
 | Excel | `.xlsx`、`.xlsm` | シートを DuckDB に読み込みます。`open` の `read` で `sheet`、`headerRow`、`keepEmptyRows`、`keepEmptyColumns` を選びます |
 | DuckDB | `.duckdb`、`.ddb` | 表を DuckDB に読み込みます（その間だけデータベースを読み取り専用で接続します）。表が `sheets` になり（`main` 以外のスキーマは `schema.name`。ビューは含みません）、`open` の `read.sheet` で選びます |
 
-CSV はカンマ区切り、TSV はタブ区切りで、二重引用符を使って読みます。CSV の値に含まれる単一引用符・セミコロン・パイプは、そのまま値として扱います。別の区切り文字は `open.read.delimiter` で指定できます（二重引用符以外の印字可能な ASCII 文字 1 文字、またはタブ）。見出しは既定では自動判定です。`open.read.headerRow: 1` は最初のレコードを見出しに、`0` は全レコードをデータにし、より大きい値は見出しより前のレコードを読み飛ばします。保存・再読み込みでも同じ設定を使います。グリッドには `open={{ read: { delimiter: ";", headerRow: 1 } }}` の形で渡します。
+CSV はカンマ区切り、TSV はタブ区切りで、二重引用符を使って読みます。CSV の値に含まれる単一引用符・セミコロン・パイプは、そのまま値として扱います。別の区切り文字は `open.read.delimiter` で指定できます（二重引用符以外の印字可能な ASCII 文字 1 文字、またはタブ）。見出しは既定では自動判定です。`open.read.headerRow: 1` は最初のレコードを見出しに、`0` は全レコードをデータにし、より大きい値は見出しより前のレコードを読み飛ばします。保存・再読み込みでも同じ設定を使います。グリッドには `open={{ delimiter: ";", headerRow: 1 }}` の形で渡します。
 
 ファイルの形式にかかわらず、`key=value` というフォルダー名で列が追加・置換されることはありません。引用符がファイルの後半に初めて現れる場合も正しく読みます。長いレコードは、エンジンのメモリー上限の範囲で読み込みバッファを必要に応じて広げます。
 
@@ -226,13 +227,12 @@ CSV はカンマ区切り、TSV はタブ区切りで、二重引用符を使っ
 | --- | --- |
 | `CAPABILITIES` | エンジンのケーパビリティ。`save` は `saveFiles` で保存できるファイルのときだけ true。 |
 | `findTableFiles(folders, limit)` | フォルダーの中の表のファイルをフルパスで返します。2 階層まで、隠しファイルと隠しフォルダーを除き、最大 `limit` 個。 |
-| `tableFormatOf(file)` | 名前から決まるファイルの形式（`TableFormat`：`csv`、`tsv`、`parquet`、`json`、`ndjson`、`xlsx`）か null。 |
+| `tableFormatOf(file)` | 名前から決まるファイルの形式（`TableFormat`：`csv`、`tsv`、`parquet`、`json`、`ndjson`、`xlsx`、`duckdb`）か null。 |
 | `fileRevision(file)` | ファイルのリビジョン。大きさ、更新時刻、先頭 64 KiB のハッシュ。 |
 | `EXPORT_MEDIA_TYPES` | 書き出しの形式（`ExportFormat`）ごとのメディアタイプ。 |
 | `EngineError` | 失敗したリクエストのエラー。`code`（§8.7）を持ちます。 |
-| `readExpression`、`readValue`、`sourceExpression`、`tableColumn` | エンジンが DuckDB の列を論理型として読む方法。DuckDB を自分で読むホスト向け。 |
 
-型 `DuckDBEngineOptions`、`HttpHandlerOptions`、`KeptExport`、`ReadOptions`、`SheetInfo` もエクスポートしています。
+型 `DuckDBEngineOptions`、`ExportFormat`、`HttpHandlerOptions`、`KeptExport`、`ReadOptions`、`SheetInfo`、`TableFormat` もエクスポートしています。
 
 ### 上限と後片付け
 

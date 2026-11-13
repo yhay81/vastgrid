@@ -65,7 +65,7 @@ export function keyCommand(event: KeyInput, apple: boolean): GridCommand | null 
     case "Backspace":
       return primary ? null : { command: "edit.clear" };
     case "F2":
-      return { command: "edit.begin" };
+      return !event.ctrlKey && !event.metaKey && !event.shiftKey ? { command: "edit.begin" } : null;
     case "z":
     case "Z":
       if (!primary) return null;

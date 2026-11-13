@@ -42,8 +42,8 @@ calls `open_grid`, and the host shows the grid under its answer.
 | Tool | Who | What it does |
 | --- | --- | --- |
 | `list_files` | agent | lists the table files of the folders, two folders deep |
-| `open_grid` | agent, App | opens a file in a new grid, with a view to start with; its result shows the App |
-| `grid_state` | agent | the view, the selection, the displayed columns, the row count and the unsaved edits |
+| `open_grid` | agent, App | opens a file (and a workbook's sheet or a database's table, `sheet`) in a new grid, with a view to start with; its result shows the App |
+| `grid_state` | agent | the sheet and sheets (if any), the view, the selection, the displayed columns, the row count and the unsaved edits |
 | `grid_rows` | agent | rows of the view as JSON values, at most 500 at once |
 | `grid_command` | agent | applies a command of the grid (sort, filter, group, select, edit, undo, save, export, …) and gives the new state |
 | `vastgrid_message` | App | carries the grid's requests to the engine |

@@ -14,13 +14,13 @@ import duckdb
 from ._block import encode_block
 from ._capabilities import CAPABILITIES
 from ._check import check_plan, plan_options
-from ._columns import read_expression, read_value, value_expression
+from ._columns import accept_key_value, read_expression, read_value, value_expression
 from ._engine_types import Json, Relation
 from ._errors import EngineError
 from ._hash import canonical_json, normalize_plan, plan_hash
 from ._messages import quoted
 from ._session import Running, Session
-from ._sql import SqlSource, SqlView, compile_view, count_query, pivot_query, quote_identifier, text_sql
+from ._sql import SqlSource, SqlView, compile_view, pivot_query, quote_identifier, text_sql, view_column
 from ._table import Table
 from ._values import float_json
 from ._view_export import write_export
@@ -124,7 +124,7 @@ class Views:
         self.session.drop(dropped)
 
     def _make(self, plan: Any, relation: Relation, running: Running) -> View:
-        source = SqlSource(relation=relation.sql, row_id=relation.row_id)
+        source = SqlSource(relation=relation.sql, row_id=relation.row_id, columns=relation.columns)
         combinations = None
         if plan.aggregate is not None and plan.aggregate.pivot is not None:
             query = pivot_query(plan, source)
@@ -133,38 +133,39 @@ class Views:
         sql = compile_view(plan, source, combinations)
         positional = plan.where is None and plan.aggregate is None and len(plan.sort) == 0
         view_hash = plan_hash(plan.plan)
-        row_count = relation.rows
-        if plan.where is not None or plan.aggregate is not None:
-            query = count_query(sql)
-            row_count = int(
-                self.session.run(running, lambda cursor: cursor.execute(query.sql, query.params).fetchone()[0])
-            )
         if positional:
-            return View(plan, sql, True, row_count, view_hash, sql.row_id)
+            assert sql.row_id is not None
+            return View(plan, sql, True, relation.rows, view_hash, sql.row_id)
         position = _free_name("vg_position", sql.columns)
-        view = View(plan, sql, False, row_count, view_hash, position)
+        view = View(plan, sql, False, 0, view_hash, position)
         self._materialize(view, running)
         return view
 
     def _materialize(self, view: View, running: Running) -> None:
-        """Stores the total order once. Internal columns have fixed names, so even a user column `rowid` is safe."""
+        """Stores the total order once and counts the rows in one pass."""
         name = quote_identifier(self.session.name("vg_order"))
         sql = view.sql
-        outputs = [f"{quote_identifier(column['name'])} AS c{index}" for index, column in enumerate(sql.columns)]
+        outputs = [f"{view_column(sql, column['name'])} AS c{index}" for index, column in enumerate(sql.columns)]
         if sql.row_id:
             outputs.append(f"{sql.row_id} AS source_id")
         # A view without columns (a pivot without keys and combinations) still has its rows.
         if not outputs:
             outputs.append("NULL AS vg_none")
         order = f" ORDER BY {', '.join(sql.order)}" if sql.order else ""
-        self.session.run(
-            running,
-            lambda cursor: cursor.execute(
+
+        def build(cursor: duckdb.DuckDBPyConnection) -> int:
+            cursor.execute(
                 f"CREATE TABLE {name} AS {sql.with_} SELECT {', '.join(outputs)} FROM vg_view{order}", sql.params
-            ),
-        )
+            )
+            return int(cursor.execute(f"SELECT count(*) FROM {name}").fetchone()[0])
+
+        try:
+            view.row_count = self.session.run(running, build)
+        except BaseException:
+            self.session.drop([f"TABLE {name}"])
+            raise
         view.objects.append(f"TABLE {name}")
-        selected = [f"c{index} AS {quote_identifier(column['name'])}" for index, column in enumerate(sql.columns)]
+        selected = [f"c{index} AS {view_column(sql, column['name'])}" for index, column in enumerate(sql.columns)]
         if sql.row_id:
             selected.append(f"source_id AS {sql.row_id}")
         selected.append(f"rowid AS {view.position}")
@@ -186,7 +187,7 @@ class Views:
         row_ids: list[int] | None = [] if view.sql.row_ids else None
         truncated: dict[str, list[int]] = {}
         if end > start:
-            outputs = [read_expression(column, quote_identifier(column["name"]), limit) for column in columns]
+            outputs = [read_expression(column, view_column(view.sql, column["name"]), limit) for column in columns]
             if view.sql.row_id:
                 outputs.append(view.sql.row_id)
             if not outputs:
@@ -227,22 +228,53 @@ class Views:
         return result
 
     def locate(self, table: Table, request: Json, running: Running) -> Json:
-        return self.use(table, request, running, lambda view: self._locate_of(view, request, running))
+        return self.use(table, request, running, lambda view: self._locate_of(table, view, request, running))
 
-    def _locate_of(self, view: View, request: Json, running: Running) -> Json:
+    def _locate_of(self, table: Table, view: View, request: Json, running: Running) -> Json:
         keys = request["keys"]
-        rows: list[int | None] = [None] * len(keys)
         by_row_id = [(index, key["rowId"]) for index, key in enumerate(keys) if "rowId" in key]
         by_value = [(index, key["value"]) for index, key in enumerate(keys) if "value" in key]
+        key_column: Json | None = None
+        if "rowKey" in request:
+            row_key = request["rowKey"]
+            key_column = next((item for item in table.columns if item["name"] == row_key), None)
+            if key_column is None:
+                raise EngineError(
+                    "invalid_request",
+                    f"The table has no column {quoted(row_key)}.",
+                    path="/rowKey",
+                    reason="syntax",
+                )
+        elif by_value:
+            raise EngineError(
+                "invalid_request",
+                "Keys by value need rowKey, the column of their values (§5.3).",
+                path="/rowKey",
+                reason="syntax",
+            )
+        rows: list[int | None] = [None] * len(keys)
         if view.positional:
             for index, value in by_row_id:
                 rows[index] = int(value) if value < view.row_count else None
         elif view.sql.row_ids:
+            assert view.sql.row_id is not None
             self._positions_of(view, by_row_id, view.sql.row_id, {"type": "bigint"}, rows, running)
-        row_key = request.get("rowKey")
-        column = next((item for item in view.sql.columns if item["name"] == row_key), None)
-        if column is not None and by_value:
-            self._positions_of(view, by_value, quote_identifier(column["name"]), column, rows, running)
+        in_view = (
+            next((item for item in view.sql.columns if item["name"] == key_column["name"]), None)
+            if key_column is not None
+            and (
+                view.plan.aggregate is None
+                or any(item["name"] == key_column["name"] for item in view.plan.aggregate.keys)
+            )
+            else None
+        )
+        if in_view is not None and by_value:
+            accepted = [
+                (index, normalized)
+                for index, value in by_value
+                if (normalized := accept_key_value(value, in_view)) is not None
+            ]
+            self._positions_of(view, accepted, view_column(view.sql, in_view["name"]), in_view, rows, running)
         return {"rows": rows}
 
     def _positions_of(
@@ -284,7 +316,7 @@ class Views:
         within = " OR ".join(f"({position} >= {start} AND {position} < {end})" for start, end in ranges)
         aggregates: list[str] = []
         for column in columns:
-            sql = quote_identifier(column["name"])
+            sql = view_column(view.sql, column["name"])
             blank = f"({sql} IS NULL OR {sql} = '')" if column["type"] == "string" else f"{sql} IS NULL"
             aggregates.append(f"count(*) FILTER (WHERE NOT {blank})")
             if column["type"] in _NUMERIC:
@@ -348,7 +380,7 @@ class Views:
         needle = f"${len(params)}" if sensitive else f"lower(${len(params)})"
         tests = []
         for item in columns:
-            value = text_sql(quote_identifier(item["name"]), item)
+            value = text_sql(view_column(view.sql, item["name"]), item)
             tests.append(f"coalesce(contains({value if sensitive else f'lower({value})'}, {needle}), false)")
         any_test = f"({' OR '.join(tests)})"
 
@@ -408,6 +440,14 @@ class Views:
         def write(view: View) -> int:
             names = request.get("columns")
             columns = view.sql.columns if names is None else _columns_of(view, names)
+            for member in ("headers", "numberFormats"):
+                if member in request and len(request[member]) != len(columns):
+                    raise EngineError(
+                        "invalid_request",
+                        f"{member} has one item per column.",
+                        path=f"/{member}",
+                        reason="syntax",
+                    )
             headers = request.get("headers") or [column["name"] for column in columns]
             write_export(
                 self.session, view, request["format"], columns, headers, request.get("numberFormats"), file, running

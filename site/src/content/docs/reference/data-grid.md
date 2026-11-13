@@ -28,7 +28,7 @@ is the source of this page.
 | --- | --- | --- | --- |
 | `transport` | `Transport` | | Where the engine is ([transports](/reference/core/#transports)). With `table`. |
 | `table` | `string` | | The `ref` of the table to open: a name of the memory engine's `tables`, or a file of the DuckDB engine. |
-| `open` | `OpenOptions` | | The `read` options of `open`: `sheet`, `headerRow`, `keepEmptyRows`, `keepEmptyColumns`. |
+| `open` | `OpenOptions` | | The `read` options of `open`: `sheet`, `delimiter`, `headerRow`, `keepEmptyRows`, `keepEmptyColumns`. |
 | `store` | `GridStore` | | A store made outside, instead of `transport` and `table`. |
 
 The grid makes its own store from `transport`, `table` and `open`, once, and connects it while it is mounted; a

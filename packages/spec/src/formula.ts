@@ -4,10 +4,11 @@
  * as a formula. The language is 0.1's, whose functions map onto §4.4, with the functions of §4.4 under their
  * own names and literals of every type. Nothing is evaluated here.
  */
+import { fromTemporalTextForm } from "./calendar.js";
 import { type CheckOptions, checkExpression, type TypedExpr } from "./check.js";
 import { type Expr, FUNCTIONS, type FunctionName, LIMITS, PlanError, type PlanErrorReason } from "./plan.js";
 import { type Column, type JsonValue, LOGICAL_TYPES, type LogicalType, type ValueType } from "./types.js";
-import { decimalTextType, floatText, isDateText, isTimestampText } from "./values.js";
+import { decimalTextType, exactNumberText, floatText, isDateText, isTimestampText } from "./values.js";
 
 /** Longest formula, in characters. */
 export const MAX_FORMULA_LENGTH = 100_000;
@@ -385,7 +386,7 @@ function typedLiteral(type: LogicalType, text: string, range: Range): Expr {
     case "bigint": {
       if (!/^-?(0|[1-9][0-9]*)$/.test(text)) throw invalid();
       const value = Number(text);
-      return { lit: Number.isSafeInteger(value) ? value : text, type };
+      return { lit: Number.isSafeInteger(value) ? (value === 0 ? 0 : value) : text, type };
     }
     case "float": {
       const special: Record<string, string> = { nan: "NaN", inf: "Infinity", "-inf": "-Infinity" };
@@ -397,7 +398,9 @@ function typedLiteral(type: LogicalType, text: string, range: Range): Expr {
     }
     case "date":
     case "timestamp":
-      return { lit: temporalText(text, type) ?? text, type };
+      return { lit: temporalText(text, type) ?? fromTemporalTextForm(text), type };
+    case "timestamptz":
+      return { lit: fromTemporalTextForm(text), type };
     default:
       return { lit: text, type };
   }
@@ -576,6 +579,8 @@ class Compiler {
         return args.map((arg, index) => (index === 0 ? this.asString(arg) : this.whole(arg)));
       case "round":
         return args.map((arg, index) => (index === 0 ? arg : this.whole(arg)));
+      case "bin":
+        return args.map((arg, index) => (index === 0 ? arg : this.binWidth(arg)));
       case "year":
       case "month":
       case "day":
@@ -623,9 +628,19 @@ class Compiler {
   /** A whole number written with a point (`3.0`) as an integer. */
   private whole(arg: Part): Part {
     const expr = arg.expr;
-    if ("lit" in expr && (expr.type === "decimal" || expr.type === "float" || typeof expr.lit === "number")) {
+    if ("lit" in expr && expr.type === "decimal" && typeof expr.lit === "string" && /^-?\d+\.0+$/.test(expr.lit)) {
       const value = Number(expr.lit);
-      if (Number.isSafeInteger(value)) return this.check({ lit: value }, arg.range);
+      if (Number.isSafeInteger(value)) return this.check({ lit: value === 0 ? 0 : value }, arg.range);
+    }
+    return arg;
+  }
+
+  /** A `bin` width written with a point (`0.25`) as a number literal. */
+  private binWidth(arg: Part): Part {
+    const expr = arg.expr;
+    if ("lit" in expr && expr.type === "decimal" && typeof expr.lit === "string" && expr.lit.includes(".")) {
+      const value = Number(expr.lit);
+      if (Number.isFinite(value)) return this.check({ lit: value === 0 ? 0 : value }, arg.range);
     }
     return arg;
   }
@@ -796,7 +811,7 @@ function literalText(value: JsonValue, type: LogicalType | undefined): string {
     if (value === null) return "NULL";
     if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
     if (typeof value === "string") return quote(value);
-    if (Number.isSafeInteger(value)) return String(value);
+    if (Number.isSafeInteger(value)) return Object.is(value, -0) ? "0" : String(value);
     const text = String(value);
     // A number with an exponent is a float.
     return /e/i.test(text) ? text : `${text}e0`;
@@ -841,7 +856,14 @@ function write(expr: Expr, precedence: number): string {
     own = 8;
   } else {
     if (OPERATOR_FUNCTIONS.has(fn)) throw new TypeError(`${fn} takes at least 2 arguments.`);
-    return `${fn.toUpperCase()}(${args.map((arg) => write(arg, 0)).join(", ")})`;
+    const parts = args.map((arg, index) => {
+      if (fn === "bin" && index === 1 && "lit" in arg && arg.type === undefined && typeof arg.lit === "number") {
+        const raw = exactNumberText(arg.lit);
+        if (raw !== null && !Number.isSafeInteger(arg.lit) && decimalTextType(raw)) return raw;
+      }
+      return write(arg, 0);
+    });
+    return `${fn.toUpperCase()}(${parts.join(", ")})`;
   }
   return own < precedence ? `(${text})` : text;
 }

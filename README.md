@@ -4,7 +4,7 @@
 [![CI](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml/badge.svg)](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/yhay81/vastgrid)](LICENSE)
 
-vastgrid opens huge CSV, TSV, Parquet, JSON Lines and Excel files like a spreadsheet, lets people fix them, and
+vastgrid opens huge CSV, TSV, Parquet, JSON Lines and Excel files and DuckDB databases like a spreadsheet, lets people fix them, and
 saves them safely. It is a canvas data grid for React with engines for the browser and Node.js, and the same grid
 comes as a command, a VS Code extension, an MCP App and a Jupyter widget.
 
@@ -86,8 +86,9 @@ For files larger than the page should hold, run the memory engine
 exporting, theming and your own engine.
 
 The DuckDB engine reads CSV with comma separators and standard double quotes. For other separators or an
-explicit header, pass `open={{ read: { delimiter: ";", headerRow: 1 } }}` to the grid; `headerRow: 0` means
-no header. See the [engine's reading options](packages/duckdb-engine#what-it-does).
+explicit header, pass `open={{ delimiter: ";", headerRow: 1 }}` to the grid; `headerRow: 0` means
+no header. By default, the CLI and MCP server keep DuckDB's temporary data in a private folder for the current user.
+See the [engine's reading options](packages/duckdb-engine#what-it-does).
 
 ## Packages
 

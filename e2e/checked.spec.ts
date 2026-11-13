@@ -74,7 +74,7 @@ test("rows are checked by key, and the detail panel shows the active row", async
   // The detail panel follows the active row.
   await page.getByRole("button", { name: "Details" }).click();
   await grid.focus();
-  await page.keyboard.press("Control+Home");
+  await page.keyboard.press("ControlOrMeta+Home");
   const panel = page.getByRole("complementary", { name: "Row 1" });
   await expect(panel.locator("dd")).toHaveText(["2", "Osaka", "12", "second"]);
   await page.keyboard.press("ArrowDown");

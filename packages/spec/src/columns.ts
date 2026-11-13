@@ -12,9 +12,19 @@ import {
   integerJson,
   logicalType,
   type RawBatch,
+  schemaFieldNames,
   UNIT_NAMES,
 } from "./block.js";
-import { dateText, timestampText, timestamptzText, timeText, UNIT_PER_SECOND } from "./calendar.js";
+import {
+  DATE_INFINITY,
+  dateText,
+  floorDiv,
+  TIMESTAMP_INFINITY,
+  timestampText,
+  timestamptzText,
+  timeText,
+  UNIT_PER_SECOND,
+} from "./calendar.js";
 import type { Column, JsonValue, ValueType } from "./types.js";
 import { floatJson } from "./values.js";
 
@@ -73,7 +83,7 @@ function numbersOf(arrow: ArrowField, batches: readonly RawBatch[], logical: Val
     case "integer":
       if (type.typeId !== Type.Int) return null;
       make = (count) => new Int32Array(count);
-      same = (values) => values instanceof Int32Array;
+      same = (values) => type.signed !== false && values instanceof Int32Array;
       read =
         width === 1
           ? type.signed === false
@@ -83,16 +93,45 @@ function numbersOf(arrow: ArrowField, batches: readonly RawBatch[], logical: Val
             ? type.signed === false
               ? (view, index) => view.getUint16(index * 2, true)
               : (view, index) => view.getInt16(index * 2, true)
-            : (view, index) => view.getInt32(index * 4, true);
+            : width === 4
+              ? type.signed === false
+                ? (view, index) => {
+                    const value = view.getUint32(index * 4, true);
+                    if (value > 2147483647) throw new RangeError();
+                    return value;
+                  }
+                : (view, index) => view.getInt32(index * 4, true)
+              : (view, index) => {
+                  const value =
+                    type.signed === false ? view.getBigUint64(index * 8, true) : view.getBigInt64(index * 8, true);
+                  if (value < -2147483648n || value > 2147483647n) throw new RangeError();
+                  return Number(value);
+                };
       break;
     case "bigint":
       if (type.typeId !== Type.Int) return null;
       make = (count) => new BigInt64Array(count);
-      same = (values) => values instanceof BigInt64Array;
+      same = (values) => type.signed !== false && values instanceof BigInt64Array;
       read =
-        width === 4
-          ? (view, index) => BigInt(view.getUint32(index * 4, true))
-          : (view, index) => view.getBigInt64(index * 8, true);
+        width === 1
+          ? type.signed === false
+            ? (view, index) => BigInt(view.getUint8(index))
+            : (view, index) => BigInt(view.getInt8(index))
+          : width === 2
+            ? type.signed === false
+              ? (view, index) => BigInt(view.getUint16(index * 2, true))
+              : (view, index) => BigInt(view.getInt16(index * 2, true))
+            : width === 4
+              ? type.signed === false
+                ? (view, index) => BigInt(view.getUint32(index * 4, true))
+                : (view, index) => BigInt(view.getInt32(index * 4, true))
+              : type.signed === false
+                ? (view, index) => {
+                    const value = view.getBigUint64(index * 8, true);
+                    if (value > 9223372036854775807n) throw new RangeError();
+                    return value;
+                  }
+                : (view, index) => view.getBigInt64(index * 8, true);
       break;
     case "decimal": {
       if (type.typeId !== Type.Decimal || (logical.precision ?? 38) > 18) return null;
@@ -131,7 +170,15 @@ function numbersOf(arrow: ArrowField, batches: readonly RawBatch[], logical: Val
       if (type.unit === DateUnit.DAY) {
         same = (values) => values instanceof Int32Array;
         read = (view, index) => view.getInt32(index * 4, true);
-      } else read = (view, index) => Number(view.getBigInt64(index * 8, true) / 86_400_000n);
+      } else {
+        read = (view, index) => {
+          const millis = view.getBigInt64(index * 8, true);
+          if (millis === BigInt(DATE_INFINITY) || millis === -BigInt(DATE_INFINITY)) return Number(millis);
+          const days = floorDiv(millis, 86_400_000n);
+          if (days < -2147483648n || days > 2147483647n) throw new RangeError();
+          return Number(days);
+        };
+      }
       break;
     case "time": {
       if (type.typeId !== Type.Time) return null;
@@ -141,7 +188,7 @@ function numbersOf(arrow: ArrowField, batches: readonly RawBatch[], logical: Val
         width === 4
           ? (view, index) => BigInt(view.getInt32(index * 4, true))
           : (view, index) => view.getBigInt64(index * 8, true);
-      read = (view, index) => ((count(view, index) as bigint) * 1_000_000n) / perSecond;
+      read = (view, index) => floorDiv((count(view, index) as bigint) * 1_000_000n, perSecond);
       break;
     }
     case "timestamp":
@@ -152,7 +199,15 @@ function numbersOf(arrow: ArrowField, batches: readonly RawBatch[], logical: Val
       if (logical.type === "timestamp" || perSecond === 1_000_000n) {
         same = (values) => values instanceof BigInt64Array;
         read = (view, index) => view.getBigInt64(index * 8, true);
-      } else read = (view, index) => (view.getBigInt64(index * 8, true) * 1_000_000n) / perSecond;
+      } else {
+        read = (view, index) => {
+          const count = view.getBigInt64(index * 8, true);
+          if (count === TIMESTAMP_INFINITY || count === -TIMESTAMP_INFINITY) return count;
+          const micros = floorDiv(count * 1_000_000n, perSecond);
+          if (micros <= -TIMESTAMP_INFINITY || micros >= TIMESTAMP_INFINITY) throw new RangeError();
+          return micros;
+        };
+      }
       break;
     default:
       return null;
@@ -257,7 +312,11 @@ export function decodeColumns(bytes: Uint8Array): { columns: Column[]; length: n
   const aligned = bytes.byteOffset % 8 === 0 ? bytes : bytes.slice();
   const table = tableFromIPC(aligned);
   const fields = table.schema.fields as unknown as ArrowField[];
-  const columns: Column[] = fields.map((arrow) => ({ name: arrow.name, ...logicalType(arrow) }));
+  const names = schemaFieldNames(aligned);
+  const columns: Column[] = fields.map((arrow, index) => ({
+    name: names?.[index] ?? arrow.name,
+    ...logicalType(arrow),
+  }));
   const values = fields.map((arrow, index) =>
     columnValues(arrow, table.children[index].data as unknown as RawBatch[], columns[index]),
   );

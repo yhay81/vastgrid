@@ -28,7 +28,7 @@ makes one when it is not given one.
 | --- | --- | --- | --- |
 | `transport` | `Transport` | (required) | Where the engine is. |
 | `table` | `string` | (required) | The `ref` of the table to open (§8.2). |
-| `open` | `OpenOptions` | | The `read` options of `open`: `sheet`, `headerRow`, `keepEmptyRows`, `keepEmptyColumns`. |
+| `open` | `OpenOptions` | | The `read` options of `open`: `sheet`, `delimiter`, `headerRow`, `keepEmptyRows`, `keepEmptyColumns`. |
 | `document` | `GridDocument` | the empty document | The document to start with ([§5.1](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#51-document)). |
 | `session` | `GridSession` | the empty session | The session to start with ([§5.2](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#52-session)). |
 | `initial` | `InitialView` | | Rows read on a server (`readInitialView`), shown before the first read. |
@@ -56,7 +56,7 @@ makes one when it is not given one.
 | `setDocument(document)`, `setSession(session)` | Shows a document or a session given by the host: a controlled prop, a saved view, an agent. |
 | `cell(row, column)` | The value of a cell of the view on screen; `undefined` while it is not read. |
 | `isCut(row, column)` | Whether the engine cut a cell's text to its limit (§8.4). |
-| `fullValue(row, column, signal?)` | The whole value of a cell, also when its text was cut, and its column: `{ value, column }`. |
+| `fullValue(row, column, signal?)` | The whole value of a cell, also when its text was cut, its column and whether it had been cut: `{ value, column, cut }`. |
 | `rowKey(row)`, `rowId(row)` | The key (§5.3) and the row ID of a row of the view on screen. |
 | `getRowsVersion()`, `subscribeRows(listener)` | A number that changes when rows of the view on screen arrive or leave, and the way to follow it. Rows are not in snapshots. |
 | `setViewport({ top, rows, columns })` | Tells the store what is on screen, so that it reads those rows and a page around them. |
@@ -133,7 +133,7 @@ whose `code` is `invalid_command` ([Commands](/reference/commands/#when-a-comman
 
 | `code` | When | HTTP |
 | --- | --- | ---: |
-| `invalid_request` | a message that does not follow §8, with `path` and `reason` | 400 |
+| `invalid_request` | a message that does not follow §8, with `path` and `reason` (`syntax`, `unknown_op`, `version`, `limit`; an unimplemented `op` gives `path: "/op"`, `reason: "unknown_op"`) | 400 |
 | `invalid_plan` | a plan that does not check (§4.7), with `path` and `reason` | 400 |
 | `table_not_found` | the table is closed or unknown | 404 |
 | `not_ready` | the table is still loading and the request needs all of it | 409 |

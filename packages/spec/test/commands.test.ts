@@ -61,14 +61,15 @@ test("states and expected results are documents and sessions (§5)", () => {
       const state = caseState(file, item.state);
       assert.doesNotThrow(() => checkDocument(state.document), item.id);
       assert.doesNotThrow(() => checkSession(state.session), item.id);
-      if (isCommandFailure(item.expect)) continue;
-      if (item.expect.document) {
-        assert.doesNotThrow(() => checkDocument(item.expect.document), `${item.id}: document`);
-        assert.deepEqual(schemaProblems("state.schema.json#/$defs/document", item.expect.document), [], item.id);
+      const expected = item.expect;
+      if (isCommandFailure(expected)) continue;
+      if (expected.document) {
+        assert.doesNotThrow(() => checkDocument(expected.document), `${item.id}: document`);
+        assert.deepEqual(schemaProblems("state.schema.json#/$defs/document", expected.document), [], item.id);
       }
-      if (item.expect.session) {
-        assert.doesNotThrow(() => checkSession(item.expect.session), `${item.id}: session`);
-        assert.deepEqual(schemaProblems("state.schema.json#/$defs/session", item.expect.session), [], item.id);
+      if (expected.session) {
+        assert.doesNotThrow(() => checkSession(expected.session), `${item.id}: session`);
+        assert.deepEqual(schemaProblems("state.schema.json#/$defs/session", expected.session), [], item.id);
       }
     }
   }

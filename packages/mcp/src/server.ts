@@ -78,8 +78,9 @@ export function registerVastgrid(server: McpServer, options: VastgridToolsOption
   const describe = (grid: Grid) => {
     const state = grid.state();
     const rows = state.view?.rowCount ?? state.table?.rowCount;
+    const where = state.sheet ? `${state.file} (${state.sheet})` : state.file;
     const text =
-      `Grid ${state.grid} shows ${state.file}: ${rows ?? "?"} rows, columns ` +
+      `Grid ${state.grid} shows ${where}: ${rows ?? "?"} rows, columns ` +
       `${state.columns.map((column) => `${column.name} (${column.type})`).join(", ")}. ` +
       "Read it with grid_state and grid_rows, change it with grid_command.";
     return result({ ...state }, text);
@@ -221,10 +222,10 @@ export function registerVastgrid(server: McpServer, options: VastgridToolsOption
     async ({ grid, client, message }, ctx) =>
       guarded(async () => {
         const answer = await grids.get(grid).message(client, message, ctx.mcpReq.signal);
-        // The response travels as JSON, with its block in base64 (§8.8).
+        // The response travels as JSON, with its block in base64 (§8.8); `cancel` has no response (§8.1).
         return {
           content: [{ type: "text", text: "vastgrid response" }],
-          structuredContent: toTextEncoding(answer as never),
+          ...(answer === undefined ? {} : { structuredContent: toTextEncoding(answer) }),
         };
       }),
   );

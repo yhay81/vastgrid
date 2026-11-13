@@ -95,7 +95,7 @@ keyboard ownership and output cleanup in both notebook UIs. Install their browse
 Jupyter server. These small smoke suites do not multiply the full functional suite by every browser.
 
 `packages/duckdb-engine/test/memory-engine.test.ts` sends 300 generated plans to the memory engine and the DuckDB
-engine and compares their answers, including rows against Parquet even when DuckDB has a known limitation.
+engine and compares their answers, including rows against Parquet.
 The Parquet HTTP failure cases use a tiny checked-in file, without a server or DuckDB startup.
 After a change to either engine or to `vastgrid-sql`, run more of them:
 `VASTGRID_PLANS=3000 VASTGRID_SEED=7` with the test, and `VASTGRID_ONLY=<plan seed>` to see one plan that differs.
@@ -126,21 +126,20 @@ Every package is released together, with one version, from one tag:
 | Package | Where |
 | --- | --- |
 | `vastgrid-spec`, `vastgrid-sql`, `vastgrid-js`, `vastgrid`, `vastgrid-duckdb`, `vastgrid-cli`, `vastgrid-mcp` | npm, in that order, each depending on the others at exactly the same version |
-| `vastgrid` (Python, `packages/notebook/python`) | PyPI; a pre-release `0.2.0-next.3` is `0.2.0rc3` there |
+| `vastgrid` (Python, `packages/notebook/python`) | PyPI; a pre-release `0.5.0-next.1` is `0.5.0rc1` there |
 | `vastgrid-vscode` | the VS Code Marketplace and Open VSX, for versions that are not pre-releases; every version's `.vsix` files are on the GitHub release |
 
-0.2 starts at 0.2.0, after 0.1.x. Pre-releases are `0.2.0-next.1`, `0.2.0-next.2`, …, published under npm's
-`next` tag, so that `npm install vastgrid` keeps giving the last stable version and `npm install vastgrid@next`
-gives the pre-release. After 0.2.0 and until 1.0.0, a release that breaks compatibility raises the minor version
-(0.3.0), and others the patch version.
+Until 1.0.0, a release that breaks compatibility raises the minor version (0.5.0), and others the patch version
+(0.4.1). Pre-releases are `0.5.0-next.1`, `0.5.0-next.2`, …, published under npm's `next` tag, so that
+`npm install vastgrid` keeps giving the last stable version and `npm install vastgrid@next` gives the pre-release.
 
 On an up-to-date `main` with a clean tree, where CI passed:
 
 ```sh
-node scripts/release.mjs version 0.2.0-next.1
-git commit -am "Release 0.2.0-next.1"
-git tag -s v0.2.0-next.1 -m "vastgrid 0.2.0-next.1"
-git push origin main v0.2.0-next.1
+node scripts/release.mjs version 0.4.1
+git commit -am "Release 0.4.1"
+git tag -s v0.4.1 -m "vastgrid 0.4.1"
+git push origin main v0.4.1
 ```
 
 The first command sets the version of every package (the npm packages, the extension, the Python package and
@@ -168,48 +167,20 @@ Open VSX is published only when the repository variable `OPEN_VSX_ENABLED` is `t
 repository's `release.yml` in the `openvsx` environment as a trusted publisher, and `ovsx publish
 --trusted-publishing` exchanges the workflow's OIDC token for a short-lived one.
 
-### From pre-releases to 0.2.0
-
-1. Publish `0.2.0-next.1` as above, and try it as users will: `npm install vastgrid@next vastgrid-js@next`, `npx
-   vastgrid-cli@next <file>`, `npx vastgrid-mcp@next` in an MCP host, the `.vsix` from the GitHub release in VS
-   Code, and `pip install --pre vastgrid` in a notebook. Fix what is found and publish `-next.2`, and so on.
-2. When a pre-release has had no fix for a while, release the same commit's code as `0.2.0`: `node
-   scripts/release.mjs version 0.2.0`, which moves "Unreleased" to `## 0.2.0`. Move the notes of the
-   pre-releases' sections into it first, so that the 0.2.0 notes say everything since 0.1, and set the status of
-   [spec.md](docs/spec.md) and [react.md](docs/react.md) from draft to 0.2.
-3. After 0.2.0 is on npm, mark 0.1's packages that 0.2 has no package for as deprecated, pointing at the
-   migration guide:
-
-   ```sh
-   npm deprecate vastgrid-core "vastgrid 0.2 replaces vastgrid-core: see https://github.com/yhay81/vastgrid/blob/main/docs/migrating-from-0.1.md"
-   npm deprecate vastgrid-browser "vastgrid 0.2 replaces vastgrid-browser with vastgrid-js: see https://github.com/yhay81/vastgrid/blob/main/docs/migrating-from-0.1.md"
-   npm deprecate "vastgrid-duckdb@<0.2" "vastgrid-duckdb 0.2 is the DuckDB engine of vastgrid 0.2: see https://github.com/yhay81/vastgrid/blob/main/docs/migrating-from-0.1.md"
-   ```
-
-   0.1's `vastgrid` and `vastgrid-duckdb` 0.1.x stay installable; their names continue at 0.2.0.
-
 After a release that fixes a vulnerability, publish its GitHub security advisory with the fixed versions
 (see [SECURITY.md](SECURITY.md)).
 
-### One-time setup
+### Trusted publishing
 
-Only the Release workflow can publish, and npm and PyPI need no token:
+Only the Release workflow can publish, and none of the registries need long-lived tokens:
 
-- On npmjs.com, for each of the seven packages, add a trusted publisher: GitHub Actions, the repository
-  `yhay81/vastgrid`, the workflow `release.yml` and the environment `npm`. Then set publishing access to
-  require two-factor authentication and disallow tokens. A package that is not on npm yet (`vastgrid-spec`,
-  `vastgrid-sql`, `vastgrid-js`, `vastgrid-cli`, `vastgrid-mcp`) has no settings until it exists: publish its
-  first pre-release by hand from the workflow's `packages` artifact (`npm publish <file>.tgz --access public
-  --tag next`, signed in with two-factor authentication), then add its trusted publisher. The workflow skips
-  versions that are already on npm, so it can then be run again for the others.
-- On PyPI, add a pending trusted publisher for the project `vastgrid`: the repository `yhay81/vastgrid`, the
-  workflow `release.yml` and the environment `pypi`.
-- On the VS Code Marketplace, the publisher `yhay81`, with a trusted publishing policy: GitHub Actions, the
-  repository `yhay81/vastgrid`, the workflow `release.yml` and the environment `vscode`.
-- On open-vsx.org, the namespace `yhay81`, with a trusted publisher: the repository `yhay81/vastgrid`, the
-  workflow `release.yml` and the environment `openvsx`.
-- On GitHub, in Settings → Environments, create `npm`, `pypi`, `vscode` and `openvsx`, and limit their
-  deployments to tags matching `v*`. Required reviewers there make each release wait for an approval.
+- **npm**: each of the seven packages trusts GitHub Actions (`yhay81/vastgrid`, workflow `release.yml`, environment
+  `npm`), with two-factor authentication required and publishing tokens disallowed.
+- **PyPI**: the project `vastgrid` trusts `yhay81/vastgrid`, workflow `release.yml` and environment `pypi`.
+- **VS Code Marketplace**: the publisher `yhay81` trusts `yhay81/vastgrid`, workflow `release.yml` and environment
+  `vscode`.
+- **Open VSX**: the namespace `yhay81` trusts `yhay81/vastgrid`, workflow `release.yml` and environment `openvsx`.
+- **GitHub**: Settings → Environments defines `npm`, `pypi`, `vscode` and `openvsx`, limited to tags matching `v*`.
 
 ## The site
 

@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DuckDBInstance } from "@duckdb/node-api";
+import { DuckDBInstance, DuckDBResultReader } from "@duckdb/node-api";
 import { createGridStore, localTransport } from "vastgrid/core";
-import { afterAll, beforeAll, test } from "vite-plus/test";
+import { afterAll, beforeAll, test, vi } from "vite-plus/test";
 import { type Client, type Json, setUp, type TableInfo } from "./client.ts";
 
 let context: Awaited<ReturnType<typeof setUp>>;
@@ -37,6 +37,25 @@ function write(info: TableInfo, updates: Json[], members: Json = {}) {
 async function values(info: TableInfo, request: { plan?: Json; columns?: string[] } = {}) {
   return (await client.rows(info, request)).rows;
 }
+
+test("checking previous values fetches only the updated cells in a sparse batch", async () => {
+  const names = Array.from({ length: 12 }, (_, i) => `c${i}`);
+  const csv = [names.join(","), ...names.map(() => names.join(","))].join("\n");
+  const info = await opened("sparse.csv", csv);
+  const updates = names.map((column, rowId) => ({ key: { rowId }, column, value: "changed", previous: column }));
+  const read = vi.spyOn(DuckDBResultReader.prototype, "getRowsJS");
+  try {
+    await client.result("write", write(info, updates));
+    const rows = read.mock.results.flatMap((result) => result.value);
+    // The first value in each row is its row ID.
+    assert.equal(
+      rows.reduce((total, row) => total + row.length - 1, 0),
+      updates.length,
+    );
+  } finally {
+    read.mockRestore();
+  }
+});
 
 test("writes keep the file, change what every request reads, and count the cells (§7.2)", async () => {
   const info = await opened("write.csv");

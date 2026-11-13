@@ -1,6 +1,6 @@
 ---
-import "../../styles/demo.css";
 import "../../styles/open.css";
+import AppShell from "../AppShell.astro";
 import OpenApp from "./OpenApp.tsx";
 
 interface Props {
@@ -24,30 +24,12 @@ const texts = {
 }[language];
 ---
 
-<!doctype html>
-<html lang={language}>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{texts.title}</title>
-    <meta name="description" content={texts.description} />
-    <meta property="og:title" content={texts.title} />
-    <meta property="og:description" content={texts.description} />
-    <meta property="og:image" content="https://vastgrid.yhay81.com/og.jpg" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="alternate" hreflang="en" href="https://vastgrid.yhay81.com/open/" />
-    <link rel="alternate" hreflang="ja" href="https://vastgrid.yhay81.com/ja/open/" />
-    <script is:inline>
-      // Apply the stored theme before the first paint, as the documentation does.
-      try {
-        const theme = localStorage.getItem("starlight-theme");
-        if (theme === "light" || theme === "dark") document.documentElement.style.colorScheme = theme;
-      } catch {}
-    </script>
-  </head>
-  <body>
-    <OpenApp client:only="react" language={language} />
-    <noscript>{texts.noscript}</noscript>
-  </body>
-</html>
+<AppShell
+  language={language}
+  paths={{ en: "/open/", ja: "/ja/open/" }}
+  title={texts.title}
+  description={texts.description}
+  noscript={texts.noscript}
+>
+  <OpenApp client:only="react" language={language} />
+</AppShell>

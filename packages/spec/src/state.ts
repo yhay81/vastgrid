@@ -200,18 +200,26 @@ function fail(path: string, reason: StateErrorReason, message: string): never {
   throw new StateError(path, reason, message);
 }
 
-function members(value: Record<string, unknown>, allowed: readonly string[], path: string) {
+function child(path: string, key: string | number) {
+  return `${path}/${String(key).replaceAll("~", "~0").replaceAll("/", "~1")}`;
+}
+
+export function checkMembers(value: Record<string, unknown>, allowed: readonly string[], path: string) {
   for (const key of Object.keys(value)) {
-    if (!allowed.includes(key)) fail(`${path}/${key}`, "syntax", `"${key}" is not a member here.`);
+    if (!allowed.includes(key)) fail(child(path, key), "syntax", `"${key}" is not a member here.`);
   }
 }
 
-function name(value: unknown, path: string): string {
-  if (typeof value !== "string" || [...value].length < 1 || [...value].length > 256) {
+const members = checkMembers;
+
+export function checkName(value: unknown, path: string): string {
+  if (typeof value !== "string" || value.length === 0 || (value.length > 256 && [...value].length > 256)) {
     fail(path, "syntax", "A name is a string of 1 to 256 characters.");
   }
   return value;
 }
+
+const name = checkName;
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], path: string): T {
   if (typeof value !== "string" || !(allowed as readonly string[]).includes(value)) {
@@ -241,10 +249,115 @@ export function checkRowKey(value: unknown, path: string): RowKey {
   }
   members(value, ["value"], path);
   const key = value.value;
-  if (typeof key !== "string" && typeof key !== "number" && typeof key !== "boolean") {
+  if (typeof key !== "string" && (typeof key !== "number" || !Number.isFinite(key)) && typeof key !== "boolean") {
     fail(`${path}/value`, "syntax", "A key's value is a string, a number or a boolean.");
   }
   return { value: key };
+}
+
+function checkNumberFormat(value: unknown, path: string) {
+  if (!isObject(value)) fail(path, "syntax", "number is an object.");
+  members(
+    value,
+    [
+      "style",
+      "currency",
+      "currencyDisplay",
+      "fractionDigits",
+      "minimumFractionDigits",
+      "maximumFractionDigits",
+      "grouping",
+      "notation",
+      "signDisplay",
+      "prefix",
+      "suffix",
+    ],
+    path,
+  );
+  if (value.style !== undefined) oneOf(value.style, ["decimal", "percent", "currency"], `${path}/style`);
+  if (value.currency !== undefined) {
+    if (typeof value.currency !== "string" || !/^[A-Z]{3}$/.test(value.currency)) {
+      fail(`${path}/currency`, "syntax", "currency is a three-letter ISO 4217 code.");
+    }
+  }
+  if (value.currencyDisplay !== undefined) {
+    oneOf(value.currencyDisplay, ["symbol", "narrowSymbol", "code", "name"], `${path}/currencyDisplay`);
+  }
+  for (const key of ["fractionDigits", "minimumFractionDigits", "maximumFractionDigits"] as const) {
+    const digits = value[key];
+    if (
+      digits !== undefined &&
+      (typeof digits !== "number" || !Number.isInteger(digits) || digits < 0 || digits > 100)
+    ) {
+      fail(`${path}/${key}`, "syntax", `${key} is an integer from 0 to 100.`);
+    }
+  }
+  if (value.grouping !== undefined && typeof value.grouping !== "boolean") {
+    fail(`${path}/grouping`, "syntax", "grouping is a boolean.");
+  }
+  if (value.notation !== undefined) {
+    oneOf(value.notation, ["standard", "scientific", "engineering", "compact"], `${path}/notation`);
+  }
+  if (value.signDisplay !== undefined) {
+    oneOf(value.signDisplay, ["auto", "always", "exceptZero", "negative", "never"], `${path}/signDisplay`);
+  }
+  for (const key of ["prefix", "suffix"] as const) {
+    if (value[key] !== undefined && typeof value[key] !== "string") {
+      fail(`${path}/${key}`, "syntax", `${key} is a string.`);
+    }
+  }
+}
+
+function checkDateFormat(value: unknown, path: string) {
+  if (!isObject(value)) fail(path, "syntax", "date is an object.");
+  members(
+    value,
+    [
+      "pattern",
+      "dateStyle",
+      "timeStyle",
+      "weekday",
+      "year",
+      "month",
+      "day",
+      "hour",
+      "minute",
+      "second",
+      "fractionalSecondDigits",
+      "hour12",
+      "timeZoneName",
+      "timeZone",
+    ],
+    path,
+  );
+  for (const key of ["pattern", "timeZone"] as const) {
+    if (value[key] !== undefined && typeof value[key] !== "string") {
+      fail(`${path}/${key}`, "syntax", `${key} is a string.`);
+    }
+  }
+  for (const key of ["dateStyle", "timeStyle"] as const) {
+    if (value[key] !== undefined) oneOf(value[key], ["full", "long", "medium", "short"], `${path}/${key}`);
+  }
+  if (value.weekday !== undefined) oneOf(value.weekday, ["long", "short", "narrow"], `${path}/weekday`);
+  for (const key of ["year", "day", "hour", "minute", "second"] as const) {
+    if (value[key] !== undefined) oneOf(value[key], ["numeric", "2-digit"], `${path}/${key}`);
+  }
+  if (value.month !== undefined) oneOf(value.month, ["numeric", "2-digit", "long", "short", "narrow"], `${path}/month`);
+  if (value.fractionalSecondDigits !== undefined) {
+    if (
+      value.fractionalSecondDigits !== 1 &&
+      value.fractionalSecondDigits !== 2 &&
+      value.fractionalSecondDigits !== 3
+    ) {
+      fail(`${path}/fractionalSecondDigits`, "syntax", "fractionalSecondDigits is 1, 2 or 3.");
+    }
+  }
+  if (value.hour12 !== undefined && typeof value.hour12 !== "boolean") {
+    fail(`${path}/hour12`, "syntax", "hour12 is a boolean.");
+  }
+  if (value.timeZoneName !== undefined) {
+    oneOf(value.timeZoneName, ["short", "long", "shortOffset", "longOffset"], `${path}/timeZoneName`);
+  }
 }
 
 /** Checks a column format (§5.1) and gives it. */
@@ -253,8 +366,8 @@ export function checkColumnFormat(value: unknown, path: string): ColumnFormat {
   members(value, ["label", "number", "date", "align", "wrap", "copy", "styles"], path);
   if (value.label !== undefined && typeof value.label !== "string")
     fail(`${path}/label`, "syntax", "label is a string.");
-  if (value.number !== undefined && !isObject(value.number)) fail(`${path}/number`, "syntax", "number is an object.");
-  if (value.date !== undefined && !isObject(value.date)) fail(`${path}/date`, "syntax", "date is an object.");
+  if (value.number !== undefined) checkNumberFormat(value.number, `${path}/number`);
+  if (value.date !== undefined) checkDateFormat(value.date, `${path}/date`);
   if (value.align !== undefined) oneOf(value.align, ["left", "center", "right"], `${path}/align`);
   if (value.wrap !== undefined && typeof value.wrap !== "boolean") fail(`${path}/wrap`, "syntax", "wrap is a boolean.");
   if (value.copy !== undefined) oneOf(value.copy, ["raw", "formatted"], `${path}/copy`);
@@ -317,10 +430,8 @@ export function checkDocument(value: unknown): GridDocument {
   members(value, ["kind", "version", "schema", "rowKey", "plan", "columns"], "");
   const document = emptyDocument();
   if (value.schema !== undefined) {
-    if (!Array.isArray(value.schema) || !value.schema.every((item) => typeof item === "string")) {
-      fail("/schema", "syntax", "schema is a list of names.");
-    }
-    document.schema = value.schema as string[];
+    if (!Array.isArray(value.schema)) fail("/schema", "syntax", "schema is a list of names.");
+    document.schema = value.schema.map((item, index) => name(item, `/schema/${index}`));
   }
   if (value.rowKey !== undefined) document.rowKey = name(value.rowKey, "/rowKey");
   if (value.plan !== undefined) {
@@ -606,69 +717,99 @@ export function repairDocument(
   table: readonly Column[],
   options: CheckOptions = {},
 ): { document: GridDocument; removed: string[] } {
-  const plan = document.plan ?? {};
+  const plan = (isObject(document.plan) ? document.plan : {}) as Record<string, unknown>;
   const removed: string[] = [];
+  if (document.plan !== undefined && !isObject(document.plan)) removed.push("/plan");
   const valid = (candidate: Plan) => validates(candidate, table, options);
   const next: Plan = {};
   const derive: Derived[] = [];
-  (plan.derive ?? []).forEach((item, index) => {
-    if (valid({ derive: [...derive, item] })) derive.push(item);
-    else removed.push(`/plan/derive/${index}`);
-  });
+  if (plan.derive !== undefined) {
+    if (!Array.isArray(plan.derive)) {
+      removed.push("/plan/derive");
+    } else {
+      plan.derive.forEach((item, index) => {
+        if (valid({ derive: [...derive, item as Derived] })) derive.push(item as Derived);
+        else removed.push(`/plan/derive/${index}`);
+      });
+    }
+  }
   if (derive.length > 0) next.derive = derive;
+  const canAnd = !options.functions || options.functions.includes("and");
   const repairCondition = (member: "where" | "having") => {
     const condition = plan[member];
     if (condition === undefined) return;
-    if (valid({ ...next, [member]: condition })) {
-      next[member] = condition;
+    if (options.plan?.[member] === false) {
+      removed.push(`/plan/${member}`);
       return;
     }
-    if (!("fn" in condition) || condition.fn !== "and") {
+    if (valid({ ...next, [member]: condition as Expr })) {
+      next[member] = condition as Expr;
+      return;
+    }
+    if (
+      !isObject(condition) ||
+      condition.fn !== "and" ||
+      !Array.isArray(condition.args) ||
+      condition.args.length < 2 ||
+      !canAnd
+    ) {
       removed.push(`/plan/${member}`);
       return;
     }
     const kept: Expr[] = [];
     condition.args.forEach((arg, index) => {
-      if (valid({ ...next, [member]: joinParts([...kept, arg]) })) kept.push(arg);
+      if (valid({ ...next, [member]: joinParts([...kept, arg as Expr]) })) kept.push(arg as Expr);
       else removed.push(`/plan/${member}/args/${index}`);
     });
     const joined = joinParts(kept);
     if (joined) next[member] = joined;
   };
   repairCondition("where");
-  if (plan.aggregate) {
-    const keys: string[] = [];
-    plan.aggregate.keys.forEach((key, index) => {
-      if (valid({ ...next, aggregate: { keys: [...keys, key], measures: [] } })) keys.push(key);
-      else removed.push(`/plan/aggregate/keys/${index}`);
-    });
-    const measures: Measure[] = [];
-    plan.aggregate.measures.forEach((measure, index) => {
-      if (valid({ ...next, aggregate: { keys, measures: [...measures, measure] } })) measures.push(measure);
-      else removed.push(`/plan/aggregate/measures/${index}`);
-    });
-    if (keys.length === 0 && measures.length === 0) {
+  if (plan.aggregate !== undefined) {
+    if (!isObject(plan.aggregate) || !Array.isArray(plan.aggregate.keys) || !Array.isArray(plan.aggregate.measures)) {
       removed.push("/plan/aggregate");
       if (plan.having !== undefined) removed.push("/plan/having");
     } else {
-      next.aggregate = { keys, measures };
-      if (plan.aggregate.pivot) {
-        const withPivot = { keys, measures, pivot: plan.aggregate.pivot };
-        if (valid({ ...next, aggregate: withPivot })) next.aggregate = withPivot;
-        else removed.push("/plan/aggregate/pivot");
+      const keys: string[] = [];
+      plan.aggregate.keys.forEach((key, index) => {
+        if (valid({ ...next, aggregate: { keys: [...keys, key as string], measures: [] } })) keys.push(key as string);
+        else removed.push(`/plan/aggregate/keys/${index}`);
+      });
+      const measures: Measure[] = [];
+      plan.aggregate.measures.forEach((measure, index) => {
+        if (valid({ ...next, aggregate: { keys, measures: [...measures, measure as Measure] } })) {
+          measures.push(measure as Measure);
+        } else {
+          removed.push(`/plan/aggregate/measures/${index}`);
+        }
+      });
+      if (keys.length === 0 && measures.length === 0) {
+        removed.push("/plan/aggregate");
+        if (plan.having !== undefined) removed.push("/plan/having");
+      } else {
+        next.aggregate = { keys, measures };
+        if (plan.aggregate.pivot !== undefined) {
+          const withPivot = { keys, measures, pivot: plan.aggregate.pivot as NonNullable<Plan["aggregate"]>["pivot"] };
+          if (valid({ ...next, aggregate: withPivot })) next.aggregate = withPivot;
+          else removed.push("/plan/aggregate/pivot");
+        }
+        repairCondition("having");
       }
-      repairCondition("having");
     }
   } else if (plan.having !== undefined) {
     removed.push("/plan/having");
   }
-  if (plan.sort) {
-    const sort: SortKey[] = [];
-    plan.sort.forEach((key, index) => {
-      if (valid({ ...next, sort: [...sort, key] })) sort.push(key);
-      else removed.push(`/plan/sort/${index}`);
-    });
-    if (sort.length > 0) next.sort = sort;
+  if (plan.sort !== undefined) {
+    if (!Array.isArray(plan.sort)) {
+      removed.push("/plan/sort");
+    } else {
+      const sort: SortKey[] = [];
+      plan.sort.forEach((key, index) => {
+        if (valid({ ...next, sort: [...sort, key as SortKey] })) sort.push(key as SortKey);
+        else removed.push(`/plan/sort/${index}`);
+      });
+      if (sort.length > 0) next.sort = sort;
+    }
   }
   const repaired: GridDocument = { ...document, plan: next };
   if (document.columns) {

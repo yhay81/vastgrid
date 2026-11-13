@@ -69,21 +69,27 @@ function mapOf(fold: Fold) {
 
 /** `fold(text, fold)` (§4.4). */
 export function foldText(text: string, fold: Fold): string {
+  let start = 0;
+  while (start < text.length && text.charCodeAt(start) < 0x3000) start++;
+  if (start === text.length) return text;
   const { pairs, single } = mapOf(fold);
-  const chars = [...text];
-  let result = "";
-  for (let index = 0; index < chars.length; index++) {
-    if (pairs.size > 0 && index + 1 < chars.length) {
-      const pair = pairs.get(chars[index] + chars[index + 1]);
+  let result = text.slice(0, start);
+  for (let index = start; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    if (code < 0x3000) {
+      result += text[index];
+      continue;
+    }
+    if (pairs.size > 0 && index + 1 < text.length) {
+      const pair = pairs.get(text.slice(index, index + 2));
       if (pair !== undefined) {
         result += pair;
         index++;
         continue;
       }
     }
-    const code = chars[index].codePointAt(0)!;
     const mapped = single.get(code);
-    result += mapped === undefined ? chars[index] : String.fromCodePoint(mapped);
+    result += mapped === undefined ? text[index] : String.fromCodePoint(mapped);
   }
   return result;
 }
@@ -95,14 +101,71 @@ export function foldAll(text: string, folds: readonly Fold[] | undefined): strin
   return result;
 }
 
+// Simple case mappings that DuckDB 2.0 (utf8proc) makes where JavaScript maps a code point to several (§3.4).
+const LOWER_SPECIAL = new Map<number, string>([[0x130, "i"]]);
+const UPPER_SPECIAL = new Map<number, string>([
+  [0xdf, "ẞ"],
+  [0x1fb3, "ᾼ"],
+  [0x1fc3, "ῌ"],
+  [0x1ff3, "ῼ"],
+]);
+for (let code = 0x1f80; code <= 0x1faf; code++) {
+  // Greek letters with ypogegrammeni map to the same letters with prosgegrammeni, 8 code points on.
+  UPPER_SPECIAL.set(code, String.fromCodePoint((code & 0xf) < 8 ? code + 8 : code));
+}
+const lowerCache = new Map<string, string>();
+const upperCache = new Map<string, string>();
+
+function mapCase(text: string, upper: boolean): string {
+  let needsChange = false;
+  let ascii = true;
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    if (code >= 0x80) {
+      ascii = false;
+      break;
+    }
+    if (upper ? code >= 0x61 && code <= 0x7a : code >= 0x41 && code <= 0x5a) needsChange = true;
+  }
+  if (ascii) return needsChange ? (upper ? text.toUpperCase() : text.toLowerCase()) : text;
+  const cache = upper ? upperCache : lowerCache;
+  const special = upper ? UPPER_SPECIAL : LOWER_SPECIAL;
+  let result = "";
+  for (const point of text) {
+    let mapped = cache.get(point);
+    if (mapped === undefined) {
+      const code = point.codePointAt(0)!;
+      mapped = special.get(code);
+      if (mapped === undefined) {
+        const plain = upper ? point.toUpperCase() : point.toLowerCase();
+        // A code point that JavaScript maps to several stays as it is, as in utf8proc's simple mappings.
+        mapped = plain.length === point.length || [...plain].length === 1 ? plain : point;
+      }
+      if (cache.size < 4096) cache.set(point, mapped);
+    }
+    result += mapped;
+  }
+  return result;
+}
+
+/** `lower(text)` (§3.4, §4.4): each code point mapped by itself with utf8proc's simple lowercase mapping. */
+export function lowerText(text: string): string {
+  return mapCase(text, false);
+}
+
+/** `upper(text)` (§3.4, §4.4): each code point mapped by itself with utf8proc's simple uppercase mapping. */
+export function upperText(text: string): string {
+  return mapCase(text, true);
+}
+
 /**
  * Whether every row that a search finds is found by another, the view's (§5.2.1): both fold the same, and the
- * folded text of the one is contained in that of the view's, since `lower` and the folds map the text of a value
- * in the same way.
+ * folded and lowercased text of the one is contained in that of the view's, since `lower` and the folds map the
+ * text of a value in the same way.
  */
 export function searchImplies(view: { search: string; fold?: Fold[] }, part: { search: string; fold?: Fold[] }) {
   const folds = view.fold ?? [];
   const partFolds = part.fold ?? [];
   if (folds.length !== partFolds.length || folds.some((fold, index) => partFolds[index] !== fold)) return false;
-  return foldAll(view.search, folds).includes(foldAll(part.search, folds));
+  return lowerText(foldAll(view.search, folds)).includes(lowerText(foldAll(part.search, folds)));
 }

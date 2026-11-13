@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdir, readdir, symlink, utimes, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { DuckDBInstance } from "@duckdb/node-api";
 import { checkResponse, MESSAGE_LIMITS, planHash } from "vastgrid-spec";
-import { afterAll, beforeAll, test } from "vite-plus/test";
+import { afterAll, beforeAll, test, vi } from "vite-plus/test";
 import { DuckDBEngine, tableFormatOf } from "../src/index.ts";
 import { type Client, type Json, setUp, type TableInfo } from "./client.ts";
 
@@ -59,7 +60,7 @@ test("table files are recognised by their extension", () => {
 
 test("loads a CSV with types, quotes and line breaks (§2.1)", async () => {
   const info = await client.open("fruit.csv");
-  assert.equal(info.status, "ready", info.error);
+  assert.equal(info.status, "ready", info.error ?? "");
   assert.equal(info.rowCount, 5);
   assert.equal(info.readableRows, 5);
   assert.equal(info.format, "csv");
@@ -101,7 +102,7 @@ test("CSV files with line breaks in quotes keep every record, padded or not (§2
   for (const [name, text, rowCount, last] of files) {
     await writeFile(path.join(workspace, name), text);
     const info = await client.open(name);
-    assert.equal(info.status, "ready", info.error);
+    assert.equal(info.status, "ready", info.error ?? "");
     assert.equal(info.rowCount, rowCount, name);
     assert.deepEqual((await client.rows(info, { start: rowCount - 1, end: rowCount })).rows, [last], name);
   }
@@ -114,7 +115,7 @@ test("reads BOM-marked UTF-16 CSV in either byte order", async () => {
     if (encoding === "utf-16be") bytes.swap16();
     await writeFile(path.join(workspace, `${encoding}.csv`), bytes);
     const info = await client.open(`${encoding}.csv`);
-    assert.equal(info.status, "ready", info.error);
+    assert.equal(info.status, "ready", info.error ?? "");
     assert.deepEqual(names(info), ["名前", "数"]);
     assert.deepEqual(info.notes, ["encoding:utf-16"]);
     assert.deepEqual((await client.rows(info)).rows, [
@@ -410,7 +411,7 @@ test("falls back when types change late or rows are irregular, and tells clients
   const opened = await client.result<TableInfo>("open", { ref: "late.csv" });
   await context.engine.whenLoaded(opened.table);
   const late = await client.result<TableInfo>("info", { table: opened.table });
-  assert.equal(late.status, "ready", late.error);
+  assert.equal(late.status, "ready", late.error ?? "");
   assert.equal(late.rowCount, 30_001);
   assert.deepEqual(late.columns, [{ name: "value", type: "string", sourceType: "VARCHAR" }]);
   assert.deepEqual((await client.rows(late, { start: 30_000, end: 30_001 })).rows, [["not a number"]]);
@@ -435,7 +436,7 @@ test("falls back when types change late or rows are irregular, and tells clients
 
   await writeFile(path.join(workspace, "ragged.csv"), "a,b,c\n1,2,3\n4,5\n6,7,8,9\n");
   const ragged = await client.open("ragged.csv");
-  assert.equal(ragged.status, "ready", ragged.error);
+  assert.equal(ragged.status, "ready", ragged.error ?? "");
   assert.equal(ragged.rowCount, 3, "short and long rows are kept");
   assert.deepEqual(names(ragged), ["a", "b", "c", "column3"]);
 
@@ -446,7 +447,7 @@ test("falls back when types change late or rows are irregular, and tells clients
   const mixed = await client.open("mixed-lines.csv");
   await context.engine.whenLoaded(mixed.table);
   const loose = await client.result<TableInfo>("info", { table: mixed.table });
-  assert.equal(loose.status, "ready", loose.error);
+  assert.equal(loose.status, "ready", loose.error ?? "");
   assert.equal(loose.rowCount, 3_001);
   assert.deepEqual(
     loose.columns.map((column) => column.type),
@@ -464,7 +465,7 @@ test("falls back when types change late or rows are irregular, and tells clients
   const quoted = await client.open("mixed-quoted.csv");
   await context.engine.whenLoaded(quoted.table);
   const inQuotes = await client.result<TableInfo>("info", { table: quoted.table });
-  assert.equal(inQuotes.status, "ready", inQuotes.error);
+  assert.equal(inQuotes.status, "ready", inQuotes.error ?? "");
   assert.deepEqual(
     inQuotes.columns.map((column) => column.type),
     ["bigint", "string"],
@@ -720,6 +721,28 @@ test("requests that do not follow §8 are answered with invalid_request", async 
   });
 });
 
+test("the default session directory is private and never follows another user's link", async () => {
+  const shared = path.join(context.root, "shared-tmp");
+  const other = path.join(shared, "someone-else");
+  await mkdir(path.join(other, "session-999999-deadbeef"), { recursive: true });
+  const tmpdir = vi.spyOn(os, "tmpdir").mockReturnValue(shared);
+  try {
+    const engine = await DuckDBEngine.create({ allowedDirectories: [workspace], threads: 1 });
+    await engine.dispose();
+    const [own] = (await readdir(shared)).filter((name) => name.startsWith("vastgrid-"));
+    if (process.getuid) {
+      assert.equal(own, `vastgrid-${process.getuid()}`);
+      assert.equal((await stat(path.join(shared, own))).mode & 0o777, 0o700);
+      await rm(path.join(shared, own), { recursive: true });
+      await symlink(other, path.join(shared, own));
+      await assert.rejects(DuckDBEngine.create({ allowedDirectories: [workspace] }), /private temporary directory/);
+    }
+    assert.deepEqual(await readdir(other), ["session-999999-deadbeef"]);
+  } finally {
+    tmpdir.mockRestore();
+  }
+});
+
 test("engines delete their session folders, also those that ended processes left", async () => {
   const base = path.join(context.root, "temp-sessions");
   await mkdir(path.join(base, "session-999999-deadbeef"), { recursive: true });
@@ -739,7 +762,7 @@ test("a file in folders named like key=value has its own columns, not ones made 
   await writeFile(path.join(workspace, "region=west/year=2024/sales.json"), '[{"id":1,"item":"a"}]');
   for (const name of ["sales.parquet", "sales.csv", "sales.jsonl", "sales.json"]) {
     const info = await client.open(`region=west/year=2024/${name}`);
-    assert.equal(info.status, "ready", info.error);
+    assert.equal(info.status, "ready", info.error ?? "");
     assert.deepEqual(
       info.columns.map((column) => column.name),
       ["id", "item"],

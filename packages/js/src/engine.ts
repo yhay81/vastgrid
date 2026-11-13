@@ -20,7 +20,7 @@ import { capabilities, PLAN_OPTIONS } from "./capabilities.js";
 import { write } from "./edits.js";
 import { contentsOf, forgets, type Table } from "./open-table.js";
 import { exportRows, find, locate, rows, summarize } from "./reads.js";
-import { Failure, type Json, type Running, started } from "./running.js";
+import { Failure, type Json, pause, type Running, started } from "./running.js";
 import {
   type ArrowTable,
   type CheckedTable,
@@ -185,8 +185,8 @@ class Engine implements MemoryEngine {
         // A table that no ID names any more forgets its ranks and views, unless it holds written values, which
         // every later request sees (§7.2); opening it again checks it again.
         if (--table.open === 0 && table.written.size === 0) {
-          this.prepared.delete(table.key);
-          table.reader?.close();
+          if (this.prepared.get(table.key) === table) this.prepared.delete(table.key);
+          if (!this.texts.has(table.key)) table.reader?.close();
         }
         return null;
       }
@@ -202,13 +202,22 @@ class Engine implements MemoryEngine {
         return exportRows(await this.whole(request, running), request, running);
       case "write": {
         const table = await this.whole(request, running);
-        const written = await write(table, request, running);
-        if (written.updated > 0) {
-          for (const id of this.idsOf(table)) {
-            this.emit({ v: 2, event: "changed", table: id, revision: table.revision, edits: { ...table.edits } });
+        const pending = (table.writing ?? Promise.resolve()).then(async () => {
+          await pause(running);
+          const written = await write(table, request, running);
+          if (written.updated > 0) {
+            for (const id of this.idsOf(table)) {
+              this.emit({ v: 2, event: "changed", table: id, revision: table.revision, edits: { ...table.edits } });
+            }
           }
-        }
-        return written;
+          return written;
+        });
+        // A failed write releases the next one just as a successful write does.
+        table.writing = pending.then(
+          () => {},
+          () => {},
+        );
+        return pending;
       }
       case "save":
         // A table in memory has no file to write back (§7.5).
@@ -403,15 +412,19 @@ class Engine implements MemoryEngine {
    */
   private async loadedWhole(table: Table, checked: CheckedTable) {
     if (table.status !== "loading") return;
+    if (table.open === 0 && this.prepared.get(table.key) !== table) {
+      if (this.prepared.get(table.key)?.reader !== checked.reader) checked.reader?.close();
+      return;
+    }
     const hash = await planHash(checkPlan({}, table.columns, PLAN_OPTIONS).plan);
+    if (table.open === 0 && this.prepared.get(table.key) !== table) {
+      if (this.prepared.get(table.key)?.reader !== checked.reader) checked.reader?.close();
+      return;
+    }
     const same = JSON.stringify(checked.columns) === JSON.stringify(table.columns);
     Object.assign(table, contentsOf(checked), { status: "ready", progress: 1, loaded: null });
     forgets(table);
-    if (!same) table.revision = `${table.revision}:read`;
-    if (table.open === 0 && this.prepared.get(table.key) !== table) {
-      table.reader?.close();
-      return;
-    }
+    if (!same) table.revision = `memory-${++revisionCount}`;
     for (const id of this.idsOf(table)) {
       if (!same) this.emit({ v: 2, event: "changed", table: id, revision: table.revision, edits: { ...table.edits } });
       this.emit({

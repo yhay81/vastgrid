@@ -33,21 +33,28 @@ self.addEventListener("message", function start(event: MessageEvent<{ file: File
 In the page, start a worker for each file and talk to it with `workerTransport`:
 
 ```tsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DataGrid, type Transport, workerTransport } from "vastgrid";
 import "vastgrid/styles.css";
 
 interface Opened {
   name: string;
   worker: Worker;
-  transport: Transport;
+  transport: Transport & { close(): void };
 }
 
 export function FileGrid() {
   const [opened, setOpened] = useState<Opened>();
 
+  useEffect(
+    () => () => {
+      opened?.transport.close();
+      opened?.worker.terminate();
+    },
+    [opened],
+  );
+
   function open(file: File) {
-    opened?.worker.terminate();
     const worker = new Worker(new URL("./engine-worker.ts", import.meta.url), { type: "module" });
     worker.postMessage({ file });
     setOpened({ name: file.name, worker, transport: workerTransport(worker) });
@@ -177,10 +184,11 @@ files have 8 columns; times are of one run.
 | Memory after opening | 58 MB | 1 MB | 590 MB | 2 MB |
 | Memory after all of the above | 107 MB | 129 MB | 1,020 MB | 1,264 MB |
 
-A Parquet file opens at once and pays when a request first reads a column whole; a text file pays when it opens.
-With `maxBytes` of 256 MiB, the 10M-row CSV opens in 4.7 s into no memory, and a summary or export of every
-column fails with `load_failed`. In Chromium, with the engine in a worker, the page has no long task while a
-million rows sort and its heap holds none of the table (10 MB).
+A Parquet file opens at once and pays when a request first reads a column whole; a text file pays to read the whole
+file (`Open` above is with `previewBytes: 0`, whereas with the default 4 MiB `previewBytes` a 1M-row CSV shows its
+first rows in about 60 ms while the rest loads). With `maxBytes` of 256 MiB, the 10M-row CSV loads in 4.7 s into no
+memory, and a summary or export of every column fails with `load_failed`. In Chromium, with the engine in a worker,
+the page has no long task while a million rows sort and its heap holds none of the table (10 MB).
 
 ## The /open/ page
 
@@ -190,8 +198,9 @@ is [site/src/components/open/engine-worker.ts](https://github.com/yhay81/vastgri
 
 ## Limits
 
-- The whole file is read before the first rows show: the 10M-row CSV above takes 10 seconds. Showing rows while
-  a file loads is a later step.
+- While a text file larger than `previewBytes` is still loading, only the plain view (`{}`) is shown: sorts,
+  filters, groups, summaries, find, writes and exports wait until the whole file is read (`partialViews: false`).
+  Excel workbooks are read whole before the first rows show.
 - A cancel is read every 40 ms or so; parts of a view (ranking numbers, sorting by ranks) run to their end first.
 - The engine does not save into the file. Export to keep edits.
 - The tab's memory is the limit. Past it, use the DuckDB engine on a server.

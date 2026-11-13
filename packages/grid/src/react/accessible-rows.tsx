@@ -1,5 +1,5 @@
-import { startTransition, useEffect, useState } from "react";
-import { type ActiveCell, type CellRange, type DisplayedColumn, type SortKey, textOf } from "vastgrid-spec";
+import { startTransition, useLayoutEffect, useState } from "react";
+import type { ActiveCell, CellRange, DisplayedColumn, SortKey } from "vastgrid-spec";
 import type { GridCanvas, Settled } from "../canvas/grid-canvas.js";
 import type { GridStore } from "../core/store.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
@@ -38,12 +38,36 @@ interface ShownRow {
   cells: Cell[];
 }
 
-/** The display positions of the columns on screen: those that scroll into view, and those pinned. */
-function shownColumns(settled: Settled, columns: readonly DisplayedColumn[]): number[] {
+/**
+ * An off-screen or overflowed active column that `shownColumns` would otherwise omit, or -1 when the active column
+ * is already among `shownColumns`. Staying -1 while the active cell moves across visible columns keeps `readScreen`
+ * memoized across arrow keys (§10 of react.md).
+ */
+function extraColumnOf(settled: Settled, columns: readonly DisplayedColumn[], active: ActiveCell | undefined): number {
+  const index = active ? columns.findIndex((item) => item.column.name === active.column) : columns.length > 0 ? 0 : -1;
+  if (index < 0) return -1;
+  let count = 0;
+  for (let column = 0; column < columns.length && count < MAX_COLUMNS; column++) {
+    const scrolls = column >= settled.left && column <= settled.right;
+    if (scrolls || columns[column].setting.pin !== undefined) {
+      if (column === index) return -1;
+      count++;
+    }
+  }
+  return index;
+}
+
+/** The display positions of the columns on screen: those that scroll into view, those pinned, and any active column. */
+function shownColumns(settled: Settled, columns: readonly DisplayedColumn[], extraColumn: number): number[] {
   const shown: number[] = [];
   for (let column = 0; column < columns.length && shown.length < MAX_COLUMNS; column++) {
     const scrolls = column >= settled.left && column <= settled.right;
     if (scrolls || columns[column].setting.pin !== undefined) shown.push(column);
+  }
+  if (extraColumn >= 0 && !shown.includes(extraColumn)) {
+    if (shown.length >= MAX_COLUMNS) shown[shown.length - 1] = extraColumn;
+    else shown.push(extraColumn);
+    shown.sort((a, b) => a - b);
   }
   return shown;
 }
@@ -84,9 +108,15 @@ function readRow(
  * cache change inside their objects, so `settled` is an argument: they are read again when scrolling pauses or
  * rows arrive (memoization, React Compiler's included, keys on it), and not when the selection moves.
  */
-function readScreen(canvas: GridCanvas, store: GridStore, settled: Settled, columns: readonly DisplayedColumn[]) {
+function readScreen(
+  canvas: GridCanvas,
+  store: GridStore,
+  settled: Settled,
+  columns: readonly DisplayedColumn[],
+  extraColumn: number,
+) {
   const { geometry } = canvas;
-  const shown = shownColumns(settled, columns);
+  const shown = shownColumns(settled, columns, extraColumn);
   const header = shown.map((column) => ({
     column,
     name: columns[column].column.name,
@@ -162,22 +192,25 @@ export function AccessibleRows({ canvas, id }: { canvas: GridCanvas; id: string 
   const { geometry } = canvas;
   const store = useGridStore();
   const [settled, setSettled] = useState(() => canvas.getSettled());
-  useEffect(
+  useLayoutEffect(
     () =>
       canvas.subscribeSettled(() => {
         startTransition(() => setSettled(canvas.getSettled()));
       }),
     [canvas],
   );
+  const rowCount = useGridSelector((snapshot) => snapshot.view?.rowCount ?? 0);
   const columns = useGridSelector((snapshot) => snapshot.displayed);
   const sort = useGridSelector((snapshot) => snapshot.document.plan?.sort);
   const selection = useGridSelector((snapshot) => snapshot.session.selection);
   const active = useGridSelector((snapshot) => snapshot.session.active);
   const totals = useGridSelector((snapshot) => snapshot.totals);
-  const screen = readScreen(canvas, store, settled, columns);
+  const extraColumn = extraColumnOf(settled, columns, active);
+  const screen = readScreen(canvas, store, settled, columns, extraColumn);
+  const activeRow = active?.row ?? 0;
   const elsewhere =
-    active && (active.row < settled.top || active.row >= screen.end) && active.row < geometry.rowCount
-      ? readRow(canvas, store, columns, screen.shown, active.row, false)
+    rowCount > 0 && columns.length > 0 && (activeRow < settled.top || activeRow >= screen.end) && activeRow < rowCount
+      ? readRow(canvas, store, columns, screen.shown, activeRow, false)
       : null;
   const rows = elsewhere ? [...screen.rows, elsewhere].sort((a, b) => a.row - b.row) : screen.rows;
   return (
@@ -203,8 +236,8 @@ export function AccessibleRows({ canvas, id }: { canvas: GridCanvas; id: string 
         // The totals row (§5.1 of the specification), after the rows.
         <div role="row" aria-rowindex={geometry.rowCount + 2}>
           {screen.header.map((cell) => {
-            const value = totals?.values[cell.name];
-            const type = totals?.columns[cell.name];
+            const item = columns[cell.column];
+            const text = totals && item ? (canvas.totalText(item) ?? "") : "";
             return (
               <div
                 key={cell.name}
@@ -212,12 +245,12 @@ export function AccessibleRows({ canvas, id }: { canvas: GridCanvas; id: string 
                 aria-colindex={cell.column + 1}
                 style={{
                   left: cell.left,
-                  top: geometry.bottom,
+                  top: geometry.scrollY.native + geometry.bottom,
                   width: cell.width,
                   height: geometry.footer,
                 }}
               >
-                {value === undefined || value === null || !type ? "" : (textOf(value, type) ?? "")}
+                {text}
               </div>
             );
           })}

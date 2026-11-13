@@ -304,3 +304,36 @@ test("export over an engine that answers data gives the file's bytes, with writt
   assert.equal(parquet.ok, false);
   disconnect();
 });
+
+test("pasting over a row key and undoing or redoing it targets the same source rows", async () => {
+  const { store, disconnect } = await editable({ kind: "vastgrid/document", version: 2, rowKey: "id" });
+  try {
+    await store.dispatch({ command: "select", row: 0, column: "id" });
+    const pasted = store.dispatch({ command: "edit.paste" }, { clipboard: { text: "2\tKyoto\n2\tNara" } });
+    const rows = () => [0, 1].map((row) => [store.cell(row, "id"), store.cell(row, "city")]);
+    assert.deepEqual(rows(), [
+      [2, "Kyoto"],
+      [2, "Nara"],
+    ]);
+    assert.equal((await pasted).ok, true);
+    await until(() => store.getSnapshot().pending === null && store.getSnapshot().table?.edits.version === 1);
+    assert.deepEqual(rows(), [
+      [2, "Kyoto"],
+      [2, "Nara"],
+    ]);
+    assert.equal((await store.dispatch({ command: "history.undo" })).ok, true);
+    await until(() => store.getSnapshot().pending === null && store.getSnapshot().table?.edits.version === 2);
+    assert.deepEqual(rows(), [
+      [1, "Tokyo"],
+      [2, "Osaka"],
+    ]);
+    assert.equal((await store.dispatch({ command: "history.redo" })).ok, true);
+    await until(() => store.getSnapshot().pending === null && store.getSnapshot().table?.edits.version === 3);
+    assert.deepEqual(rows(), [
+      [2, "Kyoto"],
+      [2, "Nara"],
+    ]);
+  } finally {
+    disconnect();
+  }
+});

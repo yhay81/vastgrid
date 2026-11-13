@@ -47,8 +47,8 @@ export function ExportMenu({ announce }: { announce: (text: string) => void }) {
     if (event.newState !== "open" || !button) return;
     const rect = button.getBoundingClientRect();
     const menu = event.currentTarget;
-    menu.style.top = `${rect.bottom + 4}px`;
-    menu.style.left = `${Math.max(8, rect.right - menu.offsetWidth)}px`;
+    menu.style.top = `${Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - menu.offsetHeight - 8))}px`;
+    menu.style.left = `${Math.max(8, Math.min(rect.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8))}px`;
   };
 
   const run = (format: string) => {
