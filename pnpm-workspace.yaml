@@ -24,7 +24,7 @@ catalog:
   # Vite+ (vp): Oxlint, Oxfmt, Vitest, Rolldown and Vite Task. Its core is Vite 8 with Rolldown, which also takes the
   # place of Vite (`vite@*` below), so that the examples, Astro, the React plugin and Vitest share one Vite.
   vite: npm:@voidzero-dev/vite-plus-core@1.4.0
-  vite-plus: 1.4.0
+  vite-plus: 1.5.1
 
 # Dependencies are pinned to exact versions (CONTRIBUTING.md).
 savePrefix: ""
