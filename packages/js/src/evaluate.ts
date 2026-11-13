@@ -477,7 +477,17 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
           return best;
         };
       }
-      const compares = types.map((left) => types.map((right) => comparer(left, right)));
+      // Comparisons depend on logical type and decimal scale, independent of the number of operands.
+      const distinct: ValueType[] = [];
+      const groups = types.map((candidate) => {
+        const index = distinct.findIndex(
+          (other) => other.type === candidate.type && scaleOf(other) === scaleOf(candidate),
+        );
+        if (index >= 0) return index;
+        distinct.push(candidate);
+        return distinct.length - 1;
+      });
+      const compares = distinct.map((left) => distinct.map((right) => comparer(left, right)));
       return (row) => {
         let best: JsonValue = null;
         let bestIndex = -1;
@@ -488,7 +498,7 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
             best = raw;
             bestIndex = index;
           } else {
-            const order = compares[index][bestIndex](raw, best);
+            const order = compares[groups[index]][groups[bestIndex]](raw, best);
             if (greatest ? order > 0 : order < 0) {
               best = raw;
               bestIndex = index;
@@ -681,7 +691,7 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
         if (y === null) return null;
         const z = c(row);
         if (z === null) return null;
-        return y === "" ? x : (x as string).replaceAll(y as string, z as string);
+        return y === "" ? x : (x as string).replaceAll(y as string, () => z as string);
       };
     case "contains":
     case "starts_with":

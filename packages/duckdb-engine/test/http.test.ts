@@ -119,6 +119,85 @@ test("a request is a POST of its JSON, and blocks are base64 in JSON responses (
   assert.deepEqual(decodeBlock(fromBase64(answer.result.block.base64)).rows, [["Apple"], ["Banana"]]);
 });
 
+test("allowedOrigins enables browser preflights, JSON, events and export downloads only for the allowed site", async () => {
+  const origin = "https://app.example";
+  const cors = createServer(
+    createHttpHandler(context.engine, {
+      path: "/api",
+      allowedOrigins: [origin],
+      allowedHosts: ["127.0.0.1"],
+    }),
+  );
+  await new Promise<void>((resolve) => cors.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${(cors.address() as AddressInfo).port}/api`;
+  const fromApp = { origin, "sec-fetch-site": "cross-site" };
+  try {
+    for (const [suffix, method, allowed] of [
+      ["", "POST", "POST"],
+      ["/events", "GET", "GET"],
+      ["/exports/example.csv", "HEAD", "GET, HEAD"],
+    ]) {
+      const answer = await fetch(url + suffix, {
+        method: "OPTIONS",
+        headers: {
+          ...fromApp,
+          "access-control-request-method": method,
+          "access-control-request-headers": "authorization,content-type",
+        },
+      });
+      assert.equal(answer.status, 204);
+      assert.equal(answer.headers.get("access-control-allow-origin"), origin);
+      assert.equal(answer.headers.get("access-control-allow-methods"), allowed);
+      assert.equal(answer.headers.get("access-control-allow-headers"), "authorization,content-type");
+      assert.match(answer.headers.get("vary") ?? "", /Origin/);
+    }
+    const opened = await fetch(url, {
+      method: "POST",
+      headers: { ...fromApp, "content-type": "application/json" },
+      body: JSON.stringify({ v: 2, id: ++id, op: "open", ref: "fruit.csv" }),
+    });
+    assert.equal(opened.status, 200);
+    assert.equal(opened.headers.get("access-control-allow-origin"), origin);
+    checkResponse(await opened.json(), "open");
+    const stream = await fetch(`${url}/events`, { headers: fromApp });
+    assert.equal(stream.headers.get("access-control-allow-origin"), origin);
+    await stream.body?.cancel();
+    const download = await fetch(`${url}/exports/missing`, { method: "HEAD", headers: fromApp });
+    assert.equal(download.status, 404);
+    assert.equal(download.headers.get("access-control-allow-origin"), origin);
+    assert.equal(download.headers.get("access-control-expose-headers"), "Content-Disposition");
+    for (const wrong of [{ origin: "https://elsewhere.example" }, { origin: "null" }]) {
+      const denied = await fetch(url, {
+        method: "OPTIONS",
+        headers: { ...wrong, "access-control-request-method": "POST" },
+      });
+      assert.equal(denied.status, 403);
+      assert.equal(denied.headers.get("access-control-allow-origin"), null);
+    }
+    for (const [method, status] of [
+      ["DELETE", 403],
+      ["POST", 204],
+    ]) {
+      const answer = await fetch(url, {
+        method: "OPTIONS",
+        headers: { ...fromApp, "access-control-request-method": String(method) },
+      });
+      assert.equal(answer.status, status);
+      assert.equal(answer.headers.get("access-control-allow-headers"), null);
+    }
+    const sameOrigin = await fetch(url, { method: "POST", headers: { origin: new URL(url).origin } });
+    assert.equal(sameOrigin.status, 415);
+    assert.equal(sameOrigin.headers.get("access-control-allow-origin"), null);
+    for (const origin of ["not a URL", "file://example.com"]) {
+      const denied = await fetch(url, { method: "POST", headers: { origin } });
+      assert.equal(denied.status, 403);
+    }
+  } finally {
+    cors.closeAllConnections();
+    await new Promise<void>((resolve) => cors.close(() => resolve()));
+  }
+});
+
 test("a client that accepts Arrow gets the block attached after the JSON", async () => {
   const table = await open();
   const response = await post(

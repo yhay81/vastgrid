@@ -188,6 +188,30 @@ test("a command that needs rows that are not read reads them first", async () =>
   disconnect();
 });
 
+test("an edit waiting for a cell stops when the selection or view changes", async ({ onTestFinished }) => {
+  const engine = fakeEngine(numbers(2000), { ...CAPABILITIES, write: true });
+  const store = createGridStore({ transport: localTransport(engine), table: "numbers" });
+  onTestFinished(store.connect());
+  await until(store, (snapshot) => snapshot.view !== null);
+  for (const change of ["selection", "view"]) {
+    const row = change === "selection" ? 1000 : 1500;
+    store.dispatchSync({ command: "select", row, column: "name" });
+    assert.equal(store.cell(row, "name"), undefined);
+    engine.hold();
+    const editing = store.dispatch({ command: "edit.begin" });
+    if (change === "selection") store.dispatchSync({ command: "select", row: 0, column: "id" });
+    else store.dispatchSync({ command: "sort.toggle", column: "id" });
+    engine.release();
+    const result = await editing;
+    assert.equal(result.ok ? "ok" : result.error.code, "cancelled");
+    assert.equal(store.currentSession().editor, undefined);
+    await until(store, (snapshot) => snapshot.pending === null);
+  }
+  store.dispatchSync({ command: "select", row: 1250, column: "name" });
+  assert.deepEqual(await store.dispatch({ command: "edit.begin" }), { ok: true });
+  assert.equal(store.currentSession().editor?.row, 1250);
+});
+
 test("commands before the table is open fail with not_ready and change nothing", async () => {
   const store = createGridStore({ transport: localTransport(fakeEngine(numbers(3))), table: "numbers" });
   const before = store.getSnapshot();

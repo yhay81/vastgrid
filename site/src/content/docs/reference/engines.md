@@ -12,7 +12,7 @@ views of plans, reads blocks of rows, writes cells and exports files. The grid r
 | --- | --- | --- |
 | Runs | in the page, in a Web Worker or in Node.js | in Node.js |
 | Tables | rows of typed JSON, Arrow, CSV, TSV, JSON Lines, Excel and Parquet files | CSV, TSV, JSON, JSON Lines and Parquet files, also compressed, Excel workbooks and DuckDB databases |
-| Size | within the memory of the page (`maxBytes`); Parquet read by row groups | any: DuckDB spills to disk, Parquet is read in place |
+| Size | within the memory of the page (`maxBytes`); Parquet read by row groups | DuckDB spills to disk and reads Parquet by row number |
 | Writes cells | tables given with `editable: true` | every file, kept apart from it |
 | Saves into the file | no | CSV and TSV, with `saveFiles: true` |
 | Exports | CSV, TSV, JSON, Excel, answered as the file's bytes | CSV, TSV, Parquet, JSON, Excel, written on the server |
@@ -220,6 +220,7 @@ middleware: requests to other paths go to `next`, or get 404 without it.
 | `exports` | `string` | `path` + `exports/` | The path under which exports without a target are downloaded. |
 | `maxBody` | `number` | 64 MiB | The largest body of a request; larger ones get 413. |
 | `keepAlive` | `number` | 15,000 | Milliseconds between the comments that keep the stream of events open. |
+| `allowedOrigins` | `string[]` | same origin | Additional browser origins allowed to send requests and read responses, including events and exports. Use full origins such as `https://app.example.com`. |
 
 | Route | Answer |
 | --- | --- |
@@ -237,7 +238,7 @@ middleware: requests to other paths go to `next`, or get 404 without it.
 | TSV | `.tsv`, `.tab`, `.tsv.gz`, `.tsv.zst`, `.tab.gz`, `.tab.zst` | as CSV |
 | JSON Lines | `.jsonl`, `.ndjson`, `.jsonl.gz`, `.jsonl.zst`, `.ndjson.gz`, `.ndjson.zst` | into DuckDB |
 | JSON | `.json`, `.json.gz`, `.json.zst` | into DuckDB |
-| Parquet | `.parquet`, `.pq` | in place, by row numbers |
+| Parquet | `.parquet`, `.pq` | by row number through a private hard link, or a temporary copy if a hard link cannot be created |
 | Excel | `.xlsx`, `.xlsm` | a sheet into DuckDB; `open`'s `read` chooses `sheet`, `headerRow`, `keepEmptyRows` and `keepEmptyColumns` |
 | DuckDB | `.duckdb`, `.ddb` | a table into DuckDB, the database attached read only meanwhile; its tables are the `sheets` (not its views), `schema.name` outside `main`, and `open`'s `read.sheet` chooses one |
 

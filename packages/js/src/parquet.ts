@@ -270,47 +270,26 @@ function nestedSpec(node: SchemaTree): { sourceType: string; format: (value: unk
     };
   }
   if (converted === "MAP" || converted === "MAP_KEY_VALUE" || logical === "MAP") {
-    element.converted_type = "MAP";
-    const [key, val] = children[0]?.children ?? [];
-    const keyLogical = key?.element.logical_type?.type;
-    const keySpec = key ? nestedSpec(key) : { sourceType: "NULL", format: String };
-    const valSpec = val ? nestedSpec(val) : { sourceType: "NULL", format: () => "NULL" };
-    const numericKey =
-      key?.element.type === "INT32" ||
-      key?.element.type === "FLOAT" ||
-      key?.element.type === "DOUBLE" ||
-      keyLogical === "FLOAT16";
-    const binaryKey =
-      (key?.element.type === "BYTE_ARRAY" || key?.element.type === "FIXED_LEN_BYTE_ARRAY") &&
-      keySpec.sourceType !== "VARCHAR" &&
-      keySpec.sourceType !== "JSON" &&
-      keySpec.sourceType !== "UUID" &&
-      keyLogical !== "FLOAT16";
-    const formatKey = (raw: unknown) => {
-      if (key?.element.type === "BOOLEAN" && typeof raw === "string") return keySpec.format(raw === "true");
-      if (typeof raw === "string" && numericKey) {
-        const parsed = Number(raw);
-        if (!Number.isNaN(parsed)) return keySpec.format(parsed);
-      }
-      if (typeof raw === "string" && (key?.element.type === "INT64" || key?.element.type === "INT96")) {
-        try {
-          return keySpec.format(BigInt(raw));
-        } catch {
-          return raw;
-        }
-      }
-      if (typeof raw === "string" && binaryKey) {
-        const bytes = raw === "" ? new Uint8Array(0) : new Uint8Array(raw.split(",").map(Number));
-        return keySpec.format(bytes);
-      }
-      return keySpec.format(raw);
-    };
+    // Read the repeated key/value group directly. hyparquet's MAP decoder coerces keys to object
+    // properties, losing the order of numeric keys and the values of compound keys.
+    delete element.converted_type;
+    delete element.logical_type;
+    const entries = children[0];
+    const [key, val] = entries?.children ?? [];
+    if (!key) throw problem("A Parquet MAP has no key field.");
+    const keySpec = nestedSpec(key);
+    const valSpec = val ? nestedSpec(val) : undefined;
     return {
-      sourceType: `MAP(${keySpec.sourceType}, ${valSpec.sourceType})`,
+      sourceType: `MAP(${keySpec.sourceType}, ${valSpec?.sourceType ?? "NULL"})`,
       format: (value) => {
         if (isNull(value)) return "NULL";
-        const entries = value instanceof Map ? [...value] : Object.entries(value as Record<string, unknown>);
-        return `{${entries.map(([k, v]) => `${formatKey(k)}=${valSpec.format(v)}`).join(", ")}}`;
+        const pairs = (value as Record<string, Record<string, unknown>[]>)[entries.element.name];
+        const formatted = pairs.map((pair) => {
+          const keyText = keySpec.format(pair[key.element.name]);
+          const valueText = valSpec ? valSpec.format(pair[val.element.name]) : "NULL";
+          return `${keyText}=${valueText}`;
+        });
+        return `{${formatted.join(", ")}}`;
       },
     };
   }

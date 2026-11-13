@@ -906,7 +906,7 @@ this table:
 | `unknown_column` | a column that the view does not have, or that is not displayed where a displayed one is needed |
 | `no_editor` | an editor command without an editor |
 | `nothing` | `history.undo`, `history.redo`, `history.undone` or `history.redone` with nothing to undo or redo |
-| `unsupported` | the engine does not offer it |
+| `unsupported` | the engine does not offer the operation, or an older history step lacks the source row ID for a key change (§7.4) |
 | `unknown_state` | checking or unchecking rows whose state is unknown (§5.2.1) |
 | `last_column` | hiding every column of the view |
 | `type` | a total that does not fit the column's type |
@@ -1043,9 +1043,10 @@ has one, its `rowKey`. Its updates are the cells in the order of the ranges, row
 column, each cell once, with `previous`, the value the cell had (§7.2); cells whose value would not change
 are left out, and a command left without updates gives no request. The cells a command writes MUST be
 writable (§7.1, `read_only`), and their keys and values, and those of the cells it copies from, MUST be in
-`context.rows` (`not_loaded`). `edit.commit` writes the editor's cell by the editor's key and value, and
-`history.undo` and `history.redo` by the step's keys, without `context.rows`; they only need writable columns. Filled values
-keep their value when the two columns have the same type, and are otherwise read from their text form
+`context.rows` (`not_loaded`). `edit.commit` uses the editor's saved key and value. An editor on the key
+column keeps the source row ID when available. If it holds only a value key, changing that value requires
+the matching source row ID from `context.rows` (§7.2). Undo and redo use the saved history keys (§7.4).
+Filled values keep their value when the two columns have the same type, and are otherwise read from their text form
 (§2.4) as the target column's type (§7.3).
 
 #### 6.5.1 Pasting
@@ -1135,8 +1136,8 @@ A `write` request (§8.2) names cells by row key and column name, with typed val
   write fails with `edit_conflict`.
 - A write carries the revision its rows were read at; when the table has another revision, it fails with
   `revision_changed`.
-- Commands that write several cells and change the key column address all cells in that write and its history step by source row ID (a single-cell write uses the source row ID when loaded, or the new key on undo),
-  so an earlier key change cannot redirect another update.
+- A command that changes the key column addresses every update in the write and its history step by source
+  row ID. This keeps each update attached to its original row even when keys become duplicates or null.
 - A write holds at most 100,000 updates.
 - Values are checked as their column's type without losing digits; one that does not fit fails the write
   with `invalid_value`. Cells that are not writable fail it with `read_only`.
@@ -1206,6 +1207,8 @@ or a fill): `{ "updates": [{ "key", "column", "before", "after" }] }`.
   `history.redo` and `history.redone` do the same the other way.
 - The history keeps at most 100 steps and 1,000,000 updates over both lists; the oldest steps of `undo` go
   first. A step larger than that on its own empties the history.
+- Undo or redo of an older step that addresses a changed key column by value fails with `unsupported`
+  because the step lacks the original source row ID.
 - Row-ID keys belong to one revision: when the revision changes, the history is emptied (§5.4).
 
 ### 7.5 Saving

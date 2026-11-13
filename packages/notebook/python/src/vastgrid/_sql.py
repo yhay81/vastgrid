@@ -302,7 +302,7 @@ def _bignum_decimal(bignum_sql: str, type: dict[str, Any]) -> str:
 
 
 def _wide_mod(left_sql: str, s1: int, right_sql: str, s2: int, type: dict[str, Any]) -> str:
-    """Exact decimal remainder when scale-aligned precision exceeds 38 digits (where DuckDB's `%` promotes to DOUBLE)."""
+    """Exact decimal remainder when scale-aligned precision exceeds 38 digits and DuckDB promotes % to DOUBLE."""
     scale = type.get("scale") or 0
     if s1 <= s2:
         shift = s2 - s1
@@ -642,10 +642,12 @@ class _Compiler:
                 scale = type.get("scale") or 0
                 max_whole = precision - scale
                 if any(
-                    item.type["type"] != "null" and (_exact_digits(item.type)[0] - _exact_digits(item.type)[1]) > max_whole
+                    item.type["type"] != "null"
+                    and (_exact_digits(item.type)[0] - _exact_digits(item.type)[1]) > max_whole
                     for item in args
                 ):
-                    chosen = f"{fn}({', '.join(_unscaled_bignum(self.expression(item), item.type, scale) for item in args)})"
+                    integers = (_unscaled_bignum(self.expression(item), item.type, scale) for item in args)
+                    chosen = f"{fn}({', '.join(integers)})"
                     return _bignum_decimal(chosen, type)
             return f"{fn}({typed()})"
         if fn in _OPERATORS:
@@ -862,7 +864,7 @@ def _sort_terms(sql: str, type: dict[str, Any], direction: str) -> list[str]:
 
 
 def _key_sql(sql: str, column: Column) -> str:
-    """The value of a group's key: DuckDB keeps the first row's, which may be −0.0 where §3.9 reads 0.0, and source dates/times outside §2.2 read as null."""
+    """Normalize the first row's group key: −0.0 becomes 0.0 (§3.9) and out-of-range dates/times become null (§2.2)."""
     if column["type"] == "float":
         return f"({sql} + CAST(0 AS {duckdb_type(column)}))"
     if column["type"] == "date":
@@ -926,9 +928,7 @@ def pivot_query(plan: CheckedPlan, source: SqlSource) -> SqlQuery:
     entries, _, _ = _rows_with(plan, source, compiler, _row_id_name(plan))
     ids = [compiler.column(column["name"]) for column in pivot.columns]
     distinct = [
-        ids[index]
-        if (expr := _key_sql(ids[index], column)) == ids[index]
-        else f"{expr} AS {ids[index]}"
+        ids[index] if (expr := _key_sql(ids[index], column)) == ids[index] else f"{expr} AS {ids[index]}"
         for index, column in enumerate(pivot.columns)
     ]
     texts = [

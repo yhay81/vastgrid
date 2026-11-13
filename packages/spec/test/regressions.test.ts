@@ -406,51 +406,72 @@ test("workbook bounds inflated parts, malformed ZIP64 headers, PIs, serial rollo
   assert.deepEqual(serialDate(2_958_465.999999999, DateStyle.Date, false), { kind: 8, text: "+010000-01-01" });
 });
 
-test("editing rowKey single-cell commit without context.rows, not_loaded precedence, and >53-bit range dedup", () => {
+test("a key-column editor keeps its source row ID through cache eviction, undo and redo", () => {
+  const table = [{ name: "id", type: "integer" as const }];
+  const state = { document: { ...emptyDocument(), rowKey: "id" }, session: emptySession() };
+  const context = {
+    table,
+    revision: "r1",
+    view: { columns: table, rowCount: 2, rowIds: true },
+    page: 10,
+    rows: [{ start: 0, keys: [{ value: 99 }, { value: 1 }], rowIds: [0, 1], columns: ["id"], values: [[99], [1]] }],
+  };
+  const evicted = { ...context, rows: [] };
+  const selected = applyCommand(state, { command: "select", row: 1, column: "id" }, context);
+  for (const after of [99, null]) {
+    const begun = applyCommand(selected, { command: "edit.begin", text: after === null ? "" : String(after) }, context);
+    assert.deepEqual(begun.session.editor?.key, { rowId: 1 });
+    const step = { column: "id", key: { rowId: 1 }, before: 1, after };
+    const write = (previous: number | null, value: number | null) => [
+      {
+        op: "write",
+        revision: "r1",
+        rowKey: "id",
+        updates: [{ column: "id", key: { rowId: 1 }, previous, value }],
+      },
+    ];
+    const committed = applyCommand(begun, { command: "edit.commit" }, evicted);
+    assert.deepEqual(committed.requests, write(1, after));
+    const pushed = applyCommand(committed, { command: "history.push", updates: [step] }, evicted);
+    assert.deepEqual(applyCommand(pushed, { command: "history.undo" }, evicted).requests, write(after, 1));
+    const undone = applyCommand(pushed, { command: "history.undone" }, evicted);
+    assert.deepEqual(applyCommand(undone, { command: "history.redo" }, evicted).requests, write(1, after));
+  }
+  const legacy = {
+    ...selected,
+    session: { ...selected.session, editor: { row: 1, column: "id", key: { value: 1 }, text: "99", value: 1 } },
+  };
+  assert.throws(
+    () => applyCommand(legacy, { command: "edit.commit" }, evicted),
+    (error: unknown) => error instanceof CommandError && error.reason === "not_loaded",
+  );
+  const retried = applyCommand(legacy, { command: "edit.commit" }, context);
+  assert.deepEqual(retried.requests[0], {
+    op: "write",
+    revision: "r1",
+    rowKey: "id",
+    updates: [{ column: "id", key: { rowId: 1 }, previous: 1, value: 99 }],
+  });
+  const ambiguous = applyCommand(
+    selected,
+    {
+      command: "history.push",
+      updates: [{ column: "id", key: { value: 1 }, before: 1, after: 99 }],
+    },
+    evicted,
+  );
+  assert.throws(
+    () => applyCommand(ambiguous, { command: "history.undo" }, evicted),
+    (error: unknown) => error instanceof CommandError && error.reason === "unsupported",
+  );
+});
+
+test("editing rowKey not_loaded precedence and >53-bit range dedup", () => {
   const table = [
     { name: "id", type: "integer" as const },
     { name: "qty", type: "integer" as const },
   ];
   const doc = { ...emptyDocument(), rowKey: "id" };
-  const evictedCommit = applyCommand(
-    {
-      document: doc,
-      session: {
-        ...emptySession(),
-        active: { row: 0, column: "id", key: { value: 1 } },
-        editor: { row: 0, column: "id", key: { value: 1 }, text: "99", value: 1 },
-      },
-    },
-    { command: "edit.commit" },
-    { table, revision: "r1", view: { columns: table, rowCount: 1, rowIds: true }, rows: [], page: 10 },
-  );
-  assert.deepEqual(evictedCommit.requests, [
-    {
-      op: "write",
-      revision: "r1",
-      rowKey: "id",
-      updates: [{ key: { value: 1 }, column: "id", value: 99, previous: 1 }],
-    },
-  ]);
-  const pushed = applyCommand(
-    evictedCommit,
-    { command: "history.push", updates: [{ key: { value: 1 }, column: "id", before: 1, after: 99 }] },
-    { table, revision: "r1", view: { columns: table, rowCount: 1, rowIds: true }, rows: [], page: 10 },
-  );
-  const undone = applyCommand(
-    pushed,
-    { command: "history.undo" },
-    { table, revision: "r1", view: { columns: table, rowCount: 1, rowIds: true }, rows: [], page: 10 },
-  );
-  assert.deepEqual(undone.requests, [
-    {
-      op: "write",
-      revision: "r1",
-      rowKey: "id",
-      updates: [{ key: { value: 99 }, column: "id", value: 1, previous: 99 }],
-    },
-  ]);
-
   assert.throws(
     () =>
       applyCommand(

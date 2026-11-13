@@ -566,8 +566,10 @@ export class Run {
     return this.lookup(row)?.key;
   }
 
-  keyAt(row: number): RowKey {
-    const key = this.lookup(row)?.key;
+  keyAt(row: number, sourceId = false): RowKey {
+    const loaded = this.lookup(row);
+    if (sourceId && loaded?.rowId !== undefined) return { rowId: loaded.rowId };
+    const key = loaded?.key;
     if (key === undefined) throw new Error(`The key of row ${row} is not loaded.`);
     return key;
   }
@@ -596,7 +598,7 @@ export class Run {
         const loaded = this.lookup(row);
         if (loaded?.rowId !== undefined && loaded.key && sameKey(loaded.key, key)) {
           key = { rowId: loaded.rowId };
-        } else if (changed.length > 1) {
+        } else {
           missing.add(row);
         }
       }

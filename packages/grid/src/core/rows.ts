@@ -60,6 +60,7 @@ export class RowReader {
   viewport: Viewport = { top: 0, rows: 0, columns: [] };
   private scheduled = false;
   private deferred: { start: number; end: number; columns: string[] }[] = [];
+  private readonly columnNames = new WeakMap<readonly Column[], Set<string>>();
 
   constructor(
     private readonly host: ReadHost,
@@ -89,7 +90,7 @@ export class RowReader {
       if (this.deferred.length < 32) this.deferred.push({ start, end, columns: [...columns] });
       return;
     }
-    const wanted = this.withKey(columns);
+    const wanted = this.withKeyFor(view, columns);
     const reads = view.cache.reads(start, end, wanted, view.info.rowCount);
     if (reads.length === 0) {
       // A read currently in flight for a shorter building view may finish without covering `[start, end)`.
@@ -131,7 +132,11 @@ export class RowReader {
   /** The columns of a view to read: those asked for that it has and its row key column, at least one. */
   withKeyFor(view: View, columns: readonly string[]): string[] {
     const available = view.info?.columns ?? view.checked.columns;
-    const names = new Set(available.map((column) => column.name));
+    let names = this.columnNames.get(available);
+    if (!names) {
+      names = new Set(available.map((column) => column.name));
+      this.columnNames.set(available, names);
+    }
     const wanted = columns.filter((column) => names.has(column));
     const key = this.host.rowKey();
     if (key !== undefined && names.has(key) && !wanted.includes(key)) wanted.push(key);
@@ -209,16 +214,6 @@ export class RowReader {
     }
   }
 
-  /** The columns to read: those asked for, and the row key column (§5.3), which commands need. */
-  private withKey(columns: readonly string[]): string[] {
-    const key = this.host.rowKey();
-    const view = this.host.current()?.info?.columns ?? [];
-    if (key === undefined || columns.includes(key) || !view.some((column) => column.name === key)) {
-      return [...columns];
-    }
-    return [...columns, key];
-  }
-
   private readVisible() {
     const view = this.host.current();
     if (!view?.info || !this.host.opened() || this.host.next() || view.abort.signal.aborted) return;
@@ -233,7 +228,7 @@ export class RowReader {
     const readable = view.info.status === "building" ? view.info.readableRows : view.info.rowCount;
     const end = Math.min(readable, top + rows + margin);
     view.cache.touch(top, top + rows);
-    for (const read of view.cache.reads(start, end, this.withKey(columns), readable)) {
+    for (const read of view.cache.reads(start, end, this.withKeyFor(view, columns), readable)) {
       void this.read(view, read).catch(() => {});
     }
     view.cache.evict(this.budget, start, end);

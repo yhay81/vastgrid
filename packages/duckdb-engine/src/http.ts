@@ -70,7 +70,11 @@ function isLoopbackHost(host: string) {
   return /^(?:localhost|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[::1\])(?::\d{1,5})?$/i.test(host);
 }
 
-function checkRequestOrigin(request: IncomingMessage, options: HttpHandlerOptions): string | null {
+function checkRequestOrigin(
+  request: IncomingMessage,
+  options: HttpHandlerOptions,
+  originAllowed: boolean,
+): string | null {
   const host = typeof request.headers.host === "string" ? request.headers.host.trim() : undefined;
   if (options.allowedHosts) {
     if (!host) return "The Host header is missing.";
@@ -86,9 +90,6 @@ function checkRequestOrigin(request: IncomingMessage, options: HttpHandlerOption
     }
   }
   const origin = typeof request.headers.origin === "string" ? request.headers.origin.trim() : undefined;
-  const allowedOrigins = options.allowedOrigins?.map((item) => item.toLowerCase());
-  const originAllowed =
-    origin !== undefined && allowedOrigins !== undefined && allowedOrigins.includes(origin.toLowerCase());
   const fetchSite =
     typeof request.headers["sec-fetch-site"] === "string"
       ? request.headers["sec-fetch-site"].trim().toLowerCase()
@@ -180,6 +181,7 @@ export function createHttpHandler(engine: DuckDBEngine, options: HttpHandlerOpti
   const events = options.events ?? `${prefix}events`;
   const exportsPath = options.exports ?? `${prefix}exports/`;
   const limit = options.maxBody ?? 64 * 1024 * 1024;
+  const allowedOrigins = new Set(options.allowedOrigins?.map((item) => item.toLowerCase()));
   const handle = async (
     request: IncomingMessage,
     response: ServerResponse,
@@ -197,17 +199,37 @@ export function createHttpHandler(engine: DuckDBEngine, options: HttpHandlerOpti
       invalid(response, 400, "The request URL is not valid.", "syntax");
       return;
     }
-    const isEvents = url.pathname === events && request.method === "GET";
-    const isExport = url.pathname.startsWith(exportsPath) && (request.method === "GET" || request.method === "HEAD");
+    const preflight =
+      request.method === "OPTIONS" && typeof request.headers["access-control-request-method"] === "string";
+    const isEvents = url.pathname === events && (request.method === "GET" || preflight);
+    const isExport = exportName !== undefined && (request.method === "GET" || request.method === "HEAD" || preflight);
     if (!isEvents && !isExport && url.pathname !== base) {
       if (next) next();
       else invalid(response, 404, "There is nothing at this path.", "syntax");
       return;
     }
-    response.setHeader?.("vary", "Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site");
-    const originProblem = checkRequestOrigin(request, options);
+    response.setHeader?.("vary", "Origin, Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site");
+    const origin = request.headers.origin;
+    const originAllowed = typeof origin === "string" && allowedOrigins.has(origin.trim().toLowerCase());
+    const originProblem = checkRequestOrigin(request, options, originAllowed);
     if (originProblem) {
       forbidden(response, originProblem);
+      return;
+    }
+    if (originAllowed) {
+      response.setHeader("access-control-allow-origin", origin);
+      response.setHeader("access-control-expose-headers", "Content-Disposition");
+    }
+    if (preflight) {
+      const methods = isEvents ? ["GET"] : isExport ? ["GET", "HEAD"] : ["POST"];
+      if (!originAllowed || !methods.includes(request.headers["access-control-request-method"] as string)) {
+        forbidden(response, "This cross-origin request is not allowed.");
+        return;
+      }
+      const headers = request.headers["access-control-request-headers"];
+      if (typeof headers === "string") response.setHeader("access-control-allow-headers", headers);
+      response.writeHead(204, { "access-control-allow-methods": methods.join(", "), "cache-control": "no-store" });
+      response.end();
       return;
     }
     if (isEvents) {

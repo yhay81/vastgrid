@@ -326,15 +326,22 @@ export class Grid {
       if (op === "open") {
         const wrongRef = typeof message.ref === "string" && message.ref !== this.file;
         const read = message.read;
-        const wrongRead =
-          this.sheet !== undefined
-            ? read === undefined ||
-              (isObject(read) && (read.sheet !== this.sheet || Object.keys(read).some((key) => key !== "sheet")))
-            : isObject(read) && Object.keys(read).length > 0;
+        // The App echoes the sheet from GridState even when the agent opened the default.
+        // Keep the original open options so both handles share the same table and edits.
+        const sheet = this.sheet ?? this.store.getSnapshot().table?.sheet;
+        const matchesSheet =
+          isObject(read) && read.sheet === sheet && Object.keys(read).length === 1 && typeof read.sheet === "string";
+        const wrongRead = isObject(read)
+          ? !matchesSheet && (this.sheet !== undefined || Object.keys(read).length > 0)
+          : read === undefined && this.sheet !== undefined;
         if (wrongRef || wrongRead) {
           return typeof message.id === "number"
             ? { v: 2, id: message.id, error: { code: "not_allowed", message: `This grid opens ${this.file} only.` } }
             : undefined;
+        }
+        if (this.sheet === undefined && matchesSheet) {
+          const { read: _read, ...defaultOpen } = message;
+          message = defaultOpen;
         }
       } else if (op !== "cancel" && typeof message.table === "string" && !client.tables.has(message.table)) {
         return typeof message.id === "number"

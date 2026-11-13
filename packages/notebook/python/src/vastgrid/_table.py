@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import os
+import posixpath
+import re
+import sys
 import uuid
 import zipfile
 from typing import Any
@@ -10,11 +13,13 @@ from xml.etree import ElementTree
 from zlib import error as zlib_error
 
 import duckdb
+import pyarrow as pa
 
 from ._columns import source_expression, table_column
 from ._edits import Edits
 from ._engine_types import Json, Relation, Source
 from ._errors import EngineError
+from ._export import XLSX_MAX_COLUMNS, XLSX_MAX_ROWS, excel_column_name
 from ._messages import quoted
 from ._session import Running, Session
 from ._sql import quote_identifier
@@ -50,6 +55,8 @@ _MAX_ZIP_ENTRIES = 10_000
 _MAX_WORKBOOK_XML = 32 * 1024 * 1024
 _MAX_PART_BASE = 128 * 1024 * 1024
 _MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024
+_XLSX_MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+_XLSX_REL = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
 
 
 def _read_bounded(archive: zipfile.ZipFile, info: zipfile.ZipInfo, limit: int, keep: bool) -> bytes:
@@ -66,9 +73,8 @@ def _read_bounded(archive: zipfile.ZipFile, info: zipfile.ZipInfo, limit: int, k
     return b"".join(chunks) if keep else b""
 
 
-def workbook_sheets(path: str) -> list[Json]:
+def workbook_sheets(path: str) -> tuple[list[Json], dict[str, str]]:
     """The sheets of a workbook in their order (§8.2 `sheets`), read from `xl/workbook.xml`."""
-    main = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
     with zipfile.ZipFile(path) as archive:
         infos = archive.infolist()
         if len(infos) > _MAX_ZIP_ENTRIES:
@@ -93,12 +99,57 @@ def workbook_sheets(path: str) -> list[Json]:
             raise KeyError("xl/workbook.xml")
         root = ElementTree.fromstring(workbook_bytes)
     sheets: list[Json] = []
-    for sheet in root.iter(f"{main}sheet"):
+    relationships: dict[str, str] = {}
+    for sheet in root.iter(f"{_XLSX_MAIN}sheet"):
         info_item: Json = {"name": sheet.get("name", "")}
+        relationships[info_item["name"]] = sheet.get(_XLSX_REL, "")
         if sheet.get("state") in ("hidden", "veryHidden"):
             info_item["hidden"] = True
         sheets.append(info_item)
-    return sheets
+    return sheets, relationships
+
+
+def _sheet_range(path: str, relationship: str, header: int) -> str | None:
+    """The rectangle containing values from the header down, even without an Excel dimension hint."""
+    with zipfile.ZipFile(path) as archive:
+        info = archive.getinfo("xl/_rels/workbook.xml.rels")
+        rels = ElementTree.fromstring(_read_bounded(archive, info, _MAX_WORKBOOK_XML, True))
+        target = next((item.get("Target") for item in rels if item.get("Id") == relationship), None)
+        if not target:
+            raise EngineError("load_failed", "The workbook's worksheet is missing.")
+        part = posixpath.normpath(posixpath.join("xl", target)).lstrip("/")
+        with archive.open(part) as sheet:
+            row = column = last_row = last_column = 0
+            first_column = XLSX_MAX_COLUMNS
+            data = None
+            for event, node in ElementTree.iterparse(sheet, events=("start", "end")):
+                if event == "start" and node.tag == f"{_XLSX_MAIN}sheetData":
+                    data = node
+                elif event == "start" and node.tag == f"{_XLSX_MAIN}row":
+                    row = int(node.get("r", row + 1))
+                    column = 0
+                elif event == "end" and node.tag == f"{_XLSX_MAIN}c" and row >= header:
+                    reference = node.get("r")
+                    if reference is None:
+                        column += 1
+                    else:
+                        match = re.fullmatch(r"([A-Z]{1,3})[1-9][0-9]{0,6}", reference)
+                        if not match:
+                            raise EngineError("load_failed", "The workbook has an invalid cell reference.")
+                        column = 0
+                        for letter in match[1]:
+                            column = column * 26 + ord(letter) - 64
+                    if column > XLSX_MAX_COLUMNS or row > XLSX_MAX_ROWS:
+                        raise EngineError("load_failed", "The worksheet exceeds Excel's dimensions.")
+                    if node.find(f"{_XLSX_MAIN}v") is not None or node.find(f"{_XLSX_MAIN}is") is not None:
+                        first_column = min(first_column, column)
+                        last_column = max(last_column, column)
+                        last_row = row
+                elif event == "end" and node.tag == f"{_XLSX_MAIN}row" and data is not None:
+                    data.clear()
+            if last_row == 0:
+                return None
+            return f"{excel_column_name(first_column - 1)}{header}:{excel_column_name(last_column - 1)}{last_row}"
 
 
 def _row_id_name(columns: list[Json]) -> str:
@@ -165,6 +216,7 @@ class Table:
         self.notes: list[str] = []
         self.sheets: list[Json] | None = None
         self.sheet: str | None = None
+        self.xlsx_range: str | None = None
         self.byte_size: int | None = None
         self.handles = 0
         self.objects: list[str] = []
@@ -202,16 +254,21 @@ class Table:
             return
         if fmt == "xlsx":
             try:
-                self.sheets = workbook_sheets(path)
+                self.sheets, relationships = workbook_sheets(path)
+                names = [sheet["name"] for sheet in self.sheets]
+                if source.sheet is not None and source.sheet not in names:
+                    raise EngineError("load_failed", f"The workbook has no sheet {quoted(source.sheet)}.")
+                visible = next((s["name"] for s in self.sheets if not s.get("hidden")), names[0]) if names else None
+                self.sheet = source.sheet if source.sheet is not None else visible
+                if self.sheet is not None and source.header_row is not None and source.header_row > 1:
+                    self.xlsx_range = _sheet_range(path, relationships[self.sheet], source.header_row)
+                    if self.xlsx_range is None:
+                        self.session.run(running, lambda cursor: self._create_empty(cursor, 0))
+                        return
             except EngineError:
                 raise
-            except (zipfile.BadZipFile, KeyError, ElementTree.ParseError, OSError, zlib_error) as error:
+            except (zipfile.BadZipFile, KeyError, ValueError, ElementTree.ParseError, OSError, zlib_error) as error:
                 raise EngineError("load_failed", "The file is not an Excel workbook.") from error
-            names = [sheet["name"] for sheet in self.sheets]
-            if source.sheet is not None and source.sheet not in names:
-                raise EngineError("load_failed", f"The workbook has no sheet {quoted(source.sheet)}.")
-            default_sheet = next((s["name"] for s in self.sheets if not s.get("hidden")), names[0]) if names else None
-            self.sheet = source.sheet if source.sheet is not None else default_sheet
         attempts = 3 if fmt in ("csv", "tsv") else 2 if fmt in ("json", "ndjson") else 1
         error: Exception | None = None
         for attempt in range(attempts):
@@ -278,8 +335,8 @@ class Table:
                     xlsx_opts.append("header=false")
                 else:
                     xlsx_opts.append("header=true")
-                    if self.source.header_row > 1:
-                        xlsx_opts.append(f"range='A{self.source.header_row}:XFD1048576'")
+                    if self.xlsx_range is not None:
+                        xlsx_opts.append(f"range='{self.xlsx_range}'")
             if self.source.keep_empty_rows is True:
                 xlsx_opts.append("stop_at_empty=false")
             if self.source.keep_empty_columns is True:
@@ -462,39 +519,31 @@ class Table:
         """A DataFrame-like object (pandas, Polars, PyArrow, a DuckDB relation), copied in its row order."""
         if isinstance(data, duckdb.DuckDBPyRelation):
             data = data.to_arrow_table()
-        elif type(data).__module__.startswith(("polars", "pandas")) and hasattr(data, "to_frame"):
+        pandas = sys.modules.get("pandas")
+        polars = sys.modules.get("polars")
+        if pandas and isinstance(data, pandas.Series) or polars and isinstance(data, polars.Series):
             data = data.to_frame()
-        if type(data).__module__.startswith("pyarrow") and hasattr(data, "validate"):
+        raw_names: list[str] | None = None
+        if isinstance(data, (pa.Table, pa.RecordBatch)):
             try:
                 data.validate(full=True)
             except Exception as error:  # noqa: BLE001
                 raise EngineError("load_failed", str(error)) from error
-        zero_cols_rows: int | None = None
-        if getattr(data, "num_columns", None) == 0 and hasattr(data, "num_rows"):
-            zero_cols_rows = int(data.num_rows)
-        elif (
-            type(data).__module__.startswith(("polars", "pandas"))
-            and hasattr(data, "columns")
-            and len(data.columns) == 0
-        ):
-            zero_cols_rows = int(len(data))
-        if zero_cols_rows is not None:
-            self._create_empty(cursor, zero_cols_rows)
-            return
-        raw_names: list[str] | None = None
-        if hasattr(data, "column_names"):
-            raw_names = [str(col) for col in data.column_names]
-        elif type(data).__module__.startswith(("polars", "pandas")) and hasattr(data, "columns"):
+            raw_names = data.column_names
+        elif pandas and isinstance(data, pandas.DataFrame) or polars and isinstance(data, polars.DataFrame):
             raw_names = [str(col) for col in data.columns]
+        if raw_names == []:
+            self._create_empty(cursor, len(data))
+            return
         override_names: list[str] | None = None
         if raw_names is not None and (
             any(not col for col in raw_names) or len({col.lower() for col in raw_names}) != len(raw_names)
         ):
             override_names = raw_names
             safe = [f"c{index}" for index in range(len(raw_names))]
-            if hasattr(data, "rename_columns"):
+            if isinstance(data, (pa.Table, pa.RecordBatch)):
                 data = data.rename_columns(safe)
-            elif type(data).__module__.startswith("polars"):
+            elif polars and isinstance(data, polars.DataFrame):
                 data = data.to_arrow().rename_columns(safe)
             else:
                 data = data.copy(deep=False)
