@@ -36,6 +36,16 @@ test("numbers and dates show by their format; other formats leave the text form"
     )?.("2024-01-31 20:00:00+00"),
     "2024-02-01 05:00",
   );
+  // Without a custom pattern, `Intl.DateTimeFormat` formats dates, times and timestamps in the locale.
+  assert.ok(formatterFor(columns[4], { date: {} }, "en-US")?.("2024-02-29")?.includes("2024"));
+  assert.ok(formatterFor({ type: "time" }, { date: {} }, "en-US")?.("14:30:05")?.includes("30"));
+  assert.ok(
+    formatterFor(
+      columns[5],
+      { date: { timeZone: "Asia/Tokyo", dateStyle: "short" } },
+      "en-US",
+    )?.("2024-01-31 20:00:00+00"),
+  );
   assert.equal(formatterFor(columns[0], { number: { style: "percent" } }, "en-US"), null);
   assert.equal(formatterFor(columns[1], {}, "en-US"), null);
   // A currency that Intl does not know leaves the text form.
@@ -79,6 +89,8 @@ test("style rules evaluate the conditions that the menus write, with nulls as §
   assert.equal(rule(and(parts(columns[2], "lt", "9.99")))(reader(row)), false);
   assert.equal(rule(and(parts(columns[0], "contains", "KY")))(reader(row)), true);
   assert.equal(rule(and(parts(columns[0], "notContains", "ky")))(reader(row)), false);
+  // Non-ASCII code points (`İ`, `É`, astral emoji) fold code point by code point (§3.4).
+  assert.equal(rule(and(parts(columns[0], "contains", "İçÉ😀")))(reader({ ...row, city: "içé😀!" })), true);
   assert.equal(rule(and(parts(columns[4], "ge", "2024-02-29")))(reader(row)), true);
   // NaN is the greatest number; a null compares to nothing.
   assert.equal(rule(and(parts(columns[3], "gt", "1e308")))(reader(row)), true);

@@ -175,7 +175,9 @@ test("over HTTP, blocks come attached to the response (§8.8)", async () => {
       const response = (await engine.handle(JSON.parse(String(init?.body)))) as Record<string, unknown>;
       const rows = (response.result as { block?: unknown } | undefined)?.block !== undefined;
       return rows
-        ? new Response(frameAttached(response), { headers: { "content-type": "application/vnd.vastgrid.v2+arrow" } })
+        ? new Response(frameAttached(response) as BodyInit, {
+            headers: { "content-type": "application/vnd.vastgrid.v2+arrow" },
+          })
         : Response.json(response);
     },
   });
@@ -273,23 +275,30 @@ test("the memory engine behind a MessagePort stops a find that is cancelled, and
   const stop = serveEngine(memoryEngine({ tables: { big: { columns, rows } } }), channel.port2 as never);
   const transport = workerTransport(channel.port1 as never);
   type Answer = { result?: { table: string; revision: string }; error?: { code: string } };
-  const opened = (await transport.send({ v: 2, id: 1, op: "open", ref: "big" })) as Answer;
+  const opened = (await transport.send({ v: 2, id: 1, op: "open", ref: "big" }, {})) as Answer;
   const at = { table: opened.result?.table, revision: opened.result?.revision };
-  const finding = transport.send({
-    v: 2,
-    id: 2,
-    op: "find",
-    ...at,
-    plan: {},
-    text: "nowhere",
-    columns: ["a", "b", "c", "d"],
-    from: { row: 0, column: 0 },
-    direction: 1,
-  }) as Promise<Answer>;
-  await transport.send({ v: 2, id: 3, op: "cancel", request: 2 });
+  const finding = transport.send(
+    {
+      v: 2,
+      id: 2,
+      op: "find",
+      ...at,
+      plan: {},
+      text: "nowhere",
+      columns: ["a", "b", "c", "d"],
+      from: { row: 0, column: 0 },
+      direction: 1,
+    },
+    {},
+  ) as Promise<Answer>;
+  await transport.send({ v: 2, id: 3, op: "cancel", request: 2 }, {});
   assert.equal((await finding).error?.code, "cancelled");
-  assert.deepEqual(await transport.send({ v: 2, id: 4, op: "close", table: at.table }), { v: 2, id: 4, result: null });
-  const after = (await transport.send({ v: 2, id: 5, op: "info", table: at.table })) as Answer;
+  assert.deepEqual(await transport.send({ v: 2, id: 4, op: "close", table: at.table }, {}), {
+    v: 2,
+    id: 4,
+    result: null,
+  });
+  const after = (await transport.send({ v: 2, id: 5, op: "info", table: at.table }, {})) as Answer;
   assert.equal(after.error?.code, "table_not_found");
   stop();
   transport.close();

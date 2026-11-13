@@ -44,8 +44,12 @@ const element = document.getElementById("root");
 if (!element) throw new Error("There is no #root.");
 const ref = element.dataset.ref ?? "";
 const locale = element.dataset.locale || "en";
+const ja = locale.toLowerCase().startsWith("ja");
 const messages = messagesFor(locale);
-let saved: Saved = (vscode.getState() as Saved | undefined) ?? {};
+const initialSaved = (vscode.getState() as Saved | undefined) ?? {};
+let saved: Saved = initialSaved.session
+  ? { ...initialSaved, session: { ...initialSaved.session, editor: undefined } }
+  : initialSaved;
 
 function keep(next: Partial<Saved>) {
   saved = { ...saved, ...next };
@@ -76,7 +80,7 @@ function post(message: ViewMessage) {
 function useSheets(store: GridStore) {
   const sheets = useSyncExternalStore(store.subscribe, () => store.getSnapshot().table?.sheets);
   const sheet = useSyncExternalStore(store.subscribe, () => store.getSnapshot().table?.sheet);
-  return { sheets: sheets?.filter((item) => !item.hidden) ?? [], sheet };
+  return { sheets: sheets ?? [], sheet };
 }
 
 function Editor({ sheet, onSheet }: { sheet: string | undefined; onSheet: (sheet: string) => void }) {
@@ -184,7 +188,7 @@ function Editor({ sheet, onSheet }: { sheet: string | undefined; onSheet: (sheet
   return (
     <div className="vastgrid-editor">
       {sheets.sheets.length > 1 && (
-        <nav className="vastgrid-sheets" aria-label={locale.toLowerCase().startsWith("ja") ? "シート" : "Sheets"}>
+        <nav className="vastgrid-sheets" aria-label={ja ? "シート" : "Sheets"}>
           {sheets.sheets.map((item) => (
             <button
               key={item.name}
@@ -192,7 +196,7 @@ function Editor({ sheet, onSheet }: { sheet: string | undefined; onSheet: (sheet
               aria-pressed={item.name === sheets.sheet}
               onClick={() => item.name !== sheets.sheet && onSheet(item.name)}
             >
-              {item.name}
+              {item.hidden ? `${item.name} (${ja ? "非表示" : "hidden"})` : item.name}
             </button>
           ))}
         </nav>
@@ -217,7 +221,12 @@ function App() {
   const [sheet, setSheet] = useState(saved.sheet);
   useEffect(() => {
     const receive = (event: MessageEvent) => {
-      if ((event.data as HostMessage | null)?.vastgrid === "restart") setGeneration((value) => value + 1);
+      if ((event.data as HostMessage | null)?.vastgrid === "restart") {
+        if (saved.session) {
+          keep({ session: { ...saved.session, history: undefined, editor: undefined } });
+        }
+        setGeneration((value) => value + 1);
+      }
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);

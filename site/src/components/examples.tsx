@@ -69,15 +69,9 @@ export function ChartGrid({ locale = "en" }: ExampleProps) {
   return (
     <div className="example not-content">
       <GridProvider store={store}>
-        <Bars />
+        <Bars locale={locale} />
         <div className="example-grid">
-          <DataGrid
-            store={store}
-            locale={locale}
-            messages={locale === "ja" ? ja : undefined}
-            toolbar
-            aria-label="orders"
-          />
+          <DataGrid store={store} locale={locale} messages={locale === "ja" ? ja : undefined} aria-label="orders" />
         </div>
       </GridProvider>
     </div>
@@ -94,7 +88,7 @@ function sameNames(a: readonly string[], b: readonly string[]) {
  * The first rows of the view as bars: the first displayed column names each bar, and the first numeric column
  * after it is its length. Rows come from the store's cache, as the canvas reads them.
  */
-function Bars() {
+function Bars({ locale }: { locale: string }) {
   const rowCount = useGridSelector((snapshot) => snapshot.view?.rowCount ?? 0);
   const names = useGridSelector((snapshot) => {
     const [label, ...rest] = snapshot.displayed;
@@ -112,14 +106,13 @@ function Bars() {
       aria-label={names.join(" / ")}
     >
       {bars.map((bar, index) => (
-        // A grouped view has one row for each key, so the labels are unique.
-        <g key={bar.label} transform={`translate(0 ${index * 22 + 2})`}>
-          <text x="0" y="14" className="example-chart__label">
+        <g key={`${index}:${bar.label}`} transform={`translate(0 ${index * 22 + 2})`}>
+          <text x="0" y="14">
             {bar.label}
           </text>
           <rect x="160" y="2" height="16" rx="2" width={largest > 0 ? (Math.max(0, bar.value) / largest) * 360 : 0} />
-          <text x="526" y="14" textAnchor="end" className="example-chart__value">
-            {bar.value.toLocaleString()}
+          <text x="526" y="14" textAnchor="end">
+            {bar.value.toLocaleString(locale)}
           </text>
         </g>
       ))}

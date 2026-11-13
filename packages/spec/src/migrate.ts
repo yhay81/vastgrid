@@ -15,9 +15,13 @@ import {
   type SortKey,
   uniqueName,
 } from "./plan.js";
-import { type ColumnSetting, emptyDocument, type GridDocument, StateError } from "./state.js";
+import { type ColumnSetting, emptyDocument, type GridDocument, repairDocument, StateError } from "./state.js";
 import type { Column, JsonValue, LogicalType } from "./types.js";
 import { isObject } from "./values.js";
+
+function isValidName(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && (value.length <= 256 || [...value].length <= 256);
+}
 
 const V1_MEASURES = ["count", "sum", "avg", "min", "max"] as const;
 type V1Measure = (typeof V1_MEASURES)[number];
@@ -192,7 +196,7 @@ class Migration {
   settings(columns: unknown, path: string, into: ColumnSetting[]) {
     if (!Array.isArray(columns)) return;
     columns.forEach((item, index) => {
-      if (!isObject(item) || typeof item.name !== "string") {
+      if (!isObject(item) || !isValidName(item.name)) {
         this.drop(`${path}/${index}`, "This is not a 0.1 column setting.");
         return;
       }
@@ -223,20 +227,30 @@ class Migration {
     // Reported in the order of 0.1's formulas.
     const reasons: string[] = [];
     const items = value.map((item, index) => {
-      const valid = isObject(item) && typeof item.name === "string" && typeof item.expression === "string";
+      const valid = isObject(item) && isValidName(item.name) && typeof item.expression === "string";
       if (!valid) reasons[index] = "This is not a 0.1 formula.";
-      return valid ? { index, name: item.name as string, expression: item.expression as string } : null;
+      return valid
+        ? {
+            index,
+            name: item.name as string,
+            expression: item.expression as string,
+            deps: formulaColumns(item.expression as string),
+          }
+        : null;
     });
     const formulaNames = new Set(items.flatMap((item) => item?.name ?? []));
     const pending = items.flatMap((item) => item ?? []);
+    const pendingCounts = new Map<string, number>();
+    for (const item of pending) pendingCounts.set(item.name, (pendingCounts.get(item.name) ?? 0) + 1);
     while (pending.length > 0) {
       // The first formula whose formulas are all migrated or dropped; on a cycle, the first one left.
       const ready = pending.findIndex((item) =>
-        formulaColumns(item.expression).every(
-          (name) => !formulaNames.has(name) || name === item.name || !pending.some((other) => other.name === name),
-        ),
+        item.deps.every((name) => !formulaNames.has(name) || name === item.name || !pendingCounts.has(name)),
       );
       const [item] = pending.splice(Math.max(ready, 0), 1);
+      const remaining = (pendingCounts.get(item.name) ?? 1) - 1;
+      if (remaining <= 0) pendingCounts.delete(item.name);
+      else pendingCounts.set(item.name, remaining);
       const fail = (reason: string) => {
         failed.add(item.name);
         reasons[item.index] = reason;
@@ -249,7 +263,7 @@ class Migration {
         fail(`Another column is named "${item.name}".`);
         continue;
       }
-      const missing = formulaColumns(item.expression).find((name) => failed.has(name));
+      const missing = item.deps.find((name) => failed.has(name));
       if (missing !== undefined) {
         fail(`The formula uses "${missing}", which was not migrated.`);
         continue;
@@ -273,26 +287,26 @@ class Migration {
 
 /**
  * Migrates 0.1's `GridState` into a document for a table (§5.6). Gives the document and the JSON Pointers,
- * into the 0.1 state, of what could not be migrated. Throws a `StateError` for a value that is not 0.1's state.
+ * into the 0.1 state, of what could not be migrated. `removed` lists pointers into the migrated document that
+ * repair discarded for this table. Throws a `StateError` for a value that is not 0.1's state.
  */
 export function migrateGridState(
   value: unknown,
   table: readonly Column[],
-): { document: GridDocument; dropped: string[]; reasons: Record<string, string> } {
+): { document: GridDocument; dropped: string[]; reasons: Record<string, string>; removed: string[] } {
   if (!isObject(value)) throw new StateError("", "syntax", "A 0.1 state is an object.");
   // A plain query, as 0.1 saved it before states existed, is a state with that query.
+  const keys = Object.keys(value);
   const state =
     value.version === undefined &&
-    Object.keys(value).every((key) => ["sort", "filters", "where", "search"].includes(key))
+    keys.length > 0 &&
+    keys.every((key) => ["sort", "filters", "where", "search"].includes(key))
       ? { version: 1, query: value }
       : value;
   if (state.version !== 1) throw new StateError("/version", "version", "This reader migrates version 1.");
   const migration = new Migration();
   const document = emptyDocument();
-  const schema =
-    Array.isArray(state.schema) && state.schema.every((name) => typeof name === "string")
-      ? (state.schema as string[])
-      : undefined;
+  const schema = Array.isArray(state.schema) && state.schema.every(isValidName) ? state.schema : undefined;
   if (schema) document.schema = schema;
   const { derive, rows, failed: formulas } = migration.formulas(state.formulas, table);
   const v1Formulas = Array.isArray(state.formulas) ? state.formulas : [];
@@ -383,7 +397,7 @@ export function migrateGridState(
   }
   document.plan = plan;
   if (columns.length > 0) document.columns = columns;
-  return { document, dropped: migration.dropped, reasons: migration.reasons };
+  return { ...repairDocument(document, table), dropped: migration.dropped, reasons: migration.reasons };
 }
 
 /** `frozenColumns` and `frozenRightColumns` as pins of the first and last shown columns (§5.6). */

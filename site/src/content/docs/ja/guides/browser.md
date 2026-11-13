@@ -31,21 +31,28 @@ self.addEventListener("message", function start(event: MessageEvent<{ file: File
 ページでは、ファイルごとに Worker を起動し、`workerTransport` でやり取りします。
 
 ```tsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DataGrid, type Transport, workerTransport } from "vastgrid";
 import "vastgrid/styles.css";
 
 interface Opened {
   name: string;
   worker: Worker;
-  transport: Transport;
+  transport: Transport & { close(): void };
 }
 
 export function FileGrid() {
   const [opened, setOpened] = useState<Opened>();
 
+  useEffect(
+    () => () => {
+      opened?.transport.close();
+      opened?.worker.terminate();
+    },
+    [opened],
+  );
+
   function open(file: File) {
-    opened?.worker.terminate();
     const worker = new Worker(new URL("./engine-worker.ts", import.meta.url), { type: "module" });
     worker.postMessage({ file });
     setOpened({ name: file.name, worker, transport: workerTransport(worker) });
@@ -144,7 +151,7 @@ memoryEngine({ tables: { sales: { parquet: "https://data.example.com/sales.parqu
 | 開いた後のメモリ | 58 MB | 1 MB | 590 MB | 2 MB |
 | 上記をすべて行った後のメモリ | 107 MB | 129 MB | 1,020 MB | 1,264 MB |
 
-Parquet はすぐに開き、要求が初めて列をまるごと読むときに時間がかかります。テキストファイルは開くときに時間がかかります。`maxBytes` を 256 MiB にすると、1,000 万行の CSV は 4.7 秒で開き、メモリはほとんど使いませんが、全列の集計や書き出しは `load_failed` になります。Chromium でエンジンを Worker に置くと、100 万行の並べ替え中もページに長いタスクは生じず、ページのヒープには表がまったく載りません（10 MB）。
+Parquet はすぐに開き、要求が初めて列をまるごと読むときに時間がかかります。テキストファイルは全体を読むときに時間がかかります（上の「開く」は `previewBytes: 0` での値で、既定の `previewBytes` 4 MiB では 100 万行の CSV も約 60 ms で先頭の行が出ます）。`maxBytes` を 256 MiB にすると、1,000 万行の CSV は 4.7 秒で読み終え、メモリはほとんど使いませんが、全列の集計や書き出しは `load_failed` になります。Chromium でエンジンを Worker に置くと、100 万行の並べ替え中もページに長いタスクは生じず、ページのヒープには表がまったく載りません（10 MB）。
 
 ## /open/ のページ
 
@@ -152,7 +159,7 @@ Parquet はすぐに開き、要求が初めて列をまるごと読むときに
 
 ## 制限
 
-- 最初の行が出るのは、ファイル全体を読んだ後です。上の 1,000 万行の CSV では 10 秒かかります。読み込み中に行を見せるのは、今後の課題です。
+- `previewBytes` より大きいテキストファイルの読み込み中に表示できるのは素のビュー（`{}`）だけで、並べ替え・絞り込み・グループ化・集計・検索・書き込み・書き出しはファイルを読み終えるまで待ちます（`partialViews: false`）。Excel のブックは全体を読んでから最初の行が出ます。
 - 取り消しは 40 ms ごとくらいに確認されます。ビューの一部の処理（数値の順位付けや、順位での並べ替え）は、終わるまで止まりません。
 - エンジンはファイルに保存しません。編集を残すには書き出してください。
 - タブのメモリが上限です。それを超えるなら、サーバーで DuckDB エンジンを使ってください。

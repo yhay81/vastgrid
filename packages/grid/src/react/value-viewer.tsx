@@ -67,8 +67,12 @@ export function ValueViewer({ target, onClose }: { target: ViewerTarget; onClose
     }
   };
   const copy = () => {
-    if (text === null) return;
-    void navigator.clipboard.writeText(text).then(() => setCopied(true));
+    if (text === null || !navigator.clipboard?.writeText) return;
+    const toCopy = indent && json !== undefined ? shown : text;
+    void navigator.clipboard.writeText(toCopy).then(
+      () => setCopied(true),
+      () => {},
+    );
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDialogElement>) => {
     if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
@@ -125,7 +129,10 @@ export function ValueViewer({ target, onClose }: { target: ViewerTarget; onClose
               type="button"
               className="vg-button vg-button--small"
               aria-pressed={indent}
-              onClick={() => setIndent(!indent)}
+              onClick={() => {
+                setIndent(!indent);
+                setCopied(false);
+              }}
             >
               {messages.formatJson}
             </button>
@@ -171,7 +178,14 @@ function jsonOf(value: JsonValue | undefined, text: string): JsonValue | undefin
 /** The length of a text in code points, as the text limit counts them (§8.4). */
 function lengthOf(text: string) {
   let length = 0;
-  for (const _ of text) length += 1;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) {
+      const low = text.charCodeAt(i + 1);
+      if (low >= 0xdc00 && low <= 0xdfff) i++;
+    }
+    length += 1;
+  }
   return length;
 }
 

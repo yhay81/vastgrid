@@ -173,6 +173,14 @@ export function countCells(output: unknown) {
   return parseTsv(tsv).reduce((count, row) => count + row.length, 0);
 }
 
+/** Gives the focus back to the grid unless something else outside the closing menu already took it. */
+function restoreFocus(scroller: HTMLDivElement | null) {
+  const active = document.activeElement;
+  if (!active || active === document.body || active.closest(".vg-menu") !== null) {
+    scroller?.focus({ preventScroll: true });
+  }
+}
+
 /** A click or Space on a cell that is a link or a button (`cellAction`). */
 export interface CellActionEvent extends GridCell {
   action: CellAction;
@@ -393,18 +401,26 @@ export function GridBody({
     });
   };
 
+  /** The active cell, or the first cell of a non-empty view before a cell has been selected. */
+  const activeTarget = () => {
+    const snapshot = store.getSnapshot();
+    if (snapshot.session.active) return snapshot.session.active;
+    const first = snapshot.displayed[0]?.column.name;
+    return (snapshot.view?.rowCount ?? 0) > 0 && first !== undefined ? { row: 0, column: first } : undefined;
+  };
+
   /** Opens the cell menu of the active cell, under it. */
   const openCellMenu = () => {
     const scroller = scrollerRef.current;
-    const active = store.getSnapshot().session.active;
-    if (!scroller || !active) return;
-    const index = columns.findIndex((item) => item.column.name === active.column);
+    const target = activeTarget();
+    if (!scroller || !target) return;
+    const index = columns.findIndex((item) => item.column.name === target.column);
     if (index < 0) return;
-    const box = geometry.cellBox(active.row, index);
+    const box = geometry.cellBox(target.row, index);
     const rect = scroller.getBoundingClientRect();
     setCellMenu({
-      row: active.row,
-      column: active.column,
+      row: target.row,
+      column: target.column,
       x: rect.left + box.left,
       y: rect.top + box.top + box.height,
     });
@@ -412,12 +428,12 @@ export function GridBody({
 
   const closeCellMenu = () => {
     setCellMenu(null);
-    scrollerRef.current?.focus({ preventScroll: true });
+    restoreFocus(scrollerRef.current);
   };
 
   const closeMenu = () => {
     setMenu(null);
-    scrollerRef.current?.focus({ preventScroll: true });
+    restoreFocus(scrollerRef.current);
   };
 
   const onDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
@@ -443,6 +459,18 @@ export function GridBody({
       if (store.getSnapshot().session.editor) editor.current?.open();
       return true;
     }
+    if (text === undefined && outcome.error instanceof CommandError && outcome.error.reason === "not_loaded") {
+      void store.dispatch({ command: "edit.begin" }).then((later) => {
+        if (later.ok) {
+          if (store.getSnapshot().session.editor) editor.current?.open();
+        } else if (later.error instanceof CommandError && later.error.reason === "read_only") {
+          announce(messages.readOnly);
+        } else {
+          announce(messages.failed(later.error.message));
+        }
+      });
+      return true;
+    }
     if (outcome.error instanceof CommandError && outcome.error.reason === "read_only") announce(messages.readOnly);
     else announce(messages.failed(outcome.error.message));
     return false;
@@ -454,16 +482,16 @@ export function GridBody({
     const composing = event.nativeEvent.isComposing || event.keyCode === 229;
     // Space acts on a link or a button of the active cell; otherwise it checks the active row, or unchecks it.
     if (!composing && event.key === " " && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
-      const active = store.getSnapshot().session.active;
-      if (!active) return;
-      const column = columns.findIndex((item) => item.column.name === active.column);
-      if (act(active.row, column)) {
+      const target = activeTarget();
+      if (!target) return;
+      const column = columns.findIndex((item) => item.column.name === target.column);
+      if (act(target.row, column)) {
         event.preventDefault();
         return;
       }
       if (!checkboxes) return;
       event.preventDefault();
-      toggleCheck(active.row);
+      toggleCheck(target.row);
       return;
     }
     // ⌘F or Ctrl+F opens the find bar, when the engine finds.
@@ -488,7 +516,7 @@ export function GridBody({
     }
     // Alt+↓ opens the menu of the active cell's column.
     if (event.altKey && event.key === "ArrowDown" && !event.ctrlKey && !event.metaKey) {
-      const column = store.getSnapshot().session.active?.column;
+      const column = activeTarget()?.column;
       const index = columns.findIndex((item) => item.column.name === column);
       if (column === undefined || index < 0) return;
       event.preventDefault();

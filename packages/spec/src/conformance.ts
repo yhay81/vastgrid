@@ -157,6 +157,9 @@ export function compareResult(expect: CorpusResult, actual: CaseResult): string[
   expect.rows.forEach((row, index) => {
     const got = actual.rows[index];
     if (!got) return;
+    if (got.length !== row.length) {
+      problems.push(`row ${index}: ${got.length} values, expected ${row.length}`);
+    }
     row.forEach((value, column) => {
       const type: Column = types[column] ?? { name: String(column), type: "string" };
       const answer = got[column] ?? null;

@@ -2,7 +2,7 @@ import { type KeyboardEvent, type ToggleEvent, use, useLayoutEffect, useRef } fr
 import { type GridCommand, isBlank, type JsonValue, joinParts } from "vastgrid-spec";
 import { filterParts } from "../core/filters.js";
 import { LocaleContext } from "./context.js";
-import { useGridSelector, useGridStore } from "./hooks.js";
+import { useGridRows, useGridSelector, useGridStore } from "./hooks.js";
 import type { ViewerTarget } from "./value-viewer.js";
 
 /** Where the cell menu opens: a cell of the view, at a point of the page. */
@@ -59,12 +59,20 @@ export function CellMenu({
     (snapshot) => snapshot.table?.capabilities.plan?.where !== false && snapshot.document.plan?.aggregate === undefined,
   );
 
+  const [values] = useGridRows({
+    start: target ? target.row : 0,
+    end: target && column ? target.row + 1 : target ? target.row : 0,
+    columns: target && column ? [column.name] : [],
+  });
+  const value: JsonValue | undefined = values?.[0];
+  const loaded = value !== undefined;
+
   useLayoutEffect(() => {
     const menu = ref.current;
     if (!menu || !target) return;
     if (!menu.matches(":popover-open")) menu.showPopover();
     menu.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
-  }, [target]);
+  }, [target, loaded]);
 
   useLayoutEffect(() => {
     const menu = ref.current;
@@ -78,7 +86,6 @@ export function CellMenu({
     if (event.newState === "closed") onClose();
   };
 
-  const value: JsonValue | undefined = target ? store.cell(target.row, target.column) : undefined;
   if (!target || !column || value === undefined) {
     return <div ref={ref} popover="auto" className="vg-menu vg-cell-menu" onToggle={onToggle} />;
   }

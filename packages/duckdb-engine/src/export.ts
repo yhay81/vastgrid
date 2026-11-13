@@ -11,15 +11,16 @@ import { Readable, pipeline as streamPipeline } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import zlib, { createDeflateRaw } from "node:zlib";
 import type { DuckDBConnection } from "@duckdb/node-api";
-import type { Column, JsonValue } from "vastgrid-spec";
+import type { Column, EXPORT_FORMATS, JsonValue } from "vastgrid-spec";
 import { writeJson } from "vastgrid-spec/export";
 import { checkXlsxSize, writeXlsx, XLSX_MAX_TEXT } from "vastgrid-spec/xlsx";
-import { quoteIdentifier, textSql } from "vastgrid-sql";
+import { quoteIdentifier, textSql, viewColumn } from "vastgrid-sql";
 import { readExpression, readValue } from "./columns.js";
+import { renameParquetColumns } from "./parquet.js";
 import { quoteLiteral } from "./session.js";
 import type { View } from "./view.js";
 
-export type ExportFormat = "csv" | "tsv" | "parquet" | "json" | "xlsx";
+export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
 export const EXPORT_MEDIA_TYPES: Record<ExportFormat, string> = {
   csv: "text/csv; charset=utf-8",
@@ -68,13 +69,21 @@ export async function writeExport(connection: DuckDBConnection, job: ExportJob, 
     );
     return;
   }
-  // DuckDB renames repeated names in a header ("x", "x_1"): a CSV or TSV file with repeated headers, or without
-  // columns (whose rows DuckDB writes as a column NULL), gets its header line written here instead.
+  // DuckDB renames repeated names in a header ("x", "x_1"), including names that differ only in case ("a", "A_1"):
+  // a CSV or TSV file with colliding headers, or without columns (whose rows DuckDB writes as a column NULL), gets
+  // its header line written here instead.
   const delimited = format === "csv" || format === "tsv";
   const delimiter = format === "tsv" ? "\t" : ",";
-  const ownHeader = delimited && (columns.length === 0 || new Set(headers).size !== headers.length);
+  const ownHeader =
+    delimited &&
+    (columns.length === 0 ||
+      headers.some((header) => header === "" || header.includes("\0")) ||
+      new Set(headers.map((header) => header.toLowerCase())).size !== headers.length);
+  const parquetNames = columns.map((column) => column.name);
+  const ownParquetNames =
+    format === "parquet" && new Set(parquetNames.map((name) => name.toLowerCase())).size !== columns.length;
   const selected = columns.map((column, index) => {
-    const name = quoteIdentifier(column.name);
+    const name = viewColumn(view.sql, column.name);
     // DuckDB writes decimals without whole digits without their 0 (`.5`) and some 32-bit floats with all their
     // exact digits (5525.71875), unlike their text forms (§2.4), and a float of the view whose SQL keeps a FLOAT
     // (`abs` of a float32) as a FLOAT: as the view's type.
@@ -82,19 +91,20 @@ export async function writeExport(connection: DuckDBConnection, job: ExportJob, 
     if (delimited && column.type === "decimal" && column.scale === column.precision) value = textSql(name, column);
     if (column.type === "float") value = `CAST(${name} AS ${column.bits === 32 ? "FLOAT" : "DOUBLE"})`;
     if (delimited && column.type === "float" && column.bits === 32) value = textSql(value, column);
-    if (delimited && !ownHeader && headers[index] !== column.name)
-      return `${value} AS ${quoteIdentifier(headers[index])}`;
-    return value === name ? name : `${value} AS ${name}`;
+    const target = quoteIdentifier(
+      ownHeader || ownParquetNames ? `c${index}` : delimited ? headers[index] : column.name,
+    );
+    return value === name && target === name ? name : `${value} AS ${target}`;
   });
   const header = ownHeader ? "false" : "true";
   const options = {
     csv: `FORMAT csv, HEADER ${header}`,
     tsv: `FORMAT csv, HEADER ${header}, DELIMITER '\\t'`,
     // Without dictionaries when there are intervals: DuckDB's dictionaries keep one of the values that compare
-    // equal, and "1 month" and "30 days" compare equal (§3.1), so one would be written for the other. A limit of
-    // one byte leaves every column without one.
+    // equal, and "1 month" and "30 days" compare equal (§3.1), so one would be written for the other. A zero-entry
+    // limit disables dictionary encoding even when every interval compares equal.
     parquet: columns.some((column) => column.type === "interval")
-      ? "FORMAT parquet, COMPRESSION zstd, DICTIONARY_SIZE_LIMIT 1"
+      ? "FORMAT parquet, COMPRESSION zstd, DICTIONARY_SIZE_LIMIT 0"
       : "FORMAT parquet, COMPRESSION zstd",
   }[format];
   const body = ownHeader ? `${file}.body` : file;
@@ -103,6 +113,7 @@ export async function writeExport(connection: DuckDBConnection, job: ExportJob, 
       `COPY (${view.sql.with} SELECT ${selected.length > 0 ? selected.join(", ") : "NULL"} FROM vg_view ${order}) TO ${quoteLiteral(body)} (${options})`,
       view.sql.params as never,
     );
+    if (ownParquetNames) await renameParquetColumns(file, parquetNames);
     if (ownHeader) {
       await pipeline(
         async function* () {
@@ -120,7 +131,7 @@ export async function writeExport(connection: DuckDBConnection, job: ExportJob, 
 /** The view's rows as typed JSON, one chunk of rows from DuckDB at a time; text cut at `textLimit`. */
 async function* rowsOf(connection: DuckDBConnection, job: ExportJob, textLimit = Number.MAX_SAFE_INTEGER) {
   const { view, columns, signal } = job;
-  const outputs = columns.map((column) => readExpression(column, quoteIdentifier(column.name), textLimit));
+  const outputs = columns.map((column) => readExpression(column, viewColumn(view.sql, column.name), textLimit));
   const result = await connection.stream(
     `${view.sql.with} SELECT ${outputs.length > 0 ? outputs.join(", ") : "NULL"} FROM vg_view ORDER BY ${view.position}`,
     view.sql.params as never,
@@ -145,7 +156,7 @@ async function writeWorkbook(connection: DuckDBConnection, job: ExportJob, file:
     {
       // The callback form of `pipeline` gives the last stream, and passes an error of the rows on to it.
       deflate: (chunks) => streamPipeline(Readable.from(chunks), createDeflateRaw({ level: DEFLATE_LEVEL }), () => {}),
-      ...(typeof zlib.crc32 === "function" ? { crc32: zlib.crc32 } : {}),
+      crc32: zlib.crc32,
       signal,
     },
   );

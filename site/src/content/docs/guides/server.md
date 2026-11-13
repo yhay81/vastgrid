@@ -1,6 +1,6 @@
 ---
 title: Files on a server
-description: Serve CSV, TSV, Parquet, JSON Lines and Excel files of any size from Node.js with the DuckDB engine of vastgrid-duckdb.
+description: Serve CSV, TSV, Parquet, JSON Lines and Excel files and DuckDB databases of any size from Node.js with the DuckDB engine of vastgrid-duckdb.
 ---
 
 `vastgrid-duckdb` opens table files with DuckDB in Node.js and answers the grid's messages: rows, sorted and
@@ -121,7 +121,7 @@ a route that serves `engine.exportFile`.
 | `DuckDBEngine.create` | Default | |
 | --- | --- | --- |
 | `allowedDirectories` | required | folders whose files may be opened; DuckDB reads no others |
-| `tempDirectory` | required | the engine's database, spilled data and converted files, in a folder of its own |
+| `tempDirectory` | private temporary folder for the current user | the engine's database, spilled data and converted files, in a folder of its own |
 | `resolve` | a path; relative ones in the first allowed folder | the file that a `ref` names; throw to refuse (`not_allowed`) |
 | `resolveTarget` | none: exports are kept for download | the file that an export's `target` names |
 | `memoryLimit` | a fifth of the memory, 1–4 GB | DuckDB's memory limit, such as `"4GB"` |
@@ -150,10 +150,10 @@ a route that serves `engine.exportFile`.
 | Format | Names |
 | --- | --- |
 | CSV | `.csv`, `.csv.gz`, `.csv.zst` |
-| TSV | `.tsv`, `.tab`, `.tsv.gz`, `.tsv.zst` |
+| TSV | `.tsv`, `.tab`, `.tsv.gz`, `.tsv.zst`, `.tab.gz`, `.tab.zst` |
 | Parquet | `.parquet`, `.pq` |
-| JSON Lines | `.jsonl`, `.ndjson`, also `.gz` |
-| JSON | `.json`, `.json.gz` |
+| JSON Lines | `.jsonl`, `.ndjson`, also `.gz` and `.zst` |
+| JSON | `.json`, `.json.gz`, `.json.zst` |
 | Excel | `.xlsx`, `.xlsm` |
 | DuckDB | `.duckdb`, `.ddb` |
 
@@ -165,8 +165,11 @@ files of folders, two levels deep, without hidden ones: use it to offer a list o
   readable at once, and `progress` events follow the load. Encodings such as UTF-16, Shift_JIS and EUC-JP are
   found and converted; the table's `notes` say so (`encoding:shift_jis`).
 - **Excel** opens at its first visible sheet. Choose another with the grid's `open` prop
-  (`<DataGrid key={sheet} open={{ sheet }} … />`), which also takes `headerRow`, `keepEmptyRows` and
+  (`<DataGrid key={sheet} open={{ sheet }} … />`), which also takes `delimiter`, `headerRow`, `keepEmptyRows` and
   `keepEmptyColumns`; it is read when the grid makes its store, hence the `key`.
+- **DuckDB** attaches the database read only while copying the chosen table (`open={{ sheet }}`, `schema.name`
+  outside `main`; views are excluded) into the session, so another program can write the database again once the
+  table has loaded.
 
 ## Progressive sorts
 
@@ -195,8 +198,9 @@ someone else since it was read is not overwritten (`file_changed`). Saving two c
 200,000-row file and 0.3 s in a 2-million-row file on an Apple-silicon laptop.
 
 With `watchFiles` (on by default) the engine watches the folders of open files. A changed file is loaded again
-and the grid moves to it, keeping its sorts and filters. A table with written cells is kept instead, and the grid
-tells the person that the file changed.
+and the grid moves to it, keeping its sorts and filters. A table with written cells, or a table from a DuckDB
+database (including changes in its `.wal`), is kept instead: the grid tells the person that the file changed, and
+reloads it only on `reload`.
 
 Exports (CSV, TSV, Parquet, JSON, xlsx) run on the server. Without `resolveTarget`, the engine keeps each file
 for an hour and the grid downloads it from `<path>/exports/<name>`. A sorted view of a million rows of four

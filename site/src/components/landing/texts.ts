@@ -76,9 +76,9 @@ export const texts: Record<Language, Texts> = {
     news: { tag: "New", text: "vastgrid for VS Code is on the Marketplace and Open VSX", href: "/apps/vscode/" },
     title: ["Open huge tables", "like a spreadsheet"],
     lead:
-      "vastgrid is a canvas data grid for CSV, TSV, Parquet, JSON Lines and Excel files of any size. Scroll a " +
-      "hundred million rows, sort, filter and group the whole file, and save your edits with every other byte " +
-      "kept as it was.",
+      "vastgrid is a canvas data grid for CSV, TSV, Parquet, JSON Lines and Excel files and DuckDB databases of any " +
+      "size. Scroll a hundred million rows, sort, filter and group the whole file, and save your edits with every " +
+      "other byte kept as it was.",
     actions: {
       start: { text: "Get started", href: "/getting-started/" },
       demo: { text: "Try the demo", href: "/demo/" },
@@ -112,8 +112,8 @@ export const texts: Record<Language, Texts> = {
         icon: "vscode",
         title: "VS Code",
         text:
-          "CSV, Parquet, Excel and JSON Lines files open in the editor. Edit the cells of CSV and TSV files, and " +
-          "save them with VS Code's own Save.",
+          "CSV, Parquet, Excel, JSON Lines and DuckDB files open in the editor. Edit the cells of CSV and TSV files, " +
+          "and save them with VS Code's own Save.",
         code: "code --install-extension yhay81.vastgrid-vscode",
         link: { text: "The extension", href: "/apps/vscode/" },
         image:
@@ -190,7 +190,7 @@ export const texts: Record<Language, Texts> = {
           title: "A spreadsheet's way of working",
           text:
             "Excel's keys and selections, filters and conditions, search and find, groups, pivots and totals, " +
-            "formulas, formats, copy, paste and fill.",
+            "formulas, formats, copy, cut, paste and fill.",
         },
         {
           icon: "shield",
@@ -251,9 +251,9 @@ export const texts: Record<Language, Texts> = {
     },
     title: ["巨大な表を、", "表計算ソフトのように。"],
     lead:
-      "vastgrid は、どんな大きさの CSV・TSV・Parquet・JSON Lines・Excel のファイルも開ける、キャンバスに描く" +
-      "データグリッドです。1 億行をスクロールし、ファイル全体を並べ替え・絞り込み・グループ化して、編集は" +
-      "ほかのバイトをそのまま残して保存します。",
+      "vastgrid は、どんな大きさの CSV・TSV・Parquet・JSON Lines・Excel のファイルや DuckDB のデータベースも" +
+      "開ける、キャンバスに描くデータグリッドです。1 億行をスクロールし、ファイル全体を並べ替え・絞り込み・" +
+      "グループ化して、編集はほかのバイトをそのまま残して保存します。",
     actions: {
       start: { text: "はじめる", href: "/ja/getting-started/" },
       demo: { text: "デモを試す", href: "/ja/demo/" },
@@ -287,7 +287,7 @@ export const texts: Record<Language, Texts> = {
         icon: "vscode",
         title: "VS Code",
         text:
-          "CSV・Parquet・Excel・JSON Lines のファイルをエディターで開きます。CSV と TSV はセルを編集して、" +
+          "CSV・Parquet・Excel・JSON Lines・DuckDB のファイルをエディターで開きます。CSV と TSV はセルを編集して、" +
           "VS Code の保存で保存できます。",
         code: "code --install-extension yhay81.vastgrid-vscode",
         link: { text: "拡張機能", href: "/ja/apps/vscode/" },
@@ -362,8 +362,8 @@ export const texts: Record<Language, Texts> = {
           icon: "sheet",
           title: "表計算ソフトの操作",
           text:
-            "Excel のキーと選択、絞り込みと条件、検索、グループ・ピボット・集計、数式、書式、コピー・貼り付け・" +
-            "フィル。",
+            "Excel のキーと選択、絞り込みと条件、検索、グループ・ピボット・集計、数式、書式、コピー・切り取り・" +
+            "貼り付け・フィル。",
         },
         {
           icon: "shield",

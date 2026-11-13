@@ -32,7 +32,7 @@ export default defineConfig({
     starlight({
       title: "vastgrid",
       description:
-        "Open CSV, TSV, Parquet, JSON Lines and Excel files of any size like a spreadsheet, with a canvas data grid for React, VS Code, the command line, AI chats and Jupyter.",
+        "Open CSV, TSV, Parquet, JSON Lines and Excel files and DuckDB databases of any size like a spreadsheet, with a canvas data grid for React, VS Code, the command line, AI chats and Jupyter.",
       logo: { src: "./src/assets/logo.svg" },
       favicon: "/favicon.svg",
       defaultLocale: "root",

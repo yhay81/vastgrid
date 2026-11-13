@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import importlib
 from dataclasses import dataclass
-from typing import Any
 
 FUNCTIONS: tuple[str, ...] = (
     # Logic and comparison
@@ -76,9 +74,6 @@ FUNCTIONS: tuple[str, ...] = (
 MEASURES: tuple[str, ...] = ("count", "count_distinct", "sum", "avg", "stddev", "min", "max", "quantile")
 """The functions of measures (§4.5)."""
 
-PLAN_MEMBERS: tuple[str, ...] = ("derive", "where", "aggregate", "pivot", "having", "sort", "search")
-"""The members of a plan that an engine may not evaluate (§4.10)."""
-
 
 @dataclass(frozen=True)
 class Limits:
@@ -98,20 +93,6 @@ class Limits:
 
 
 LIMITS = Limits()
-
-PLAN_ERROR_REASONS: tuple[str, ...] = (
-    "syntax",
-    "unknown_column",
-    "duplicate_name",
-    "type",
-    "arity",
-    "unknown_function",
-    "unsupported",
-    "misplaced",
-    "literal",
-    "limit",
-)
-"""Why a plan does not validate (§4.7)."""
 
 
 class PlanError(Exception):
@@ -133,21 +114,3 @@ class SpecError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
-
-
-_ELSEWHERE = {
-    "check_plan": "_check",
-    "check_expression": "_check",
-    "plan_options": "_check",
-    "canonical_json": "_hash",
-    "normalize_plan": "_hash",
-    "plan_hash": "_hash",
-}
-
-
-def __getattr__(name: str) -> Any:
-    """Checking (§4.7) and hashing (§4.8) live in `_check`, which imports this module, and `_hash`; this module gives
-    them too, on first use."""
-    if name in _ELSEWHERE:
-        return getattr(importlib.import_module(f"{__package__}.{_ELSEWHERE[name]}"), name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -31,7 +31,7 @@ async function dialectOf(connection: DuckDBConnection, table: LoadedTable): Prom
   const row = read.getRowsJS()[0];
   const text = (value: unknown) => (value === null || value === "(empty)" ? "" : String(value));
   if (text(row[3])) throw new CsvSaveError("unsupported", "Files with comment lines are not saved.");
-  const quote = text(row[1]) || '"';
+  const quote = text(row[1]);
   return {
     delimiter: text(row[0]) || (table.format === "tsv" ? "\t" : ","),
     quote,
@@ -52,11 +52,19 @@ function textOf(column: Column, value: string, dialect: CsvDialect): { text: str
   const format =
     column.type === "date" ? dialect.dateFormat : column.type === "timestamp" ? dialect.timestampFormat : "";
   if (!format) return { text: `CAST(${value} AS VARCHAR)` };
+  if (column.type === "date" && format === "%Y-%m-%d") {
+    const formatted = `CASE WHEN isfinite(${value}) THEN try(strftime(${value}, '%Y-%m-%d')) ELSE CAST(${value} AS VARCHAR) END`;
+    const back = `CAST(try_strptime(${formatted}, '%Y-%m-%d') AS DATE)`;
+    return {
+      text: formatted,
+      same: `(${value} IS NULL OR NOT isfinite(${value}) OR coalesce(${back} = ${value}, false))`,
+    };
+  }
   const literal = quoteLiteral(format);
-  const text = `try(strftime(${value}, ${literal}))`;
+  const text = `CASE WHEN isfinite(${value}) THEN try(strftime(${value}, ${literal})) ELSE CAST(${value} AS VARCHAR) END`;
   const back =
     column.type === "date" ? `CAST(try_strptime(${text}, ${literal}) AS DATE)` : `try_strptime(${text}, ${literal})`;
-  return { text, same: `(${value} IS NULL OR coalesce(${back} = ${value}, false))` };
+  return { text, same: `(${value} IS NULL OR coalesce(isfinite(${value}) AND ${back} = ${value}, false))` };
 }
 
 /**
@@ -139,9 +147,9 @@ export async function saveTable(
         throw error;
       }
     });
-    const records = cells.size > 0 ? await replace(table, dialect, cells, signal) : 0;
     const base = table.base;
     if (base === null) throw new EngineError("internal", "The table has no rows of its own.");
+    const records = cells.size > 0 ? await replace(table, dialect, cells, signal) : 0;
     await session.withConnection(undefined, (connection) => table.edits.saved(connection, base));
     return { records, edits: table.edits.state };
   });

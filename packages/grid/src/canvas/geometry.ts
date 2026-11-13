@@ -165,10 +165,13 @@ export class Geometry {
         check: this.checkboxes && x < CHECK_WIDTH,
       };
     }
+    if (y >= this.groupTop && y < this.headerHeight) {
+      const edgeColumn = this.resizeEdgeAt(x);
+      if (edgeColumn >= 0) return { area: "header", row: 0, column: edgeColumn, edge: true, menu: false };
+    }
     const column = this.columnAt(x);
     if (column < 0) return none;
     const right = this.columnX(column) + this.layout.width(column);
-    const edge = Math.abs(x - right) <= 4;
     if (y < this.groupTop) {
       const level = Math.floor(y / this.groupHeight);
       return {
@@ -181,22 +184,46 @@ export class Geometry {
       };
     }
     if (y < this.headerHeight) {
-      return { area: "header", row: 0, column, edge, menu: !edge && x >= right - MENU_WIDTH - 4 };
+      return { area: "header", row: 0, column, edge: false, menu: x >= right - MENU_WIDTH - 4 };
     }
     if (empty) return none;
     return { area: "cell", row, column, edge: false, menu: false };
   }
 
+  /** Display position whose header's right border is within 4 px of `x`, or -1. */
+  private resizeEdgeAt(x: number) {
+    if (this.layout.count === 0 || x < this.gutterWidth) return -1;
+    for (let column = 0; column < this.frozenLeft; column++) {
+      const right = this.columnX(column) + this.layout.width(column);
+      if (Math.abs(x - right) <= 4) return column;
+    }
+    const rightX = this.width - this.frozenRightWidth;
+    for (let column = this.rightStart; column < this.layout.count; column++) {
+      const right = this.columnX(column) + this.layout.width(column);
+      if (Math.abs(x - right) <= 4) return column;
+    }
+    const [first, last] = this.visibleScrollColumns();
+    const minEdge = this.gutterWidth + this.frozenWidth;
+    const maxEdge = this.frozenRight > 0 ? rightX : this.width;
+    for (let column = first; column <= last; column++) {
+      const right = this.columnX(column) + this.layout.width(column);
+      if (right >= minEdge && right <= maxEdge && Math.abs(x - right) <= 4) return column;
+    }
+    return -1;
+  }
+
   /** The display position of the column at an x of the canvas; -1 when there is none. */
   columnAt(x: number) {
-    if (this.layout.count === 0) return -1;
+    if (this.layout.count === 0 || x < this.gutterWidth || x >= this.width) return -1;
     const rightX = this.width - this.frozenRightWidth;
     if (this.frozenRight > 0 && x >= rightX) {
       return Math.max(this.rightStart, this.layout.indexAt(this.layout.left(this.rightStart) + x - rightX));
     }
     const local = x - this.gutterWidth;
     if (this.frozenLeft > 0 && local < this.frozenWidth) return this.layout.indexAt(local);
-    const column = this.layout.indexAt(local + this.scrollX.position);
-    return Math.min(column, this.rightStart - 1);
+    if (this.rightStart <= this.frozenLeft) return -1;
+    const scrolled = local + this.scrollX.position;
+    if (scrolled >= this.layout.left(this.rightStart)) return -1;
+    return Math.min(this.layout.indexAt(scrolled), this.rightStart - 1);
   }
 }

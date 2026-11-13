@@ -1,6 +1,6 @@
 import { ARROW_MEDIA_TYPE, readAttached, toStructuredEncoding } from "vastgrid-spec";
 import type { Transport } from "./client.js";
-import type { RequestMessage } from "./types.js";
+import { GridError, type RequestMessage } from "./types.js";
 
 /** An engine in the same thread: it answers request messages, and may send events (§8.5). */
 export interface Engine {
@@ -69,6 +69,9 @@ export function workerTransport(worker: WorkerLike): Transport & { close(): void
     },
     close() {
       worker.removeEventListener("message", receive);
+      for (const [id, resolve] of [...waiting]) {
+        resolve({ v: 2, id, error: { code: "cancelled", message: "The transport was closed." } });
+      }
       waiting.clear();
       listeners.clear();
     },
@@ -114,12 +117,12 @@ export function httpTransport(url: string, options: HttpTransportOptions = {}): 
   const exports = options.exports ?? `${url.replace(/\/+$/, "")}/exports/`;
   // While the event stream connects, requests wait: an engine sends each event to the streams open at the time, so
   // a table opened before would finish loading without the client hearing it.
-  let connecting: Promise<void> | null = null;
+  const connecting = new Set<Promise<void>>();
   const transport: Transport = {
     cancels: "signal",
     exportUrl: (target) => `${exports}${encodeURIComponent(target)}`,
     async send(message, { signal }) {
-      if (connecting) await connecting;
+      if (connecting.size > 0) await Promise.all([...connecting]);
       const response = await request(url, {
         method: "POST",
         headers: {
@@ -132,7 +135,17 @@ export function httpTransport(url: string, options: HttpTransportOptions = {}): 
       });
       const type = response.headers.get("content-type") ?? "";
       if (type.startsWith(ARROW_MEDIA_TYPE)) return readAttached(new Uint8Array(await response.arrayBuffer()));
-      return toStructuredEncoding((await response.json()) as Record<string, unknown>);
+      const text = await response.text();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        throw new GridError("internal", `Expected a JSON response (HTTP ${response.status}).`);
+      }
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new GridError("internal", `Expected a JSON object response (HTTP ${response.status}).`);
+      }
+      return toStructuredEncoding(parsed as Record<string, unknown>);
     },
   };
   const events = options.events;
@@ -143,11 +156,11 @@ export function httpTransport(url: string, options: HttpTransportOptions = {}): 
       const opening = new Promise<void>((resolve) => {
         open = resolve;
       });
-      connecting = opening;
+      connecting.add(opening);
       // Open, or failed: a stream that cannot connect does not hold the requests back.
       const settle = () => {
+        connecting.delete(opening);
         open();
-        if (connecting === opening) connecting = null;
       };
       source.onopen = settle;
       source.onerror = settle;

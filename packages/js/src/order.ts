@@ -375,6 +375,11 @@ function rankWords(column: Column, values: Values, write: NumberWriter | null): 
     }
     ranks[row] = distinct - 1;
   }
+  if (distinct < present) {
+    for (let which = 0; which < distinctWords.length; which++) {
+      distinctWords[which] = distinctWords[which].slice(0, distinct);
+    }
+  }
   if (present < count) {
     for (let row = 0; row < count; row++) {
       const blank = write
@@ -409,7 +414,7 @@ function rankWords(column: Column, values: Values, write: NumberWriter | null): 
 }
 
 const SURROGATE = /[\uD800-\uDFFF]/;
-const HIGH_UNITS = /[\uD800-￿]/g;
+const HIGH_UNITS = /[\uD800-\uFFFF]/g;
 
 /**
  * The string with its UTF-16 units from U+D800 moved so that comparing units compares code points (§3.1):

@@ -50,16 +50,28 @@ function keyOf(value: JsonValue, column: Column) {
   return isBlank(value, column) ? BLANK : JSON.stringify(value);
 }
 
-/** `filter.column` with the parts of a filter, or null when its text is not a value of the column. */
-function filterCommand(filter: ColumnFilter | null, column: Column): GridCommand | null {
+/** `filter.column` with the parts of a filter, or which bound was not a value of the column. */
+function buildFilterCommand(
+  filter: ColumnFilter | null,
+  column: Column,
+): { ok: true; command: GridCommand } | { ok: false; side: "first" | "second" | "both" } {
   let parts: Expr[] = [];
   try {
     if (filter) parts = filterParts(filter, column);
   } catch (cause) {
-    if (cause instanceof FilterTextError) return null;
+    if (cause instanceof FilterTextError) {
+      if (filter?.kind === "condition" && filter.operator === "between" && cause.side === "first") {
+        try {
+          filterParts({ ...filter, first: "" }, column);
+        } catch (secondCause) {
+          if (secondCause instanceof FilterTextError) return { ok: false, side: "both" };
+        }
+      }
+      return { ok: false, side: cause.side };
+    }
     throw cause;
   }
-  return { command: "filter.column", column: column.name, where: joinParts(parts) ?? null };
+  return { ok: true, command: { command: "filter.column", column: column.name, where: joinParts(parts) ?? null } };
 }
 
 /** How long typing in the values' search box must pause before the list is read again. */
@@ -100,6 +112,7 @@ function FilterForm({ column, onDone }: { column: Column; onDone: () => void }) 
   const [first, setFirst] = useState(read?.kind === "condition" ? read.first : "");
   const [second, setSecond] = useState(read?.kind === "condition" ? read.second : "");
   const [error, setError] = useState<string | null>(null);
+  const [invalidSide, setInvalidSide] = useState<"first" | "second" | "both" | null>(null);
   const [pending, startApply] = useTransition();
 
   useEffect(() => {
@@ -127,11 +140,16 @@ function FilterForm({ column, onDone }: { column: Column; onDone: () => void }) 
 
   // Blank values (null and the empty string) are one item.
   const items: { key: string; value: JsonValue; count: number }[] = [];
+  const itemsByKey = new Map<string, { key: string; value: JsonValue; count: number }>();
   for (const item of list?.values ?? []) {
     const key = keyOf(item.value, column);
-    const same = items.find((other) => other.key === key);
+    const same = itemsByKey.get(key);
     if (same) same.count += item.count;
-    else items.push({ key, value: item.value, count: item.count });
+    else {
+      const entry = { key, value: item.value, count: item.count };
+      itemsByKey.set(key, entry);
+      items.push(entry);
+    }
   }
   const checked = (key: string) => (toggled.has(key) ? !base : base);
   const conditionOn = operator !== "none";
@@ -153,13 +171,15 @@ function FilterForm({ column, onDone }: { column: Column; onDone: () => void }) 
   };
 
   const apply = (filter: ColumnFilter | null) => {
-    const command = filterCommand(filter, column);
-    if (!command) {
+    const built = buildFilterCommand(filter, column);
+    if (!built.ok) {
+      setInvalidSide(built.side);
       setError(messages.invalidValue(column.name));
       return;
     }
+    setInvalidSide(null);
     startApply(async () => {
-      const outcome = await store.dispatch(command);
+      const outcome = await store.dispatch(built.command);
       if (!outcome.ok) {
         setError(outcome.error.message);
         return;
@@ -232,7 +252,11 @@ function FilterForm({ column, onDone }: { column: Column; onDone: () => void }) 
           className="vg-input"
           aria-label={messages.condition}
           value={operator}
-          onChange={(event) => setOperator(event.target.value as FilterOperator | "none")}
+          onChange={(event) => {
+            setOperator(event.target.value as FilterOperator | "none");
+            setInvalidSide(null);
+            setError(null);
+          }}
         >
           <option value="none">{messages.conditionNone}</option>
           {operators.map((item) => (
@@ -246,9 +270,14 @@ function FilterForm({ column, onDone }: { column: Column; onDone: () => void }) 
             className="vg-input"
             aria-label={operator === "between" ? messages.minimum : messages.value}
             placeholder={operator === "between" ? messages.minimum : messages.value}
-            aria-invalid={error !== null}
+            aria-invalid={invalidSide === "first" || invalidSide === "both"}
             value={first}
-            onChange={(event) => setFirst(event.target.value)}
+            onChange={(event) => {
+              setFirst(event.target.value);
+              if (invalidSide === "first" || invalidSide === "both") {
+                setInvalidSide(invalidSide === "both" ? "second" : null);
+              }
+            }}
           />
         )}
         {operator === "between" && (
@@ -256,9 +285,14 @@ function FilterForm({ column, onDone }: { column: Column; onDone: () => void }) 
             className="vg-input"
             aria-label={messages.maximum}
             placeholder={messages.maximum}
-            aria-invalid={error !== null}
+            aria-invalid={invalidSide === "second" || invalidSide === "both"}
             value={second}
-            onChange={(event) => setSecond(event.target.value)}
+            onChange={(event) => {
+              setSecond(event.target.value);
+              if (invalidSide === "second" || invalidSide === "both") {
+                setInvalidSide(invalidSide === "both" ? "first" : null);
+              }
+            }}
           />
         )}
       </fieldset>

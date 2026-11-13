@@ -1,12 +1,12 @@
 ---
 title: Where vastgrid opens files
-description: The six places vastgrid opens CSV, TSV, Parquet, JSON Lines and Excel files and DataFrames, and what each reads, edits, saves and exports.
+description: The six places vastgrid opens CSV, TSV, Parquet, JSON Lines and Excel files, DuckDB databases and DataFrames, and what each reads, edits, saves and exports.
 ---
 
-vastgrid opens huge CSV, TSV, Parquet, JSON Lines and Excel files, and DataFrames, in six places. Each shows the
-same grid, `DataGrid` of `vastgrid`, with the same document, session and commands, and talks to its engine with
-the same messages. What differs is the engine, how the messages travel, and what the host does with the cells you
-write.
+vastgrid opens huge CSV, TSV, Parquet, JSON Lines and Excel files, DuckDB databases and DataFrames in six places.
+Each shows the same grid, `DataGrid` of `vastgrid`, with the same document, session and commands, and talks to its
+engine with the same messages. What differs is the engine, how the messages travel, and what the host does with the
+cells you write.
 
 - To look at a file now: the [command line](/apps/cli/), or [Open a file](/open/) on this site with nothing to
   install.
@@ -37,9 +37,10 @@ write.
 | MCP App | yes, also compressed | yes | yes | yes | `.xlsx`, `.xlsm` | `.duckdb`, `.ddb` | |
 | Notebook | yes, also compressed | yes | yes | yes | `.xlsx`, `.xlsm` | `.duckdb`, `.ddb` | pandas, Polars, PyArrow, DuckDB relations |
 
-Every entry opens the sheets of a workbook, hidden ones marked, and a file of any size. Parquet files are read in
-place, a row range at a time; the others are read into DuckDB, or into the memory engine within its memory limit
-(`maxBytes`, see [Large files in the browser](/guides/browser/)).
+Every entry opens the sheets of a workbook (hidden ones marked), and the DuckDB entries open the tables of a
+DuckDB database as sheets, on files of any size. Parquet files are read in place, a row range at a time; the others
+are read into DuckDB, or into the memory engine within its memory limit (`maxBytes`, see
+[Large files in the browser](/guides/browser/)).
 
 ## Editing, saving and exporting
 
@@ -49,7 +50,7 @@ place, a row range at a time; the others are read into DuckDB, or into the memor
 | React component | when the engine writes | when the engine saves (`capabilities.save`) | the engine's formats |
 | Command line | yes | CSV and TSV, with `--save` (⌘S or Ctrl+S) | CSV, TSV, Parquet, JSON, Excel, downloaded |
 | VS Code | yes, with undo and redo on VS Code's stack | CSV and TSV, with VS Code's Save; Save As writes any format | CSV, TSV, Parquet, JSON, Excel, where a save dialog says |
-| MCP App | yes, the person and the agent alike | CSV and TSV, with `--save` | CSV, TSV, Parquet, JSON, Excel, written on the server |
+| MCP App | yes, the person and the agent alike | CSV and TSV, with `--save` | CSV, TSV, Parquet, JSON, Excel, downloaded or written on the server |
 | Notebook | yes | no: the notebook reads the written cells (`grid.to_pandas()`) | CSV, TSV, Parquet, JSON, Excel, downloaded or by `grid.export` |
 
 A save writes only the edited fields of a CSV or TSV file and keeps every other byte: the byte order mark, the

@@ -100,6 +100,8 @@ export interface SyncAnswer {
 export interface GridState {
   grid: string;
   file: string;
+  sheet?: string;
+  sheets?: { name: string; hidden?: boolean }[];
   version: number;
   status: GridSnapshot["status"];
   table: { rowCount: number | null; status: string; edits: number; fileChanged: boolean } | null;
@@ -117,6 +119,7 @@ export class Grid {
     session: { version: 0, by: "" },
   };
   private readonly clients = new Map<string, Client>();
+  private readonly rowsClient: GridClient;
   private readonly disconnect: () => void;
   private readonly stopEvents: Array<() => void> = [];
   /** Commands of the agent being applied. */
@@ -130,7 +133,9 @@ export class Grid {
     private readonly ids: RequestIds,
     private readonly wait: number,
     private readonly idle = CLIENT_IDLE,
+    readonly sheet?: string,
   ) {
+    this.rowsClient = new GridClient(localTransport(ids.client()));
     this.disconnect = store.connect();
     // The agent's commands change the state that the Apps then follow. The store also applies commands of its own
     // (§6.7, when it reads a view), as the store of each App does: those are not sent, nor do they win over the
@@ -214,9 +219,12 @@ export class Grid {
   state(): GridState {
     const snapshot = this.store.getSnapshot();
     const table = snapshot.table;
+    const sheet = table?.sheet ?? this.sheet;
     return {
       grid: this.id,
       file: this.file,
+      ...(sheet === undefined ? {} : { sheet }),
+      ...(table?.sheets ? { sheets: table.sheets } : {}),
       version: this.version,
       status: snapshot.status,
       table: table && {
@@ -273,8 +281,7 @@ export class Grid {
     const start = options.start ?? 0;
     const count = Math.min(options.count ?? 50, ROWS_LIMIT);
     const columns = options.columns ?? snapshot.displayed.map(({ column }) => column.name);
-    const client = new GridClient(localTransport(this.ids.client()));
-    const answer = await client.request<{
+    const answer = await this.rowsClient.request<{
       start: number;
       end: number;
       rowIds: number[] | null;
@@ -308,13 +315,13 @@ export class Grid {
   }
 
   /** Answers a request message of an App (§8), and keeps the tables it opens for their events. */
-  async message(clientId: string, message: unknown, signal?: AbortSignal): Promise<unknown> {
+  async message(clientId: string, message: unknown, signal?: AbortSignal): Promise<Json | undefined> {
     const client = this.client(clientId);
-    const answer = (await client.engine.handle(message, { signal })) as Json;
+    const answer = (await client.engine.handle(message, { signal })) as Json | undefined;
     const op = (message as Json | null)?.op;
     const result = answer?.result as Json | undefined;
     if ((op === "open" || op === "reload") && typeof result?.table === "string") client.tables.add(result.table);
-    if (op === "close" && answer?.error === undefined) client.tables.delete((message as Json).table as string);
+    if (op === "close" && answer && answer.error === undefined) client.tables.delete((message as Json).table as string);
     return answer;
   }
 
@@ -412,7 +419,7 @@ export class Grids {
       ...(options.sheet === undefined ? {} : { open: { sheet: options.sheet } }),
       ...(document ? { document } : {}),
     });
-    const grid = new Grid(id, file, store, this.ids, this.options.wait ?? 20_000, this.options.idle);
+    const grid = new Grid(id, file, store, this.ids, this.options.wait ?? 20_000, this.options.idle, options.sheet);
     try {
       await grid.settled(signal);
     } catch (error) {

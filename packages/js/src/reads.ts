@@ -6,6 +6,7 @@ import {
   checkPlan,
   encodeBlock,
   type JsonValue,
+  lowerText,
   MESSAGE_LIMITS,
   normalizePlan,
   type RowKey,
@@ -13,11 +14,11 @@ import {
 } from "vastgrid-spec";
 import { EXPORT_FORMATS, PLAN_OPTIONS } from "./capabilities.js";
 import { cellsOf, loadFailed, ranksOf, readColumns, type Table, valuesOf } from "./open-table.js";
-import { type ColumnRanks, rankColumn } from "./order.js";
+import type { ColumnRanks } from "./order.js";
 import { Failure, type Json, pause, type Running } from "./running.js";
 import { Summary } from "./summary.js";
-import { shown, TableProblem, vectorOf } from "./table.js";
-import { columnsOf, firstsOf, positionOf, viewOf } from "./view.js";
+import { shown, TableProblem } from "./table.js";
+import { columnsOf, firstsOf, groupRanksOf, positionOf, viewOf } from "./view.js";
 
 /**
  * The string cut to `limit` code points, or null when it has no more than that (§8.4). A string of no more
@@ -152,8 +153,7 @@ export async function find(table: Table, request: Json, running: Running) {
   const text = request.text as string;
   if (text === "" || view.rowCount === 0 || sources.length === 0) return null;
   const sensitive = request.caseSensitive === true;
-  const { mapCase } = await import("./evaluate.js");
-  const needle = sensitive ? text : mapCase(text, false);
+  const needle = sensitive ? text : lowerText(text);
   await readColumns(
     table,
     sources.filter((source) => !source.values).map((source) => source.index),
@@ -165,7 +165,7 @@ export async function find(table: Table, request: Json, running: Running) {
     if (value === null) return false;
     const column = sources[at].column;
     const form = column.type === "string" ? (value as string) : (textOf(value, column) as string);
-    return (sensitive ? form : mapCase(form, false)).includes(needle);
+    return (sensitive ? form : lowerText(form)).includes(needle);
   };
   const count = view.rowCount;
   const width = sources.length;
@@ -216,6 +216,15 @@ export async function exportRows(table: Table, request: Json, running: Running) 
   const view = await viewOf(table, request.plan, running);
   const names = (request.columns as string[] | undefined) ?? view.columns.map((column) => column.name);
   const sources = columnsOf(table, view, names);
+  for (const member of ["headers", "numberFormats"] as const) {
+    const list = request[member] as unknown[] | undefined;
+    if (list !== undefined && list.length !== sources.length) {
+      throw new Failure("invalid_request", `${member} has one item per column.`, {
+        path: `/${member}`,
+        reason: "syntax",
+      });
+    }
+  }
   await readColumns(
     table,
     sources.filter((source) => !source.values).map((source) => source.index),
@@ -258,8 +267,8 @@ export async function locate(table: Table, request: Json, running: Running) {
   }
   const name = request.rowKey as string;
   // In a view of groups, values are looked up among the groups' keys; groups have no row IDs.
-  const group = view.grouped ? view.derived.get(name) : undefined;
-  if (column !== undefined && !group && keys.some((key) => "value" in key)) {
+  const group = view.groupKeys?.has(name) ? view.derived.get(name) : undefined;
+  if (column !== undefined && !view.grouped && keys.some((key) => "value" in key)) {
     await readColumns(table, [column], running);
   }
   let ranks: ColumnRanks | undefined;
@@ -268,7 +277,7 @@ export async function locate(table: Table, request: Json, running: Running) {
       if ("rowId" in key) return view.grouped ? null : positionOf(view, key.rowId);
       if (view.grouped && !group) return null;
       // The first position in the view of a row whose value equals the key's (§3.1).
-      ranks ??= group ? rankColumn(group.column, vectorOf(group.values)) : ranksOf(table, column as number);
+      ranks ??= group ? groupRanksOf(view, name, group) : ranksOf(table, column as number);
       const rank = ranks.rankOf(key.value);
       if (rank < 0) return null;
       const first = firstsOf(view, name, ranks)[rank];

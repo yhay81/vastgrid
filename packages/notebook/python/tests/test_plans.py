@@ -268,3 +268,22 @@ def test_case(connect, file: str, case: dict[str, Any]) -> None:
         return
     assert "result" in got, f"expected rows, got the error {got.get('error')}"
     assert compare_result(expect, got["result"]) == []
+
+
+def test_wide_decimal_pivot_accumulates_each_column_once() -> None:
+    columns = [{"name": "k", "type": "string"}, {"name": "v", "type": "decimal", "precision": 38, "scale": 20}]
+    aggregate = {"keys": [], "measures": [{"name": "s", "fn": "sum", "column": "v"}], "pivot": {"columns": ["k"]}}
+    count = 200
+    view = compile_view(
+        check_plan({"aggregate": aggregate}, columns), SqlSource("t", "id"), [[str(i)] for i in range(count)]
+    )
+    assert view.with_.count("sum(") == count
+    query = rows_query(view, SqlRead(0, 1, [column["name"] for column in view.columns]), output)
+    with duckdb.connect() as connection:
+        connection.execute("CREATE TABLE t(id BIGINT, k VARCHAR, v DECIMAL(38,20))")
+        connection.execute("INSERT INTO t VALUES (0, '0', -0.5), (1, '0', 0.01), (2, '1', 0.00000000000000000001)")
+        assert connection.execute(query.sql, query.params).fetchone() == (
+            "-0.49000000000000000000",
+            "0.00000000000000000001",
+            *([None] * (count - 2)),
+        )

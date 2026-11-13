@@ -92,6 +92,18 @@ test("the agent's commands show in the App, and the person's selection reaches t
     .toMatchObject({ column: "region", row: 0 });
 });
 
+test("a host locale change preserves pending and subsequent selections", async ({ page }) => {
+  const { grid } = await openApp(page);
+  const app = page.frameLocator("iframe");
+  await app.getByRole("gridcell", { name: "EU" }).first().click({ force: true });
+  await page.evaluate(() => window.host.setLocale("ja"));
+  await expect(app.getByRole("button", { name: "全画面表示" })).toBeVisible();
+  const active = async () => ((await agent(page, "grid_state", { grid })).session as Json).active;
+  await expect.poll(active).toMatchObject({ row: 0, column: "region" });
+  await app.getByRole("gridcell", { name: "US", exact: true }).click({ force: true });
+  await expect.poll(active).toMatchObject({ row: 1, column: "region" });
+});
+
 test("the agent writes a cell, the App shows it, and both undo it", async ({ page }) => {
   const { grid } = await openApp(page);
   for (const command of [

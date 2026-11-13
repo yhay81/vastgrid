@@ -31,7 +31,7 @@ beforeAll(async () => {
     instance.closeSync();
   }
   info = await client.open(file);
-  assert.equal(info.status, "ready", info.error);
+  assert.equal(info.status, "ready", info.error ?? "");
 });
 
 afterAll(async () => {

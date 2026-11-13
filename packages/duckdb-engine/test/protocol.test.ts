@@ -88,8 +88,8 @@ test("open gives TableInfo, and info and changes follow it", async () => {
 test("rows answers a plan's view with a block that keeps every value", async () => {
   const table = await opened();
   const plan = {
-    where: { fn: "ge", args: [{ col: "qty" }, { lit: 2 }] },
-    sort: [{ column: "price", direction: "desc" }],
+    where: { fn: "ge" as const, args: [{ col: "qty" }, { lit: 2 }] },
+    sort: [{ column: "price", direction: "desc" as const }],
   };
   const response = await send("rows", {
     table,

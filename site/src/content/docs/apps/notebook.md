@@ -1,13 +1,13 @@
 ---
 title: Notebook
-description: Show DataFrames and CSV, TSV, Parquet, JSON Lines and Excel files of any size in a grid in a Jupyter notebook, with DuckDB in the kernel, and get the edited table back.
+description: Show DataFrames and CSV, TSV, Parquet, JSON Lines and Excel files and DuckDB databases of any size in a grid in a Jupyter notebook, with DuckDB in the kernel, and get the edited table back.
 ---
 
 The Python package `vastgrid` shows a table of any size in vastgrid's grid in a Jupyter notebook: a pandas or
-Polars DataFrame, a PyArrow table, a DuckDB relation, or a CSV, TSV, Parquet, JSON, JSON Lines or Excel file.
-DuckDB reads it in the kernel; the grid in the cell's output is an [anywidget](https://anywidget.dev) that shows
-`DataGrid` and reads blocks of rows over the widget's messages, a row range at a time. The notebook gets the
-edited table back as a DataFrame, or exports it.
+Polars DataFrame, a PyArrow table, a DuckDB relation, a CSV, TSV, Parquet, JSON, JSON Lines or Excel file, or a
+DuckDB database. DuckDB reads it in the kernel; the grid in the cell's output is an [anywidget](https://anywidget.dev)
+that shows `DataGrid` and reads blocks of rows over the widget's messages, a row range at a time. The notebook gets
+the edited table back as a DataFrame, or exports it.
 
 ## Running it
 
@@ -32,7 +32,7 @@ grid
 
 | Option | Default | What it is |
 | --- | --- | --- |
-| `sheet` | the first sheet | the sheet of a workbook |
+| `sheet` | the first sheet or table | the sheet of a workbook or the table of a DuckDB database |
 | `height` | 480 | the grid's height in pixels |
 | `locale` | `"en"` | the grid's texts and numbers, a BCP 47 tag: `"ja"`, `"zh-CN"`, `"zh-TW"`, `"ko"`, `"es"`, `"pt-BR"`, `"fr"`, `"de"`; texts are English for other languages |
 | `name` | the file's name, or `"table"` | the table's name, which screen readers say |
@@ -60,7 +60,7 @@ of its own, deleted with the database.
 ## Editing and exporting
 
 Everything the grid does with an engine works: sorting, filtering, searching, grouping, pivots, formulas,
-statistics, finding and editing cells (typing, pasting, clearing, filling, undo and redo). See
+statistics, finding and editing cells (typing, cutting, pasting, clearing, filling, undo and redo). See
 [Using the grid](/guides/using-the-grid/).
 
 Nothing is saved into a file in its place: a notebook has its data as variables, so the engine answers that it

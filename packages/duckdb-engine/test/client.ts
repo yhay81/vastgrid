@@ -26,6 +26,7 @@ export interface TableInfo {
   notes?: string[];
   sheets?: { name: string; hidden?: boolean }[];
   sheet?: string;
+  fileChanged?: boolean;
   error?: string;
   capabilities: Json;
 }
@@ -172,7 +173,7 @@ export async function writeParquet(file: string, table: { columns: Column[]; row
     // Without dictionaries: DuckDB's dictionaries keep one of the intervals that compare equal, so that a
     // column of "1 month" and "30 days" would read back as one of them.
     await connection.run(
-      `COPY (SELECT ${names} FROM t ORDER BY vg_order) TO '${file.replaceAll("'", "''")}' (FORMAT parquet, DICTIONARY_SIZE_LIMIT 1)`,
+      `COPY (SELECT ${names} FROM t ORDER BY vg_order) TO '${file.replaceAll("'", "''")}' (FORMAT parquet, DICTIONARY_SIZE_LIMIT 0)`,
     );
   } finally {
     connection.closeSync();

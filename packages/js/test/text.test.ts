@@ -22,7 +22,7 @@ type Options = Omit<FileTable, "file">;
 
 /** The columns and rows of a file as the engine reads it. */
 async function read(text: string | Uint8Array, options: Options = { format: "csv" }) {
-  const client = new Client({ t: { file: new Blob([text]), ...options } });
+  const client = new Client({ t: { file: new Blob([text as BlobPart]), ...options } });
   const info = await client.open("t");
   const { rows } = await client.rows(info, {});
   return { columns: info.columns, rows };
@@ -30,7 +30,7 @@ async function read(text: string | Uint8Array, options: Options = { format: "csv
 
 /** The error that opening a file fails with. */
 async function failure(text: string | Uint8Array, options: Options = { format: "csv" }) {
-  const client = new Client({ t: { file: new Blob([text]), ...options } });
+  const client = new Client({ t: { file: new Blob([text as BlobPart]), ...options } });
   return client.error("open", { ref: "t" });
 }
 
@@ -676,7 +676,7 @@ test("a large generated file answers sorts, filters, groups and summaries as the
     const client = new Client({ t: { file, format: "csv", maxBytes: lazyBytes } });
     const info = await client.open("t");
     assert.deepEqual([info.rowCount, info.columns], answers[0].slice(0, 2));
-    if ("where" in plan && "search" in plan.where) {
+    if ("where" in plan && plan.where && "search" in plan.where) {
       const { table, revision } = info;
       const error = await client.error("rows", { table, revision, plan, start: 0, end: 1, columns: [] });
       assert.match(error.message, /at \/maxBytes, /);

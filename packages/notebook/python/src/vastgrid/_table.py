@@ -17,6 +17,7 @@ from ._errors import EngineError
 from ._messages import quoted
 from ._session import Running, Session
 from ._sql import quote_identifier
+from ._values import combine_pairs
 
 FILE_FORMATS = {
     ".csv": "csv",
@@ -65,6 +66,47 @@ def _row_id_name(columns: list[Json]) -> str:
     while name in names:
         name += "_"
     return name
+
+
+def _unique_columns(sources: list[tuple[str, str]]) -> list[Json]:
+    """Unique, non-empty table columns (§4.2) from DuckDB source descriptions."""
+    taken: set[str] = set()
+    columns: list[Json] = []
+    for index, (raw_name, sql_type) in enumerate(sources):
+        base = combine_pairs(raw_name or f"column_{index + 1}")[:256]
+        name = base
+        suffix = 2
+        while name in taken:
+            tail = f"_{suffix}"
+            name = f"{base[: 256 - len(tail)]}{tail}"
+            suffix += 1
+        taken.add(name)
+        columns.append(table_column(name, sql_type))
+    return columns
+
+
+def _relation_aliases(columns: list[Json], row_id_raw: str) -> tuple[list[str], dict[str, str] | None]:
+    """Case-distinct quoted SQL aliases for a relation's columns when any two names differ only in case."""
+    used = {row_id_raw.lower()}
+    aliases: list[str] = []
+    collided = False
+    next_id = 0
+    for column in columns:
+        lower = column["name"].lower()
+        if lower not in used:
+            used.add(lower)
+            aliases.append(quote_identifier(column["name"]))
+            continue
+        collided = True
+        while f"vg_c{next_id}" in used:
+            next_id += 1
+        alias = f"vg_c{next_id}"
+        next_id += 1
+        used.add(alias)
+        aliases.append(quote_identifier(alias))
+    if not collided:
+        return aliases, None
+    return aliases, {column["name"]: aliases[i] for i, column in enumerate(columns)}
 
 
 class Table:
@@ -200,31 +242,68 @@ class Table:
         return options
 
     def _describe(self, cursor: duckdb.DuckDBPyConnection, sql: str, params: list[Any]) -> list[tuple[str, str]]:
-        return [(str(row[0]), str(row[1])) for row in cursor.execute(f"DESCRIBE {sql}", params).fetchall()]
+        rows = cursor.execute(f"SELECT '.' || column_name, column_type FROM (DESCRIBE {sql})", params).fetchall()
+        return [(str(row[0])[1:], str(row[1])) for row in rows]
 
-    def _create(self, cursor: duckdb.DuckDBPyConnection, reader: str, params: list[Any]) -> None:
+    def _create(
+        self,
+        cursor: duckdb.DuckDBPyConnection,
+        reader: str,
+        params: list[Any],
+        *,
+        names: list[str] | None = None,
+    ) -> None:
         """Creates a table of the session from a reader with the columns cast to their logical types (under names of
         its own, so that a column named like DuckDB's `rowid` stays a column), and the view that the engine reads."""
-        sources = self._describe(cursor, f"SELECT * FROM {reader}", params)
-        columns = [table_column(name, sql_type) for name, sql_type in sources]
+        described = self._describe(cursor, f"SELECT * FROM {reader}", params)
+        sources = (
+            [(names[index], sql_type) for index, (_, sql_type) in enumerate(described)]
+            if names is not None
+            else described
+        )
+        columns = _unique_columns(sources)
         table = quote_identifier(self.session.name("vg_t"))
+        has_collision = names is None and len({name.lower() for name, _ in sources}) != len(sources)
+        source_ids = [f'"s{i}"' for i in range(len(sources))]
+        from_clause = f"(SELECT * FROM {reader}) vg_s({', '.join(source_ids)})" if has_collision and sources else reader
+        raw_ids = (
+            [quote_identifier(described[i][0]) for i in range(len(sources))]
+            if names is not None
+            else source_ids
+            if has_collision
+            else [None] * len(sources)
+        )
         values = [
-            f'{source_expression(name, sql_type, columns[index])} AS "c{index}"'
+            f'{source_expression(name, sql_type, columns[index], raw_ids[index])} AS "c{index}"'
             for index, (name, sql_type) in enumerate(sources)
         ]
         selected = ", ".join(values) if values else "NULL AS vg_none"
-        cursor.execute(f"CREATE TABLE {table} AS SELECT {selected} FROM {reader}", params)
+        cursor.execute(f"CREATE TABLE {table} AS SELECT {selected} FROM {from_clause}", params)
         self.objects.insert(0, f"TABLE {table}")
         view = quote_identifier(self.session.name("vg_v"))
-        row_id = quote_identifier(_row_id_name(columns))
-        named = [f'"c{index}" AS {quote_identifier(column["name"])}' for index, column in enumerate(columns)]
+        raw_row_id = _row_id_name(columns)
+        row_id = quote_identifier(raw_row_id)
+        aliases, aliases_map = _relation_aliases(columns, raw_row_id)
+        named = [f'"c{index}" AS {aliases[index]}' for index in range(len(columns))]
         cursor.execute(f"CREATE VIEW {view} AS SELECT {', '.join([*named, f'rowid AS {row_id}'])} FROM {table}")
         self.objects.insert(0, f"VIEW {view}")
         # fetchall finishes the result: DuckDB 2.0 refuses to unregister data (`_load_data`) while one is unfinished.
         rows = cursor.execute(f"SELECT count(*) FROM {table}").fetchall()[0][0]
         self.columns = columns
-        self.relation = Relation(view, row_id, int(rows))
+        self.relation = Relation(view, row_id, int(rows), aliases_map)
         self.row_count = int(rows)
+
+    def _create_empty(self, cursor: duckdb.DuckDBPyConnection, rows: int) -> None:
+        table = quote_identifier(self.session.name("vg_t"))
+        cursor.execute(f"CREATE TABLE {table} AS SELECT NULL AS vg_none FROM range($1)", [rows])
+        self.objects.insert(0, f"TABLE {table}")
+        view = quote_identifier(self.session.name("vg_v"))
+        row_id = quote_identifier("vg_row")
+        cursor.execute(f"CREATE VIEW {view} AS SELECT rowid AS {row_id} FROM {table}")
+        self.objects.insert(0, f"VIEW {view}")
+        self.columns = []
+        self.relation = Relation(view, row_id, rows, {})
+        self.row_count = rows
 
     def _load_database(self, cursor: duckdb.DuckDBPyConnection, path: str, sheet: str | None) -> None:
         """A table of a DuckDB database: the database is attached read only while it is copied, and its tables are
@@ -278,7 +357,9 @@ class Table:
         numbers (`file_row_number`), which is loaded as a table instead."""
         literal = "'" + path.replace("'", "''") + "'"
         sources = self._describe(cursor, f"SELECT * FROM read_parquet({literal}, hive_partitioning=false)", [])
-        if any(name.lower() == "file_row_number" for name, _ in sources):
+        if any(name.lower() == "file_row_number" or not name for name, _ in sources) or len(
+            {name.lower() for name, _ in sources}
+        ) != len(sources):
             return False
         columns = [table_column(name, sql_type) for name, sql_type in sources]
         view = quote_identifier(self.session.name("vg_p"))
@@ -302,10 +383,52 @@ class Table:
         """A DataFrame-like object (pandas, Polars, PyArrow, a DuckDB relation), copied in its row order."""
         if isinstance(data, duckdb.DuckDBPyRelation):
             data = data.to_arrow_table()
+        elif type(data).__module__.startswith(("polars", "pandas")) and hasattr(data, "to_frame"):
+            data = data.to_frame()
+        if type(data).__module__.startswith("pyarrow") and hasattr(data, "validate"):
+            try:
+                data.validate(full=True)
+            except Exception as error:  # noqa: BLE001
+                raise EngineError("load_failed", str(error)) from error
+        zero_cols_rows: int | None = None
+        if getattr(data, "num_columns", None) == 0 and hasattr(data, "num_rows"):
+            zero_cols_rows = int(data.num_rows)
+        elif (
+            type(data).__module__.startswith(("polars", "pandas"))
+            and hasattr(data, "columns")
+            and len(data.columns) == 0
+        ):
+            zero_cols_rows = int(len(data))
+        if zero_cols_rows is not None:
+            self._create_empty(cursor, zero_cols_rows)
+            return
+        raw_names: list[str] | None = None
+        if hasattr(data, "column_names"):
+            raw_names = [str(col) for col in data.column_names]
+        elif type(data).__module__.startswith(("polars", "pandas")) and hasattr(data, "columns"):
+            raw_names = [str(col) for col in data.columns]
+        override_names: list[str] | None = None
+        if raw_names is not None and (
+            any(not col for col in raw_names) or len({col.lower() for col in raw_names}) != len(raw_names)
+        ):
+            override_names = raw_names
+            safe = [f"c{index}" for index in range(len(raw_names))]
+            if hasattr(data, "rename_columns"):
+                data = data.rename_columns(safe)
+            elif type(data).__module__.startswith("polars"):
+                data = data.to_arrow().rename_columns(safe)
+            else:
+                data = data.copy(deep=False)
+                data.columns = safe
         name = self.session.name("vg_data")
-        cursor.register(name, data)
         try:
-            self._create(cursor, quote_identifier(name), [])
+            cursor.register(name, data)
+        except Exception as error:  # noqa: BLE001
+            raise EngineError("load_failed", str(error)) from error
+        try:
+            self._create(cursor, quote_identifier(name), [], names=override_names)
+        except duckdb.Error as error:
+            raise EngineError("load_failed", str(error)) from error
         finally:
             cursor.unregister(name)
 

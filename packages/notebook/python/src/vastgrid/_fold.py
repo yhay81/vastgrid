@@ -40,12 +40,17 @@ FOLD_TABLES: dict[str, tuple[list[tuple[str, str]], str, str]] = {
     "kana": ([], *_range(0x3041, 0x3096, 0x60)),
 }
 
+_FOLD_MAPS: dict[str, tuple[frozenset[str], dict[str, str], dict[int, int]]] = {
+    fold: (frozenset(pair[0] for pair, _ in pairs), dict(pairs), str.maketrans(source, target))
+    for fold, (pairs, source, target) in FOLD_TABLES.items()
+}
+
 
 def fold_text(text: str, fold: str) -> str:
     """`fold(text, fold)` (§4.4), by code point: a pair first where one starts, then each code point."""
-    pairs, source, target = FOLD_TABLES[fold]
-    pair_map = dict(pairs)
-    single = dict(zip(source, target, strict=True))
+    pair_starts, pair_map, trans = _FOLD_MAPS[fold]
+    if not pair_starts or not any(char in pair_starts for char in text[:-1]):
+        return text.translate(trans)
     result: list[str] = []
     index = 0
     while index < len(text):
@@ -54,7 +59,9 @@ def fold_text(text: str, fold: str) -> str:
             result.append(pair)
             index += 2
             continue
-        result.append(single.get(text[index], text[index]))
+        code = ord(text[index])
+        mapped = trans.get(code)
+        result.append(chr(mapped) if mapped is not None else text[index])
         index += 1
     return "".join(result)
 

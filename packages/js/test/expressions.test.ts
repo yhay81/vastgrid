@@ -194,3 +194,22 @@ test("values of every comparable type compare as §3.1 says", async () => {
 test("derived values of generated rows filter and sort correctly", async () => {
   await deriveRows(10_000);
 });
+
+test("in compares an exact subject to each candidate using that pair's numeric types", async () => {
+  const client = new Client({
+    t: { columns: [{ name: "x", type: "bigint" }], rows: [["9007199254740993"], ["9007199254740992"], [null]] },
+  });
+  const info = await client.open("t");
+  const args = [{ col: "x" }, { lit: "9007199254740992", type: "bigint" }];
+  const plan = {
+    derive: [
+      { name: "exact", expr: { fn: "in", args: [...args, { lit: 0.5 }] } },
+      { name: "rounded", expr: { fn: "in", args: [...args, { lit: 9007199254740992, type: "float" }] } },
+    ],
+  };
+  assert.deepEqual((await client.rows(info, plan, { columns: ["exact", "rounded"] })).rows, [
+    [false, true],
+    [true, true],
+    [null, null],
+  ]);
+});

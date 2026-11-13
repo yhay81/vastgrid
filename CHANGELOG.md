@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- `vastgrid`, `vastgrid-js`, `vastgrid-spec`: pasting over row keys, undo and redo address the original rows.
+  Failed writes leave all cells unchanged. Renaming a derived column preserves its column settings, and
+  `migrateGridState` reports settings removed during repair.
+- `vastgrid-duckdb`, `vastgrid-cli`, `vastgrid-mcp`: large compressed Excel sheets open correctly. The CLI
+  checks the targets of file links, and the CLI and MCP server use private temporary directories per user.
+  Changing the MCP host's language keeps pending edits synchronized.
+- `vastgrid-sql`, `vastgrid-duckdb`, `vastgrid-js`, `vastgrid` (Python): mixed numeric comparisons preserve
+  exact values, exports preserve case-sensitive Parquet names, and wide decimal pivots and batch edits scale
+  to larger inputs. The notebook preserves row counts for zero-column Arrow tables and reports out-of-range timestamps.
+- `vastgrid` website: a failed attempt to open another file preserves the current file, sheet and edits.
+
 ## 0.4.0 — 2026-11-06
 
 ### Breaking changes

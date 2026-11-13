@@ -1,4 +1,3 @@
-import { createReadStream } from "node:fs";
 import { type FileHandle, open } from "node:fs/promises";
 import type { TextEncoding } from "./encoding.js";
 
@@ -83,7 +82,7 @@ function unsafeInShiftJis(char: string) {
  * Finds the records of the file and the layout of the edited ones. Throws `CsvSaveError` when the
  * records do not match the table's rows.
  */
-async function scan(handle: FileHandle, job: CsvRewrite): Promise<Map<number, RecordLayout>> {
+async function scan(handle: FileHandle, job: CsvRewrite, size: number): Promise<Map<number, RecordLayout>> {
   const { dialect, encoding } = job;
   const width = unitWidth(encoding);
   const little = littleEndian(encoding);
@@ -91,8 +90,8 @@ async function scan(handle: FileHandle, job: CsvRewrite): Promise<Map<number, Re
   const quote = dialect.quote ? dialect.quote.charCodeAt(0) : -1;
   const escapeChar = dialect.escape ? dialect.escape.charCodeAt(0) : quote;
   const layouts = new Map<number, RecordLayout>();
-  const size = (await handle.stat()).size;
-  const buffer = Buffer.alloc(CHUNK);
+  const bufferSize = Math.min(CHUNK, Math.max(4, size));
+  const buffer = Buffer.allocUnsafe(bufferSize);
   // A byte order mark is not part of the first record.
   let offset = 0;
   const head = Buffer.alloc(3);
@@ -129,7 +128,7 @@ async function scan(handle: FileHandle, job: CsvRewrite): Promise<Map<number, Re
   let position = offset;
   while (position < size) {
     job.signal?.throwIfAborted();
-    const { bytesRead } = await handle.read(buffer, 0, Math.min(CHUNK, size - position), position);
+    const { bytesRead } = await handle.read(buffer, 0, Math.min(bufferSize, size - position), position);
     if (bytesRead === 0) break;
     // Whole units only; a unit split by the chunk is read with the next one.
     const usable = bytesRead - (bytesRead % width);
@@ -147,6 +146,19 @@ async function scan(handle: FileHandle, job: CsvRewrite): Promise<Map<number, Re
         recordStart = fieldStart = unit === 10 ? at + width : at;
         if (unit === 10) continue;
       }
+      if (line < dialect.skipRows) {
+        if (unit === 10 || unit === 13) {
+          line++;
+          fieldCount = 0;
+          fields = line >= firstData && job.edits.has(row) ? [] : null;
+          if (unit === 13) state = 5;
+          else {
+            state = 0;
+            recordStart = fieldStart = at + width;
+          }
+        }
+        continue;
+      }
       switch (state) {
         case 2:
           if (unit === escapeChar && escapeChar !== quote) state = 4;
@@ -162,6 +174,7 @@ async function scan(handle: FileHandle, job: CsvRewrite): Promise<Map<number, Re
           }
           break;
         case 0:
+          if (unit === 32 && delimiter !== 32 && quote !== 32) continue;
           if (unit === quote) {
             state = 2;
             continue;
@@ -202,7 +215,7 @@ async function scan(handle: FileHandle, job: CsvRewrite): Promise<Map<number, Re
 /** Encodes text in the file's encoding, or throws `CsvSaveError` for characters it cannot hold. */
 function encoder(encoding: TextEncoding): (text: string) => Buffer {
   if (encoding === "utf-8") return (text) => Buffer.from(text, "utf8");
-  if (encoding === "utf-16le" || encoding === "utf-16" || encoding === "utf-16be") {
+  if (encoding === "utf-16le" || encoding === "utf-16be") {
     const little = littleEndian(encoding);
     return (text) => {
       const bytes = Buffer.from(text, "utf16le");
@@ -300,6 +313,15 @@ function checkDialect(dialect: CsvDialect, encoding: TextEncoding) {
   }
 }
 
+async function writeAll(output: FileHandle, buffer: Uint8Array) {
+  let offset = 0;
+  while (offset < buffer.byteLength) {
+    const { bytesWritten } = await output.write(buffer, offset, buffer.byteLength - offset);
+    if (bytesWritten === 0) throw new CsvSaveError("layout", "Could not write to temporary file.");
+    offset += bytesWritten;
+  }
+}
+
 /**
  * Writes `target` from `source` with the edits (see the module's description). Returns the records
  * written anew. `target` is left for the caller to rename or delete.
@@ -308,56 +330,72 @@ export async function rewriteCsv(job: CsvRewrite): Promise<{ records: number }> 
   checkDialect(job.dialect, job.encoding);
   const encode = encoder(job.encoding);
   const handle = await open(job.source, "r");
-  const output = await open(job.target, "wx");
+  let output: FileHandle | undefined;
   try {
-    const layouts = await scan(handle, job);
+    output = await open(job.target, "wx");
+    const size = (await handle.stat()).size;
+    const layouts = await scan(handle, job, size);
     const ordered = [...layouts.entries()].sort((a, b) => a[1].start - b[1].start);
     const width = unitWidth(job.encoding);
     const delimiter = encode(job.dialect.delimiter);
+    const copyBuffer = Buffer.allocUnsafe(Math.min(CHUNK, Math.max(1, size)));
     let cursor = 0;
     const copy = async (end: number) => {
       // Unchanged bytes are copied as they are.
-      if (end <= cursor) return;
-      const stream = createReadStream("", {
-        fd: handle.fd,
-        start: cursor,
-        end: end - 1,
-        autoClose: false,
-        highWaterMark: CHUNK,
-      });
-      for await (const chunk of stream) {
+      while (cursor < end) {
         job.signal?.throwIfAborted();
-        await output.write(chunk as Buffer);
+        const want = Math.min(copyBuffer.length, end - cursor);
+        const { bytesRead } = await handle.read(copyBuffer, 0, want, cursor);
+        if (bytesRead === 0) throw new CsvSaveError("layout", "The file ended while copying unchanged bytes.");
+        await writeAll(output as FileHandle, copyBuffer.subarray(0, bytesRead));
+        cursor += bytesRead;
       }
-      cursor = end;
     };
     for (const [row, layout] of ordered) {
       const edits = job.edits.get(row);
       if (!edits) continue;
       await copy(layout.start);
+      const recordBytes = Buffer.allocUnsafe(layout.end - layout.start);
+      if (recordBytes.length > 0) {
+        const { bytesRead } = await handle.read(recordBytes, 0, recordBytes.length, layout.start);
+        if (bytesRead !== recordBytes.length) {
+          throw new CsvSaveError("layout", "The file ended while reading an edited record.");
+        }
+      }
       const parts: Buffer[] = [];
-      const count = Math.max(layout.fields.length, ...[...edits.keys()].map((field) => field + 1));
+      let count = Math.max(layout.fields.length, job.columns > 1 ? 2 : 1);
+      for (const field of edits.keys()) {
+        if (field + 1 > count) count = field + 1;
+      }
       for (let field = 0; field < count; field++) {
         if (field > 0) parts.push(delimiter);
         if (edits.has(field)) {
           parts.push(encode(fieldText(edits.get(field) ?? null, job.dialect)));
         } else if (field < layout.fields.length) {
           const [start, end] = layout.fields[field];
-          const raw = Buffer.alloc(end - start);
-          if (raw.length > 0) await handle.read(raw, 0, raw.length, start);
-          parts.push(raw);
+          if (end > start) parts.push(recordBytes.subarray(start - layout.start, end - layout.start));
         }
         // Fields missing from a short record (read as blanks) are written empty.
       }
-      await output.write(Buffer.concat(parts));
+      let written: Uint8Array = Buffer.concat(parts);
+      if (written.length === 0 && job.columns === 1 && layout.end === size) {
+        if (!job.dialect.quote) {
+          throw new CsvSaveError(
+            "unsupported",
+            "A blank at the end of a single-column file without a line break needs quotes.",
+          );
+        }
+        written = encode(`${job.dialect.quote}${job.dialect.quote}`);
+      }
+      await writeAll(output, written);
       cursor = layout.end;
       if (width === 2 && cursor % 2 !== 0) throw new CsvSaveError("layout", "The file's records are not aligned.");
     }
-    await copy((await handle.stat()).size);
+    await copy(size);
     await output.sync();
     return { records: ordered.length };
   } finally {
-    await output.close();
-    await handle.close();
+    await output?.close().catch(() => undefined);
+    await handle.close().catch(() => undefined);
   }
 }

@@ -42,7 +42,13 @@ function readTyped(run: Run, text: string, cell: Target) {
 
 /** The write of the editor's cell, by its key and with its value as `previous` (§6.5). */
 function editorUpdate(run: Run, editor: Editor) {
-  return { key: editor.key, column: editor.column, value: readTyped(run, editor.text, editor), previous: editor.value };
+  return {
+    row: editor.row,
+    key: editor.key,
+    column: editor.column,
+    value: readTyped(run, editor.text, editor),
+    previous: editor.value,
+  };
 }
 
 /**
@@ -52,18 +58,32 @@ function editorUpdate(run: Run, editor: Editor) {
 function selectionUpdates(run: Run, editor: Editor) {
   const grid = run.grid();
   const isEditor = (cell: Target) => cell.row === editor.row && cell.column === editor.column;
-  const selected = run.cellsOf(grid, grid.ranges);
-  const targets = selected.some(isEditor) ? selected : [{ row: editor.row, column: editor.column }, ...selected];
-  run.writable(new Set(targets.map((cell) => cell.column)));
-  if (targets.length > WRITE_LIMIT) fail("", "too_many_cells", "A write holds at most 100,000 cells.");
+  const editorCol = grid.index.get(editor.column);
+  let editorInSelection = false;
+  const selectedColumns = new Set<string>();
+  for (const rect of grid.ranges) {
+    const [start, end] = run.cellRows(rect);
+    if (end <= start) continue;
+    const cols = run.colsOf(rect, grid);
+    if (editorCol !== undefined && editor.row >= start && editor.row < end && cols.includes(editorCol)) {
+      editorInSelection = true;
+    }
+    for (const col of cols) selectedColumns.add(grid.columns[col]);
+  }
+  const columns = new Set<string>();
+  if (!editorInSelection) columns.add(editor.column);
+  for (const column of selectedColumns) columns.add(column);
+  run.writable(columns);
+  const selected = run.cellsOf(grid, grid.ranges, editorInSelection ? WRITE_LIMIT : WRITE_LIMIT - 1);
+  const targets = editorInSelection ? selected : [{ row: editor.row, column: editor.column }, ...selected];
   run.need([{ cells: targets.filter((cell) => !isEditor(cell)), keyed: true }]);
   // The text reads the same in every cell of a column: once per column, failing at its first cell.
   const values = new Map<string, JsonValue>();
   return targets.map((cell) => {
     if (!values.has(cell.column)) values.set(cell.column, readTyped(run, editor.text, cell));
     const value = values.get(cell.column) ?? null;
-    if (isEditor(cell)) return { key: editor.key, column: cell.column, value, previous: editor.value };
-    return { key: run.keyAt(cell.row), column: cell.column, value, previous: run.valueAt(cell) };
+    if (isEditor(cell)) return { row: cell.row, key: editor.key, column: cell.column, value, previous: editor.value };
+    return { row: cell.row, key: run.keyAt(cell.row), column: cell.column, value, previous: run.valueAt(cell) };
   });
 }
 
@@ -111,17 +131,24 @@ export const EDITING_HANDLERS = {
     takes(command, []);
     const grid = run.grid();
     if (grid.columns.length === 0) return;
-    const cells = run.cellsOf(grid, grid.ranges);
-    if (cells.length === 0) return;
-    const targets = cells.filter((cell) => run.writableCell(cell.column));
-    if (targets.length === 0) fail("", "read_only", "No selected cell is written.", { column: cells[0].column });
-    if (targets.length > WRITE_LIMIT) fail("", "too_many_cells", "A write holds at most 100,000 cells.");
+    let firstColumn: string | undefined;
+    const writableRects = grid.ranges.flatMap((rect) => {
+      const [start, end] = run.cellRows(rect);
+      const cols = run.colsOf(rect, grid);
+      if (end <= start || cols.length === 0) return [];
+      firstColumn ??= grid.columns[cols[0]];
+      const writableCols = cols.filter((col) => run.writableCell(grid.columns[col]));
+      return writableCols.length === 0 ? [] : [{ rows: [start, end] as [number, number], cols: writableCols }];
+    });
+    if (firstColumn === undefined) return;
+    if (writableRects.length === 0) fail("", "read_only", "No selected cell is written.", { column: firstColumn });
+    const targets = run.cellsOf(grid, writableRects, WRITE_LIMIT);
     run.need([{ cells: targets, keyed: true }]);
     run.write(
       targets.flatMap((cell) => {
         const value = run.valueAt(cell);
         if (isBlank(value, run.typeOf(cell.column))) return [];
-        return [{ key: run.keyAt(cell.row), column: cell.column, value: null, previous: value }];
+        return [{ row: cell.row, key: run.keyAt(cell.row), column: cell.column, value: null, previous: value }];
       }),
     );
   },
@@ -148,7 +175,7 @@ export const EDITING_HANDLERS = {
       const rows = rect.rows === "all" ? run.rowCount : rect.rows[1] - rect.rows[0];
       const cols = run.colsOf(rect, grid);
       // A range that holds the values a whole number of times is filled with them.
-      const repeat = grid.ranges.length > 1 || (rows % height === 0 && cols.length % width === 0);
+      const repeat = grid.ranges.length > 1 || (rows > 0 && rows % height === 0 && cols.length % width === 0);
       const areaRows = repeat ? rows : height;
       const wanted = repeat ? cols : span(cols[0], cols[0] + width - 1);
       cutRows = Math.max(cutRows, top + areaRows - run.rowCount);
@@ -160,16 +187,21 @@ export const EDITING_HANDLERS = {
       };
     });
     run.writable(new Set(areas.flatMap((area) => area.cols.map((col) => grid.columns[col]))));
-    const count = areas.reduce((total, area) => total + Math.max(0, area.end - area.top) * area.cols.length, 0);
-    if (count > WRITE_LIMIT) fail("", "too_many_cells", "A write holds at most 100,000 cells.");
+    const stride = grid.columns.length;
     const targets: (Target & { text: string })[] = [];
-    const seen = new Set<string>();
+    const seen = areas.length > 1 ? new Set<number>() : null;
     for (const area of areas) {
+      if (!seen && Math.max(0, area.end - area.top) * area.cols.length > WRITE_LIMIT) {
+        fail("", "too_many_cells", "A write holds at most 100,000 cells.");
+      }
       for (let row = area.top; row < area.end; row++) {
         area.cols.forEach((col, index) => {
-          const id = `${row}:${col}`;
-          if (seen.has(id)) return;
-          seen.add(id);
+          if (seen) {
+            const id = row * stride + col;
+            if (seen.has(id)) return;
+            seen.add(id);
+          }
+          if (targets.length >= WRITE_LIMIT) fail("", "too_many_cells", "A write holds at most 100,000 cells.");
           const text = values[(row - area.top) % height]?.[index % width] ?? "";
           targets.push({ row, column: grid.columns[col], text });
         });
@@ -188,7 +220,13 @@ export const EDITING_HANDLERS = {
           error: read.error,
         });
       }
-      return { key: run.keyAt(cell.row), column: cell.column, value: read.value, previous: run.valueAt(cell) };
+      return {
+        row: cell.row,
+        key: run.keyAt(cell.row),
+        column: cell.column,
+        value: read.value,
+        previous: run.valueAt(cell),
+      };
     });
     run.write(updates);
     run.output = { cutRows: Math.max(0, cutRows), cutColumns };
@@ -207,28 +245,29 @@ export const EDITING_HANDLERS = {
       if (down) {
         const from = end - start === 1 ? start - 1 : start;
         const first = end - start === 1 ? start : start + 1;
-        return from < 0 || first >= end ? [] : [{ from, lines: span(first, end - 1), across: cols }];
+        return from < 0 || first >= end ? [] : [{ from, rowStart: first, rowEnd: end, cols }];
       }
       const from = cols.length === 1 ? cols[0] - 1 : cols[0];
-      const lines = cols.length === 1 ? cols : cols.slice(1);
-      return from < 0 ? [] : [{ from, lines, across: span(start, end - 1) }];
+      const fillCols = cols.length === 1 ? cols : cols.slice(1);
+      return from < 0 ? [] : [{ from, rowStart: start, rowEnd: end, cols: fillCols }];
     });
-    const columnsFilled = down
-      ? areas.flatMap((area) => area.across.map((col) => grid.columns[col]))
-      : areas.flatMap((area) => area.lines.map((col) => grid.columns[col]));
-    run.writable(new Set(columnsFilled));
-    const count = areas.reduce((total, area) => total + area.lines.length * area.across.length, 0);
-    if (count > WRITE_LIMIT) fail("", "too_many_cells", "A write holds at most 100,000 cells.");
+    run.writable(new Set(areas.flatMap((area) => area.cols.map((col) => grid.columns[col]))));
+    const stride = grid.columns.length;
     const targets: { target: Target; source: Target }[] = [];
-    const seen = new Set<string>();
+    const seen = areas.length > 1 ? new Set<number>() : null;
     for (const area of areas) {
+      if (!seen && (area.rowEnd - area.rowStart) * area.cols.length > WRITE_LIMIT) {
+        fail("", "too_many_cells", "A write holds at most 100,000 cells.");
+      }
       // Row by row, and in a row column by column, as every write lists its cells.
-      const [rows, cols] = down ? [area.lines, area.across] : [area.across, area.lines];
-      for (const row of rows) {
-        for (const col of cols) {
-          const id = `${row}:${col}`;
-          if (seen.has(id)) continue;
-          seen.add(id);
+      for (let row = area.rowStart; row < area.rowEnd; row++) {
+        for (const col of area.cols) {
+          if (seen) {
+            const id = row * stride + col;
+            if (seen.has(id)) continue;
+            seen.add(id);
+          }
+          if (targets.length >= WRITE_LIMIT) fail("", "too_many_cells", "A write holds at most 100,000 cells.");
           const source = down
             ? { row: area.from, column: grid.columns[col] }
             : { row, column: grid.columns[area.from] };
@@ -246,7 +285,7 @@ export const EDITING_HANDLERS = {
       const to = run.typeOf(target.column);
       let next = value;
       if (value !== null && !sameType(from, to)) {
-        const read = readCellText(textOf(value, from) ?? "", to);
+        const read = readCellText(textOf(value, from) ?? "", to, { timeZone: run.timeZoneOf(target.column) });
         if (!read.ok) {
           fail("", "invalid_value", `A value of "${source.column}" is not a value of "${target.column}".`, {
             row: target.row,
@@ -256,7 +295,13 @@ export const EDITING_HANDLERS = {
         }
         next = read.value;
       }
-      return { key: run.keyAt(target.row), column: target.column, value: next, previous: run.valueAt(target) };
+      return {
+        row: target.row,
+        key: run.keyAt(target.row),
+        column: target.column,
+        value: next,
+        previous: run.valueAt(target),
+      };
     });
     run.write(updates);
   },

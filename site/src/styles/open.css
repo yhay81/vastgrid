@@ -30,6 +30,10 @@
   color: var(--demo-muted);
 }
 
+.open__error {
+  color: light-dark(#b42318, #f97066);
+}
+
 .open__actions {
   display: flex;
   flex-wrap: wrap;

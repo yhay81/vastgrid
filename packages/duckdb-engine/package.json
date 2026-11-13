@@ -1,13 +1,15 @@
 {
   "name": "vastgrid-duckdb",
   "version": "0.4.0",
-  "description": "vastgrid's DuckDB engine for Node.js: opens huge CSV, TSV, Parquet and JSON Lines files and Excel workbooks, writes their cells and saves CSV and TSV files with the bytes that were not edited kept, and answers the grid over HTTP or in the same process.",
+  "description": "vastgrid's DuckDB engine for Node.js: opens huge CSV, TSV, Parquet, JSON and JSON Lines files, Excel workbooks and DuckDB databases, writes their cells and saves CSV and TSV files with the bytes that were not edited kept, and answers the grid over HTTP or in the same process.",
   "keywords": [
     "duckdb",
     "data grid",
     "csv",
     "tsv",
     "parquet",
+    "json",
+    "ndjson",
     "excel",
     "xlsx",
     "server"
@@ -43,6 +45,7 @@
   "dependencies": {
     "@duckdb/node-api": "catalog:",
     "fzstd": "0.1.1",
+    "hyparquet": "1.32.0",
     "vastgrid-spec": "workspace:*",
     "vastgrid-sql": "workspace:*"
   },

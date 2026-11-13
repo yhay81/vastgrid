@@ -2,17 +2,10 @@
 import { toHtmlTable, toMarkdownTable, toTsv } from "../clipboard.js";
 import { excelNumberFormat } from "../excel.js";
 import { formatterFor } from "../format.js";
+import { EXPORT_FORMATS } from "../messages.js";
 import type { JsonValue, LogicalType } from "../types.js";
 import { textOf } from "../values.js";
-import {
-  booleanArgument,
-  type CommandRequest,
-  choice,
-  fail,
-  optionalString,
-  stringArgument,
-  takes,
-} from "./command.js";
+import { booleanArgument, type CommandRequest, choice, fail, optionalString, takes } from "./command.js";
 import { type Grid, type Handlers, type Run, span } from "./run.js";
 
 /** Cells that one copy holds at most (§6.6). */
@@ -52,16 +45,25 @@ export const COPYING_HANDLERS = {
   copy(run, command) {
     takes(command, ["headers", "values"]);
     const headers = booleanArgument(command, "headers");
-    const values =
-      command.values === undefined || command.values === null
-        ? null
-        : choice(command, "values", ["raw", "formatted"] as const);
+    const values = command.values === undefined ? null : choice(command, "values", ["raw", "formatted"] as const);
     const grid = run.grid();
+    if (grid.columns.length === 0) {
+      run.output = { tsv: "", html: '<meta charset="utf-8"><table></table>', markdown: "" };
+      return;
+    }
     const layout = copyLayout(run, grid);
     if (!layout) fail("", "copy_layout", "These ranges cannot be copied together.");
-    const rows = layout.rows.flatMap(([start, end]) => span(start, end - 1).filter((row) => row < run.rowCount));
-    if (rows.length * layout.cols.length > COPY_LIMIT)
-      fail("", "too_many_cells", "A copy holds at most 1,000,000 cells.");
+    const rowSpans: [number, number][] = [];
+    let rowTotal = 0;
+    for (const [start, end] of layout.rows) {
+      const clampedEnd = Math.min(end, run.rowCount);
+      if (clampedEnd > start) {
+        rowSpans.push([start, clampedEnd]);
+        rowTotal += clampedEnd - start;
+      }
+    }
+    if (rowTotal * layout.cols.length > COPY_LIMIT) fail("", "too_many_cells", "A copy holds at most 1,000,000 cells.");
+    const rows = rowSpans.flatMap(([start, end]) => span(start, end - 1));
     const names = layout.cols.map((col) => grid.columns[col]);
     run.need([{ cells: rows.flatMap((row) => names.map((column) => ({ row, column }))), keyed: false }]);
     // Without `values`, each column copies as its `format.copy` says.
@@ -88,7 +90,7 @@ export const COPYING_HANDLERS = {
 
   export(run, command) {
     takes(command, ["format", "columns", "rows", "target"]);
-    const format = stringArgument(command, "format");
+    const format = choice(command, "format", EXPORT_FORMATS);
     const columns = choice(command, "columns", ["displayed", "all"] as const, "displayed");
     const rows = choice(command, "rows", ["view", "table"] as const, "view");
     const target = optionalString(command, "target");
@@ -101,23 +103,28 @@ export const COPYING_HANDLERS = {
     const known = new Set(source.map((column) => column.name));
     let displayed = run.displayed().filter((name) => known.has(name));
     if (displayed.length === 0 && rows === "table") displayed = source.map((column) => column.name);
+    const displayedSet = new Set(displayed);
     const names =
       columns === "displayed"
         ? displayed
-        : [...displayed, ...source.map((column) => column.name).filter((name) => !displayed.includes(name))];
+        : [...displayed, ...source.map((column) => column.name).filter((name) => !displayedSet.has(name))];
     const settings = new Map((run.document.columns ?? []).map((setting) => [setting.name, setting]));
     const request: CommandRequest = {
       op: "export",
       revision: run.context.revision,
       plan: rows === "view" ? run.plan : {},
       format,
-      columns: names,
-      headers: names.map((name) => settings.get(name)?.format?.label ?? name),
     };
-    if (format === "xlsx") {
+    if (names.length > 0) {
+      request.columns = names;
+      request.headers = names.map((name) => settings.get(name)?.format?.label ?? name);
+    }
+    if (format === "xlsx" && names.length > 0) {
       // A workbook shows numbers and dates as the grid formats them.
       const types = new Map(source.map((column) => [column.name, column.type]));
-      const codes = names.map((name) => excelNumberFormat(types.get(name) as LogicalType, settings.get(name)?.format));
+      const codes = names.map((name) =>
+        excelNumberFormat(types.get(name) as LogicalType, settings.get(name)?.format, { locale: run.context.locale }),
+      );
       if (codes.some((code) => code !== null)) request.numberFormats = codes;
     }
     if (target !== undefined) request.target = target;

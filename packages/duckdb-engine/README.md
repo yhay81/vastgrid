@@ -48,12 +48,15 @@ temporary folder.
 | Option | What it is |
 | --- | --- |
 | `allowedDirectories` | the folders whose files may be opened; DuckDB reads no other files, for good |
-| `tempDirectory` | where the engine keeps its database, spilled data and converted files, removed by `dispose` |
+| `tempDirectory` | where the engine keeps its database, spilled data and converted files, removed by `dispose`; defaults to a private folder for the current user |
 | `resolve(ref)` | the file that a table's name means, where a host checks that it may be opened; relative names are inside the first allowed folder by default |
+| `allowFile(realFile)` | checks the actual location after following links; return `false` to refuse it |
 | `saveFiles` | lets `save` write written cells into CSV and TSV files (off by default: the engine then never changes a file) |
 | `watchFiles` | follows the files of open tables (on by default) |
 | `resolveTarget(target)` | where an export may be written on the server; without it, the engine keeps each export for the host to serve |
+| `maxTables`, `previewRows`, `textLimit` | idle table cache size, preview rows while loading, and default string truncation limit (see below) |
 | `memoryLimit`, `threads`, `maxTempDirectorySize` | DuckDB's resources (see below) |
+| `log(message, error)` | receives background problems that no request caused |
 
 ## What it does
 
@@ -115,7 +118,7 @@ temporary folder.
   is now, without them. A file that is removed, or cannot be read while it is being written, keeps its table the
   same way until it can be read again.
 - **Exporting.** `export` (§8.2) writes the whole view, with the written cells, as CSV, TSV, Parquet, JSON or an
-  Excel workbook, on the server: DuckDB writes the first four (`COPY`), and workbooks are streamed one chunk of
+  Excel workbook, on the server: DuckDB writes the first three (`COPY`), and JSON and workbooks are streamed one chunk of
   rows at a time. Files are written under a temporary name and renamed once complete. With `resolveTarget`, an
   export may name a `target` where the host lets it be written (inside the allowed folders, never a file that a
   table reads). Without a target, the engine keeps the file (at most 16, for an hour) and answers its name, which
@@ -138,6 +141,9 @@ shows them in the grid.
 
 | Option | Default | What it bounds |
 | --- | ---: | --- |
+| `maxTables` | 4 | Idle loaded tables retained once no handle uses them. |
+| `previewRows` | 1,000 | Rows readable while a delimited or JSON file loads. |
+| `textLimit` | 2,000 | Default maximum code points per string returned by `rows`. |
 | `maxViews` | 8 | Views retained per engine; requests actively reading a view pin it until they finish. |
 | `materializeRows` | 20,000,000 | Input rows above which non-aggregate views store only row IDs. |
 | `viewPreviewMinRows` | 1,000,000 | Minimum input size for a sort preview. |

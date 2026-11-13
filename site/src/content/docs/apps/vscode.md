@@ -1,12 +1,12 @@
 ---
 title: VS Code
-description: Open CSV, TSV, Parquet, JSON Lines and Excel files of any size in a grid in VS Code, and edit and save CSV and TSV files with VS Code's own Save.
+description: Open CSV, TSV, Parquet, JSON Lines and Excel files and DuckDB databases of any size in a grid in VS Code, and edit and save CSV and TSV files with VS Code's own Save.
 ---
 
-The extension `vastgrid-vscode` opens CSV, TSV, Parquet, JSON Lines and Excel files of any size in a grid, as an
-editor of VS Code. DuckDB reads the file in the extension's process, in Node.js; the editor's webview shows
-`DataGrid` and reads rows from it through the webview's messages. Cells of CSV and TSV files are edited and saved
-with VS Code's own Save, with the bytes that were not edited kept as they are.
+The extension `vastgrid-vscode` opens CSV, TSV, Parquet, JSON Lines and Excel files and DuckDB databases of any
+size in a grid, as an editor of VS Code. DuckDB reads the file in the extension's process, in Node.js; the editor's
+webview shows `DataGrid` and reads rows from it through the webview's messages. Cells of CSV and TSV files are edited
+and saved with VS Code's own Save, with the bytes that were not edited kept as they are.
 
 ## Installing
 
@@ -18,7 +18,7 @@ code --install-extension yhay81.vastgrid-vscode
 
 VSCodium and other editors get it from [Open VSX](https://open-vsx.org/extension/yhay81/vastgrid-vscode). Each version's
 `vastgrid-vscode-<version>-<target>.vsix` files are also on its GitHub release, for **Extensions: Install from
-VSIX…**. It needs VS Code 1.100 or later, on macOS (Apple silicon or Intel), Linux (x64 or arm64; Alpine x64) or Windows
+VSIX…**. It needs VS Code 1.100 or later, on macOS (Apple silicon or Intel), Linux (x64 or arm64; Alpine x64 or arm64) or Windows
 (x64 or arm64): the platforms of DuckDB's Node.js bindings, each with a package of its own. It does not run in
 vscode.dev or on 32-bit Arm Linux, where the bindings do not run.
 
@@ -27,15 +27,15 @@ sorting, filtering and grouping, the sum of a selection, and editing.
 
 ## Opening files
 
-Parquet and Excel files open in vastgrid when you open them. CSV, TSV and JSON Lines files open as text, as
+Parquet, Excel and DuckDB files open in vastgrid when you open them. CSV, TSV and JSON Lines files open as text, as
 before: open them in vastgrid with "Open With…", the editor's "Open in vastgrid" button, or "Open in vastgrid" in
 the explorer.
 
 | Format | Files | In vastgrid |
 | --- | --- | --- |
 | CSV, TSV | `.csv`, `.tsv`, `.tab` | edited and saved |
-| CSV, TSV compressed | `.csv.gz`, `.csv.zst`, `.tsv.gz`, `.tsv.zst` | read |
-| JSON Lines | `.jsonl`, `.ndjson` (also `.gz`) | read |
+| CSV, TSV compressed | `.csv.gz`, `.csv.zst`, `.tsv.gz`, `.tsv.zst`, `.tab.gz`, `.tab.zst` | read |
+| JSON Lines | `.jsonl`, `.ndjson` (also `.gz`, `.zst`) | read |
 | Parquet | `.parquet`, `.pq` | read, by default |
 | Excel | `.xlsx`, `.xlsm` | read, by default; a bar above the grid, or "vastgrid: Choose Sheet", chooses the sheet |
 | DuckDB | `.duckdb`, `.ddb` | read, by default; a bar above the grid, or "vastgrid: Choose Sheet", chooses the table |
@@ -46,7 +46,7 @@ Japanese when VS Code is.
 
 ## Editing and saving
 
-- The grid writes cells as it does elsewhere: typing, pasting, clearing and filling (see
+- The grid writes cells as it does elsewhere: typing, cutting, pasting, clearing and filling (see
   [Editing cells](/guides/editing/)). Each step is an edit on VS Code's stack, so the Edit menu's Undo and Redo,
   and ⌘Z, ⇧⌘Z or Ctrl+Y, undo and redo it in the grid that made it. The editor is dirty while the stack is away
   from the point where the file was saved: undoing every write makes it clean again.

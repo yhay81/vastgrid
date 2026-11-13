@@ -80,7 +80,21 @@
             }
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "not": { "properties": { "type": { "const": "decimal" } } } },
+          "then": { "properties": { "precision": false, "scale": false } }
+        },
+        {
+          "if": { "not": { "properties": { "type": { "const": "float" } } } },
+          "then": { "properties": { "bits": false } }
+        },
+        {
+          "if": { "not": { "properties": { "type": { "const": "timestamp" } } } },
+          "then": { "properties": { "unit": false } }
+        }
+      ]
     },
     "table": {
       "type": "object",

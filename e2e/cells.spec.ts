@@ -74,3 +74,29 @@ test("column groups select their columns, links act, and Ctrl+D fills down", asy
   await page.keyboard.press(`${primary}+d`);
   await expect(page.getByRole("gridcell", { name: "apple", exact: true })).toHaveCount(2);
 });
+
+test("a paste that makes duplicate row keys keeps both records through undo and redo", async ({ page, context }) => {
+  const name = "e2e-paste-row-keys.csv";
+  await writeFile(path.join(benchDirectory, name), "id,fruit\n1,pear\n2,pear\n");
+  try {
+    await page.goto(`${site}/?file=${name}`);
+    const grid = page.getByRole("grid");
+    await expect(page.getByRole("gridcell", { name: "pear", exact: true })).toHaveCount(2);
+    await page.evaluate(() => {
+      const store = window.files.handle!.store;
+      store.setDocument({ ...store.getSnapshot().document, rowKey: "id" });
+    });
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.evaluate(() => navigator.clipboard.writeText("2\tpear\n2\tplum"));
+    await grid.focus();
+    await page.keyboard.press("ControlOrMeta+v");
+    const visible = () => grid.getByRole("gridcell").allTextContents();
+    await expect.poll(visible).toEqual(["2", "pear", "2", "plum"]);
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect.poll(visible).toEqual(["1", "pear", "2", "pear"]);
+    await page.keyboard.press("ControlOrMeta+Shift+z");
+    await expect.poll(visible).toEqual(["2", "pear", "2", "plum"]);
+  } finally {
+    await rm(path.join(benchDirectory, name), { force: true });
+  }
+});

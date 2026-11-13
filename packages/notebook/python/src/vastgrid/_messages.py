@@ -3,10 +3,12 @@ and `errorResponse` make them, so that an engine in Python answers every request
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
-from ._json import MAX_SAFE_INTEGER, is_number, is_safe_integer, js_json
+from ._capabilities import EXPORT_FORMATS
+from ._values import MAX_SAFE_INTEGER, is_number, is_safe_integer, js_float, json_text
 
 PROTOCOL_VERSION = 2
 
@@ -25,8 +27,6 @@ OPERATIONS = (
     "cancel",
     "close",
 )
-
-EXPORT_FORMATS = ("csv", "tsv", "parquet", "json", "xlsx")
 
 TEXT_LIMIT = 1_000_000
 DEPTH_LIMIT = 256
@@ -94,7 +94,7 @@ def fit_text(text: str, limit: int) -> str:
 
 def quoted(value: Any) -> str:
     """A name or a value as an error's message quotes it: its JSON, cut to 60 code points."""
-    return fit_text(js_json(value), 60)
+    return fit_text(json_text(value), 60)
 
 
 def answer_id(message: Any) -> int | None:
@@ -207,14 +207,14 @@ def _row_key(value: Any, path: str) -> None:
     if "rowId" in value:
         for key in value:
             if key != "rowId":
-                _fail(f"{path}/{key}", "syntax", f'"{key}" is not a member here.')
+                _fail(f"{path}{_step(key)}", "syntax", f"{quoted(key)} is not a member here.")
         row = value["rowId"]
         if not is_safe_integer(row) or row < 0:
             _fail(f"{path}/rowId", "syntax", "A position is an integer from 0.")
         return
     for key in value:
         if key != "value":
-            _fail(f"{path}/{key}", "syntax", f'"{key}" is not a member here.')
+            _fail(f"{path}{_step(key)}", "syntax", f"{quoted(key)} is not a member here.")
     key = value.get("value")
     if not isinstance(key, (str, bool)) and not is_number(key):
         _fail(f"{path}/value", "syntax", "A key's value is a string, a number or a boolean.")
@@ -224,7 +224,7 @@ def _value(value: Any, path: str) -> None:
     """A value as JSON writes it (§2.2): null, a boolean, a finite number or a string."""
     if value is None or isinstance(value, (str, bool)):
         return
-    if is_number(value) and (not isinstance(value, float) or value == value and abs(value) != float("inf")):
+    if is_number(value) and math.isfinite(js_float(value)):
         return
     _fail(path, "syntax", "A value is null, a boolean, a number or a string (§2.2).")
 
@@ -331,14 +331,17 @@ def check_request(message: Any) -> dict[str, Any]:
         _choice(request["format"], EXPORT_FORMATS, "/format")
         _optional_string(request, "target", "/target")
         columns = _names(request["columns"], "/columns") if "columns" in request else None
+        expected_length = len(columns) if columns is not None else None
         for member in ("headers", "numberFormats"):
             if member not in request:
                 continue
             items = request[member]
-            if not isinstance(items, list):
-                _fail(f"/{member}", "syntax", f"{member} is a list.")
-            if columns is not None and len(items) != len(columns):
+            if not isinstance(items, list) or len(items) == 0:
+                _fail(f"/{member}", "syntax", f"{member} is a non-empty list.")
+            if expected_length is not None and len(items) != expected_length:
                 _fail(f"/{member}", "syntax", f"{member} has one item per column.")
+            if expected_length is None:
+                expected_length = len(items)
             for index, item in enumerate(items):
                 if member == "numberFormats" and item is None:
                     continue

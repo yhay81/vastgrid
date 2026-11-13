@@ -8,6 +8,7 @@
 // Without a folder, it packs the packages of `pnpm run build` (run it first). The Release workflow gives it the
 // tarballs that it publishes.
 import { execFileSync, spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -181,7 +182,9 @@ async function checkCli() {
     const html = await response.text();
     if (!response.ok || !html.includes("<script")) throw new Error(`${page} answered ${response.status}.`);
   } finally {
+    const exited = child.exitCode !== null ? Promise.resolve() : once(child, "exit");
     child.kill();
+    await exited;
   }
 }
 
@@ -225,6 +228,8 @@ async function checkMcp() {
     const ids = JSON.stringify(rows.structuredContent?.rows);
     if (ids !== "[[1],[2],[3],[4]]") throw new Error(`grid_rows gave ${ids}.`);
   } finally {
+    const exited = child.exitCode !== null ? Promise.resolve() : once(child, "exit");
     child.kill();
+    await exited;
   }
 }

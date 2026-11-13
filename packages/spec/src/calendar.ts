@@ -33,7 +33,7 @@ export function infinityOf(text: string): number {
 }
 
 /** `a / b` rounded down, for a positive `b`. */
-function floorDiv(a: bigint, b: bigint) {
+export function floorDiv(a: bigint, b: bigint): bigint {
   const quotient = a / b;
   return a % b !== 0n && a < 0n ? quotient - 1n : quotient;
 }
@@ -147,6 +147,30 @@ export function temporalTextForm(text: string): string {
   return `${date}${year > 0 ? "" : " (BC)"}${text.slice(dash + 6)}`;
 }
 
+/**
+ * The §2.2 text of a date, a timestamp or a timestamptz from its §2.4 text form (`10000-01-01` -> `+010000-01-01`,
+ * `0001-12-31 (BC)` -> `0000-12-31`). Values already in §2.2 form and the infinities stay as they are.
+ */
+export function fromTemporalTextForm(text: string): string {
+  if (infinityOf(text) !== 0) return text;
+  const first = text.charCodeAt(0);
+  if (first === 43 || first === 45) return text;
+  const dash = text.indexOf("-");
+  if (dash < 4 || dash > 6) return text;
+  const digits = text.slice(0, dash);
+  if (!/^[0-9]+$/.test(digits)) return text;
+  if (text.slice(dash + 6, dash + 11) === " (BC)") {
+    const bc = Number(digits);
+    if (bc < 1) return text;
+    return `${yearText(1 - bc)}${text.slice(dash, dash + 6)}${text.slice(dash + 11)}`;
+  }
+  if (dash > 4) {
+    const year = Number(digits);
+    if (year > 9999) return `${yearText(year)}${text.slice(dash)}`;
+  }
+  return text;
+}
+
 /** `HH:MM:SS`, then the fraction of a second without trailing zeros, of a count of a unit within a day. */
 function clock(count: bigint, unit: TimestampUnit): string {
   const perSecond = UNIT_PER_SECOND[unit];
@@ -192,6 +216,12 @@ export function timestampText(count: bigint, unit: TimestampUnit = "us"): string
   if (count < -TIMESTAMP_INFINITY || count > TIMESTAMP_INFINITY) {
     throw new RangeError("The count is outside the range of timestamps.");
   }
+  if (unit !== "ns") {
+    const micros = count * (1_000_000n / UNIT_PER_SECOND[unit]);
+    if (micros <= -TIMESTAMP_INFINITY || micros >= TIMESTAMP_INFINITY) {
+      throw new RangeError("The count is outside the range of timestamps.");
+    }
+  }
   // `dateText` throws for a timestamp whose date is not a date.
   const perDay = DAY_SECONDS * UNIT_PER_SECOND[unit];
   const days = floorDiv(count, perDay);
@@ -211,7 +241,8 @@ export function parseTimestampText(text: string, unit: TimestampUnit = "us"): bi
   const time = parseClock(text.slice(space + 1), unit);
   if (days === null || time === null) return null;
   const count = BigInt(days) * DAY_SECONDS * UNIT_PER_SECOND[unit] + time;
-  return count > -TIMESTAMP_INFINITY && count < TIMESTAMP_INFINITY ? count : null;
+  const check = unit === "ns" ? count : count * (1_000_000n / UNIT_PER_SECOND[unit]);
+  return check > -TIMESTAMP_INFINITY && check < TIMESTAMP_INFINITY ? count : null;
 }
 
 /** The text of a timestamptz (§2.2) from microseconds since 1970-01-01 00:00:00 UTC. */

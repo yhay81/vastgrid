@@ -53,7 +53,7 @@ jobs:
       # One package of the extension for each platform, with DuckDB's bindings of that platform.
       - name: Package the VS Code extension
         run: |
-          for target in linux-x64 linux-arm64 alpine-x64 darwin-x64 darwin-arm64 win32-x64 win32-arm64; do
+          for target in linux-x64 linux-arm64 alpine-x64 alpine-arm64 darwin-x64 darwin-arm64 win32-x64 win32-arm64; do
             pnpm --filter vastgrid-vscode run package "$target"
           done
           mkdir -p "$RUNNER_TEMP/vscode"

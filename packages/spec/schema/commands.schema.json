@@ -93,6 +93,12 @@
               "start": {
                 "$ref": "state.schema.json#/$defs/position"
               },
+              "rowIds": {
+                "type": "array",
+                "items": {
+                  "$ref": "state.schema.json#/$defs/position"
+                }
+              },
               "keys": {
                 "type": "array",
                 "items": {
@@ -386,9 +392,15 @@
             },
             "fold": {
               "type": "array",
+              "maxItems": 2,
               "uniqueItems": true,
               "items": {
                 "enum": ["width", "kana"]
+              },
+              "not": {
+                "prefixItems": [{ "const": "kana" }, { "const": "width" }],
+                "minItems": 2,
+                "items": false
               }
             }
           }
@@ -1001,7 +1013,7 @@
               "const": "export"
             },
             "format": {
-              "type": "string"
+              "enum": ["csv", "tsv", "parquet", "json", "xlsx"]
             },
             "columns": {
               "enum": ["displayed", "all"]

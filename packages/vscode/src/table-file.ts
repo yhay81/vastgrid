@@ -255,12 +255,12 @@ export class TableFile {
       await mkdir(this.options.tempDirectory, { recursive: true });
       const engine = await DuckDBEngine.create({
         ...this.options.engine,
-        allowedDirectories: [path.dirname(file)],
+        allowedDirectories: [...new Set([path.dirname(this.file), path.dirname(file)])],
         tempDirectory: this.options.tempDirectory,
         saveFiles: this.editable,
         resolve: (ref) => {
           if (ref !== this.ref) throw new Error(`This editor opens ${this.ref} only.`);
-          return file;
+          return this.file;
         },
         ...(this.options.log ? { log: this.options.log } : {}),
       });
@@ -271,7 +271,11 @@ export class TableFile {
       const ids = new RequestIds(engine);
       const running: Running = { engine, ids, own: ids.client(), anchor: null };
       this.stopEvents = engine.subscribe((event) => {
-        for (const view of this.views) if (view.running === running) view.post(event);
+        for (const view of this.views) {
+          if (view.running === running && typeof event.table === "string" && view.tables.has(event.table)) {
+            view.post(event);
+          }
+        }
       });
       if (this.editable) {
         // Written cells live while a handle of the table is open (§7.2): a handle of the extension's own keeps them
@@ -326,12 +330,17 @@ export class TableFile {
   }
 
   /** Runs `run` on a handle of the file of its own, which it then closes. */
-  private async withHandle<T>(run: (running: Running, info: Json) => Promise<T>, signal?: AbortSignal) {
+  private async withHandle<T>(run: (running: Running, info: Json) => Promise<T>, signal?: AbortSignal, sheet?: string) {
     const running = await this.getEngine();
     // The table with the written cells, also when the file changed on disk since it was read (§7.6), when it is a
     // new table that `open` would answer.
     if (running.anchor) return run(running, await this.request(running, "info", { table: running.anchor }, signal));
-    const info = await this.request(running, "open", { ref: this.ref }, signal);
+    const info = await this.request(
+      running,
+      "open",
+      { ref: this.ref, ...(sheet === undefined ? {} : { read: { sheet } }) },
+      signal,
+    );
     try {
       return await run(running, info);
     } finally {
@@ -358,23 +367,27 @@ export class TableFile {
    * Writes the whole table, with its written cells, into `target` in the format of its extension (CSV, TSV,
    * Parquet, JSON or Excel); the rows written.
    */
-  async saveAs(target: string, signal?: AbortSignal): Promise<number> {
+  async saveAs(target: string, signal?: AbortSignal, sheet?: string): Promise<number> {
     const format = EXPORT_FORMATS.find(([pattern]) => pattern.test(target))?.[1];
     if (!format) {
       throw new TableFileError("invalid_request", "vastgrid saves as .csv, .tsv, .parquet, .json or .xlsx files.");
     }
-    return this.withHandle(async (running, info) => {
-      const result = await this.request(
-        running,
-        "export",
-        { table: info.table, revision: info.revision, plan: {}, format },
-        signal,
-      );
-      const kept = running.engine.exportFile(result.target as string);
-      if (!kept) throw new TableFileError("internal", "The engine did not keep the export.");
-      await copyFile(kept.path, target);
-      return result.rows as number;
-    }, signal);
+    return this.withHandle(
+      async (running, info) => {
+        const result = await this.request(
+          running,
+          "export",
+          { table: info.table, revision: info.revision, plan: {}, format },
+          signal,
+        );
+        const kept = running.engine.exportFile(result.target as string);
+        if (!kept) throw new TableFileError("internal", "The engine did not keep the export.");
+        await copyFile(kept.path, target);
+        return result.rows as number;
+      },
+      signal,
+      sheet,
+    );
   }
 
   /**

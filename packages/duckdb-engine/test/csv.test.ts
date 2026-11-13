@@ -18,7 +18,7 @@ async function opened(name: string, content: string | Buffer, read?: Json): Prom
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, content);
   const info = await context.client.open(name, read);
-  assert.equal(info.status, "ready", info.error);
+  assert.equal(info.status, "ready", info.error ?? "");
   return info;
 }
 
@@ -159,7 +159,7 @@ test("compressed sampling stops after its prefix and late invalid UTF-8 converts
 });
 
 test("zstd CSV detects UTF-8, UTF-16 in both byte orders and Shift_JIS", async () => {
-  // Fixed frames also exercise the Node 20 decoder, where zstdCompressSync is unavailable.
+  // Fixed frames test UTF-8, UTF-16LE, UTF-16BE and Shift_JIS zstd streams.
   const frames = [
     "KLUv/SAd6QAAaWQsbm90ZQ0KMSzmnbHkuqwNCjIs5aSn6ZiqDQo=",
     "KLUv/SAsYQEA//5pAGQALABuAG8AdABlAA0ACgAxACwAcWesTg0ACgAyACwAJ1kqlg0ACgA=",

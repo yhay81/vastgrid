@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { transformSync } from "@babel/core";
-// @ts-expect-error The scripts are JavaScript without declarations.
 import { test } from "vite-plus/test";
 import { compiled, compilerOptions, failures, sources } from "../../../scripts/react-compiler.mjs";
 

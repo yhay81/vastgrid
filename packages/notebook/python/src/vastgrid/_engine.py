@@ -176,6 +176,13 @@ class Engine:
         return self._info(handle, table)
 
     def _info(self, handle: str, table: Table) -> Json:
+        capabilities: Json = {
+            **CAPABILITIES,
+            "plan": dict(CAPABILITIES["plan"]),
+            "functions": list(CAPABILITIES["functions"]),
+            "measures": list(CAPABILITIES["measures"]),
+            "export": {"formats": list(EXPORT_FORMATS), "delivery": "data"},
+        }
         info: Json = {
             "table": handle,
             "revision": table.revision,
@@ -184,8 +191,8 @@ class Engine:
             "progress": 1,
             "rowCount": table.row_count,
             "readableRows": table.relation.rows if table.relation else 0,
-            "columns": table.columns,
-            "capabilities": CAPABILITIES,
+            "columns": [dict(column) for column in table.columns],
+            "capabilities": capabilities,
         }
         if table.source.format is not None:
             info["format"] = table.source.format
@@ -264,11 +271,6 @@ class Engine:
             if os.path.exists(file):
                 os.remove(file)
         return {"target": None, "rows": rows, "data": {"bytes": content}}
-
-    def export_file(self, handle: str, request: Json, file: str) -> int:
-        """Writes the view of a plan into a file of the notebook's, as `export` writes it; gives its row count."""
-        table = self._table({"table": handle})
-        return self.views.export(table, {"plan": {}, **request}, Running(), file)
 
     def close(self) -> None:
         """Cancels the running requests, drops every table and deletes the engine's files."""

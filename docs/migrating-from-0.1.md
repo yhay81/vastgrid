@@ -90,7 +90,7 @@ filters, `columnStats`, `exportView`, `updateCells`, `subscribe`) to 0.2's messa
 | `validateCell` | the engine checks values against their column's type (§7.3); a check of the app's own is not in 0.2 |
 | `onCellsChange` | `onDocumentChange` and `onSessionChange` for the history, and `onError` for failures that belong to no command; failed writes offer Retry, Overwrite and Discard in the grid (React §6.6) |
 | `exportOptions` | the `export` command (§6.6) and the Export menu; a server keeps exports and the browser downloads them (§8.2) |
-| `copyValues` | `copy` with `raw` (§6.6); `formatted` is answered `unsupported` |
+| `copyValues` | `copy` with `values: "raw"` or `"formatted"` (§6.6), and `column.format.copy` per column |
 | `reloadKey`, `followTail` | engines follow their files (§7.6) and send `changed` events; `reload` reads a file again. Following the end of a growing file is not in 0.2 |
 | `copyLimit`, `nullText` | not in 0.2: copying reads what it copies from the engine, and blank cells are empty |
 | `locale`, `messages`, `rowHeight`, `headerHeight`, `columnGroups`, `groupHeaderHeight`, `toolbar`, `statusBar`, `detailPanel`, `className`, `style`, `aria-label` | the same names |
@@ -108,8 +108,9 @@ A `GridState` that 0.1 saved (`onStateChange`, version 1) becomes a document wit
 ```ts
 import { migrateGridState } from "vastgrid-spec";
 
-const { document, dropped, reasons } = migrateGridState(JSON.parse(saved), columns);
-// dropped: JSON Pointers into the 0.1 state of what could not be migrated, and reasons[pointer] says why.
+const { document, dropped, reasons, removed } = migrateGridState(JSON.parse(saved), columns);
+// dropped points into the 0.1 state. reasons[pointer] explains each migration failure.
+// removed points into the migrated document before repair for this table.
 <DataGrid transport={transport} table="orders" defaultDocument={document} />;
 ```
 
@@ -202,7 +203,7 @@ shipped: what 0.1 left out (a row tree, #30) is not added.
 | --- | --- | --- |
 | JavaScript values | `ArraySource`: rows of JSON | `vastgrid-js`: rows of typed JSON, Apache Arrow IPC |
 | In the browser, without a server | `vastgrid-browser`: CSV, TSV, JSON Lines and Parquet files; Parquet at a URL | `vastgrid-js`: CSV, TSV, JSON Lines, Excel (`.xlsx`, `.xlsm`) and Parquet files; Parquet at a URL by HTTP Range |
-| Node.js, with DuckDB | `vastgrid-duckdb`: CSV and TSV (also `.gz`, `.zst`), Parquet, JSON, JSON Lines, Excel; UTF-16, Shift_JIS and EUC-JP text | `vastgrid-duckdb`: the same formats and encodings, read by DuckDB without loading them whole |
+| Node.js, with DuckDB | `vastgrid-duckdb`: CSV and TSV (also `.gz`, `.zst`), Parquet, JSON, JSON Lines, Excel; UTF-16, Shift_JIS and EUC-JP text | `vastgrid-duckdb`: the same formats and encodings, plus DuckDB databases (`.duckdb`, `.ddb`), read by DuckDB without loading them whole |
 | Apps | the playground (an example) | `vastgrid-cli`, the VS Code extension, the MCP App and the notebook, with the DuckDB engine ([the overview of the apps](https://vastgrid.yhay81.com/apps/overview/)) |
 
 ## Using the grid
@@ -212,7 +213,7 @@ What people do in the grid works as in 0.1, and is specified now: the keyboard o
 ⌘/Ctrl+F, ⌘/Ctrl+D and R, ⌘/Ctrl+S); typing into a cell, with an IME whose keys stay its own while it composes;
 copying and pasting with Excel and other spreadsheets (TSV and HTML); undo and redo; selecting, resizing, fitting,
 moving, pinning and hiding columns; the column, cell, group, conditions, formulas and columns menus; the totals
-row; and the find bar. English and Japanese are built in, as in 0.1. The end-to-end tests (`e2e/`) run these in a
+row; and the find bar. English is built in, and eight other languages (Japanese included) are imported from `vastgrid/locales/<tag>`. The end-to-end tests (`e2e/`) run these in a
 browser, and the performance budgets of React §10 hold them to frame times while scrolling and editing.
 
 ## Saving

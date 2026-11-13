@@ -16,16 +16,16 @@ import { Edits } from "./edits.js";
 import { convertToUtf8, detectEncoding, type TextEncoding } from "./encoding.js";
 import { EngineError, errorMessage } from "./errors.js";
 import { quoteLiteral, type Session } from "./session.js";
-import { convertSheet, type ReadOptions, readWorkbook, type SheetInfo, sheetList, WorkbookError } from "./xlsx.js";
+import { convertWorkbookSheet, type ReadOptions, type SheetInfo, WorkbookError } from "./xlsx.js";
 
 export type TableFormat = "csv" | "tsv" | "parquet" | "json" | "ndjson" | "xlsx" | "duckdb";
 
 const EXTENSIONS: [RegExp, TableFormat][] = [
   [/\.(csv|csv\.gz|csv\.zst)$/i, "csv"],
-  [/\.(tsv|tab|tsv\.gz|tsv\.zst)$/i, "tsv"],
+  [/\.(tsv|tab|tsv\.gz|tsv\.zst|tab\.gz|tab\.zst)$/i, "tsv"],
   [/\.(parquet|pq)$/i, "parquet"],
-  [/\.(jsonl|ndjson|jsonl\.gz|ndjson\.gz)$/i, "ndjson"],
-  [/\.(json|json\.gz)$/i, "json"],
+  [/\.(jsonl|ndjson|jsonl\.gz|ndjson\.gz|jsonl\.zst|ndjson\.zst)$/i, "ndjson"],
+  [/\.(json|json\.gz|json\.zst)$/i, "json"],
   [/\.(xlsx|xlsm)$/i, "xlsx"],
   [/\.(duckdb|ddb)$/i, "duckdb"],
 ];
@@ -71,22 +71,24 @@ export async function fileRevision(file: string): Promise<string> {
   });
   let revision: string;
   if (handle === null) {
-    const info = await stat(file);
-    revision = `${info.size}:${Math.round(info.mtimeMs)}:locked`;
+    const info = await stat(file, { bigint: true });
+    revision = `${info.size}:${info.mtimeNs}:locked`;
   } else {
     try {
-      const info = await handle.stat();
-      const head = Buffer.alloc(Math.min(info.size, REVISION_HEAD_BYTES));
+      const info = await handle.stat({ bigint: true });
+      const head = Buffer.allocUnsafe(
+        Number(info.size < BigInt(REVISION_HEAD_BYTES) ? info.size : BigInt(REVISION_HEAD_BYTES)),
+      );
       const { bytesRead } = await handle.read(head, 0, head.length, 0);
       const hash = createHash("sha1").update(head.subarray(0, bytesRead)).digest("hex").slice(0, 16);
-      revision = `${info.size}:${Math.round(info.mtimeMs)}:${hash}`;
+      revision = `${info.size}:${info.mtimeNs}:${hash}`;
     } finally {
       await handle.close();
     }
   }
   if (tableFormatOf(file) !== "duckdb") return revision;
-  const log = await stat(databaseLog(file)).catch(() => null);
-  return log ? `${revision}:${log.size}:${Math.round(log.mtimeMs)}` : revision;
+  const log = await stat(databaseLog(file), { bigint: true }).catch(() => null);
+  return log ? `${revision}:${log.size}:${log.mtimeNs}` : revision;
 }
 
 /** The write-ahead log of a DuckDB database: changes that its file does not hold yet. */
@@ -96,12 +98,66 @@ export function databaseLog(file: string): string {
 
 /** What the views of a table read: a view of the session with the table's columns, and the row IDs. */
 export interface Relation {
-  /** The quoted name of the view, whose columns have the table's names and types (§2.1). */
+  /** The quoted name of the view, whose columns have the table's types (§2.1). */
   sql: string;
   /** The quoted name of its column of row IDs: the rows' positions in the file, from 0 (§1). */
   rowId: string;
   /** The rows that can be read now. */
   rows: number;
+  /** Quoted SQL identifiers in `sql` when column names differ only in case. */
+  columns?: Readonly<Record<string, string>>;
+}
+
+/** The quoted SQL identifier of a column in a relation. */
+export function relationColumn(relation: Relation, name: string): string {
+  return relation.columns && Object.hasOwn(relation.columns, name) ? relation.columns[name] : quoteIdentifier(name);
+}
+
+/** Unique, non-empty table columns (§4.2) from DuckDB source descriptions. */
+function uniqueColumns(sources: readonly SourceColumn[]): Column[] {
+  const taken = new Set<string>();
+  return sources.map((source, index) => {
+    const base = [...(source.name || `column_${index + 1}`)].slice(0, 256).join("");
+    let name = base;
+    for (let suffix = 2; taken.has(name); suffix++) {
+      const tail = `_${suffix}`;
+      name = `${[...base].slice(0, 256 - tail.length).join("")}${tail}`;
+    }
+    taken.add(name);
+    return tableColumn({ ...source, name });
+  });
+}
+
+/** Allocates case-distinct SQL aliases for a relation's columns when any two names differ only in case. */
+function relationAliases(
+  columns: readonly Column[],
+  rowIdNameText: string,
+): {
+  aliases: string[];
+  map: Readonly<Record<string, string>> | undefined;
+} {
+  const used = new Set<string>([rowIdNameText.toLowerCase()]);
+  const aliases: string[] = [];
+  let collided = false;
+  let next = 0;
+  for (const column of columns) {
+    const lower = column.name.toLowerCase();
+    if (!used.has(lower)) {
+      used.add(lower);
+      aliases.push(quoteIdentifier(column.name));
+      continue;
+    }
+    collided = true;
+    while (used.has(`vg_c${next}`)) next++;
+    const alias = `vg_c${next++}`;
+    used.add(alias);
+    aliases.push(quoteIdentifier(alias));
+  }
+  if (!collided) return { aliases, map: undefined };
+  return {
+    aliases,
+    map: Object.fromEntries(columns.map((column, index) => [column.name, aliases[index]])),
+  };
 }
 
 export interface TableOptions {
@@ -167,16 +223,13 @@ export class LoadedTable {
   private readonly objects: string[] = [];
   private readonly tempFiles: string[] = [];
   private preview: string[] = [];
+  private workbookNames: string[] | undefined;
   private loadConnection: DuckDBConnection | null = null;
   private disposed = false;
   private ready: Promise<void> = Promise.resolve();
   private previewed: () => void = () => undefined;
   private readonly firstRows = new Promise<void>((resolve) => {
     this.previewed = resolve;
-  });
-  private listed: () => void = () => undefined;
-  private readonly sheetsKnown = new Promise<void>((resolve) => {
-    this.listed = resolve;
   });
 
   constructor(
@@ -225,11 +278,6 @@ export class LoadedTable {
     return this.firstRows;
   }
 
-  /** Workbooks and databases: waits until the sheets are known, or the load failed. */
-  whenListed(): Promise<void> {
-    return Promise.race([this.sheetsKnown, this.ready]);
-  }
-
   /** The relation to read, or why there is none. */
   requireRelation(): Relation {
     if (this.status === "error") throw new EngineError("load_failed", this.error ?? "The file could not be read.");
@@ -238,8 +286,11 @@ export class LoadedTable {
   }
 
   private async describe(connection: DuckDBConnection, sql: string, values: string[] = []): Promise<SourceColumn[]> {
-    const reader = await connection.runAndReadAll(`DESCRIBE ${sql}`, values);
-    return reader.getRowsJS().map((row) => ({ name: String(row[0]), sqlType: String(row[1]) }));
+    const reader = await connection.runAndReadAll(
+      `SELECT '.' || column_name, column_type FROM (DESCRIBE ${sql})`,
+      values,
+    );
+    return reader.getRowsJS().map((row) => ({ name: String(row[0]).slice(1), sqlType: String(row[1]) }));
   }
 
   /**
@@ -255,10 +306,13 @@ export class LoadedTable {
   ): Promise<{ objects: string[]; table: string; columns: Column[]; relation: Relation }> {
     // The reader of a database's table names it and takes no file.
     const params = this.format === "duckdb" ? [] : [source];
-    const sources = await this.describe(connection, `SELECT * FROM ${reader}`, params);
-    const columns = sources.map(tableColumn);
+    const rawSources = await this.describe(connection, `SELECT * FROM ${reader}`, params);
+    const sources = this.workbookNames
+      ? rawSources.map((item, index) => ({ ...item, name: this.workbookNames?.[index] ?? item.name }))
+      : rawSources;
+    const columns = uniqueColumns(sources);
     const table = this.session.createName("vg_t");
-    const values = sources.map((item, index) => `${sourceExpression(item, columns[index])} AS "c${index}"`);
+    const values = rawSources.map((item, index) => `${sourceExpression(item, columns[index])} AS "c${index}"`);
     const objects = [`TABLE ${quoteIdentifier(table)}`];
     await connection.run(
       `CREATE TABLE ${quoteIdentifier(table)} AS SELECT ${values.join(", ")} FROM ${reader}${limit === undefined ? "" : ` LIMIT ${limit}`}`,
@@ -266,8 +320,10 @@ export class LoadedTable {
     );
     try {
       const view = this.session.createName("vg_v");
-      const rowId = quoteIdentifier(rowIdName(columns));
-      const named = columns.map((column, index) => `"c${index}" AS ${quoteIdentifier(column.name)}`);
+      const rawRowId = rowIdName(columns);
+      const rowId = quoteIdentifier(rawRowId);
+      const { aliases, map } = relationAliases(columns, rawRowId);
+      const named = columns.map((_, index) => `"c${index}" AS ${aliases[index]}`);
       await connection.run(
         `CREATE VIEW ${quoteIdentifier(view)} AS SELECT ${[...named, `rowid AS ${rowId}`].join(", ")} FROM ${quoteIdentifier(table)}`,
       );
@@ -277,7 +333,12 @@ export class LoadedTable {
         objects,
         table: quoteIdentifier(table),
         columns,
-        relation: { sql: quoteIdentifier(view), rowId, rows: Number(count.getRowsJS()[0][0]) },
+        relation: {
+          sql: quoteIdentifier(view),
+          rowId,
+          rows: Number(count.getRowsJS()[0][0]),
+          ...(map ? { columns: map } : {}),
+        },
       };
     } catch (error) {
       await this.drop(connection, objects);
@@ -379,10 +440,15 @@ export class LoadedTable {
           lastError = error;
           this.options.log?.(`Loading ${this.path} failed (attempt ${attempt + 1})`, error);
           // Only DuckDB's error of invalid UTF-8: its other errors list `Encoding: utf-8` among what was tried.
-          if (/invalid unicode/i.test(errorMessage(error)) && source === this.path && this.format !== "duckdb") {
-            // The sample was valid UTF-8 but a later part is not: convert with replacement characters.
+          if (
+            /invalid unicode/i.test(errorMessage(error)) &&
+            source === this.path &&
+            (this.format === "csv" || this.format === "tsv" || this.format === "json" || this.format === "ndjson")
+          ) {
+            // The sample was valid UTF-8 but a later part is not: convert with replacement characters and retry.
             source = await this.convert("utf-8");
             this.notes.push("invalid_utf8_replaced");
+            attempt--;
           }
         }
       }
@@ -418,19 +484,20 @@ export class LoadedTable {
     try {
       const tables = await this.session.withConnection(undefined, async (connection) => {
         const reader = await connection.runAndReadAll(
-          "SELECT table_schema, table_name FROM information_schema.tables WHERE table_catalog = $1 AND table_type = 'BASE TABLE' ORDER BY table_schema <> 'main', table_schema, table_name",
+          "SELECT '.' || table_schema, '.' || table_name FROM information_schema.tables WHERE table_catalog = $1 AND table_type = 'BASE TABLE' ORDER BY table_schema <> 'main', table_schema, table_name",
           [catalog],
         );
-        return reader.getRowsJS().map(([schema, name]) => {
-          const sheet = schema === "main" ? String(name) : `${String(schema)}.${String(name)}`;
+        return reader.getRowsJS().map(([rawSchema, rawName]) => {
+          const schema = String(rawSchema).slice(1);
+          const name = String(rawName).slice(1);
+          const sheet = schema === "main" ? name : `${schema}.${name}`;
           return {
             sheet,
-            sql: `${quoteIdentifier(catalog)}.${quoteIdentifier(String(schema))}.${quoteIdentifier(String(name))}`,
+            sql: `${quoteIdentifier(catalog)}.${quoteIdentifier(schema)}.${quoteIdentifier(name)}`,
           };
         });
       });
       this.sheets = tables.map(({ sheet }) => ({ name: sheet }));
-      this.listed();
       if (tables.length === 0) throw new EngineError("load_failed", "The database has no tables.");
       const chosen = this.read.sheet === undefined ? tables[0] : tables.find(({ sheet }) => sheet === this.read.sheet);
       if (!chosen) throw new EngineError("load_failed", `The database has no table named "${this.read.sheet}".`);
@@ -455,21 +522,29 @@ export class LoadedTable {
       const file = quoteLiteral(this.path);
       const sources = await this.describe(connection, `SELECT * FROM read_parquet(${file}, hive_partitioning=false)`);
       if (sources.some((column) => column.name.toLowerCase() === "file_row_number")) return false;
-      const columns = sources.map(tableColumn);
+      const columns = uniqueColumns(sources);
       const view = this.session.createName("vg_p");
-      const rowId = quoteIdentifier(rowIdName(columns));
-      const values = sources.map(
-        (item, index) => `${sourceExpression(item, columns[index])} AS ${quoteIdentifier(item.name)}`,
-      );
+      const rawRowId = rowIdName(columns);
+      const rowId = quoteIdentifier(rawRowId);
+      const { aliases, map } = relationAliases(columns, rawRowId);
+      const values = sources.map((item, index) => `${sourceExpression(item, columns[index])} AS ${aliases[index]}`);
+      const viewObject = `VIEW ${quoteIdentifier(view)}`;
       await connection.run(
         `CREATE VIEW ${quoteIdentifier(view)} AS SELECT ${[...values, `file_row_number AS ${rowId}`].join(", ")} FROM read_parquet(${file}, file_row_number=true, hive_partitioning=false)`,
       );
-      this.objects.push(`VIEW ${quoteIdentifier(view)}`);
+      if (this.disposed) {
+        await this.drop(connection, [viewObject]);
+        return true;
+      }
       const count = await connection.runAndReadAll(`SELECT count(*) FROM ${quoteIdentifier(view)}`);
-      if (this.disposed) return true;
+      if (this.disposed) {
+        await this.drop(connection, [viewObject]);
+        return true;
+      }
+      this.objects.push(viewObject);
       const rows = Number(count.getRowsJS()[0][0]);
       this.columns = columns;
-      this.relation = { sql: quoteIdentifier(view), rowId, rows };
+      this.relation = { sql: quoteIdentifier(view), rowId, rows, ...(map ? { columns: map } : {}) };
       this.rowCount = rows;
       this.status = "ready";
       this.progress = 1;
@@ -492,22 +567,25 @@ export class LoadedTable {
     const target = this.session.file(`${this.session.createName("sheet")}.csv`);
     this.tempFiles.push(target);
     try {
-      const workbook = await readWorkbook(this.path);
-      this.sheets = sheetList(workbook);
-      this.listed();
-      const sheet = await this.session.loads.run(() =>
-        convertSheet(this.path, target, {
+      const sheet = await convertWorkbookSheet(
+        this.path,
+        target,
+        (sheets) => {
+          this.sheets = sheets;
+        },
+        (convert) => this.session.loads.run(convert),
+        {
           ...this.read,
-          workbook,
           // Reading the sheet takes most of the time; DuckDB loading the converted file takes the rest.
           onProgress: (share) => {
             this.progress = share * 0.9;
             this.options.onChange(this, "progress");
           },
           cancelled: () => this.disposed,
-        }),
+        },
       );
       this.sheet = sheet.sheet;
+      this.workbookNames = sheet.names;
       this.notes.push(...sheet.notes);
       return { source: target, reader: sheet.reader };
     } catch (error) {
@@ -553,7 +631,7 @@ export class LoadedTable {
       }
       if (this.reading !== "plain" || !unevenRecords(error)) throw error;
       this.reading = "sequential";
-      await read();
+      return this.readDelimited(source, read);
     }
   }
 
@@ -635,7 +713,7 @@ export class LoadedTable {
     } finally {
       if (timer) clearInterval(timer);
       this.loadConnection = null;
-      connection.closeSync();
+      this.session.close(connection);
     }
   }
 

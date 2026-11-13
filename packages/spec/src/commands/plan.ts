@@ -1,5 +1,5 @@
 /** The commands of the plan (docs/spec.md §6.2): sort keys, filters, search, derived columns and groups. */
-import { checkPlan } from "../check.js";
+import { checkPlan, planOptions } from "../check.js";
 import { type Fold, FOLDS } from "../fold.js";
 import type { Expr, Plan, Search, SortKey } from "../plan.js";
 import { columnsOf, joinParts, partsOf } from "../state.js";
@@ -64,8 +64,9 @@ export const PLAN_HANDLERS = {
 
   "sort.toggle"(run, command) {
     takes(command, ["column", "add"]);
-    const column = run.viewName(command, "column");
+    const rawColumn = stringArgument(command, "column");
     const add = booleanArgument(command, "add");
+    const column = run.viewName(command, "column", "/column", rawColumn);
     const plan = run.draft();
     const sort = plan.sort ?? [];
     const at = sort.findIndex((key) => key.column === column);
@@ -102,9 +103,9 @@ export const PLAN_HANDLERS = {
   "filter.column"(run, command) {
     takes(command, ["column", "where"]);
     const column = stringArgument(command, "column");
+    const parts = wherePartsArgument(command, column);
     const rows = [...run.context.table.map((item) => item.name), ...(run.plan.derive ?? []).map((item) => item.name)];
     if (!rows.includes(column)) fail("/column", "unknown_column", `The rows have no column "${column}".`);
-    const parts = wherePartsArgument(command, column);
     const plan = run.draft();
     const current = partsOf(plan.where);
     const ofColumn = (part: Expr) => {
@@ -154,7 +155,6 @@ export const PLAN_HANDLERS = {
   "derive.update"(run, command) {
     takes(command, ["name", "expr", "rename"]);
     const name = stringArgument(command, "name");
-    const index = run.derivedIndex("name", name);
     let expr: Expr | undefined;
     if (command.expr !== undefined) {
       const value = expressionArgument(command, "expr");
@@ -162,6 +162,7 @@ export const PLAN_HANDLERS = {
       expr = value;
     }
     const rename = optionalString(command, "rename");
+    const index = run.derivedIndex("name", name);
     const plan = run.draft();
     const derive = plan.derive ?? [];
     if (expr !== undefined) derive[index] = { name, expr };
@@ -199,7 +200,8 @@ export const PLAN_HANDLERS = {
     }
     run.setPlan(plan);
     if (run.document.columns) {
-      const ownSetting = viewScope || !run.viewColumn(name);
+      const ownSetting =
+        (viewScope || !run.viewColumn(name)) && run.document.columns.some((setting) => setting.name === name);
       run.document.columns = run.document.columns
         .filter((setting) => !(ownSetting && setting.name === rename))
         .map((setting) => {
@@ -248,7 +250,9 @@ export const PLAN_HANDLERS = {
         keys: keys.filter((key) => !removed.has(key)),
         measures: measures.filter((measure) => measure.column === undefined || !removed.has(measure.column)),
       };
-      if (pivot && !pivot.columns.some((column) => removed.has(column))) plan.aggregate.pivot = pivot;
+      if (pivot && plan.aggregate.measures.length > 0 && !pivot.columns.some((column) => removed.has(column))) {
+        plan.aggregate.pivot = pivot;
+      }
       if (plan.aggregate.keys.length === 0 && plan.aggregate.measures.length === 0) {
         delete plan.aggregate;
         delete plan.having;
@@ -256,7 +260,11 @@ export const PLAN_HANDLERS = {
     }
     run.setPlan(run.keepValid(plan));
     if (run.document.columns) {
-      const view = new Set(checkPlan(run.plan, run.context.table).columns.map((column) => column.name));
+      const view = new Set(
+        checkPlan(run.plan, run.context.table, planOptions(run.context.capabilities)).columns.map(
+          (column) => column.name,
+        ),
+      );
       run.document.columns = run.document.columns.filter(
         (setting) => !removed.has(setting.name) || view.has(setting.name),
       );

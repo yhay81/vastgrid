@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
@@ -56,6 +56,10 @@ test("a chosen CSV file is edited, exported as a workbook, and the workbook open
   await page.keyboard.press("Enter");
   await expect(page.getByRole("gridcell", { name: "Osaka", exact: true })).toBeAttached({ timeout: 30_000 });
 
+  await drop(page, [{ name: "bad.xlsx", bytes: "invalid workbook" }]);
+  await expect(page.getByRole("alert")).toContainText("bad.xlsx");
+  await expect(grid.getByRole("gridcell", { name: "Osaka", exact: true })).toBeAttached();
+
   await page.getByRole("button", { name: "Export" }).click();
   const downloading = page.waitForEvent("download");
   await page.getByRole("dialog", { name: "Export" }).getByRole("button", { name: "Excel (.xlsx)" }).click();
@@ -73,36 +77,70 @@ test("a chosen CSV file is edited, exported as a workbook, and the workbook open
   expect(problems).toEqual([]);
 });
 
+test("a failed replacement worker leaves the current file editable", async ({ page }) => {
+  await page.addInitScript(() => {
+    let started = false;
+    window.Worker = class extends Worker {
+      constructor(...args: ConstructorParameters<typeof Worker>) {
+        super(...args);
+        if (started) {
+          this.postMessage = () => {
+            this.dispatchEvent(new Event("messageerror"));
+          };
+        }
+        started = true;
+      }
+    };
+  });
+  await openPage(page);
+  await expect(page.getByRole("button", { name: "Choose a file" })).toBeVisible();
+  await drop(page, [{ name: "current.csv", bytes: "city\nTokyo" }]);
+  const grid = page.getByRole("grid", { name: "current.csv" });
+  await expect(grid.getByRole("gridcell", { name: "Tokyo" })).toBeAttached();
+  await drop(page, [{ name: "next.csv", bytes: "city\nOsaka" }]);
+  await expect(page.getByRole("alert")).toContainText("next.csv");
+  await grid.focus();
+  await page.keyboard.type("Kyoto");
+  await page.keyboard.press("Enter");
+  await expect(grid.getByRole("gridcell", { name: "Kyoto" })).toBeAttached();
+});
+
 test("a workbook's sheets are chosen, and a file of no known format says why", async ({ page }) => {
   const folder = await mkdtemp(path.join(tmpdir(), "vastgrid-open-"));
-  const file = path.join(folder, "book.xlsx");
-  await writeWorkbook(file, {
-    sheets: [
-      { name: "Hidden", state: "hidden", rows: [row(1, [cell("A1", { t: "inlineStr", is: "secret" })])] },
-      { name: "Plan", rows: [row(1, [cell("A1", { t: "inlineStr", is: "plan" })]), row(2, [cell("A2", { v: 1 })])] },
-      {
-        name: "Done",
-        rows: [row(1, [cell("A1", { t: "inlineStr", is: "done" })]), row(2, [cell("A2", { v: 2 })]), row(3, [])],
-      },
-    ],
-  });
-  const problems = await openPage(page, "ja");
-  await expect(page.getByRole("button", { name: "ファイルを選ぶ" })).toBeVisible();
-  await page.locator('input[type="file"]').setInputFiles(file);
-  const grid = page.getByRole("grid", { name: "book.xlsx" });
-  await expect(page.getByRole("columnheader", { name: /^plan/ })).toBeAttached({ timeout: 30_000 });
-  const sheet = page.getByRole("combobox", { name: "シート" });
-  await expect(sheet).toHaveValue("Plan");
-  await expect(sheet.getByRole("option")).toHaveText(["Hidden (非表示)", "Plan", "Done"]);
-  await sheet.selectOption("Done");
-  await expect(page.getByRole("columnheader", { name: /^done/ })).toBeAttached({ timeout: 30_000 });
-  await expect(page.getByRole("gridcell", { name: "2", exact: true })).toBeAttached();
-  await expect(grid).toHaveAttribute("aria-rowcount", "2");
+  try {
+    const file = path.join(folder, "book.xlsx");
+    await writeWorkbook(file, {
+      sheets: [
+        { name: "Hidden", state: "hidden", rows: [row(1, [cell("A1", { t: "inlineStr", is: "secret" })])] },
+        { name: "Plan", rows: [row(1, [cell("A1", { t: "inlineStr", is: "plan" })]), row(2, [cell("A2", { v: 1 })])] },
+        {
+          name: "Done",
+          rows: [row(1, [cell("A1", { t: "inlineStr", is: "done" })]), row(2, [cell("A2", { v: 2 })]), row(3, [])],
+        },
+      ],
+    });
+    const problems = await openPage(page, "ja");
+    await expect(page.getByRole("button", { name: "ファイルを選ぶ" })).toBeVisible();
+    await page.locator('input[type="file"]').setInputFiles(file);
+    const grid = page.getByRole("grid", { name: "book.xlsx" });
+    await expect(page.getByRole("columnheader", { name: /^plan/ })).toBeAttached({ timeout: 30_000 });
+    const sheet = page.getByRole("combobox", { name: "シート" });
+    await expect(sheet).toHaveValue("Plan");
+    await expect(sheet.getByRole("option")).toHaveText(["Hidden (非表示)", "Plan", "Done"]);
+    await sheet.selectOption("Done");
+    await expect(page.getByRole("columnheader", { name: /^done/ })).toBeAttached({ timeout: 30_000 });
+    await expect(page.getByRole("gridcell", { name: "2", exact: true })).toBeAttached();
+    await expect(grid).toHaveAttribute("aria-rowcount", "2");
 
-  await drop(page, [{ name: "notes.json", bytes: "[]" }]);
-  await expect(page.locator(".demo__grid")).toContainText("notes.json", { timeout: 30_000 });
-  await expect(page.locator(".demo__grid")).toContainText("/format");
-  expect(problems).toEqual([]);
+    await drop(page, [{ name: "notes.json", bytes: "[]" }]);
+    await expect(page.getByRole("alert")).toContainText("notes.json", { timeout: 30_000 });
+    await expect(page.getByRole("alert")).toContainText("/format");
+    await expect(sheet).toHaveValue("Done");
+    await expect(grid.getByRole("gridcell", { name: "2", exact: true })).toBeAttached();
+    expect(problems).toEqual([]);
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
 });
 
 test("the sample of 1,000,000 rows opens, goes to its last row and sorts", async ({ page }) => {

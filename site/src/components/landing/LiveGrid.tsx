@@ -33,7 +33,6 @@ export function LiveGrid({ locale = "en", rows = 100_000 }: Props) {
       defaultDocument={pinned}
       locale={locale}
       messages={locale === "ja" ? ja : undefined}
-      statusBar
       aria-label={locale === "ja" ? "架空の注文" : "Made-up orders"}
     />
   );

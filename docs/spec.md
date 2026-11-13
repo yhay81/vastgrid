@@ -115,8 +115,9 @@ Typed JSON is already a value of its declared type, rather than text awaiting co
   not. Readers and writers MUST NOT silently replace invalid text with U+FFFD.
 - A `timestamp` MUST fit a signed 64-bit count of its unit since the Unix epoch, without the ends of that
   range: 2^63 − 1 and −(2^63 − 1) are the infinities, and −2^63 is not a value. For `ns`, the inclusive bounds
-  are `1677-09-21 00:12:43.145224194` and `2262-04-11 23:47:16.854775806`. Other units are limited by the
-  dates above, and `us` ends at `+294247-01-10 04:00:54.775806`.
+  are `1677-09-21 00:12:43.145224194` and `2262-04-11 23:47:16.854775806`. Other units start at
+  `-290308-12-22 00:00:00` and end at `+294247-01-10 04:00:54.775806` (`.775` for `ms`, `:54` for `s`), where a
+  64-bit count of microseconds ends.
 - An `interval` has signed 32-bit months and days (−2^31 through 2^31 − 1) and signed 64-bit nanoseconds
   (−2^63 through 2^63 − 1). Its parsed totals MUST fit these ranges; blocks write the canonical text of
   those same three parts when read back.
@@ -173,7 +174,8 @@ Expressions (§4.3) write literals as `{ "lit": value }`, with `type` when the J
   |v| ≤ 2^53 − 1 is a bigint; any other JSON number is a 64-bit float.
 - With `type`, the value is read as in §2.2. `{ "lit": "12.50", "type": "decimal" }` is a decimal(4, 2): its
   precision is its number of digits (at least 1, and at least its scale) and its scale its number of
-  fraction digits. Other examples: `{ "lit": "2024-01-31", "type": "date" }`,
+  fraction digits. `{ "lit": "…", "type": "timestamp" }` has `unit: "ns"` when it writes more than six
+  fraction digits, and `unit: "us"` otherwise. Other examples: `{ "lit": "2024-01-31", "type": "date" }`,
   `{ "lit": "NaN", "type": "float" }`, `{ "lit": "9007199254740993", "type": "bigint" }`.
 - `{ "lit": null, "type": T }` is a null of type T. `{ "lit": null }` without `type` takes the type that
   its place needs (another argument of `coalesce`, `if` or a comparison); a plan where no type can be
@@ -393,7 +395,9 @@ Every expression has a type, decided from the types of its columns and the rules
 Kinds of arguments: **number** (integer, bigint, decimal, float), **exact** (integer, bigint, decimal),
 **temporal** (date, time, timestamp, timestamptz), **orderable** (number, string, boolean, temporal,
 uuid) and **any**. A common type of several values is their type when they all have the same one; for
-numbers, the type that `add` gives them (§3.7); a typed or untyped null takes the type of the others. Other
+numbers, the type that `add` gives them (§3.7); for `date` and `timestamp`, `timestamp` in the timestamp's
+unit, and for `timestamp` values of different units, `timestamp` in the finer unit; a typed or untyped null
+takes the type of the others (a parameterless typed null takes the parameters of the same base type). Other
 mixtures are invalid.
 
 Logic and comparison:
@@ -565,10 +569,10 @@ A formula is made of:
   written before a number is part of it.
 - **Text** in single or double quotes, with the quote doubled inside (`'it''s'`); `TRUE`, `FALSE` and
   `NULL`.
-- **Literals of a type**: the type's name, then its text form (§2.4) in quotes, or `NULL`:
-  `DATE '2024-01-31'`, `TIMESTAMP '2024-01-31 12:00:00'`, `FLOAT 'nan'`, `UUID '…'`, `DATE NULL`. Dates and
-  timestamps may also be written as 0.1 read them: `2024-1-5`, with `T` or a space before the time, without
-  seconds.
+- **Literals of a type**: the type's name, then its text form (§2.4; base64 for `BINARY`, as in §2.2) in
+  quotes, or `NULL`: `DATE '2024-01-31'`, `TIMESTAMP '2024-01-31 12:00:00'`, `FLOAT 'nan'`, `UUID '…'`,
+  `DATE NULL`. Dates and timestamps may also be written as 0.1 read them: `2024-1-5`, with `T` or a space
+  before the time, without seconds.
 - **Operators**, from the lowest precedence; chains of `AND`, `OR` and `&` are one call, and the others
   group from the left:
 
@@ -851,7 +855,8 @@ Readers MUST accept the versions they know and refuse the others (`invalid_state
 A 0.1 query saved without a state (an object of `sort`, `filters`, `where` and `search` only) migrates as a
 state with that query. Indexes into `schema` name its columns; without `schema`, they are positions of the
 table's columns, then of the formulas. The migration reports the JSON Pointers (into the 0.1 state) of what it
-could not migrate, each with why, and the document is then repaired for the table (§5.5).
+could not migrate, each with why. Repair for the table (§5.5) reports its removals separately as pointers
+into the migrated document before repair.
 
 ## 6. Commands
 
@@ -874,7 +879,7 @@ The **context** is what the core knows when it applies the command:
 | `table` | columns (§2.1) | the table's columns |
 | `revision` | a revision, or null | the table's revision |
 | `view` | `{ "columns", "rowCount", "rowIds" }` | the current view of the document's plan: its columns (§4.2, with the generated columns of a pivot), its row count, and whether it has row IDs |
-| `rows` | blocks `{ "start", "keys"?, "columns"?, "values" }`, optional | rows of the view that the core has read: from position `start`, their keys (§5.3; absent for views without row IDs) and their values, one array per row with the values of `columns` (all the view's columns, in view order, when absent) |
+| `rows` | blocks `{ "start", "keys"?, "rowIds"?, "columns"?, "values" }`, optional | rows of the view that the core has read: from position `start`, their keys (§5.3; absent for views without row IDs), their source row IDs for writes that change the key column, and their values, one array per row with the values of `columns` (all the view's columns, in view order, when absent) |
 | `page` | a positive integer | rows on a page, for Page Up and Page Down |
 | `capabilities` | §4.10, optional | what the engine offers; everything when absent |
 | `clipboard` | `{ "text"?, "html"? }`, optional | what `edit.paste` pastes |
@@ -940,7 +945,7 @@ to the displayed columns (§5.4, step 3).
 | `filter.clear` | | removes the conditions, keeping the search |
 | `search.set` | `text`; `fold`: as in §3.5, none when absent or empty | the search becomes `{ "search": text }` (with `fold` when it names any), first; a text that `trim` leaves empty (§4.4) removes it |
 | `derive.add` | `name`, `expr`; `before`: a derived column | adds a derived column at the end, or before `before` |
-| `derive.update` | `name`: a derived column; `expr`; `rename`: a new name | changes the expression, and gives the column a new name (§6.2.2) |
+| `derive.update` | `name`: a derived column; `expr` (optional); `rename`: a new name | changes the expression when given, and gives the column a new name (§6.2.2) |
 | `derive.remove` | `name`: a derived column | removes the column and what uses it (§6.2.2) |
 | `group.set` | `aggregate` | sets `plan.aggregate`, then removes the parts of `having` and the sort keys that do not validate against the groups |
 | `group.clear` | | removes `aggregate` and `having`, and the sort keys that do not validate against the rows |
@@ -1130,6 +1135,8 @@ A `write` request (§8.2) names cells by row key and column name, with typed val
   write fails with `edit_conflict`.
 - A write carries the revision its rows were read at; when the table has another revision, it fails with
   `revision_changed`.
+- Commands that change the key column address all cells in that write and its history step by source row ID,
+  so an earlier key change cannot redirect another update.
 - A write holds at most 100,000 updates.
 - Values are checked as their column's type without losing digits; one that does not fit fails the write
   with `invalid_value`. Cells that are not writable fail it with `read_only`.
@@ -1162,7 +1169,7 @@ the text is removed first, except for strings. An empty text is null for every t
 | `date` | year, month and day separated by `-`, `/` or `.`, naming a real day; the year has four to six digits, or a sign and six digits, or is the number of a year BC followed by ` BC` or ` (BC)` as the text form writes it (§2.4) | §2.2 | `date` |
 | `time` | `H:MM`, `H:MM:SS` or `H:MM:SS.f` with 1 to 6 fraction digits | `HH:MM:SS`, with the fraction without trailing zeros | `time` |
 | `timestamp` | a date, then optionally a space or `T` and a time with as many fraction digits as the unit keeps | §2.2; midnight without a time | `timestamp`, `range` (outside the signed 64-bit count) |
-| `timestamptz` | a timestamp, then optionally `Z` or an offset `±HH`, `±HHMM` or `±HH:MM` | the instant in UTC (§2.2); without an offset, the time of day in the column's time zone (below), or UTC | `timestamp` |
+| `timestamptz` | a timestamp, then optionally `Z` or an offset `±HH`, `±HHMM` or `±HH:MM` | the instant in UTC (§2.2); without an offset, the time of day in the column's time zone (below), or UTC | `timestamp`, `range` |
 | `uuid` | 32 hex digits, with or without the dashes of `8-4-4-4-12`, in any letter case | lowercase with dashes | `uuid` |
 | `interval`, `binary` | nothing | | `type` |
 
@@ -1447,8 +1454,11 @@ Over **HTTP**, a request is a `POST` with `content-type: application/json` and t
 response is `application/json` with the text encoding, except that a client that sends
 `accept: application/vnd.vastgrid.v2+arrow` MAY receive the response of `rows` and `export` as that type:
 4 bytes with the length n of the JSON response (little-endian), the n bytes of the JSON response in UTF-8
-with its block attached, then the block's bytes. Errors are `application/json`, with the HTTP status of
-§8.7. Events go out as Server-Sent Events at a URL the host chooses.
+with its block attached, then the block's bytes. Operation errors are `application/json`, with the HTTP
+status of §8.7; HTTP transport rejections before a request is read (wrong method, media type, body size,
+path or origin) carry their HTTP status (`400`, `403`, `404`, `405`, `413`, `415`) either with an
+`invalid_request` (`id: null`) envelope or without a message envelope. Events go out
+as Server-Sent Events at a URL the host chooses.
 
 An **MCP App** calls a tool of its server with the request in the tool's arguments; the tool result's
 `structuredContent` is the response, with the text encoding. Tool calls carry no events: the server gives them in
@@ -1559,7 +1569,6 @@ comes with conformance cases checked against DuckDB, and the JS engine follows i
 - Native nested types (lists, structs, maps) instead of their text, and measures that give them, such as a
   `histogram` that gives the counts of all the bins in one value.
 - Collations (the reading order of Japanese) as capabilities; folding is `fold` (§3.4).
-- DuckDB's dates beyond those of §2.2 (to 5877642 BC and 5881580 AD), which read as null.
 
 ## Appendix A. From 0.1
 
@@ -1616,7 +1625,7 @@ DuckDB 2.0 through `@duckdb/node-api` 2.0.0-r.1, on 2026-10-27 (first checked wi
 | `exp(1000)`, `power(-8, 1/3)`, `power(0, -1)` | Infinity, NaN, Infinity |
 | the types of `DECIMAL(10,2) + DECIMAL(5,3)`, of `*` and `/` on them, of `BIGINT + DECIMAL(3,1)`, `DECIMAL(3,1) % INTEGER` and `INTEGER / INTEGER` | DECIMAL(12,3), DECIMAL(15,5), DOUBLE, DECIMAL(21,1), DECIMAL(11,1), DOUBLE |
 | the types of `sum(BIGINT)`, `sum(DECIMAL(10,2))` and `avg(DECIMAL(10,2))` | HUGEINT, DECIMAL(38,2), DOUBLE |
-| `sum` and `avg` of `DECIMAL(38,4)` values whose sum has more than 38 digits | errors (DuckDB 1.5 gave the sum): `vastgrid-sql` sums the digits of wide decimals as a HUGEINT |
+| `sum` and `avg` of `DECIMAL(38,4)` values whose sum has more than 38 digits | errors (DuckDB 1.5 gave the sum): `vastgrid-sql` sums the digits of wide decimals as a BIGNUM |
 | `stddev_samp` of 1.7e308 and −1.7e308 | NaN (DuckDB 1.5: an error); `vastgrid-sql` gives null, as the JS engine does |
 | `sum`, `min`, `max` and `avg` of NaN, 1 and Infinity | NaN, 1, NaN, NaN (0.2 leaves the values that are not finite out, §3.8) |
 | `count(DISTINCT x)` of NaN, NaN, 0.0, −0.0 and NULL | 2 |
@@ -1651,6 +1660,6 @@ Two behaviors of `@duckdb/node-api` 2.0.0-r.1 (and 1.5.6-r.1) matter to engines 
 - It binds JavaScript numbers without a fraction as `BIGINT`, so binding `1e20` fails with
   `bigint out of int64 range`. `vastgrid-sql` binds floats as text (`floatParam`) and casts them.
 
-`@uwdata/flechette` 2.6.0 decodes Utf8 values with a `TextDecoder` that drops a U+FEFF at the start of a
-value in the same way. `vastgrid-spec`'s block reader decodes Utf8 and LargeUtf8 values from their bytes
-with `ignoreBOM: true` instead (§8.4).
+`@uwdata/flechette` 2.7.1 decodes Utf8 values with a `TextDecoder` that drops a U+FEFF at the start of a
+value in the same way. `vastgrid-spec`'s block reader decodes Utf8, LargeUtf8 and Utf8View values from their
+bytes with `ignoreBOM: true` instead (§8.4).

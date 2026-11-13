@@ -16,13 +16,16 @@ export function normalizePlan(plan: Plan): Plan {
 
 /** Orders strings by their code points, as the members of the normal form are. */
 function compareCodePoints(a: string, b: string): number {
-  const left = [...a];
-  const right = [...b];
-  for (let index = 0; index < Math.min(left.length, right.length); index++) {
-    const difference = (left[index].codePointAt(0) ?? 0) - (right[index].codePointAt(0) ?? 0);
-    if (difference !== 0) return difference;
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    const x = a.codePointAt(i)!;
+    const y = b.codePointAt(j)!;
+    if (x !== y) return x - y;
+    i += x > 0xffff ? 2 : 1;
+    j += y > 0xffff ? 2 : 1;
   }
-  return left.length - right.length;
+  return a.length - i - (b.length - j);
 }
 
 /**
@@ -47,9 +50,11 @@ export function canonicalJson(value: unknown): string {
   throw new TypeError(`JSON has no ${typeof value} values.`);
 }
 
+const utf8Encoder = new TextEncoder();
+
 /** `sha256:` and the lowercase hex SHA-256 of the plan's normal form in UTF-8. */
 export async function planHash(plan: Plan): Promise<string> {
-  const bytes = new TextEncoder().encode(canonicalJson(normalizePlan(plan)));
+  const bytes = utf8Encoder.encode(canonicalJson(normalizePlan(plan)));
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
   return `sha256:${Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }

@@ -1,7 +1,7 @@
 # vastgrid's MCP App
 
 `vastgrid-mcp` (`packages/mcp`) is an MCP server with an [MCP App](https://github.com/modelcontextprotocol/ext-apps):
-an agent opens a CSV, TSV, Parquet, JSON Lines or Excel file of any size in a grid that the person sees in the
+an agent opens a CSV, TSV, Parquet, JSON, JSON Lines or Excel file of any size, or a table of a DuckDB database, in a grid that the person sees in the
 chat, and both work on the same grid. The agent reads the grid's state and rows and applies the commands of the
 specification (docs/spec.md §6); the person scrolls, sorts, filters, selects and edits in the grid. What one
 does, the other sees. DuckDB reads the files on the server, in Node.js; the page in the host is plain JavaScript
@@ -37,8 +37,8 @@ calls `open_grid`, and the host shows the grid under its answer.
 | Tool | Who | What it does |
 | --- | --- | --- |
 | `list_files` | agent | lists the table files of the folders, two folders deep |
-| `open_grid` | agent, App | opens a file in a new grid, with a document to start with (§5.1); its result shows the App |
-| `grid_state` | agent | the document, the session (§5.2), the displayed columns, the view's row count and the unsaved edits |
+| `open_grid` | agent, App | opens a file (and a workbook's sheet or a database's table, `sheet`) in a new grid, with a document to start with (§5.1); its result shows the App |
+| `grid_state` | agent | the sheet and sheets (if any), the document, the session (§5.2), the displayed columns, the view's row count and the unsaved edits |
 | `grid_rows` | agent | rows of the view as JSON values (§2.2), at most 500 at once, strings cut to 1,000 code points |
 | `grid_command` | agent | applies a command of §6 as the person's keys and menus do, and gives the new state |
 | `vastgrid_message` | App | carries a request of §8 to the engine (§8.8) |
@@ -95,8 +95,8 @@ engine are closed; so are those of every App of a grid that closes (the least re
 `dist/app.html`, with its script and styles inside, the menus and panels that the grid loads when they open
 included: a host serves the page as a UI resource and the page loads nothing. It declares no domains (`csp` with
 empty `connectDomains` and `resourceDomains`), so hosts give it their default CSP, in which WebAssembly does not
-run. The page is 838 KB, 251 KB with gzip: React and the grid, as in the command line's page (605 KB), then
-ext-apps' MCP client and zod.
+run. The page is about 900 KB, 270 KB with gzip: React and the grid, as in the command line's page (about 650 KB),
+then ext-apps' MCP client and zod.
 
 The App takes the host's theme and locale (English, Japanese, Chinese, Korean, Spanish, Portuguese, French or German).
 It is 520 pixels high in the conversation, or the host's `maxHeight` when that is less, and as high as its frame

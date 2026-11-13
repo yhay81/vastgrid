@@ -1,7 +1,7 @@
 # vastgrid on the command line
 
-`vastgrid` (`packages/cli`, the package `vastgrid-cli`) opens CSV, TSV, Parquet, JSON Lines and Excel files of any
-size in a grid in the browser with one command. DuckDB reads the files in the command, in Node.js, and the page
+`vastgrid` (`packages/cli`, the package `vastgrid-cli`) opens CSV, TSV, Parquet, JSON, JSON Lines and Excel files of any
+size, and the tables of DuckDB databases, in a grid in the browser with one command. DuckDB reads the files in the command, in Node.js, and the page
 reads blocks of rows from it over HTTP (docs/spec.md §8.8), as the grid does on any server. Nothing leaves the
 computer: the server answers on 127.0.0.1 only, to the browser that opened the address it printed.
 
@@ -29,14 +29,14 @@ Options:
 
 The command prints the address of the page and opens it in the browser (`open` on macOS, `xdg-open` on Linux,
 `url.dll` on Windows); with `--no-open`, or when no browser opens, open the printed address yourself. Ctrl+C stops
-the server and DuckDB, which deletes its folder of temporary files (`vastgrid-cli` in the system's temporary
-folder). A second Ctrl+C stops without waiting; folders left by a command that was killed are deleted by the next
-one.
+the server and DuckDB. Each run keeps its files in a session folder under the current user's private temporary
+directory. A clean shutdown deletes the session folder. The next run cleans up sessions left by a killed command.
 
 ## Files
 
-- A file named opens; it must be a CSV, TSV, Parquet, JSON Lines or Excel file by its name (`.csv`, `.tsv`,
-  `.parquet`, `.jsonl`, `.json`, `.xlsx` and their compressed forms).
+- A file named opens; it must be a CSV, TSV, Parquet, JSON, JSON Lines, Excel or DuckDB database file by its name
+  (`.csv`, `.tsv`, `.tab`, `.parquet`, `.pq`, `.jsonl`, `.ndjson`, `.json`, `.xlsx`, `.xlsm`, `.duckdb`, `.ddb`, and
+  `.gz` or `.zst` of the text formats).
 - A folder named gives its table files, two folders deep, without hidden files and folders, at most 1,000. With
   nothing named, the current folder is used.
 - The page lists the files named first, then those of the folders, by their paths from the current folder. It
@@ -47,7 +47,7 @@ one.
 ## The page
 
 The page shows the first file, with the toolbar, the status bar and a check box for each row; a list above the grid
-chooses another file, and the sheets of a workbook are buttons. The address keeps the file and the sheet
+chooses another file, and the sheets of a workbook and the tables of a database are buttons. The address keeps the file and the sheet
 (`?file=…&sheet=…`), so that the browser's back and forward move between them and a page loaded again shows the same
 file. The tab keeps the view of each of them, its sorts, filters, column widths, selection and scroll, and shows
 it again on the way back and when the page is loaded again (`sessionStorage`). Its texts follow the browser's language (English, Japanese, Chinese, Korean, Spanish, Portuguese, French or
@@ -59,7 +59,7 @@ browser.
 
 With `--save`, ⌘S or Ctrl+S (or the toolbar's Save) writes the written cells into the CSV or TSV file they came
 from, keeping every byte that holds no edited field (§7.5). Without it the command never changes a file. Parquet,
-JSON Lines and Excel files are not saved. A file changed on disk is read again, or, when it has written cells, the
+JSON, JSON Lines, Excel and DuckDB files are not saved. A file changed on disk is read again (or for a database, marked changed until reloaded), or, when it has written cells, the
 grid says so and keeps them until they are discarded (§7.6).
 
 `pnpm --filter vastgrid-cli build` bundles the page (`packages/cli/app`) with Vite into one HTML file,

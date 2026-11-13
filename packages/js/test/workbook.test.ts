@@ -44,7 +44,7 @@ async function open(client: Client, ref: string, read?: unknown): Promise<Opened
 test("a sheet opens with its columns' types, is written to, exported and opened again", async () => {
   const source = new Client({ source: table });
   const bytes = await exported(source, await source.open("source"));
-  const book: FileTable = { file: new File([bytes], "book.xlsx"), editable: true };
+  const book: FileTable = { file: new File([bytes as BlobPart], "book.xlsx"), editable: true };
   const client = new Client({ book });
   const info = await open(client, "book");
   assert.deepEqual(info.sheets, [{ name: "Sheet1" }]);
@@ -75,7 +75,9 @@ test("a sheet opens with its columns' types, is written to, exported and opened 
       { key: { rowId: 0 }, column: "price", value: 2.75 },
     ],
   });
-  const again = new Client({ book: { file: new File([await exported(client, info)], "again.xlsx") } });
+  const again = new Client({
+    book: { file: new File([(await exported(client, info)) as BlobPart], "again.xlsx") },
+  });
   const reopened = await open(again, "book");
   assert.deepEqual(
     (
@@ -97,7 +99,7 @@ test("read options choose the sheet and the header row, and each set of them is 
   const source = new Client({ source: table });
   const bytes = await exported(source, await source.open("source"));
   // A Blob is a workbook by the table's format.
-  const client = new Client({ book: { file: new Blob([bytes]), format: "xlsx" } });
+  const client = new Client({ book: { file: new Blob([bytes as BlobPart]), format: "xlsx" } });
   const named = await open(client, "book");
   const unnamed = await open(client, "book", { sheet: "Sheet1", headerRow: 0 });
   assert.deepEqual(
@@ -120,7 +122,7 @@ test("a workbook that cannot be read fails the open at /file; one beyond maxByte
   const client = new Client({
     text: { file: new Blob(["id,name\n1,a\n"]), format: "xlsx" },
     old: { file: new File([new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])], "old.xlsx") },
-    small: { file: new File([bytes], "small.xlsx"), maxBytes: 64 },
+    small: { file: new File([bytes as BlobPart], "small.xlsx"), maxBytes: 64 },
   });
   for (const [ref, message] of [
     ["text", /at \/file, .*not a ZIP archive/],

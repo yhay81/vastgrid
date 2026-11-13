@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { cell, row, writeWorkbook } from "../packages/duckdb-engine/test/xlsx-fixture.ts";
@@ -13,6 +13,7 @@ const folder = path.resolve(".data/cli-e2e");
 const orders = ".data/cli-e2e/orders.csv";
 
 test.beforeEach(async () => {
+  rmSync(folder, { recursive: true, force: true });
   mkdirSync(path.join(folder, "sub"), { recursive: true });
   writeFileSync(path.join(folder, "orders.csv"), "id,region,price\n1,EU,10.5\n2,US,30\n3,EU,20\n4,JP,5\n");
   writeFileSync(path.join(folder, "sub", "items.tsv"), "id\tname\n1\tpen\n2\tnote\n");

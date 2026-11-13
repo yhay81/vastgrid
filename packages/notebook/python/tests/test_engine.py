@@ -18,6 +18,7 @@ import pyarrow as pa
 import pytest
 
 from vastgrid import Engine, Source
+from vastgrid._edits import Edits
 from vastgrid._messages import ProtocolError, check_request
 from vastgrid._table import file_format
 
@@ -343,3 +344,102 @@ def test_files_in_folders_named_like_key_value_have_their_own_columns(engine: En
         opened = client.result("open", ref=name)
         assert [column["name"] for column in opened["columns"]] == ["id", "item"], name
         assert client.rows(opened) == [[1, "a"]], name
+
+
+def test_series_null_only_columns_case_colliding_columns_and_sequential_writes(engine: Engine) -> None:
+    client = Client(engine)
+    for ref, series in (
+        ("pandas-series", pandas.Series(["Tokyo", "Osaka"], name="city")),
+        ("polars-series", polars.Series("city", ["Tokyo", "Osaka"])),
+    ):
+        engine.add(ref, Source(data=series))
+        opened = client.result("open", ref=ref)
+        assert [column["name"] for column in opened["columns"]] == ["city"], ref
+        assert client.rows(opened) == [["Tokyo"], ["Osaka"]], ref
+
+    engine.add("nulls", Source(data=pandas.DataFrame({"note": [None, None]})))
+    nulls = client.result("open", ref="nulls")
+    assert nulls["columns"] == [{"name": "note", "type": "string", "sourceType": '"NULL"'}]
+    client.result(
+        "write",
+        table=nulls["table"],
+        revision=nulls["revision"],
+        updates=[{"key": {"rowId": 0}, "column": "note", "value": "ok"}],
+    )
+    assert client.rows(nulls) == [["ok"], [None]]
+
+    engine.add("case", Source(data=pa.table({"a": [1, 2], "A": [10, 20]})))
+    case = client.result("open", ref="case")
+    assert [column["name"] for column in case["columns"]] == ["a", "A"]
+    at = {"table": case["table"], "revision": case["revision"]}
+    missing_row_key = client.error("write", **at, updates=[{"key": {"value": 1}, "column": "A", "value": 99}])
+    assert missing_row_key["code"] == "invalid_request" and missing_row_key["path"] == "/rowKey"
+    staged = client.result(
+        "write",
+        **at,
+        rowKey="a",
+        updates=[
+            {"key": {"value": 1}, "column": "a", "value": 3, "previous": 1},
+            {"key": {"value": 3}, "column": "A", "value": 30, "previous": 10},
+        ],
+    )
+    assert staged == {"updated": 2, "edits": {"version": 1, "cells": 2}}
+    assert client.rows(case) == [[3, 30], [2, 20]]
+    exported = client.result("export", **at, plan={}, format="csv")
+    assert exported["data"]["bytes"] == b"a,A\n3,30\n2,20\n"
+    empty_hdr = client.result("export", **at, plan={}, format="csv", headers=["", 'n"1'])
+    assert empty_hdr["data"]["bytes"] == b'"","n""1"\n3,30\n2,20\n'
+
+
+@pytest.mark.parametrize(("unit", "limit"), [("s", 9_223_372_036_854), ("ms", 9_223_372_036_854_775)])
+def test_out_of_range_source_timestamps_are_null_per_cell(engine: Engine, unit: str, limit: int) -> None:
+    counts = [0, -limit, limit, -limit - 1, limit + 1, -(2**63 - 1), 2**63 - 1]
+    column = pa.array(counts, type=pa.int64()).view(pa.timestamp(unit))
+    engine.add("time", Source(data=pa.table({"t": column})))
+    client = Client(engine)
+    opened = client.result("open", ref="time")
+    table = engine.handles[opened["table"]]
+    assert table.relation is not None
+    read = engine.session.database.sql(f'SELECT "t" FROM {table.relation.sql} ORDER BY {table.relation.row_id}')
+    assert read.to_arrow_table().column(0).cast(pa.int64()).to_pylist() == [*counts[:3], None, None, *counts[-2:]]
+
+
+def test_pastes_read_previous_values_once_per_column(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
+    count = 120
+    engine.add("paste", Source(data=pa.table({"x": list(range(count)), "y": [None] * count})))
+    client = Client(engine)
+    opened = client.result("open", ref="paste")
+    reads = []
+    read_cells = Edits._read_cells
+
+    def track(self, cursor, relation, index, rows):
+        reads.append((index, len(rows)))
+        return read_cells(self, cursor, relation, index, rows)
+
+    monkeypatch.setattr(Edits, "_read_cells", track)
+    updates = [
+        {"key": {"rowId": row}, "column": column, "value": new, "previous": old}
+        for row in range(count)
+        for column, old, new in [("x", row, row + 1), ("y", None, "yes")]
+    ]
+    updates.append({"key": {"rowId": 1}, "column": "x", "previous": 2, "value": 8})
+    client.result("write", table=opened["table"], revision=opened["revision"], updates=updates)
+    assert reads == [(0, count), (1, count)]
+    assert client.rows(opened)[:2] == [[1, "yes"], [8, "yes"]]
+
+
+def test_mixed_in_and_lambda_column_bins(engine: Engine) -> None:
+    exact = 2**53
+    engine.add("numbers", Source(data=pa.table({"i": [exact, exact + 1, None], "VG_W": [42.0, -11.0, None]})))
+    client = Client(engine)
+    opened = client.result("open", ref="numbers")
+    plan = {
+        "derive": [
+            {
+                "name": "matches",
+                "expr": {"fn": "in", "args": [{"col": "i"}, {"lit": str(exact), "type": "bigint"}, {"lit": 0.5}]},
+            },
+            {"name": "bin", "expr": {"fn": "bin", "args": [{"col": "VG_W"}, {"lit": 10}]}},
+        ]
+    }
+    assert client.rows(opened, plan, ["matches", "bin"]) == [[True, 40.0], [False, -20.0], [None, None]]

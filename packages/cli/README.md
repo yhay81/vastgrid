@@ -1,6 +1,6 @@
 # vastgrid-cli
 
-Open huge CSV, TSV, Parquet, JSON Lines and Excel files in a grid in the browser with one command. DuckDB reads the
+Open huge CSV, TSV, Parquet, JSON, JSON Lines and Excel files and DuckDB databases in a grid in the browser with one command. DuckDB reads the
 files on this computer, in Node.js, and the page reads blocks of rows from it as you scroll: sort, filter, search,
 group, pivot, add formulas, edit cells, export, and save edited CSV and TSV files with every byte that was not
 edited kept as it is. Nothing leaves the computer.
@@ -28,8 +28,7 @@ deletes its temporary files.
 ## Files
 
 - A file named opens when its name says it is a table: `.csv`, `.tsv`, `.tab`, `.parquet`, `.pq`, `.jsonl`,
-  `.ndjson`, `.json`, `.xlsx`, `.xlsm`, `.duckdb`, `.ddb`, and `.gz` (also `.zst` for CSV and TSV) of the text
-  formats.
+  `.ndjson`, `.json`, `.xlsx`, `.xlsm`, `.duckdb`, `.ddb`, and `.gz` or `.zst` of the text formats.
 - A folder named gives its table files, two folders deep, without hidden ones, at most 1,000. With nothing named,
   the current folder is used.
 - No other file opens: DuckDB reads nothing outside the folders of the files and folders named, links followed.

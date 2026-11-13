@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import type { Column, GridDocument } from "vastgrid-spec";
 import { test } from "vite-plus/test";
-import { measureName, measuresPlan, statisticsOf, totalMeasures } from "../src/core/measures.ts";
+import { measureName, measuresPlan, rowColumns, statisticsOf, totalMeasures } from "../src/core/measures.ts";
 import { createGridStore, localTransport } from "../src/core.ts";
 import { readInitialView } from "../src/server.ts";
 import { CAPABILITIES, fakeEngine, numbers, settle } from "./fake-engine.ts";
@@ -23,7 +23,7 @@ test("statistics take the column's type and what the engine evaluates (§4.5, §
 });
 
 test("measures are an aggregate without keys over the plan's rows; grouped plans have none", () => {
-  const where = { fn: "gt", args: [{ col: "qty" }, { lit: 1 }] } as const;
+  const where = { fn: "gt" as const, args: [{ col: "qty" }, { lit: 1 }] };
   assert.deepEqual(measuresPlan({ where, sort: [{ column: "qty", direction: "asc" }] }, [{ name: "n", fn: "count" }]), {
     where,
     aggregate: { keys: [], measures: [{ name: "n", fn: "count" }] },
@@ -38,6 +38,19 @@ test("measures are an aggregate without keys over the plan's rows; grouped plans
   );
   assert.equal(measureName("sum", "qty", new Set()), "sum(qty)");
   assert.equal(measureName("count", undefined, new Set(["count(*)"])), "count(*) (2)");
+  const tableInfo = {
+    table: "t",
+    revision: "1",
+    status: "ready" as const,
+    columns: [qty, city],
+    rowCount: 2,
+    readableRows: 2,
+    edits: { version: 0, cells: 0 },
+    progress: null,
+    capabilities: { ...CAPABILITIES, plan: { ...CAPABILITIES.plan, derive: true } },
+  };
+  assert.equal(rowColumns({ derive: [{ name: "d", expr: { lit: 1 } }] }, tableInfo).length, 3);
+  assert.deepEqual(rowColumns({ derive: [{ name: "d", expr: { col: "missing" } }] }, tableInfo), tableInfo.columns);
 });
 
 test("the store reads the totals row for the view on screen and follows its settings", async () => {

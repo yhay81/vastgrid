@@ -30,10 +30,12 @@ export interface Table {
   editable: boolean;
   /** The edits version and the cells written so far (§8.2). */
   edits: { version: number; cells: number };
+  /** The last queued write, so another cannot change cells or row keys while this write validates. */
+  writing?: Promise<void>;
   /** Cells written, as `row * columns + column`. */
   written: Set<number>;
-  /** Row IDs by the key text of a value of a column, made when `write` or `locate` first needs them. */
-  keys: Map<number, Map<string, number>>;
+  /** First row IDs by rank of a column, made when `write` first looks keys up in it. */
+  keys: Map<number, Int32Array>;
   /** The ranks of each column, made when a view first needs them. */
   ranks: (ColumnRanks | undefined)[];
   /** Checks of each column's values (§2.2); a column is checked whole before anything reads all of it. */
@@ -75,7 +77,7 @@ export function contentsOf(checked: CheckedTable) {
     vectors: checked.vectors,
     reader: checked.reader ?? null,
     rowCount: checked.rowCount,
-    keys: new Map<number, Map<string, number>>(),
+    keys: new Map<number, Int32Array>(),
     ranks: columns.map(() => undefined),
     checkers: columns.map((column, index) => valueChecker(column, index)),
     values: columns.map(() => undefined),

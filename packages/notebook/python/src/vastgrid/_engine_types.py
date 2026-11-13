@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from ._sql import quote_identifier
+
 Json = dict[str, Any]
 
 
@@ -25,3 +27,9 @@ class Relation:
     sql: str
     row_id: str
     rows: int
+    columns: dict[str, str] | None = None
+
+
+def relation_column(relation: Relation, name: str) -> str:
+    """The quoted SQL identifier of `name` in `relation`."""
+    return (relation.columns or {}).get(name) or quote_identifier(name)

@@ -6,6 +6,7 @@ import {
   displayedColumns,
   emptyDocument,
   type GridDocument,
+  MESSAGE_LIMITS,
   planOptions,
   repairDocument,
 } from "vastgrid-spec";
@@ -41,14 +42,41 @@ export async function readInitialView(transport: Transport, options: ReadInitial
       planOptions(info.capabilities),
     ).document;
     const plan = document.plan ?? {};
-    const view = checkPlan(plan, info.columns, planOptions(info.capabilities));
-    const columns = displayedColumns(document, view.columns).map((item) => item.column.name);
-    if (document.rowKey !== undefined && !columns.includes(document.rowKey)) columns.push(document.rowKey);
-    const wanted = options.rows ?? 100;
-    const end = info.rowCount === null ? wanted : Math.min(wanted, info.rowCount);
+    const checked = checkPlan(plan, info.columns, planOptions(info.capabilities));
+    const probe =
+      plan.aggregate?.pivot === undefined
+        ? undefined
+        : await client.request<RowsResult>(
+            "rows",
+            { table: info.table, revision: info.revision, plan, start: 0, end: 0, columns: [] },
+            options.signal,
+          );
+    const viewColumns = probe ? probe.view.columns : checked.columns;
+    const columns = displayedColumns(document, viewColumns).map((item) => item.column.name);
+    if (
+      document.rowKey !== undefined &&
+      !columns.includes(document.rowKey) &&
+      viewColumns.some((column) => column.name === document.rowKey)
+    ) {
+      columns.push(document.rowKey);
+    }
+    const wanted = Math.max(0, Math.floor(options.rows ?? 100));
+    const knownRowCount = probe ? probe.view.rowCount : plan.aggregate ? null : info.rowCount;
+    let end = Math.min(knownRowCount === null ? wanted : Math.min(wanted, knownRowCount), MESSAGE_LIMITS.rows);
+    if (end > 0 && columns.length > 0 && end * columns.length > MESSAGE_LIMITS.cells) {
+      end = Math.max(1, Math.floor(MESSAGE_LIMITS.cells / columns.length));
+    }
+    if (probe && (end === 0 || columns.length === 0)) return { table: info, plan, rows: probe };
     const rows = await client.request<RowsResult>(
       "rows",
-      { table: info.table, revision: info.revision, plan, start: 0, end: Math.max(end, 1), columns },
+      {
+        table: info.table,
+        revision: info.revision,
+        plan,
+        start: 0,
+        end: columns.length === 0 ? 0 : end,
+        columns: end === 0 ? [] : columns,
+      },
       options.signal,
     );
     return { table: info, plan, rows };

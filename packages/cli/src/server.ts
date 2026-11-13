@@ -5,11 +5,9 @@
  * (DNS rebinding) reach nothing.
  */
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdirSync } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import os from "node:os";
 import path from "node:path";
 import { createHttpHandler, DuckDBEngine, findTableFiles, tableFormatOf } from "vastgrid-duckdb";
 
@@ -109,20 +107,30 @@ export async function serve(options: ServeOptions): Promise<Served> {
   const token = options.token ?? randomBytes(24).toString("base64url");
   if (!/^[\w-]{16,}$/.test(token)) throw new Error("The token is 16 or more letters, digits, - and _.");
   const { files, folders } = await sortPaths(options.paths, cwd);
+  const [realFiles, realFolders] = await Promise.all([
+    Promise.all(files.map((file) => realpath(file))),
+    Promise.all(folders.map((folder) => realpath(folder))),
+  ]);
   const nameOf = (file: string) => (isInside(cwd, file) ? path.relative(cwd, file).split(path.sep).join("/") : file);
   // Only the files named, and the table files of the folders named, open; DuckDB reads nothing outside their folders.
   const opens = (file: string) =>
     files.includes(file) || (tableFormatOf(file) !== null && folders.some((folder) => isInside(folder, file)));
-  const tempDirectory = options.tempDirectory ?? path.join(os.tmpdir(), "vastgrid-cli");
-  mkdirSync(tempDirectory, { recursive: true });
   const engine = await DuckDBEngine.create({
-    allowedDirectories: [...new Set([...folders, ...files.map((file) => path.dirname(file))])],
+    allowedDirectories: [
+      ...new Set([
+        ...folders,
+        ...realFolders,
+        ...files.map((file) => path.dirname(file)),
+        ...realFiles.map((file) => path.dirname(file)),
+      ]),
+    ],
+    allowFile: (file) => realFiles.includes(file) || realFolders.some((folder) => isInside(folder, file)),
     resolve: (ref) => {
       const file = path.resolve(cwd, ref);
       if (!opens(file)) throw new Error(`vastgrid was not started with ${ref}.`);
       return file;
     },
-    tempDirectory,
+    tempDirectory: options.tempDirectory,
     saveFiles: options.save ?? false,
     log: options.log,
   });

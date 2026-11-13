@@ -184,7 +184,7 @@ export const ptBR: GridMessages = {
   matchCase: "Diferenciar maiúsculas de minúsculas",
   findNext: "Localizar próxima",
   findPrevious: "Localizar anterior",
-  closeFind: "Fechar pesquisa",
+  closeFind: "Fechar localização",
   noMatches: "Nenhum resultado",
   cellMenu: "Menu da célula",
   copy: "Copiar",

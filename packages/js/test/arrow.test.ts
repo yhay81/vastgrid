@@ -104,7 +104,7 @@ test("a table given as Arrow answers as the same table given as rows", async () 
       sort: [{ column: "sum", direction: "desc" }],
     },
   ];
-  const answers = [];
+  const answers: unknown[][] = [];
   for (const table of [rows, { arrow } satisfies ArrowTable]) {
     const client = new Client({ t: table });
     const info = await client.open("t");

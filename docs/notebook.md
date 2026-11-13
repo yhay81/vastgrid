@@ -1,8 +1,8 @@
 # vastgrid in notebooks
 
 `vastgrid` (`packages/notebook/python`, a Python package) shows a table of any size in vastgrid's grid in a Jupyter
-notebook: a pandas or Polars DataFrame, a PyArrow table, a DuckDB relation, or a CSV, TSV, Parquet, JSON, JSON Lines
-or Excel file. DuckDB reads it in the kernel; the grid in the cell's output is an [anywidget](https://anywidget.dev)
+notebook: a pandas or Polars DataFrame, a PyArrow table, a DuckDB relation, a CSV, TSV, Parquet, JSON, JSON Lines
+or Excel file, or a table of a DuckDB database. DuckDB reads it in the kernel; the grid in the cell's output is an [anywidget](https://anywidget.dev)
 module (`packages/notebook/widget`) that shows `DataGrid` (react.md) and reads blocks of rows over the widget's
 messages, a row range at a time, as it does from any engine (docs/spec.md §8). The notebook gets the edited table
 back as a DataFrame, or exports it.

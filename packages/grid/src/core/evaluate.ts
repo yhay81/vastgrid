@@ -55,27 +55,48 @@ function compare(a: Value, b: Value): number | null {
   if (typeof a.value === "boolean" && typeof b.value === "boolean") return Number(a.value) - Number(b.value);
   if (typeof a.value === "string" && typeof b.value === "string") {
     // Code point order.
-    const x = [...a.value];
-    const y = [...b.value];
-    for (let index = 0; index < Math.min(x.length, y.length); index++) {
-      const difference = (x[index].codePointAt(0) ?? 0) - (y[index].codePointAt(0) ?? 0);
-      if (difference !== 0) return difference;
+    const x = a.value;
+    const y = b.value;
+    let ix = 0;
+    let iy = 0;
+    while (ix < x.length && iy < y.length) {
+      const cx = x.codePointAt(ix) as number;
+      const cy = y.codePointAt(iy) as number;
+      if (cx !== cy) return cx - cy;
+      ix += cx > 0xffff ? 2 : 1;
+      iy += cy > 0xffff ? 2 : 1;
     }
-    return x.length - y.length;
+    return x.length - ix - (y.length - iy);
   }
   return null;
+}
+
+function isSingleCodePoint(text: string): boolean {
+  if (text.length === 1) return true;
+  if (text.length !== 2) return false;
+  const first = text.charCodeAt(0);
+  const second = text.charCodeAt(1);
+  return first >= 0xd800 && first <= 0xdbff && second >= 0xdc00 && second <= 0xdfff;
 }
 
 /** `lower` (§3.4): each code point by itself, kept when its lower case is not one code point. */
 function lower(text: string): string {
   let out = "";
-  for (const point of text) {
-    if (point === "İ") {
+  for (let index = 0; index < text.length;) {
+    const code = text.codePointAt(index) as number;
+    const step = code > 0xffff ? 2 : 1;
+    if (code >= 0x41 && code <= 0x5a) {
+      out += String.fromCharCode(code + 32);
+    } else if (code < 0x80) {
+      out += text[index];
+    } else if (code === 0x130) {
       out += "i";
-      continue;
+    } else {
+      const point = step === 2 ? text.slice(index, index + 2) : text[index];
+      const mapped = point.toLowerCase();
+      out += isSingleCodePoint(mapped) ? mapped : point;
     }
-    const mapped = point.toLowerCase();
-    out += [...mapped].length === 1 ? mapped : point;
+    index += step;
   }
   return out;
 }

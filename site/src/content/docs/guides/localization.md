@@ -40,8 +40,9 @@ with `Intl` in the grid's locale.
 
 ## Replacing texts
 
-`messages` replaces some of the built-in texts of the grid's language. Texts with a count or a name are
-functions, which receive them already formatted:
+`messages` is merged over the English set (`en`), replacing only the texts you pass. To replace a few texts in
+another language, spread that language's set first (`messages={{ ...ja, grid: "注文" }}`). Texts with a count or a
+name are functions, which receive them already formatted:
 
 ```tsx
 <DataGrid
@@ -55,9 +56,9 @@ functions, which receive them already formatted:
 />
 ```
 
-`messages` is merged over the built-in set member by member. The groups `exportFormats`, `operators`,
-`statisticNames`, `measureNames`, `pinned`, `alignments` and `numberStyles` are replaced as a whole, so to change
-one text in a group, start from the group of a set:
+`messages` is merged over `en` member by member. The groups `exportFormats`, `operators`, `statisticNames`,
+`measureNames`, `pinned`, `alignments` and `numberStyles` are replaced as a whole, so to change one text in a
+group, start from the group of that language's set:
 
 ```tsx
 import { DataGrid } from "vastgrid";

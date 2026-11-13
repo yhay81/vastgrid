@@ -11,6 +11,7 @@ declare global {
       call(name: string, args: Record<string, unknown>): Promise<unknown>;
       /** The tools that the App called, in order. */
       calls: string[];
+      setLocale(locale: string): void;
       /** What `open_grid` answered the "agent", once the App has it. */
       opened: { structuredContent?: { grid?: string } } | null;
     };
@@ -22,12 +23,11 @@ async function call(name: string, args: Record<string, unknown>) {
   return response.json();
 }
 
-window.host = { call, calls: [], opened: null };
 const file = new URLSearchParams(location.search).get("file") ?? "orders.csv";
 const frame = document.querySelector("iframe") as HTMLIFrameElement;
 
 async function connect() {
-  const context: McpUiHostContext = {
+  let context: McpUiHostContext = {
     theme: "light",
     locale: "en-US",
     displayMode: "inline",
@@ -39,11 +39,21 @@ async function connect() {
     { serverTools: {}, openLinks: {} },
     { hostContext: context },
   );
+  window.host = {
+    call,
+    calls: [],
+    opened: null,
+    setLocale(locale) {
+      context = { ...context, locale };
+      bridge.setHostContext(context);
+    },
+  };
   // Full screen is the frame over the whole window.
   bridge.onrequestdisplaymode = async ({ mode }) => {
     const shown = mode === "pip" ? "inline" : mode;
     frame.classList.toggle("fullscreen", shown === "fullscreen");
-    bridge.setHostContext({ ...context, displayMode: shown });
+    context = { ...context, displayMode: shown };
+    bridge.setHostContext(context);
     return { mode: shown };
   };
   bridge.oncalltool = async (params) => {

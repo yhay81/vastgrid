@@ -2,11 +2,16 @@
  * Reading typed text as a value of a column's type (docs/spec.md §7.3), and the text an editor starts with.
  */
 import {
+  civilFromDays,
+  dateText,
   daysFromCivil,
-  infinityOf,
-  parseDateText,
-  parseTimestampText,
+  FIRST_DAY,
+  floorDiv,
+  LAST_DAY,
+  parseTimestamptzText,
+  parseTimeText,
   TIMESTAMP_INFINITY,
+  temporalTextForm,
   timestampText,
   timestamptzText,
   UNIT_DIGITS,
@@ -98,22 +103,37 @@ function clockText(text: string, digits: number): string | null {
 }
 
 /**
- * The text of a date (§2.2) with `-`, `/` or `.` between its parts, or null. Its year is four to six digits, a sign
- * and six digits, or, followed by `BC` or `(BC)` as the text form writes it (§2.4), the number of a year BC.
+ * The count of days from 1970-01-01 of a valid calendar day written with `-`, `/` or `.`, or null when it is not a
+ * real calendar day (even before checking `[FIRST_DAY, LAST_DAY]`, so UTC offsets on boundary days can be applied).
  */
-function dayText(text: string): string | null {
+function civilDays(text: string): number | null {
   const match = /^([+-][0-9]{6}|[0-9]{4,6})[-/.]([0-9]{1,2})[-/.]([0-9]{1,2})( \(BC\)| BC)?$/i.exec(text);
   if (!match) return null;
   let year = Number(match[1]);
   if (match[4]) {
     if (!/^[0-9]/.test(match[1]) || year < 1) return null;
     year = 1 - year;
+  } else if (match[1].length === 7 && year >= 0 && year <= 9999 && match[1][0] === "+") {
+    return null;
+  } else if (match[1] === "-000000") {
+    return null;
   }
-  const digits = String(Math.abs(year));
-  const yearText =
-    year >= 0 && year <= 9999 ? digits.padStart(4, "0") : `${year < 0 ? "-" : "+"}${digits.padStart(6, "0")}`;
-  const day = `${yearText}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
-  return parseDateText(day) === null ? null : day;
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1) return null;
+  const days = daysFromCivil(year, month, day);
+  const [y, m, d] = civilFromDays(days);
+  return y === year && m === month && d === day ? days : null;
+}
+
+/**
+ * The text of a date (§2.2) with `-`, `/` or `.` between its parts, or null. Its year is four to six digits, a sign
+ * and six digits, or, followed by `BC` or `(BC)` as the text form writes it (§2.4), the number of a year BC.
+ */
+function dayText(text: string): string | null {
+  const days = civilDays(text);
+  if (days === null || days < FIRST_DAY || days > LAST_DAY) return null;
+  return dateText(days);
 }
 
 const DAY_MS = 86_400_000;
@@ -156,7 +176,7 @@ function zoneOffset(instant: number, timeZone: string): number {
  * and the one of the offset before the change when clocks skip it, as Temporal's `compatible` does.
  */
 function zonedInstant(local: bigint, timeZone: string): bigint {
-  const ms = Number(local / 1000n);
+  const ms = Number(floorDiv(local, 1000n));
   const before = zoneOffset(ms - DAY_MS, timeZone);
   const after = zoneOffset(ms + DAY_MS, timeZone);
   const fitting = [before, after].filter((offset) => zoneOffset(ms - offset, timeZone) === offset);
@@ -172,11 +192,12 @@ function readTimestamp(text: string, type: ValueType, timeZone: string | undefin
   const unit = zoned ? "us" : (type.unit ?? "us");
   const match = timestampInput.exec(text);
   if (!match || (match[3] && !zoned)) return fail("timestamp");
-  const day = dayText(match[1]);
+  const days = civilDays(match[1]);
   const clock = match[2] === undefined ? "00:00:00" : clockText(match[2], UNIT_DIGITS[unit]);
-  if (!day || !clock) return fail("timestamp");
+  if (days === null || !clock) return fail("timestamp");
   if (!zoned) {
-    const value = `${day} ${clock}`;
+    if (days < FIRST_DAY || days > LAST_DAY) return fail("range");
+    const value = `${dateText(days)} ${clock}`;
     return isValueOf(value, type) ? { ok: true, value } : fail("range");
   }
   let offsetMinutes = 0;
@@ -186,8 +207,9 @@ function readTimestamp(text: string, type: ValueType, timeZone: string | undefin
     const minutes = Number(offset[2]) * 60 + Number(offset[3] ?? 0);
     offsetMinutes = offset[1] === "-" ? -minutes : minutes;
   }
-  const local = parseTimestampText(`${day} ${clock}`, "us");
-  if (local === null) return fail("timestamp");
+  const clockMicros = parseTimeText(clock);
+  if (clockMicros === null) return fail("timestamp");
+  const local = BigInt(days) * 86_400n * UNIT_PER_SECOND.us + clockMicros;
   let utc = local - BigInt(offsetMinutes) * 60n * UNIT_PER_SECOND.us;
   if (!match[3] && timeZone) {
     try {
@@ -196,12 +218,12 @@ function readTimestamp(text: string, type: ValueType, timeZone: string | undefin
       // A zone that Intl does not know: UTC, as the grid then shows the text form.
     }
   }
-  // An offset may move the instant onto the count of an infinity.
-  if (utc >= TIMESTAMP_INFINITY || utc <= -TIMESTAMP_INFINITY) return fail("timestamp");
+  // An offset may move the instant onto or past the count of an infinity or the date bounds.
+  if (utc >= TIMESTAMP_INFINITY || utc <= -TIMESTAMP_INFINITY) return fail("range");
   try {
     return { ok: true, value: timestamptzText(utc) };
   } catch {
-    return fail("timestamp");
+    return fail("range");
   }
 }
 
@@ -214,9 +236,9 @@ export function readCellText(text: string, type: ValueType, options: InputOption
     if (!isValueOf(text, type)) return fail("unicode");
     return { ok: true, value: text.replace(whiteSpace, "") === "" ? null : text };
   }
-  if (type.type === "interval" || type.type === "binary") return fail("type");
   let trimmed = text.replace(whiteSpace, "");
   if (trimmed === "") return { ok: true, value: null };
+  if (type.type === "interval" || type.type === "binary") return fail("type");
   const numeric = type.type === "integer" || type.type === "bigint" || type.type === "decimal" || type.type === "float";
   if (options.grouping && numeric && groupedText.test(trimmed)) trimmed = trimmed.replaceAll(",", "");
   // DuckDB's infinities, in any letter case (§2.2).
@@ -248,7 +270,7 @@ export function readCellText(text: string, type: ValueType, options: InputOption
     case "timestamptz":
       return readTimestamp(trimmed, type, options.timeZone);
     case "uuid":
-      return /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(trimmed)
+      return /^(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.test(trimmed)
         ? {
             ok: true,
             value: trimmed
@@ -268,14 +290,15 @@ export function readCellText(text: string, type: ValueType, options: InputOption
 export function editText(value: JsonValue, type: ValueType, options: { timeZone?: string } = {}): string {
   const text = textOf(value, type) ?? "";
   if (type.type !== "timestamptz" || !options.timeZone || value === null) return text;
-  const utc = parseTimestampText(text.slice(0, -3), "us");
-  if (utc === null) return text;
+  const utc = typeof value === "string" ? parseTimestamptzText(value) : null;
+  if (utc === null || utc === TIMESTAMP_INFINITY || utc === -TIMESTAMP_INFINITY) return text;
   try {
-    const offset = zoneOffset(Number(utc / 1000n), options.timeZone);
+    const offset = zoneOffset(Number(floorDiv(utc, 1000n)), options.timeZone);
     // Offsets with seconds (local mean times before 1900) have no text that §7.3 reads.
     if (offset % 60_000 !== 0) return text;
-    const local = timestampText(utc + BigInt(offset) * 1000n, "us");
-    if (infinityOf(local) !== 0 || parseTimestampText(local, "us") === null) return text;
+    const localCount = utc + BigInt(offset) * 1000n;
+    if (localCount <= -TIMESTAMP_INFINITY || localCount >= TIMESTAMP_INFINITY) return text;
+    const local = temporalTextForm(timestampText(localCount, "us"));
     const minutes = Math.abs(offset / 60_000);
     const pad = (count: number) => String(count).padStart(2, "0");
     const hours = `${offset < 0 ? "-" : "+"}${pad(Math.floor(minutes / 60))}`;

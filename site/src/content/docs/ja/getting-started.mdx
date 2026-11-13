@@ -11,7 +11,7 @@ import { LinkCard } from "@astrojs/starlight/components";
 | --- | --- |
 | [`vastgrid`](https://www.npmjs.com/package/vastgrid) | React の `DataGrid`・`GridProvider` とフック。`vastgrid/core` には React を使わないストアとトランスポート、`vastgrid/server` にはサーバーで最初の行を読む関数、`vastgrid/locales/<tag>` には言語ごとの文言があります。 |
 | [`vastgrid-js`](https://www.npmjs.com/package/vastgrid-js) | ページか Web Worker の中で動くメモリエンジン。JavaScript の行、Arrow の表、CSV・TSV・JSON Lines・Excel のファイル、ディスク上や URL の Parquet を扱います。 |
-| [`vastgrid-duckdb`](https://www.npmjs.com/package/vastgrid-duckdb) | Node.js の DuckDB のエンジン。どんな大きさのファイルも開け、HTTP の受け口が付いています。 |
+| [`vastgrid-duckdb`](https://www.npmjs.com/package/vastgrid-duckdb) | Node.js の DuckDB のエンジン。どんな大きさのファイルや DuckDB のデータベースも開け、HTTP の受け口が付いています。 |
 | [`vastgrid-spec`](https://www.npmjs.com/package/vastgrid-spec) | コードにした仕様。型、コマンド、プランの検査、適合性のテストがあり、自作のエンジンで使います。 |
 | [`vastgrid-sql`](https://www.npmjs.com/package/vastgrid-sql) | プランを DuckDB の SQL にします。DuckDB の上に自作のエンジンを作るときに使います。 |
 
@@ -65,7 +65,7 @@ export function App() {
 
 ## ブラウザーで開くファイル
 
-メモリエンジンは、利用者が選んだファイルを Web Worker の中で、アップロードせずに読みます。CSV・TSV・JSON Lines・Excel・Parquet のファイルと、HTTP の範囲指定で読む URL の Parquet です。100 万行の CSV は約 1 秒で開きます。Worker とページのコードは[ブラウザーで開く大きなファイル](/ja/guides/browser/)にあります。それをそのまま試せるページが[ファイルを開く](/ja/open/)です。
+メモリエンジンは、利用者が選んだファイルを Web Worker の中で、アップロードせずに読みます。CSV・TSV・JSON Lines・Excel・Parquet のファイルと、HTTP の範囲指定で読む URL の Parquet です。100 万行の CSV も、残りを読みながら約 60 ms で先頭の行が出ます。Worker とページのコードは[ブラウザーで開く大きなファイル](/ja/guides/browser/)にあります。それをそのまま試せるページが[ファイルを開く](/ja/open/)です。
 
 ## サーバーのファイル
 

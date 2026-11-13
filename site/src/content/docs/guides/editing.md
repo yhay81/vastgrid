@@ -65,10 +65,10 @@ again and the status bar says why (see [When a write fails](#when-a-write-fails)
 | `decimal` | `12.5`, `.5`: no more fraction digits than the column's scale, no exponent |
 | `float` | `1.5`, `1.5e3`, `inf`, `-infinity`, `nan` |
 | `boolean` | `true`, `false`, `1`, `0`, in any letter case |
-| `date` | `2024-01-31`, `2024/1/31`, `2024.1.31`, naming a real day |
+| `date` | `2024-01-31`, `2024/1/31`, `2024.1.31`, extended years (`10000-01-01`, `0001-12-31 (BC)`), `infinity`, `-infinity`, naming a real day |
 | `time` | `9:05`, `09:05:30`, `09:05:30.25` (up to 6 fraction digits) |
-| `timestamp` | A date, then a space or `T` and a time |
-| `timestamptz` | A timestamp, then `Z` or an offset such as `+09:00`; without one, the time zone of the column's date format (`format.date.timeZone`), or UTC |
+| `timestamp` | A date, then a space or `T` and a time, or `infinity`, `-infinity` |
+| `timestamptz` | A timestamp, then `Z` or an offset such as `+09:00` (without one, the time zone of the column's date format `format.date.timeZone`, or UTC), or `infinity`, `-infinity` |
 | `uuid` | 32 hex digits, with or without dashes |
 | `interval`, `binary` | Not typed |
 
@@ -131,8 +131,8 @@ With `saveFiles: true`, the DuckDB engine saves written cells into the CSV or TS
 - An empty string written through the API cannot be saved: even a quoted empty field reads back as null.
   Saving returns `save_unsupported` and keeps the original file and all pending edits. Null can be saved;
   clearing a cell in the grid writes null.
-- Parquet, JSON Lines, Excel and compressed files are never written. Their cells can still be edited, and
-  [exported](/guides/export/) with the edits.
+- Parquet, JSON Lines, Excel, DuckDB database and compressed files are never written. Their cells can still be edited,
+  and [exported](/guides/export/) with the edits.
 
 The memory engine does not save. To keep its written values, [export](/guides/export/) the whole table: exports
 hold the written values.
@@ -147,6 +147,8 @@ The DuckDB engine follows the files of open tables
 - A table with written cells stays as it was read, so that the edits are not lost. The status bar says "The file
   changed on disk. Your unsaved edits are kept.", saving is refused, and the toolbar's **Discard edits and
   reload** reads the file as it is now, without them (`store.reload()`).
+- A table from a DuckDB database (including changes in its `.wal`) also reports `fileChanged` without reading the
+  database again automatically, so as not to lock it against the program writing it; `store.reload()` reads it again.
 
 ## Writing from code
 
@@ -175,6 +177,8 @@ export function Orders({ transport }: { transport: Transport }) {
 
 | Command | Writes |
 | --- | --- |
+| `{ command: "edit.commit", move: null, cells: "selection" }` | The editor's text into every selected cell |
+| `{ command: "cut" }` | Copies the selection (`{ tsv, html, markdown }`) and clears its writable cells |
 | `{ command: "edit.clear" }` | Null into the selected cells |
 | `dispatch({ command: "edit.paste" }, { clipboard: { text: "1\t2\n3\t4" } })` | The text into the selection; the output is `{ cutRows, cutColumns }` |
 | `{ command: "edit.fill", direction: "down" }` | The first row of each range into the rest (`"right"`: the first column) |

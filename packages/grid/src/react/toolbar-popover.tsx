@@ -32,8 +32,8 @@ export function ToolbarPopover({
       const button = buttonRef.current;
       if (!button) return;
       const rect = button.getBoundingClientRect();
-      menu.style.top = `${rect.bottom + 4}px`;
-      menu.style.left = `${Math.max(8, rect.right - menu.offsetWidth)}px`;
+      menu.style.top = `${Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - menu.offsetHeight - 8))}px`;
+      menu.style.left = `${Math.max(8, Math.min(rect.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8))}px`;
     };
     place();
     // The content may arrive after the popover opened.

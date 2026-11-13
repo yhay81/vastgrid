@@ -13,6 +13,7 @@ import { GridStore } from "vastgrid/core";
 import { DuckDBEngine } from "vastgrid-duckdb";
 import type { GridDocument, GridSession } from "vastgrid-spec";
 import { afterAll, beforeAll, test } from "vite-plus/test";
+import { cell, row, writeWorkbook } from "../../duckdb-engine/test/xlsx-fixture.ts";
 import { callTool, mcpTransport, sync } from "../app/transport.ts";
 import { APP_URI, type Grids, registerVastgrid } from "../src/index.ts";
 
@@ -442,4 +443,34 @@ test("the agent saves written cells into the CSV file, with the grid's `save` co
   assert.equal(await readFile(file, "utf8"), "id,name\n1,Ann\n2,Bea\n");
   const state = (await call("grid_state", { grid })).content as { table: { edits: number } };
   assert.equal(state.table.edits, 0);
+});
+
+test("open_grid keeps the chosen sheet in GridState so the App opens the same sheet, and cancel answers cleanly", async () => {
+  await writeWorkbook(path.join(folder, "book.xlsx"), {
+    sheets: [
+      {
+        name: "First",
+        rows: [row(1, [cell("A1", { t: "inlineStr", is: "first_col" })]), row(2, [cell("A2", { v: 1 })])],
+      },
+      {
+        name: "Second",
+        rows: [row(1, [cell("A1", { t: "inlineStr", is: "second_col" })]), row(2, [cell("A2", { v: 2 })])],
+      },
+    ],
+  });
+  const opened = await call("open_grid", { file: "book.xlsx", sheet: "Second" });
+  assert.equal(opened.error, false, JSON.stringify(opened.content));
+  assert.equal(opened.content.sheet, "Second");
+  assert.deepEqual(opened.content.sheets, [{ name: "First" }, { name: "Second" }]);
+  assert.deepEqual(
+    (opened.content.columns as Json[]).map((column) => column.name),
+    ["second_col"],
+  );
+  // A `cancel` notification (§8.1) has no response object and does not throw in `vastgrid_message`.
+  const cancelled = await callTool(app, "vastgrid_message", {
+    grid: String(opened.content.grid),
+    client: "cancel-client",
+    message: { v: 2, id: 99, op: "cancel", request: 98 },
+  });
+  assert.deepEqual(cancelled, {});
 });

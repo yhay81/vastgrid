@@ -106,7 +106,12 @@ export function rowsEngine(name: string, columns: Column[], rows: JsonValue[][])
       if (request.table !== name) return errorResponse(id, "table_not_found", "The table is not open.");
       if (op === "info") return { v: 2, id, result: info };
       if (op === "close") return { v: 2, id, result: null };
-      if (op !== "rows") return errorResponse(id, "internal", `This engine does not answer ${op}.`);
+      if (op !== "rows") {
+        return errorResponse(id, "invalid_request", `This engine does not answer ${op}.`, {
+          path: "/op",
+          reason: "unknown_op",
+        });
+      }
 
       const [member] = Object.keys(request.plan as object);
       if (member !== undefined) {
@@ -173,7 +178,7 @@ SQL を使うエンジンには、`vastgrid-sql` があります。検証した�
 
 ## 自作のトランスポート
 
-ホストに独自の通信路（Webview の `postMessage` やノートブックの comm など）があるとき、`postMessage` と `addEventListener` を持つものなら `workerTransport` が使え、反対側では `serveEngine` が答えます。そうでなければ `Transport` を実装します。`send(request, { signal })` はブロックをバイト列にしたエンジンの答えを返し、`cancel` には何も返しません。`subscribe`、`cancels`（signal の中断で要求が取り消されるなら `"signal"`）、`exportUrl` は省略できます。
+ホストに独自の通信路（Webview の `postMessage` やノートブックの comm など）があるとき、`postMessage` と `addEventListener` を持つものなら `workerTransport` が使え、反対側では `serveEngine` が答えます。そうでなければ `Transport` を実装します。`send(request, { signal })` はブロックをバイト列にしたエンジンの答えを返し、`cancel` には何も返しません。`subscribe`、`cancels`（signal の中断で要求が取り消されるなら `"signal"`）、`exportUrl`、`downloadExport` は省略できます。
 
 ```ts
 import type { Transport } from "vastgrid";

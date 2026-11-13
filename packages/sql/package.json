@@ -1,7 +1,7 @@
 {
   "name": "vastgrid-sql",
   "version": "0.4.0",
-  "description": "vastgrid's plans as DuckDB SQL: the meaning of the specification in SQL, with every value as a parameter.",
+  "description": "vastgrid's plans as DuckDB SQL: the meaning of the specification in SQL, with user values bound as parameters.",
   "keywords": [
     "duckdb",
     "sql",

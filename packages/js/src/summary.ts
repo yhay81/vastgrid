@@ -93,6 +93,71 @@ export class Summary {
 
   /** Adds the values of one column, by row ID, at the rows of `rows` (row IDs). */
   add(column: Column, values: Vector, rows: Uint32Array) {
+    const numbers = values.numbers;
+    const validity = values.validity ?? null;
+    if (numbers) {
+      const valid = (row: number) => validity === null || ((validity[row >> 3] >> (row & 7)) & 1) === 1;
+      switch (column.type) {
+        case "integer": {
+          const ints = numbers as Int32Array;
+          const sum = this.exactAt(0);
+          for (const row of rows) {
+            if (!valid(row)) continue;
+            const n = ints[row];
+            this.count++;
+            sum.add(n);
+            this.number(n);
+          }
+          return;
+        }
+        case "bigint": {
+          const bigs = numbers as BigInt64Array;
+          const sum = this.exactAt(0);
+          for (const row of rows) {
+            if (!valid(row)) continue;
+            const b = bigs[row];
+            this.count++;
+            sum.addBig(b);
+            this.number(Number(b));
+          }
+          return;
+        }
+        case "decimal": {
+          const scale = column.scale ?? 0;
+          const divisor = 10 ** scale;
+          const bigs = numbers as BigInt64Array;
+          const sum = this.exactAt(scale);
+          for (const row of rows) {
+            if (!valid(row)) continue;
+            const b = bigs[row];
+            this.count++;
+            sum.addBig(b);
+            this.number(
+              b >= -9_007_199_254_740_991n && b <= 9_007_199_254_740_991n
+                ? Number(b) / divisor
+                : Number(decimalText(b, scale)),
+            );
+          }
+          return;
+        }
+        case "float": {
+          const floats = numbers as Float32Array | Float64Array;
+          for (const row of rows) {
+            if (!valid(row)) continue;
+            const n = floats[row];
+            this.count++;
+            if (!Number.isFinite(n)) continue;
+            this.floats.add(n);
+            this.scaled.add(n * SCALE_DOWN);
+            this.number(n);
+          }
+          return;
+        }
+        default:
+          for (const row of rows) if (valid(row)) this.count++;
+          return;
+      }
+    }
     switch (column.type) {
       case "string":
         // The empty string is blank (§3.2).

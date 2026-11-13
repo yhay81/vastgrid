@@ -1,9 +1,9 @@
 ---
 title: ファイルを開ける場所
-description: vastgrid が CSV・TSV・Parquet・JSON Lines・Excel のファイルと DataFrame を開ける 6 つの場所と、それぞれの読み込み・編集・保存・書き出し。
+description: vastgrid が CSV・TSV・Parquet・JSON Lines・Excel のファイルと DuckDB データベース、DataFrame を開ける 6 つの場所と、それぞれの読み込み・編集・保存・書き出し。
 ---
 
-vastgrid は巨大な CSV・TSV・Parquet・JSON Lines・Excel のファイルや DataFrame を、6 つの場所で開きます。どこでも同じグリッド（`vastgrid` の `DataGrid`）が、同じドキュメント・セッション・コマンドで表を示し、同じ電文でエンジンと話します。違うのは、エンジンと電文の運び方、そして書き込んだセルをホストがどう扱うかです。
+vastgrid は巨大な CSV・TSV・Parquet・JSON Lines・Excel のファイルや DuckDB データベース、DataFrame を、6 つの場所で開きます。どこでも同じグリッド（`vastgrid` の `DataGrid`）が、同じドキュメント・セッション・コマンドで表を示し、同じ電文でエンジンと話します。違うのは、エンジンと電文の運び方、そして書き込んだセルをホストがどう扱うかです。
 
 - いますぐファイルを見るなら、[コマンドライン](/ja/apps/cli/)か、何も入れずに使えるこのサイトの[ファイルを開く](/ja/open/)。
 - エディターの中で作業するなら [VS Code](/ja/apps/vscode/)。
@@ -33,7 +33,7 @@ vastgrid は巨大な CSV・TSV・Parquet・JSON Lines・Excel のファイル�
 | MCP App | 可（圧縮も） | 可 | 可 | 可 | `.xlsx`、`.xlsm` | `.duckdb`、`.ddb` | |
 | ノートブック | 可（圧縮も） | 可 | 可 | 可 | `.xlsx`、`.xlsm` | `.duckdb`、`.ddb` | pandas、Polars、PyArrow、DuckDB のリレーション |
 
-どの入口もブックのシートを（隠しシートには印を付けて）開き、ファイルの大きさを問いません。Parquet はその場で行の範囲ごとに読み、ほかの形式は DuckDB に読み込むか、メモリーエンジンの上限（`maxBytes`。[ブラウザーで開く大きなファイル](/ja/guides/browser/)を参照）の内で読み込みます。
+どの入口もブックのシートを（隠しシートには印を付けて）開き、DuckDB の入口は DuckDB データベースの表もシートとして開き、ファイルの大きさを問いません。Parquet はその場で行の範囲ごとに読み、ほかの形式は DuckDB に読み込むか、メモリーエンジンの上限（`maxBytes`。[ブラウザーで開く大きなファイル](/ja/guides/browser/)を参照）の内で読み込みます。
 
 ## 編集・保存・書き出し
 
@@ -43,7 +43,7 @@ vastgrid は巨大な CSV・TSV・Parquet・JSON Lines・Excel のファイル�
 | React コンポーネント | エンジンが書き込めるとき | エンジンが保存できるとき（`capabilities.save`） | エンジンの形式 |
 | コマンドライン | 可 | CSV と TSV を `--save` で（⌘S または Ctrl+S） | CSV、TSV、Parquet、JSON、Excel をダウンロード |
 | VS Code | 可（元に戻す・やり直しは VS Code のスタックで） | CSV と TSV を VS Code の保存で。名前を付けて保存はどの形式でも | CSV、TSV、Parquet、JSON、Excel を保存ダイアログの場所へ |
-| MCP App | 可（人もエージェントも） | CSV と TSV を `--save` で | CSV、TSV、Parquet、JSON、Excel をサーバーに書く |
+| MCP App | 可（人もエージェントも） | CSV と TSV を `--save` で | CSV、TSV、Parquet、JSON、Excel をダウンロード、またはサーバーに書く |
 | ノートブック | 可 | 不可（書き込んだセルはノートブックが読む。`grid.to_pandas()`） | CSV、TSV、Parquet、JSON、Excel をダウンロード、または `grid.export` で |
 
 保存は CSV や TSV の編集したフィールドだけを書き、ほかのバイト（BOM、引用符、区切り文字、改行、文字コード）はそのまま残します。読んだ後にディスク上で変わったファイルには上書きしません。保存しない書き込みは、エンジンが止まるまでエンジンにとどまります。どちらも[セルの編集](/ja/guides/editing/)で説明しています。

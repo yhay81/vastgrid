@@ -4,7 +4,7 @@
   "type": "module",
   "description": "0.2's grid on files of a folder, read by the DuckDB engine over HTTP: `?file=sales-100000000.parquet`.",
   "scripts": {
-    "dev": "vp dev",
+    "dev": "NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--conditions=vastgrid-source\" vp dev",
     "build": "vp build",
     "preview": "vp preview"
   },

@@ -10,29 +10,35 @@ import {
   compareTemporalText,
   dateLength,
   dateText,
+  decimalJson,
   type ExprType,
+  exactNumberText,
   FIRST_DAY,
   floatJson,
   floatOf,
+  floorDiv,
+  type Fold,
+  foldAll,
+  foldText,
   fromBase64,
   infinityOf,
+  integerJson,
   isDateText,
   isValueOf,
   type JsonValue,
   LAST_DAY,
+  lowerText,
   normalizeInterval,
   parseDateText,
   parseTimestampText,
   sameType,
+  TIMESTAMP_INFINITY,
   type TypedExpr,
   textOf,
   timestampText,
   trimSpaces,
-  type Fold,
-  foldAll,
-  foldText,
-  TIMESTAMP_INFINITY,
   UNIT_PER_SECOND,
+  upperText,
   type ValueType,
   yearOf,
 } from "vastgrid-spec";
@@ -71,14 +77,7 @@ export function unscaled(value: JsonValue, type: ValueType): bigint {
 }
 
 /** The text of a decimal from its integer at a scale: −10 at scale 2 is `"-0.10"`. */
-export function decimalText(value: bigint, scale: number): string {
-  const negative = value < 0n;
-  const digits = (negative ? -value : value).toString();
-  if (scale === 0) return negative ? `-${digits}` : digits;
-  const padded = digits.padStart(scale + 1, "0");
-  const point = padded.length - scale;
-  return `${negative ? "-" : ""}${padded.slice(0, point)}.${padded.slice(point)}`;
-}
+export const decimalText = decimalJson;
 
 /** The typed JSON of an exact number of a type from its integer at the type's scale; null when it does not fit. */
 export function exactJson(value: bigint, type: ValueType): JsonValue {
@@ -86,11 +85,10 @@ export function exactJson(value: bigint, type: ValueType): JsonValue {
     case "integer":
       return value >= INT32_MIN && value <= INT32_MAX ? Number(value) : null;
     case "bigint":
-      if (value < INT64_MIN || value > INT64_MAX) return null;
-      return value >= -9_007_199_254_740_991n && value <= 9_007_199_254_740_991n ? Number(value) : value.toString();
+      return value >= INT64_MIN && value <= INT64_MAX ? integerJson(value) : null;
     default: {
       const limit = power10(type.precision ?? 38);
-      return value > -limit && value < limit ? decimalText(value, type.scale ?? 0) : null;
+      return value > -limit && value < limit ? decimalJson(value, type.scale ?? 0) : null;
     }
   }
 }
@@ -224,7 +222,7 @@ function caster(from: ValueType, to: ValueType): (value: JsonValue) => JsonValue
       // An infinity is the same in every unit.
       if (infinityOf(value as string) !== 0) return value;
       const count = parseTimestampText(asTimestampText(value as string, from), source) as bigint;
-      const converted = b >= a ? count * (b / a) : floorDivide(count, a / b);
+      const converted = b >= a ? count * (b / a) : floorDiv(count, a / b);
       // A finite value must fit the new unit without becoming an infinity (§3.6).
       if (converted <= -TIMESTAMP_INFINITY || converted >= TIMESTAMP_INFINITY) return null;
       const result = timestampText(converted, unit);
@@ -234,49 +232,9 @@ function caster(from: ValueType, to: ValueType): (value: JsonValue) => JsonValue
   return (value) => value;
 }
 
-function floorDivide(a: bigint, b: bigint): bigint {
-  const quotient = a / b;
-  return a % b !== 0n && a < 0n ? quotient - 1n : quotient;
-}
-
-// Simple case mappings that DuckDB 2.0 (utf8proc) makes where JavaScript maps a code point to several (§3.4).
-const LOWER_SPECIAL = new Map<number, string>([[0x130, "i"]]);
-const UPPER_SPECIAL = new Map<number, string>([
-  [0xdf, "ẞ"],
-  [0x1fb3, "ᾼ"],
-  [0x1fc3, "ῌ"],
-  [0x1ff3, "ῼ"],
-]);
-for (let code = 0x1f80; code <= 0x1faf; code++) {
-  // Greek letters with ypogegrammeni map to the same letters with prosgegrammeni, 8 code points on.
-  if ((code & 0xf) < 8) UPPER_SPECIAL.set(code, String.fromCodePoint(code + 8));
-  else UPPER_SPECIAL.set(code, String.fromCodePoint(code));
-}
-const ASCII = /^[\0-\x7f]*$/;
-const lowerCache = new Map<string, string>();
-const upperCache = new Map<string, string>();
-
 /** The string with each code point mapped by itself to lower or upper case (§3.4). */
 export function mapCase(text: string, upper: boolean): string {
-  if (ASCII.test(text)) return upper ? text.toUpperCase() : text.toLowerCase();
-  const cache = upper ? upperCache : lowerCache;
-  const special = upper ? UPPER_SPECIAL : LOWER_SPECIAL;
-  let result = "";
-  for (const point of text) {
-    let mapped = cache.get(point);
-    if (mapped === undefined) {
-      const code = point.codePointAt(0) as number;
-      mapped = special.get(code);
-      if (mapped === undefined) {
-        const plain = upper ? point.toUpperCase() : point.toLowerCase();
-        // A code point that JavaScript maps to several stays as it is, as in utf8proc's simple mappings.
-        mapped = plain.length === point.length || [...plain].length === 1 ? plain : point;
-      }
-      if (cache.size < 4096) cache.set(point, mapped);
-    }
-    result += mapped;
-  }
-  return result;
+  return upper ? upperText(text) : lowerText(text);
 }
 
 /** The number of code points of a string. */
@@ -295,6 +253,20 @@ function offsetOf(text: string, points: number): number {
   for (let point = 0; point < points && at < text.length; point++) {
     const unit = text.charCodeAt(at);
     at += unit >= 0xd800 && unit < 0xdc00 ? 2 : 1;
+  }
+  return at;
+}
+
+/** The UTF-16 offset of the code point at `points` from the end (0 when there are fewer). */
+function endOffsetOf(text: string, points: number): number {
+  let at = text.length;
+  for (let point = 0; point < points && at > 0; point++) {
+    at--;
+    if (at > 0) {
+      const low = text.charCodeAt(at);
+      const high = text.charCodeAt(at - 1);
+      if (low >= 0xdc00 && low <= 0xdfff && high >= 0xd800 && high < 0xdc00) at--;
+    }
   }
   return at;
 }
@@ -412,22 +384,52 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
       };
     }
     case "in": {
-      const items = expr.args.slice(1).map((arg, index) => ({
-        value: (arg as { value: JsonValue }).value,
-        compare: comparer(types[0], types[index + 1]),
-      }));
-      // Strings are looked up in a set: in may have many literals.
-      if (types[0].type === "string") {
-        const set = new Set(items.map((item) => item.value));
+      const literals = expr.args.slice(1).map((arg) => (arg as { value: JsonValue }).value);
+      if (types[0].type === "float") {
+        // Set uses SameValueZero, which matches §3.1: −0.0 equals 0.0 and NaN equals NaN.
+        const set = new Set(literals.map((item, index) => toFloat(item, types[index + 1])));
         return (row) => {
           const value = a(row);
-          return value === null ? null : set.has(value);
+          return value === null ? null : set.has(toFloat(value, types[0]));
         };
       }
+      if (isExact(types[0])) {
+        const scale = Math.max(...types.map(scaleOf));
+        const factor = power10(scale - scaleOf(types[0]));
+        const exact = new Set<bigint>();
+        const floats = new Set<number>();
+        literals.forEach((item, index) => {
+          const candidate = types[index + 1];
+          if (candidate.type === "float") floats.add(toFloat(item, candidate));
+          else exact.add(unscaled(item, candidate) * power10(scale - scaleOf(candidate)));
+        });
+        return (row) => {
+          const value = a(row);
+          if (value === null) return null;
+          return (
+            exact.has(unscaled(value, types[0]) * factor) || (floats.size > 0 && floats.has(toFloat(value, types[0])))
+          );
+        };
+      }
+      if (types[0].type === "date" || types[0].type === "timestamp") {
+        const set = new Set(literals.map((item, index) => asTimestampText(item as string, types[index + 1])));
+        return (row) => {
+          const value = a(row);
+          return value === null ? null : set.has(asTimestampText(value as string, types[0]));
+        };
+      }
+      if (types[0].type === "interval") {
+        const key = (item: JsonValue) => (normalizeInterval(item as string) as [bigint, bigint, bigint]).join(",");
+        const set = new Set(literals.map(key));
+        return (row) => {
+          const value = a(row);
+          return value === null ? null : set.has(key(value));
+        };
+      }
+      const set = new Set(literals);
       return (row) => {
         const value = a(row);
-        if (value === null) return null;
-        return items.some((item) => item.compare(value, item.value) === 0);
+        return value === null ? null : set.has(value);
       };
     }
     case "is_null":
@@ -510,12 +512,28 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
     case "round": {
       const digits = expr.args.length === 2 ? ((expr.args[1] as { value: number }).value as number) : 0;
       if (type.type === "float") {
-        const factor = 10 ** Math.abs(digits);
+        const factor = Math.abs(digits) <= 308 ? 10 ** Math.abs(digits) : Number.POSITIVE_INFINITY;
         return float1(a, types[0], (x) => {
+          const negative = x < 0 || Object.is(x, -0);
           const magnitude = Math.abs(x);
-          const rounded =
-            digits >= 0 ? Math.round(magnitude * factor) / factor : Math.round(magnitude / factor) * factor;
-          return x < 0 ? -rounded : rounded;
+          if (digits >= 0) {
+            // Every float with |x| >= 2^52 is already an exact integer; beyond 324 places even subnormals are exact.
+            if (magnitude === 0 || magnitude >= 2 ** 52 || digits > 324) return x;
+            if (digits > 292) {
+              const split = 10 ** (digits - 200);
+              const shifted = magnitude * 1e200 * split;
+              if (!Number.isFinite(shifted)) return x;
+              const rounded = Math.round(shifted) / split / 1e200;
+              return negative ? -rounded : rounded;
+            }
+            const scaled = magnitude * factor;
+            if (!Number.isFinite(scaled)) return x;
+            const rounded = Math.round(scaled) / factor;
+            return negative ? -rounded : rounded;
+          }
+          if (!Number.isFinite(factor)) return negative ? -0 : 0;
+          const rounded = Math.round(magnitude / factor) * factor;
+          return negative ? -rounded : rounded;
         });
       }
       const scale = scaleOf(types[0]);
@@ -543,7 +561,7 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
       // The greatest multiple of the width that is not above the number (§4.4).
       const width = (expr.args[1] as { value: number }).value;
       if (type.type === "float") return float1(a, types[0], (x) => Math.floor(x / width) * width);
-      const [whole, fraction = ""] = String(width).split(".");
+      const [whole, fraction = ""] = (exactNumberText(width) as string).split(".");
       const step = BigInt(whole + fraction.padEnd(scaleOf(types[0]), "0"));
       return (row) => {
         const x = a(row);
@@ -616,9 +634,7 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
         if (y === null) return null;
         const text = x as string;
         const count = Math.max(0, whole(y));
-        if (left) return text.slice(0, offsetOf(text, count));
-        const total = codePoints(text);
-        return count >= total ? text : text.slice(offsetOf(text, total - count));
+        return left ? text.slice(0, offsetOf(text, count)) : text.slice(endOffsetOf(text, count));
       };
     }
     case "substr":
@@ -643,7 +659,7 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
         if (y === null) return null;
         const z = c(row);
         if (z === null) return null;
-        return y === "" ? x : (x as string).split(y as string).join(z as string);
+        return y === "" ? x : (x as string).replaceAll(y as string, z as string);
       };
     case "contains":
     case "starts_with":

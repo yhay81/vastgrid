@@ -3,9 +3,7 @@
  * vastgrid's MCP server over stdio: `vastgrid-mcp [--save] <folder>…`. The grids open the files of the folders
  * (the current folder when none is named); `--save` lets them save written cells into CSV and TSV files.
  */
-import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
-import os from "node:os";
 import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
@@ -26,12 +24,9 @@ if (unknown) {
 }
 const named = args.filter((arg) => !arg.startsWith("-"));
 const folders = (named.length > 0 ? named : [process.cwd()]).map((folder) => path.resolve(folder));
-const tempDirectory = path.join(os.tmpdir(), `vastgrid-mcp-${process.pid}`);
-mkdirSync(tempDirectory, { recursive: true });
 
 const engine = await DuckDBEngine.create({
   allowedDirectories: folders,
-  tempDirectory,
   saveFiles: save,
   // stdout carries MCP's messages: the engine's log goes to stderr.
   log: (message, error) => process.stderr.write(`vastgrid-mcp: ${message}: ${String(error ?? "")}\n`),

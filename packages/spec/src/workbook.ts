@@ -301,6 +301,7 @@ async function scanXml(
       if (buffer.startsWith("<!--", open)) {
         const end = buffer.indexOf("-->", open + 4);
         if (end < 0) break;
+        if (open > position) handler.text(buffer.slice(position, open));
         position = end + 3;
         continue;
       }
@@ -312,7 +313,7 @@ async function scanXml(
         position = end + 3;
         continue;
       }
-      const close = buffer.indexOf(">", open + 1);
+      const close = findTagClose(buffer, open + 1);
       if (close < 0) break;
       if (open > position) handler.text(buffer.slice(position, open));
       position = close + 1;
@@ -325,7 +326,7 @@ async function scanXml(
       const selfClosing = buffer.charCodeAt(close - 1) === 47;
       const tag = buffer.slice(open + 1, selfClosing ? close - 1 : close);
       let space = 0;
-      while (space < tag.length && tag.charCodeAt(space) > 32) space++;
+      while (space < tag.length && !isXmlSpace(tag.charCodeAt(space))) space++;
       if (space === tag.length) space = -1;
       const name = space < 0 ? tag : tag.slice(0, space);
       handler.open(localName(name), space < 0 ? "" : tag.slice(space), selfClosing);
@@ -337,6 +338,21 @@ async function scanXml(
   }
 }
 
+function findTagClose(buffer: string, from: number) {
+  let quote = 0;
+  for (let index = from; index < buffer.length; index++) {
+    const code = buffer.charCodeAt(index);
+    if (quote !== 0) {
+      if (code === quote) quote = 0;
+    } else if (code === 34 || code === 39) {
+      quote = code;
+    } else if (code === 62) {
+      return index;
+    }
+  }
+  return -1;
+}
+
 function localName(name: string) {
   const colon = name.indexOf(":");
   return colon < 0 ? name : name.slice(colon + 1);
@@ -346,32 +362,38 @@ function escapeText(text: string) {
   return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;");
 }
 
+function isXmlSpace(code: number) {
+  return code === 32 || code === 9 || code === 10 || code === 13;
+}
+
 /** The value of an attribute in the raw attribute text of a tag, decoded, or `undefined`. */
 function attribute(attributes: string, name: string): string | undefined {
   let at = 0;
-  for (;;) {
-    at = attributes.indexOf(name, at);
-    if (at < 0) return undefined;
-    const before = attributes.charCodeAt(at - 1);
-    let equals = at + name.length;
-    while (attributes.charCodeAt(equals) === 32) equals++;
-    // The name must stand alone; a namespace prefix (`r:id` for `id`) is allowed.
-    if (
-      (before === 32 || before === 10 || before === 13 || before === 9 || before === 58) &&
-      attributes[equals] === "="
-    ) {
-      let quote = equals + 1;
-      while (attributes.charCodeAt(quote) === 32) quote++;
-      const mark = attributes[quote];
-      const end = attributes.indexOf(mark, quote + 1);
-      if (end < 0) return undefined;
-      return decodeXml(attributes.slice(quote + 1, end));
+  const length = attributes.length;
+  while (at < length) {
+    while (at < length && isXmlSpace(attributes.charCodeAt(at))) at++;
+    if (at >= length) return undefined;
+    const nameStart = at;
+    while (at < length && !isXmlSpace(attributes.charCodeAt(at)) && attributes.charCodeAt(at) !== 61) at++;
+    const fullName = attributes.slice(nameStart, at);
+    while (at < length && isXmlSpace(attributes.charCodeAt(at))) at++;
+    if (attributes.charCodeAt(at) !== 61) continue;
+    at++;
+    while (at < length && isXmlSpace(attributes.charCodeAt(at))) at++;
+    const mark = attributes.charCodeAt(at);
+    if (mark !== 34 && mark !== 39) return undefined;
+    const end = attributes.indexOf(mark === 34 ? '"' : "'", at + 1);
+    if (end < 0) return undefined;
+    if (fullName === name || localName(fullName) === name) {
+      return decodeXml(attributes.slice(at + 1, end));
     }
-    at += name.length;
+    at = end + 1;
   }
+  return undefined;
 }
 
 const entities: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
 /** Decodes XML entities and Excel's `_xHHHH_` escapes (used for control characters). */
 function decodeXml(text: string): string {
@@ -380,13 +402,17 @@ function decodeXml(text: string): string {
     result = result.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, name: string) => {
       if (name[0] === "#") {
         const code = name[1] === "x" || name[1] === "X" ? Number.parseInt(name.slice(2), 16) : Number(name.slice(1));
-        return Number.isFinite(code) && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+        return Number.isInteger(code) && code >= 1 && code <= 0x10ffff && (code < 0xd800 || code > 0xdfff)
+          ? String.fromCodePoint(code)
+          : match;
       }
       return entities[name] ?? match;
     });
   }
   if (result.includes("_x")) {
-    result = result.replace(/_x([0-9a-f]{4})_/gi, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)));
+    result = result
+      .replace(/_x([0-9a-f]{4})_/gi, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
+      .replace(loneSurrogate, "\ufffd");
   }
   return result;
 }
@@ -822,8 +848,9 @@ export async function convertSheet(
       text = decodeXml(raw);
       kind = Kind.text;
     } else if (cellType === "b") {
-      if (raw !== "") {
-        field = raw.trim() === "1" || raw.trim() === "true" ? "TRUE" : "FALSE";
+      const trimmed = raw.trim().toLowerCase();
+      if (trimmed !== "") {
+        field = trimmed === "1" || trimmed === "true" ? "TRUE" : "FALSE";
         kind = Kind.boolean;
       }
     } else if (cellType === "d") {
@@ -870,7 +897,7 @@ export async function convertSheet(
     rowCells.push(cellColumn);
     rowFields.push(field);
     rowKinds.push(kind);
-    headerTexts.push(kind === Kind.text ? text : field);
+    if (!headerDone) headerTexts.push(kind === Kind.text ? text : field);
   };
 
   const emitRow = () => {
@@ -1009,13 +1036,14 @@ export async function convertSheet(
     const name = header.get(index);
     if (!options.keepEmptyColumns && !kinds[index] && name === undefined) continue;
     const letters = columnLetters(index);
-    let unique = name === undefined || name.trim() === "" ? letters : name;
-    if (taken.has(unique.toLowerCase())) {
-      let suffix = 2;
-      while (taken.has(`${unique}_${suffix}`.toLowerCase())) suffix++;
-      unique = `${unique}_${suffix}`;
+    const baseChars = [...(name === undefined || name.trim() === "" ? letters : name)];
+    const base = baseChars.slice(0, 256).join("");
+    let unique = base;
+    for (let suffix = 2; taken.has(unique); suffix++) {
+      const tail = `_${suffix}`;
+      unique = `${baseChars.slice(0, 256 - tail.length).join("")}${tail}`;
     }
-    taken.add(unique.toLowerCase());
+    taken.add(unique);
     columns.push({ name: unique, type: typeOf(kinds[index] ?? 0), letters, field: index + 1 });
   }
   if (columns.length === 0) columns.push({ name: "A", type: "string", letters: "A", field: 1 });

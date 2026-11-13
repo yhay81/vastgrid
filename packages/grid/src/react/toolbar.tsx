@@ -66,24 +66,35 @@ export function Toolbar({ announce }: { announce: (text: string) => void }) {
   const [folds, setFolds] = useState(currentFolds);
   const [shown, setShown] = useState(current);
   const [shownFolds, setShownFolds] = useState(currentFolds);
+  const [sent, setSent] = useState<{ text: string; folds: boolean } | null>(null);
   // A search set elsewhere (an agent, a saved view) replaces the text, and the switch when it has text.
   if (shown !== current || shownFolds !== currentFolds) {
+    const ownEcho = sent !== null && sent.text === current && (current === "" || sent.folds === currentFolds);
     setShown(current);
     setShownFolds(currentFolds);
-    setText(current);
-    if (current !== "") setFolds(currentFolds);
+    setSent(null);
+    if (!ownEcho) {
+      setText(current);
+      if (current !== "") setFolds(currentFolds);
+    }
   }
   const deferred = useDeferredValue(text);
   useEffect(() => {
     if (deferred === current) return;
-    const timer = setTimeout(() => void store.dispatch(searchSet(deferred, folds)), SEARCH_DELAY);
+    const timer = setTimeout(() => {
+      setSent({ text: deferred, folds });
+      void store.dispatch(searchSet(deferred, folds));
+    }, SEARCH_DELAY);
     return () => clearTimeout(timer);
   }, [store, deferred, current, folds]);
   const toggleFolds = () => {
     const next = !folds;
     setFolds(next);
     // A search that is set changes at once; the switch alone waits for text.
-    if (current !== "" && deferred === current) void store.dispatch(searchSet(current, next));
+    if (current !== "" && deferred === current) {
+      setSent({ text: current, folds: next });
+      void store.dispatch(searchSet(current, next));
+    }
   };
   const showsSave = saves && saving !== null;
   const exports = useGridSelector((snapshot) => (snapshot.table?.capabilities.export?.formats.length ?? 0) > 0);

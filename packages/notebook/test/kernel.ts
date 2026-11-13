@@ -42,7 +42,9 @@ export class Kernel {
       stdio: ["pipe", "pipe", "inherit"],
     });
     this.child.on("error", (error) => this.fail(error));
-    this.child.stdin?.on("error", (error) => this.fail(error));
+    this.child.stdin?.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code !== "EPIPE") this.fail(error);
+    });
     this.child.on("close", (code, signal) => {
       this.fail(new Error(`The notebook test kernel closed (code ${code}, signal ${signal}).`));
     });

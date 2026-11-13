@@ -71,10 +71,10 @@ const notes = [
 
 const longNote =
   "This note is long on purpose: double-click the cell or press F2 to read all of it. " +
-  "Cells show one line and end with an ellipsis, the cell inspector shows the whole value, and copying " +
+  "Cells show one line and end with an ellipsis, the detail panel shows the whole value, and copying " +
   "a cell copies its whole text. ".repeat(4);
 
-export const orderColumns: MemoryTable["columns"] = [
+const orderColumns: MemoryTable["columns"] = [
   { name: "order_id", type: "integer" },
   { name: "ordered_at", type: "timestamp" },
   { name: "customer", type: "string" },
@@ -91,72 +91,61 @@ export const orderColumns: MemoryTable["columns"] = [
   { name: "note", type: "string" },
 ];
 
-function pad(value: number) {
-  return String(value).padStart(2, "0");
-}
+const twoDigits = Array.from({ length: 60 }, (_, value) => String(value).padStart(2, "0"));
 
 /**
- * A table of made-up orders, generated in the browser: `rows` rows of numbers, decimals, dates, text in several
- * scripts, booleans, blanks and a few long values. The same `rows` always gives the same table.
+ * The made-up orders as a table of the memory engine, by row, whose cells can be written: `rows` rows of numbers,
+ * decimals, dates, text in several scripts, booleans, blanks and a few long values. The same `rows` always gives the
+ * same table.
  */
-export function generateOrders(rows: number): Value[][] {
+export function ordersTable(rows: number): MemoryTable {
   const random = mulberry32(20261020);
-  const columns: Value[][] = orderColumns.map(() => new Array<Value>(rows));
-  const [
-    orderId,
-    orderedAt,
-    customer,
-    city,
-    country,
-    category,
-    product,
-    quantity,
-    unitPrice,
-    total,
-    paid,
-    rating,
-    note,
-  ] = columns;
   const placeTable = places.flatMap((place) => Array<(typeof places)[number]>(place[2]).fill(place));
   const start = Date.UTC(2024, 0, 1);
+  const days = Array.from({ length: 731 }, (_, day) => new Date(start + day * 86_400_000).toISOString().slice(0, 10));
   // Spread the orders over two years, in order.
   const step = (2 * 365 * 86_400_000) / rows;
+  const tableRows = new Array<Value[]>(rows);
   for (let row = 0; row < rows; row++) {
-    orderId[row] = 100_001 + row;
-    const time = new Date(start + row * step + random() * step);
-    orderedAt[row] =
-      `${time.getUTCFullYear()}-${pad(time.getUTCMonth() + 1)}-${pad(time.getUTCDate())} ` +
-      `${pad(time.getUTCHours())}:${pad(time.getUTCMinutes())}:${pad(time.getUTCSeconds())}`;
+    const seconds = Math.floor((row * step + random() * step) / 1000);
+    const day = Math.floor(seconds / 86_400);
+    const secOfDay = seconds - day * 86_400;
+    const hour = Math.floor(secOfDay / 3600);
+    const rem = secOfDay - hour * 3600;
+    const minute = Math.floor(rem / 60);
+    const second = rem - minute * 60;
     const place = placeTable[Math.floor(random() * placeTable.length)];
-    city[row] = place[0];
-    country[row] = place[1];
-    customer[row] =
+    const customer =
       place[1] === "Japan" && random() < 0.8
         ? japaneseNames[Math.floor(random() * japaneseNames.length)]
         : `${givenNames[Math.floor(random() * givenNames.length)]} ${familyNames[Math.floor(random() * familyNames.length)]}`;
     const item = catalog[Math.floor(random() * catalog.length)];
-    category[row] = item[0];
-    product[row] = item[1];
     const count = random() < 0.7 ? 1 : 1 + Math.floor(random() * 9);
-    quantity[row] = count;
     // Prices in yen with a discount now and then, as decimals.
     const cents = Math.round(item[2] * (random() < 0.15 ? 0.8 : 1) * 100);
-    unitPrice[row] = (cents / 100).toFixed(2);
-    total[row] = ((cents * count) / 100).toFixed(2);
-    paid[row] = random() < 0.92;
-    rating[row] = random() < 0.4 ? null : 1 + Math.floor(random() ** 0.5 * 5);
+    const paid = random() < 0.92;
+    const rating = random() < 0.4 ? null : 1 + Math.floor(random() ** 0.5 * 5);
     const roll = random();
-    note[row] = roll < 0.001 ? longNote : roll < 0.04 ? notes[Math.floor(random() * notes.length)] : null;
+    const note = roll < 0.001 ? longNote : roll < 0.04 ? notes[Math.floor(random() * notes.length)] : null;
+    tableRows[row] = [
+      100_001 + row,
+      `${days[day]} ${twoDigits[hour]}:${twoDigits[minute]}:${twoDigits[second]}`,
+      customer,
+      place[0],
+      place[1],
+      item[0],
+      item[1],
+      count,
+      (cents / 100).toFixed(2),
+      ((cents * count) / 100).toFixed(2),
+      paid,
+      rating,
+      note,
+    ];
   }
-  return columns;
-}
-
-/** The made-up orders as a table of the memory engine, by row, whose cells can be written. */
-export function ordersTable(rows: number): MemoryTable {
-  const columns = generateOrders(rows);
   return {
     columns: orderColumns,
-    rows: Array.from({ length: rows }, (_, row) => columns.map((values) => values[row])),
+    rows: tableRows,
     editable: true,
   };
 }

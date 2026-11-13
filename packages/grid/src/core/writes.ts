@@ -67,29 +67,51 @@ export class CommandWriter {
     return this.writing;
   }
 
+  /** Pending writes can address a row by its key value or its stable source ID. */
+  private entry(row: LoadedRow | undefined, column: string) {
+    if (!row) return undefined;
+    const byKey = row.key && this.written.get(keyText(row.key))?.get(column);
+    if (row.rowId === undefined || (row.key && "rowId" in row.key)) return byKey;
+    const byId = this.written.get(keyText({ rowId: row.rowId }))?.get(column);
+    return byId && (!byKey || byId.write > byKey.write) ? byId : byKey;
+  }
+
+  /** Whether an unanswered write covers a cell. */
+  has(row: LoadedRow | undefined, column: string): boolean {
+    return this.entry(row, column) !== undefined;
+  }
+
   /** A cell's written value, or its cached value when no write covers it. */
-  value(key: RowKey | undefined, column: string, cached: JsonValue | undefined): JsonValue | undefined {
-    const entry = key === undefined ? undefined : this.written.get(keyText(key))?.get(column);
+  value(row: LoadedRow | undefined, column: string, cached: JsonValue | undefined): JsonValue | undefined {
+    const entry = this.entry(row, column);
     return entry === undefined ? cached : entry.value;
   }
 
   /** Drops written values once rows of their edits version are on screen. */
   visible(edits: number) {
     this.dropWritten((write) => (this.writeVersions.get(write) ?? Number.POSITIVE_INFINITY) <= edits);
+    for (const [write, version] of this.writeVersions) {
+      if (version <= edits) this.writeVersions.delete(write);
+    }
+  }
+
+  /** Clears written values from an earlier revision of the table. */
+  reset() {
+    this.writeVersions.clear();
+    this.dropWritten(() => true);
   }
 
   /** A row as commands read it, with the values of writes that its rows do not hold yet. */
-  overlay(row: LoadedRow | undefined): LoadedRow | undefined {
-    if (!row?.key || this.written.size === 0) return row;
-    const values = this.written.get(keyText(row.key));
-    if (!values) return row;
+  overlay(row: LoadedRow | undefined, rowKey: string | undefined): LoadedRow | undefined {
+    if (!row || this.written.size === 0) return row;
+    // While its key is changing, later edits of this row must still name the same record.
+    const key =
+      rowKey !== undefined && row.rowId !== undefined && this.has(row, rowKey) ? { rowId: row.rowId } : row.key;
     return {
-      key: row.key,
-      has: (column) => values.has(column) || row.has(column),
-      get: (column) => {
-        const entry = values.get(column);
-        return entry === undefined ? row.get(column) : entry.value;
-      },
+      key,
+      rowId: row.rowId,
+      has: (column) => row.has(column) || this.has(row, column),
+      get: (column) => this.value(row, column, row.get(column)) ?? null,
     };
   }
 
@@ -161,7 +183,7 @@ export class CommandWriter {
       command,
       updates: request.updates as WriteUpdate[],
       revision: (request.revision as string | null | undefined) ?? null,
-      ...(request.rowKey === undefined ? {} : { rowKey: request.rowKey as string | string[] }),
+      ...(request.rowKey === undefined ? {} : { rowKey: request.rowKey as string }),
       error,
       retry: error.code === "edit_conflict" ? "overwrite" : RETRIED.has(error.code) ? "retry" : null,
     };

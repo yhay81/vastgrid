@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 import { inflateRawSync } from "node:zlib";
+import { DuckDBInstance } from "@duckdb/node-api";
 import { createGridStore, localTransport } from "vastgrid/core";
 import { XLSX_MAX_ROWS } from "vastgrid-spec/xlsx";
 import { afterAll, beforeAll, test } from "vite-plus/test";
@@ -198,6 +199,43 @@ test("Parquet keeps intervals that compare equal as they are: 1 month is not 30 
       [],
       `intervals of ${JSON.stringify(plan)} read back as written`,
     );
+  }
+});
+
+test("Parquet keeps distinct interval representations when all values compare equal and names differ only in case", async () => {
+  const values = ["1 month", "30 days"];
+  await writeParquet(path.join(workspace, "equal-intervals.parquet"), {
+    columns: [{ name: "span", type: "interval" }],
+    rows: values.map((value) => [value]),
+  });
+  const source = await client.open("equal-intervals.parquet");
+  assert.deepEqual(
+    (await client.rows(source)).rows,
+    values.map((value) => [value]),
+  );
+  const plan = { derive: [{ name: "SPAN", expr: { col: "span" } }] };
+  await exported(source, { format: "parquet", plan, target: "equal-intervals.parquet" });
+  const db = await DuckDBInstance.create(":memory:");
+  const conn = await db.connect();
+  try {
+    const file = out("equal-intervals.parquet");
+    const schema = (await conn.runAndReadAll("SELECT name, converted_type FROM parquet_schema($1)", [file]))
+      .getRowsJS()
+      .slice(1);
+    assert.deepEqual(schema, [
+      ["span", "INTERVAL"],
+      ["SPAN", "INTERVAL"],
+    ]);
+    const rows = (
+      await conn.runAndReadAll("SELECT a::VARCHAR, b::VARCHAR FROM read_parquet($1) t(a,b)", [file])
+    ).getRowsJS();
+    assert.deepEqual(
+      rows,
+      values.map((value) => [value, value]),
+    );
+  } finally {
+    conn.closeSync();
+    db.closeSync();
   }
 });
 

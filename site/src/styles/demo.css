@@ -8,6 +8,20 @@
   --demo-control: light-dark(#ffffff, #1e1e24);
   --demo-accent: light-dark(#0b57d0, #8ab4f8);
   --demo-accent-bg: light-dark(#dde7f7, #26324a);
+
+  &:has(> head > meta[name="color-scheme"][content="dark"]) {
+    color-scheme: dark;
+    .vg-root {
+      color-scheme: dark;
+    }
+  }
+
+  &:has(> head > meta[name="color-scheme"][content="light"]) {
+    color-scheme: light;
+    .vg-root {
+      color-scheme: light;
+    }
+  }
 }
 
 html,
@@ -74,16 +88,6 @@ body {
   color: var(--demo-accent);
 }
 
-.demo__frame {
-  color: var(--demo-muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.demo__frame strong {
-  color: var(--demo-fg);
-}
-
 .demo__note {
   flex-basis: 100%;
   margin: 0;
@@ -112,10 +116,6 @@ body {
 
   .demo__options {
     margin-left: 0;
-  }
-
-  .demo__frame {
-    display: none;
   }
 
   .demo__note {

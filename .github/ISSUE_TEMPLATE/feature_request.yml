@@ -5,7 +5,7 @@ body:
     attributes:
       value: |
         Thank you. English and Japanese are both fine.
-        The [roadmap](https://github.com/yhay81/vastgrid#roadmap) lists what is already planned.
+        The [roadmap](https://vastgrid.yhay81.com/about/roadmap/) lists what is already planned.
   - type: textarea
     id: problem
     attributes:

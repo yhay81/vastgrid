@@ -1,9 +1,9 @@
 ---
 title: VS Code
-description: どんな大きさの CSV・TSV・Parquet・JSON Lines・Excel のファイルも VS Code の表で開き、CSV と TSV は VS Code の保存で編集・保存します。
+description: どんな大きさの CSV・TSV・Parquet・JSON Lines・Excel のファイルや DuckDB データベースも VS Code の表で開き、CSV と TSV は VS Code の保存で編集・保存します。
 ---
 
-拡張機能 `vastgrid-vscode` は、どんな大きさの CSV・TSV・Parquet・JSON Lines・Excel のファイルも、VS Code のエディターとして表で開きます。ファイルは拡張機能のプロセスの DuckDB（Node.js）が読み、エディターの Webview が `DataGrid` を示して、Webview のメッセージで行を読みます。CSV と TSV のファイルのセルは編集でき、VS Code の保存で、編集していないバイトをそのまま残して保存します。
+拡張機能 `vastgrid-vscode` は、どんな大きさの CSV・TSV・Parquet・JSON Lines・Excel のファイルや DuckDB データベースも、VS Code のエディターとして表で開きます。ファイルは拡張機能のプロセスの DuckDB（Node.js）が読み、エディターの Webview が `DataGrid` を示して、Webview のメッセージで行を読みます。CSV と TSV のファイルのセルは編集でき、VS Code の保存で、編集していないバイトをそのまま残して保存します。
 
 ## インストール
 
@@ -13,19 +13,19 @@ VS Code の拡張機能ビューで [Visual Studio Marketplace](https://marketpl
 code --install-extension yhay81.vastgrid-vscode
 ```
 
-VSCodium などのエディターは [Open VSX](https://open-vsx.org/extension/yhay81/vastgrid-vscode) から導入します。各バージョンの `vastgrid-vscode-<version>-<target>.vsix` は GitHub Release にもあり、**Extensions: Install from VSIX…** で導入できます。VS Code 1.100 以降が必要です。macOS（Apple シリコン・Intel）、Linux（x64・arm64、Alpine は x64）、Windows（x64・arm64）にそれぞれのパッケージがあります。バインディングが動かない vscode.dev と 32 ビットの Arm の Linux では動きません。
+VSCodium などのエディターは [Open VSX](https://open-vsx.org/extension/yhay81/vastgrid-vscode) から導入します。各バージョンの `vastgrid-vscode-<version>-<target>.vsix` は GitHub Release にもあり、**Extensions: Install from VSIX…** で導入できます。VS Code 1.100 以降が必要です。macOS（Apple シリコン・Intel）、Linux（x64・arm64、Alpine の x64・arm64 も）、Windows（x64・arm64）にそれぞれのパッケージがあります。バインディングが動かない vscode.dev と 32 ビットの Arm の Linux では動きません。
 
 導入すると、VS Code のようこそページに、ファイルを開く、並べ替え・絞り込み・グループ化、選択の合計、編集を順に案内するウォークスルー **vastgrid を始める** が出ます。
 
 ## ファイルを開く
 
-Parquet と Excel のファイルは、開くと vastgrid で開きます。CSV・TSV・JSON Lines のファイルはこれまでどおりテキストで開くので、「Open With…」、エディターの「vastgrid で開く」ボタン、エクスプローラーの「vastgrid で開く」（英語の VS Code では「Open in vastgrid」）で vastgrid に開いてください。
+Parquet・Excel・DuckDB のファイルは、開くと vastgrid で開きます。CSV・TSV・JSON Lines のファイルはこれまでどおりテキストで開くので、「Open With…」、エディターの「vastgrid で開く」ボタン、エクスプローラーの「vastgrid で開く」（英語の VS Code では「Open in vastgrid」）で vastgrid に開いてください。
 
 | 形式 | ファイル | vastgrid では |
 | --- | --- | --- |
 | CSV、TSV | `.csv`、`.tsv`、`.tab` | 編集と保存 |
-| 圧縮した CSV、TSV | `.csv.gz`、`.csv.zst`、`.tsv.gz`、`.tsv.zst` | 読むだけ |
-| JSON Lines | `.jsonl`、`.ndjson`（`.gz` も） | 読むだけ |
+| 圧縮した CSV、TSV | `.csv.gz`、`.csv.zst`、`.tsv.gz`、`.tsv.zst`、`.tab.gz`、`.tab.zst` | 読むだけ |
+| JSON Lines | `.jsonl`、`.ndjson`（`.gz`・`.zst` も） | 読むだけ |
 | Parquet | `.parquet`、`.pq` | 読むだけ。既定で vastgrid で開く |
 | Excel | `.xlsx`、`.xlsm` | 読むだけ。既定で vastgrid で開く。表の上のバーか「vastgrid: シートを選択」でシートを選ぶ |
 | DuckDB | `.duckdb`、`.ddb` | 読むだけ。既定で vastgrid で開く。表の上のバーか「vastgrid: シートを選択」でデータベースの表を選ぶ |
@@ -34,7 +34,7 @@ Parquet と Excel のファイルは、開くと vastgrid で開きます。CSV�
 
 ## 編集と保存
 
-- セルはほかの場所と同じように書き込めます。入力・貼り付け・消去・フィル（[セルの編集](/ja/guides/editing/)を参照）。それぞれの操作は VS Code の編集のスタックに積まれるので、編集メニューの元に戻す・やり直しや、⌘Z・⇧⌘Z・Ctrl+Y で、その操作をしたグリッドで取り消し・やり直しができます。エディターは、スタックが保存した時点から離れている間だけ未保存になり、書き込みをすべて取り消すと未保存でなくなります。
+- セルはほかの場所と同じように書き込めます。入力・切り取り・貼り付け・消去・フィル（[セルの編集](/ja/guides/editing/)を参照）。それぞれの操作は VS Code の編集のスタックに積まれるので、編集メニューの元に戻す・やり直しや、⌘Z・⇧⌘Z・Ctrl+Y で、その操作をしたグリッドで取り消し・やり直しができます。エディターは、スタックが保存した時点から離れている間だけ未保存になり、書き込みをすべて取り消すと未保存でなくなります。
 - VS Code の保存（⌘S か Ctrl+S。セルの編集中でも、編集中の値を先に書き込みます）は、書き込んだセルをファイルに保存し、編集したフィールドだけを書き直します。読んだ後にほかの誰かがディスク上で変えたファイルには上書きしません。エディターはセルを持ったまま未保存のままになるので、名前を付けて保存でほかの場所に書くか、元に戻す（Revert）かツールバーの「編集を破棄して再読み込み」で、ファイルをいまの内容で読み直してください。
 - 名前を付けて保存は、書き込んだセルを含む表全体を、新しい名前の拡張子に合わせて CSV・TSV・Parquet・JSON・Excel で書きます。読むだけのファイルに書き込んだセルを残す方法でもあります。
 - 元に戻す（Revert）は書き込んだセルを捨てます。エディターはファイルを開き直し、並べ替え・絞り込み・列の設定は残ります。

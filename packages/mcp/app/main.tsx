@@ -17,9 +17,118 @@ import { callTool, type GridLink, mcpTransport, sync, ToolCallError } from "./tr
 interface Opened {
   grid: string;
   file: string;
+  sheet?: string;
   version: number;
   document: GridDocument;
   session: GridSession;
+}
+
+interface AppChrome {
+  opening: string;
+  openFailed: string;
+  noAnswer: string;
+  fullscreen: string;
+  exitFullscreen: string;
+  noDownload: string;
+  exportFailed: string;
+}
+
+const APP_CHROME: Record<string, AppChrome> = {
+  en: {
+    opening: "Opening the file…",
+    openFailed: "The file did not open.",
+    noAnswer: "The server does not answer.",
+    fullscreen: "Full screen",
+    exitFullscreen: "Exit full screen",
+    noDownload: "The host does not download files: ask the agent to export into a folder.",
+    exportFailed: "The export could not be read.",
+  },
+  ja: {
+    opening: "ファイルを開いています…",
+    openFailed: "ファイルを開けませんでした。",
+    noAnswer: "サーバーから応答がありません。",
+    fullscreen: "全画面表示",
+    exitFullscreen: "全画面表示を終了",
+    noDownload:
+      "ホストがファイルのダウンロードに対応していません。フォルダへの書き出しをエージェントに依頼してください。",
+    exportFailed: "書き出したファイルを読み取れませんでした。",
+  },
+  "zh-cn": {
+    opening: "正在打开文件…",
+    openFailed: "无法打开文件。",
+    noAnswer: "服务器无响应。",
+    fullscreen: "全屏",
+    exitFullscreen: "退出全屏",
+    noDownload: "宿主不支持下载文件：请让代理导出到文件夹。",
+    exportFailed: "无法读取导出文件。",
+  },
+  "zh-tw": {
+    opening: "正在開啟檔案…",
+    openFailed: "無法開啟檔案。",
+    noAnswer: "伺服器沒有回應。",
+    fullscreen: "全螢幕",
+    exitFullscreen: "結束全螢幕",
+    noDownload: "宿主不支援下載檔案：請讓代理匯出到資料夾。",
+    exportFailed: "無法讀取匯出檔案。",
+  },
+  ko: {
+    opening: "파일을 여는 중…",
+    openFailed: "파일을 열지 못했습니다.",
+    noAnswer: "서버가 응답하지 않습니다.",
+    fullscreen: "전체 화면",
+    exitFullscreen: "전체 화면 종료",
+    noDownload: "호스트가 파일 다운로드를 지원하지 않습니다. 에이전트에게 폴더로 내보내기를 요청하세요.",
+    exportFailed: "내보낸 파일을 읽지 못했습니다.",
+  },
+  es: {
+    opening: "Abriendo el archivo…",
+    openFailed: "No se pudo abrir el archivo.",
+    noAnswer: "El servidor no responde.",
+    fullscreen: "Pantalla completa",
+    exitFullscreen: "Salir de pantalla completa",
+    noDownload: "El host no descarga archivos: pide al agente que exporte a una carpeta.",
+    exportFailed: "No se pudo leer la exportación.",
+  },
+  fr: {
+    opening: "Ouverture du fichier…",
+    openFailed: "Le fichier n’a pas pu être ouvert.",
+    noAnswer: "Le serveur ne répond pas.",
+    fullscreen: "Plein écran",
+    exitFullscreen: "Quitter le plein écran",
+    noDownload: "L’hôte ne télécharge pas de fichiers : demandez à l’agent d’exporter dans un dossier.",
+    exportFailed: "L’exportation n’a pas pu être lue.",
+  },
+  de: {
+    opening: "Datei wird geöffnet…",
+    openFailed: "Die Datei konnte nicht geöffnet werden.",
+    noAnswer: "Der Server antwortet nicht.",
+    fullscreen: "Vollbild",
+    exitFullscreen: "Vollbild beenden",
+    noDownload: "Der Host lädt keine Dateien herunter: Bitten Sie den Agenten, in einen Ordner zu exportieren.",
+    exportFailed: "Der Export konnte nicht gelesen werden.",
+  },
+  "pt-br": {
+    opening: "Abrindo o arquivo…",
+    openFailed: "Não foi possível abrir o arquivo.",
+    noAnswer: "O servidor não responde.",
+    fullscreen: "Tela cheia",
+    exitFullscreen: "Sair da tela cheia",
+    noDownload: "O host não baixa arquivos: peça ao agente para exportar em uma pasta.",
+    exportFailed: "Não foi possível ler a exportação.",
+  },
+};
+
+function chromeFor(locale = "en"): AppChrome {
+  const tag = locale.trim().toLowerCase().replaceAll("_", "-");
+  if (APP_CHROME[tag]) return APP_CHROME[tag];
+  const base = tag.split("-")[0] ?? "";
+  if (base === "zh") {
+    return tag.includes("hant") || tag.includes("-tw") || tag.includes("-hk") || tag.includes("-mo")
+      ? APP_CHROME["zh-tw"]
+      : APP_CHROME["zh-cn"];
+  }
+  if (base === "pt") return APP_CHROME["pt-br"];
+  return APP_CHROME[base] ?? APP_CHROME.en;
 }
 
 /** Milliseconds that the person's changes wait to go out together, and between retries after a failure. */
@@ -65,8 +174,10 @@ interface GridAppProps {
 }
 
 function GridApp({ app, opened, host, onReopen, onDisplayMode }: GridAppProps) {
+  const locale = host?.locale ?? "en";
+  const chrome = useMemo(() => chromeFor(locale), [locale]);
   const link = useMemo<GridLink>(() => ({ grid: opened.grid, client: crypto.randomUUID() }), [opened.grid]);
-  const transport = useMemo(() => mcpTransport(app, link), [app, link]);
+  const transport = useMemo(() => mcpTransport(app, link, () => chromeFor(app.getHostContext()?.locale)), [app, link]);
   const [document, setDocument] = useState(opened.document);
   const [session, setSession] = useState(opened.session);
   const version = useRef(-1);
@@ -74,7 +185,7 @@ function GridApp({ app, opened, host, onReopen, onDisplayMode }: GridAppProps) {
   const outgoing = useRef<{ document?: GridDocument; session?: GridSession }>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushRef = useRef<() => void>(() => {});
-  const [status, setStatus] = useState<string | null>(null);
+  const [unreachable, setUnreachable] = useState(false);
 
   useEffect(() => {
     const stop = new AbortController();
@@ -94,7 +205,11 @@ function GridApp({ app, opened, host, onReopen, onDisplayMode }: GridAppProps) {
     };
     /** The server lost the grid (it started again): the file opens again with the App's document. */
     const reopen = async () => {
-      const again = await callTool(app, "open_grid", { file: opened.file, document: latest.current.document });
+      const again = await callTool(app, "open_grid", {
+        file: opened.file,
+        ...(opened.sheet === undefined ? {} : { sheet: opened.sheet }),
+        document: latest.current.document,
+      });
       if (!isOpened(again)) throw new Error("open_grid answered no grid.");
       stop.abort();
       onReopen(again);
@@ -103,13 +218,16 @@ function GridApp({ app, opened, host, onReopen, onDisplayMode }: GridAppProps) {
       while (!stop.signal.aborted) {
         try {
           adopt(await sync(app, link, { version: version.current }, stop.signal));
-          setStatus(null);
+          setUnreachable(false);
         } catch (error) {
           if (stop.signal.aborted) return;
           if (error instanceof ToolCallError && error.code === "grid_not_found") {
-            await reopen().catch(() => setStatus("The server does not answer."));
+            await reopen().catch(async () => {
+              setUnreachable(true);
+              await delay(RETRY_DELAY, stop.signal);
+            });
           } else {
-            setStatus("The server does not answer.");
+            setUnreachable(true);
             await delay(RETRY_DELAY, stop.signal);
           }
         }
@@ -120,9 +238,13 @@ function GridApp({ app, opened, host, onReopen, onDisplayMode }: GridAppProps) {
       timer.current = null;
       const parts = outgoing.current;
       outgoing.current = {};
-      sync(app, link, { version: version.current, ...parts }).then(adopt, () =>
-        setStatus("The server does not answer."),
-      );
+      if (parts.document === undefined && parts.session === undefined) return;
+      sync(app, link, { version: version.current, ...parts }).then(adopt, () => {
+        if (stop.signal.aborted) return;
+        outgoing.current = { ...parts, ...outgoing.current };
+        setUnreachable(true);
+        timer.current ??= setTimeout(push, RETRY_DELAY);
+      });
     };
     pushRef.current = () => {
       if (timer.current === null) timer.current = setTimeout(push, PUSH_DELAY);
@@ -130,10 +252,10 @@ function GridApp({ app, opened, host, onReopen, onDisplayMode }: GridAppProps) {
     return () => {
       stop.abort();
       if (timer.current !== null) clearTimeout(timer.current);
+      timer.current = null;
     };
-  }, [app, link, transport, opened.file, onReopen]);
+  }, [app, link, transport, opened.file, opened.sheet, onReopen]);
 
-  const locale = host?.locale ?? "en";
   const fullscreen = host?.displayMode === "fullscreen";
   const toggles = host?.availableDisplayModes?.includes(fullscreen ? "inline" : "fullscreen") === true;
   const toggle = () => {
@@ -147,6 +269,7 @@ function GridApp({ app, opened, host, onReopen, onDisplayMode }: GridAppProps) {
       <DataGrid
         transport={transport}
         table={opened.file}
+        {...(opened.sheet === undefined ? {} : { open: { sheet: opened.sheet } })}
         document={document}
         session={session}
         onDocumentChange={(next) => {
@@ -173,8 +296,8 @@ function GridApp({ app, opened, host, onReopen, onDisplayMode }: GridAppProps) {
         <button
           type="button"
           className="vastgrid-app-mode"
-          aria-label={fullscreen ? "Exit full screen" : "Full screen"}
-          title={fullscreen ? "Exit full screen" : "Full screen"}
+          aria-label={fullscreen ? chrome.exitFullscreen : chrome.fullscreen}
+          title={fullscreen ? chrome.exitFullscreen : chrome.fullscreen}
           onClick={toggle}
         >
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -187,9 +310,9 @@ function GridApp({ app, opened, host, onReopen, onDisplayMode }: GridAppProps) {
           </svg>
         </button>
       )}
-      {status && (
+      {unreachable && (
         <p className="vastgrid-app-status" role="status">
-          {status}
+          {chrome.noAnswer}
         </p>
       )}
     </div>
@@ -205,9 +328,11 @@ const app = new App(
 );
 let host: McpUiHostContext | undefined;
 let opened: Opened | null = null;
+let openFailed = false;
 
 function reopened(again: Opened) {
   opened = again;
+  openFailed = false;
   render();
 }
 
@@ -217,21 +342,25 @@ function displayed(mode: McpUiDisplayMode) {
 }
 
 function render() {
+  const chrome = chromeFor(host?.locale);
   root.render(
     opened ? (
       <GridApp key={opened.grid} app={app} opened={opened} host={host} onReopen={reopened} onDisplayMode={displayed} />
     ) : (
-      <p className="vastgrid-app-status">Opening the file…</p>
+      <p className="vastgrid-app-status">{openFailed ? chrome.openFailed : chrome.opening}</p>
     ),
   );
 }
 
 app.ontoolresult = (params) => {
   if (params.isError || !isOpened(params.structuredContent)) {
-    root.render(<p className="vastgrid-app-status">The file did not open.</p>);
+    opened = null;
+    openFailed = true;
+    render();
     return;
   }
   opened = params.structuredContent;
+  openFailed = false;
   render();
 };
 app.onhostcontextchanged = (context) => {

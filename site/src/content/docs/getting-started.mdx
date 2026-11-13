@@ -11,7 +11,7 @@ The grid is one package, and the data comes from an engine. Pick the engine by w
 | --- | --- |
 | [`vastgrid`](https://www.npmjs.com/package/vastgrid) | `DataGrid`, `GridProvider` and the hooks for React. `vastgrid/core` has the store and the transports without React, `vastgrid/server` reads the first rows on a server, and `vastgrid/locales/<tag>` has the texts of each language. |
 | [`vastgrid-js`](https://www.npmjs.com/package/vastgrid-js) | The memory engine, in the page or in a Web Worker: rows in JavaScript, Arrow tables, CSV, TSV, JSON Lines and Excel files, and Parquet files on disk or at a URL. |
-| [`vastgrid-duckdb`](https://www.npmjs.com/package/vastgrid-duckdb) | The DuckDB engine for Node.js, for files of any size, with a handler for HTTP. |
+| [`vastgrid-duckdb`](https://www.npmjs.com/package/vastgrid-duckdb) | The DuckDB engine for Node.js, for files and DuckDB databases of any size, with a handler for HTTP. |
 | [`vastgrid-spec`](https://www.npmjs.com/package/vastgrid-spec) | The specification as code: types, commands, plan checking and the conformance tests. For your own engine. |
 | [`vastgrid-sql`](https://www.npmjs.com/package/vastgrid-sql) | Plans as DuckDB SQL, for an engine of your own on DuckDB. |
 
@@ -73,9 +73,9 @@ export function App() {
 ## A file in the browser
 
 The memory engine reads a file that a person picks, in a Web Worker, without uploading it: CSV, TSV, JSON Lines,
-Excel and Parquet, and Parquet files at a URL by HTTP ranges. A million-row CSV file opens in about a second.
-[Large files in the browser](/guides/browser/) has the worker and the page. [Open a file](/open/) is that page,
-ready to try.
+Excel and Parquet, and Parquet files at a URL by HTTP ranges. A million-row CSV file shows its first rows in about
+60 ms while the rest loads. [Large files in the browser](/guides/browser/) has the worker and the page.
+[Open a file](/open/) is that page, ready to try.
 
 ## Files on a server
 

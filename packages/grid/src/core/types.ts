@@ -146,7 +146,7 @@ export interface FailedWrite {
   readonly command: string;
   readonly updates: readonly WriteUpdate[];
   readonly revision: string | null;
-  readonly rowKey?: string | readonly string[];
+  readonly rowKey?: string;
   readonly error: GridError;
   readonly retry: "retry" | "overwrite" | null;
 }

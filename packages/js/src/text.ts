@@ -224,8 +224,10 @@ export async function readPreview(table: FileTable, bytes: number): Promise<Chec
       size: end,
       slice: (start = 0, stop = end) => ({ arrayBuffer: async () => head.slice(start, stop).buffer }),
     };
-    const read = await readFile({ ...table, format: formatOf(table), file: lines });
-    return read.reader ? null : { ...read, rowCount: Math.max(0, read.rowCount - 1) };
+    const format = formatOf(table);
+    const read = await readFile({ ...table, format, file: lines });
+    const rowCount = format === "jsonl" ? read.rowCount : read.rowCount - 1;
+    return read.reader || rowCount <= 0 ? null : { ...read, rowCount };
   } catch {
     return null;
   }
@@ -711,11 +713,18 @@ function detectSeparator(bytes: Uint8Array): number {
   const candidates = [0x2c, TAB, 0x3b, 0x7c];
   const counts = [0, 0, 0, 0];
   let inQuotes = false;
+  let seen = false;
   for (let index = 0; index < bytes.length; index++) {
     const code = bytes[index];
-    if (code === QUOTE) inQuotes = !inQuotes;
-    else if (!inQuotes) {
-      if (code === LF) break;
+    if (code === QUOTE) {
+      seen = true;
+      inQuotes = !inQuotes;
+    } else if (!inQuotes) {
+      if (code === LF) {
+        if (seen) break;
+        continue;
+      }
+      if (code !== CR) seen = true;
       const at = candidates.indexOf(code);
       if (at >= 0) counts[at]++;
     }
@@ -1013,11 +1022,12 @@ async function surveyCsv(
       for (let index = 0; index < fields.count; index++) {
         const start = fields.starts[index];
         const end = fields.ends[index];
-        header.push(
-          fields.quoted[index]
-            ? decoder.decode(unquoted.subarray(0, unquote(bytes, start, end)))
-            : decoder.decode(bytes.subarray(start, end)),
-        );
+        if (fields.quoted[index]) {
+          const length = unquote(bytes, start, end);
+          header.push(decoder.decode(unquoted.subarray(0, length)));
+        } else {
+          header.push(decoder.decode(bytes.subarray(start, end)));
+        }
       }
       return;
     }
@@ -1334,7 +1344,17 @@ async function keepJson(
           putInt64(column, rows, value as number);
           break;
         case "string": {
-          const { written } = encoder.encodeInto(jsonText(value), (column.text as Uint8Array).subarray(column.cursor));
+          const text = jsonText(value);
+          const needed = utf8Length(text);
+          if (needed < 0) throw changed();
+          let target = column.text as Uint8Array;
+          if (column.cursor + needed > target.length) {
+            const grown = new Uint8Array(Math.max(column.cursor + needed, target.length * 2, 64));
+            grown.set(target.subarray(0, column.cursor));
+            column.text = grown;
+            target = grown;
+          }
+          const { written } = encoder.encodeInto(text, target.subarray(column.cursor));
           column.cursor += written;
           break;
         }

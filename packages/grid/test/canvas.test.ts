@@ -31,6 +31,11 @@ test("a column layout finds the column at an x, clamped to its columns", () => {
   assert.equal(layout.indexAt(180), 4);
   assert.equal(layout.indexAt(1e9), 4);
   assert.equal(new ColumnLayout([]).indexAt(0), -1);
+  assert.deepEqual(
+    [layout.left(-1), layout.left(9), layout.right(-1), layout.right(2), layout.right(9)],
+    [0, 180, 0, 150, 180],
+  );
+  assert.deepEqual([layout.width(-1), layout.width(0), layout.width(9)], [0, 100, 0]);
 });
 
 test("frozen columns give way past three quarters of the width, those at the right first", () => {

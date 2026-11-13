@@ -25,6 +25,7 @@ table, or a store made with `useCreateGridStore`:
 ```tsx
 import { DataGrid, localTransport } from "vastgrid";
 import { memoryEngine } from "vastgrid-js";
+import "vastgrid/styles.css";
 
 const transport = localTransport(memoryEngine({ tables: { orders: { columns, rows } } }));
 
@@ -51,11 +52,12 @@ columns:
 import { migrateGridState } from "vastgrid-spec";
 
 // columns: the table's columns, as the engine reports them (snapshot.table.columns once it is open)
-const { document, dropped, reasons } = migrateGridState(savedState, columns);
+const { document, dropped, reasons, removed } = migrateGridState(savedState, columns);
 // <DataGrid … defaultDocument={document} />
 ```
 
 `dropped` lists the JSON Pointers, into the 0.1 state, of what could not be migrated, and `reasons` says why.
+`removed` points to the settings discarded when repairing the migrated document for the current table.
 Columns frozen at either side become `pin: "left"` and `pin: "right"`, and groups become the plan's `aggregate`
 ([§5.6 of the specification](https://github.com/yhay81/vastgrid/blob/main/docs/spec.md#56-versions-and-migration)).
 

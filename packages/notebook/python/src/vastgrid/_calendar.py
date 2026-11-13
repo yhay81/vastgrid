@@ -137,6 +137,29 @@ def temporal_text_form(text: str) -> str:
     return date + ("" if year > 0 else " (BC)") + text[dash + 6 :]
 
 
+def from_temporal_text_form(text: str) -> str:
+    """The §2.2 text of a date, a timestamp or a timestamptz from its §2.4 text form (`10000-01-01` -> `+010000-01-01`,
+    `0001-12-31 (BC)` -> `0000-12-31`). Values already in §2.2 form and the infinities stay as they are."""
+    if infinity_of(text) != 0 or text[:1] in ("+", "-"):
+        return text
+    dash = text.find("-")
+    if dash < 4 or dash > 6:
+        return text
+    digits = text[:dash]
+    if not digits.isascii() or not digits.isdigit():
+        return text
+    if text[dash + 6 : dash + 11] == " (BC)":
+        bc = int(digits)
+        if bc < 1:
+            return text
+        return f"{_year_text(1 - bc)}{text[dash : dash + 6]}{text[dash + 11 :]}"
+    if dash > 4:
+        year = int(digits)
+        if year > 9999:
+            return f"{_year_text(year)}{text[dash:]}"
+    return text
+
+
 def _clock(count: int, unit: str) -> str:
     """`HH:MM:SS`, then the fraction of a second without trailing zeros, of a count of a unit within a day."""
     per_second = UNIT_PER_SECOND[unit]
@@ -183,6 +206,10 @@ def timestamp_text(count: int, unit: str = "us") -> str:
         return "infinity" if count > 0 else "-infinity"
     if count < -TIMESTAMP_INFINITY or count > TIMESTAMP_INFINITY:
         raise ValueError("The count is outside the range of timestamps.")
+    if unit != "ns":
+        micros = count * (1_000_000 // UNIT_PER_SECOND[unit])
+        if micros <= -TIMESTAMP_INFINITY or micros >= TIMESTAMP_INFINITY:
+            raise ValueError("The count is outside the range of timestamps.")
     per_day = _DAY_SECONDS * UNIT_PER_SECOND[unit]
     days = count // per_day
     return f"{date_text(days)} {_clock(count - days * per_day, unit)}"
@@ -202,6 +229,10 @@ def parse_timestamp_text(text: str, unit: str = "us") -> int | None:
     if days is None or time is None:
         return None
     count = days * _DAY_SECONDS * UNIT_PER_SECOND[unit] + time
+    if unit != "ns":
+        micros = count * (1_000_000 // UNIT_PER_SECOND[unit])
+        if micros <= -TIMESTAMP_INFINITY or micros >= TIMESTAMP_INFINITY:
+            return None
     return count if -TIMESTAMP_INFINITY < count < TIMESTAMP_INFINITY else None
 
 

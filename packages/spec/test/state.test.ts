@@ -457,6 +457,7 @@ test("formulas group, measure and pivot as 0.1's columns did", () => {
     v1Table,
   );
   assert.deepEqual(dropped, []);
+  assert.ok(migrated.plan);
   assert.deepEqual(migrated.plan.aggregate, {
     keys: ["year"],
     measures: [{ name: "sum(net)", fn: "sum", column: "net" }],

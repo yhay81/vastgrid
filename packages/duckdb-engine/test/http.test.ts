@@ -3,6 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { type AddressInfo, connect } from "node:net";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { ARROW_MEDIA_TYPE, checkEvent, checkResponse, decodeBlock, fromBase64, readAttached } from "vastgrid-spec";
 import { afterAll, beforeAll, test } from "vite-plus/test";
 import { createHttpHandler } from "../src/index.ts";
@@ -77,14 +78,19 @@ test(
     });
     const port = (interrupted.address() as AddressInfo).port;
     const socket = connect(port, "127.0.0.1", () => {
-      socket.write("POST /api HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100000\r\n\r\n{");
+      socket.write(
+        "POST /api HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 100000\r\n\r\n{",
+      );
     });
-    onTestFinished(() => socket.destroy());
+    onTestFinished(() => {
+      socket.destroy();
+    });
     await received;
     socket.destroy();
     await closed;
     const response = await fetch(`http://127.0.0.1:${port}/api`, {
       method: "POST",
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ v: 2, id: ++id, op: "open", ref: "fruit.csv" }),
     });
     assert.equal(response.status, 200);
@@ -165,6 +171,12 @@ test("errors have the HTTP statuses of §8.7", async () => {
   const get = await fetch(`${base}/api`);
   assert.equal(get.status, 405);
   assert.equal(get.headers.get("allow"), "POST");
+  const wrongMedia = await fetch(`${base}/api`, {
+    method: "POST",
+    headers: { "content-type": "text/plain" },
+    body: JSON.stringify({ v: 2, id: 10, op: "open", ref: "fruit.csv" }),
+  });
+  assert.equal(wrongMedia.status, 415);
   assert.equal((await fetch(`${base}/elsewhere`)).status, 404);
   const large = await post(JSON.stringify({ v: 2, id: 6, op: "open", ref: "x".repeat(65 * 1024 * 1024) }));
   assert.equal(large.status, 413);
@@ -180,6 +192,29 @@ test("cancel has no response, and middleware passes other paths on", async () =>
     passed = true;
   });
   assert.ok(passed);
+  const missingHead = await fetch(`${base}/api/exports/none`, { method: "HEAD" });
+  assert.equal(missingHead.status, 404);
+  await writeFile(path.join(context.workspace, "dl.csv"), "a\n1\n");
+  const opened = (await (await post({ v: 2, id: ++id, op: "open", ref: "dl.csv" })).json()) as {
+    result: { table: string; revision: string };
+  };
+  await context.engine.whenLoaded(opened.result.table);
+  const info = (await (await post({ v: 2, id: ++id, op: "info", table: opened.result.table })).json()) as {
+    result: { table: string; revision: string };
+  };
+  const exp = (await (
+    await post({
+      v: 2,
+      id: ++id,
+      op: "export",
+      table: info.result.table,
+      revision: info.result.revision,
+      plan: {},
+      format: "csv",
+    })
+  ).json()) as { result: { target: string } };
+  const headOk = await fetch(`${base}/api/exports/${exp.result.target}`, { method: "HEAD" });
+  assert.equal(headOk.status, 200);
 });
 
 test("events go out as Server-Sent Events (§8.5, §8.8)", async () => {
@@ -208,4 +243,92 @@ test("events go out as Server-Sent Events (§8.5, §8.8)", async () => {
   await opened;
   controller.abort();
   await reader.cancel().catch(() => undefined);
+});
+
+test("handler forwards unexpected failures to next or returns 400/500 JSON, and refuses SSE when disposed", async () => {
+  const broken = {
+    disposeSignal: { aborted: false } as AbortSignal,
+    exportFile: () => null,
+    on: () => () => undefined,
+    handle: () => Promise.reject(new Error("boom")),
+  } as unknown as Parameters<typeof createHttpHandler>[0];
+  const withNext = createHttpHandler(broken, { path: "/api" });
+  const srv = createServer((req, res) => createHttpHandler(broken, { path: "/api" })(req, res));
+  await new Promise<void>((resolve) => srv.listen(0, "127.0.0.1", resolve));
+  const addr = srv.address() as { port: number };
+  try {
+    const r500 = await fetch(`http://127.0.0.1:${addr.port}/api`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ v: 2, id: 7, op: "open", ref: "a.csv" }),
+    });
+    assert.equal(r500.status, 500);
+    const body500 = (await r500.json()) as { id: number; error: { code: string } };
+    assert.deepEqual([body500.id, body500.error.code], [7, "internal"]);
+
+    // Request without an id that fails in handle returns 400 syntax error; missing content-type returns 415; bad URL returns 400.
+    const r400NoId = await fetch(`http://127.0.0.1:${addr.port}/api`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ v: 2, op: "open" }),
+    });
+    assert.equal(r400NoId.status, 400);
+    const r415NoHeader = await fetch(`http://127.0.0.1:${addr.port}/api`, { method: "POST" });
+    assert.equal(r415NoHeader.status, 415);
+    const r400BadUrl = await fetch(`http://127.0.0.1:${addr.port}/api/exports/%E0%A4%A`);
+    assert.equal(r400BadUrl.status, 400);
+
+    let forwarded: unknown;
+    const fakeReq = Readable.from([Buffer.from('{"v":2,"id":8,'), Buffer.from('"op":"open","ref":"a.csv"}')]);
+    Object.assign(fakeReq, {
+      url: "/api",
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      complete: true,
+    });
+    await withNext(fakeReq as never, { destroyed: false, headersSent: false, on: () => undefined } as never, (err) => {
+      forwarded = err;
+    });
+    assert.equal((forwarded as Error)?.message, "boom");
+
+    // Default path "/" and attached `data` block framing (§8.8).
+    const dataEngine = {
+      ...broken,
+      handle: () =>
+        Promise.resolve({ v: 2, id: 9, result: { format: "csv", rows: 1, data: { bytes: new Uint8Array([97, 10]) } } }),
+    } as unknown as Parameters<typeof createHttpHandler>[0];
+    const rootSrv = createServer((req, res) => createHttpHandler(dataEngine)(req, res));
+    await new Promise<void>((resolve) => rootSrv.listen(0, "127.0.0.1", resolve));
+    const rootPort = (rootSrv.address() as { port: number }).port;
+    try {
+      const attached = await fetch(`http://127.0.0.1:${rootPort}/`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: ARROW_MEDIA_TYPE },
+        body: JSON.stringify({ v: 2, id: 9, op: "export" }),
+      });
+      assert.equal(attached.status, 200);
+      const decoded = readAttached(new Uint8Array(await attached.arrayBuffer())) as {
+        result: { data: { bytes: Uint8Array } };
+      };
+      assert.deepEqual([...decoded.result.data.bytes], [97, 10]);
+    } finally {
+      rootSrv.close();
+    }
+
+    const closedEngine = {
+      ...broken,
+      disposeSignal: AbortSignal.abort(),
+    } as unknown as Parameters<typeof createHttpHandler>[0];
+    const closedSrv = createServer((req, res) => createHttpHandler(closedEngine, { path: "/api" })(req, res));
+    await new Promise<void>((resolve) => closedSrv.listen(0, "127.0.0.1", resolve));
+    const closedPort = (closedSrv.address() as { port: number }).port;
+    try {
+      const sse500 = await fetch(`http://127.0.0.1:${closedPort}/api/events`);
+      assert.equal(sse500.status, 500);
+    } finally {
+      closedSrv.close();
+    }
+  } finally {
+    srv.close();
+  }
 });

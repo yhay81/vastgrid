@@ -3,11 +3,12 @@
  * whose grids talk to it by messages as the page does, and VS Code's save, save as, revert, undo and backups.
  */
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { type GridSnapshot, GridStore, type WorkerLike, workerTransport } from "vastgrid/core";
 import { afterAll, beforeAll, test } from "vite-plus/test";
+import { cell as xlsxCell, row as xlsxRow, writeWorkbook } from "../../duckdb-engine/test/xlsx-fixture.ts";
 import { newSteps } from "../src/history.ts";
 import type { HostMessage } from "../src/messages.ts";
 import { type FileKey, type FileView, type KeptFile, TableFile, type TableFileOptions } from "../src/table-file.ts";
@@ -472,4 +473,48 @@ test("the engine opens the editor's file only, and closes with its files when th
     await file.dispose();
   }
   assert.deepEqual(await readdir(temp), []);
+});
+
+test("a symlinked file opens even when its target has no table extension, and saveAs exports the chosen sheet", async () => {
+  const annex = path.join(folder, "annex");
+  await mkdir(annex, { recursive: true });
+  await writeFile(path.join(annex, "blob-sha256"), "id,name\n1,linked\n");
+  const linked = path.join(folder, "linked.csv");
+  await symlink(path.join(annex, "blob-sha256"), linked);
+  const sym = tableFile(linked);
+  const grid = webview(sym);
+  try {
+    const snapshot = await settled(grid.store);
+    assert.equal(snapshot.status, "ready");
+    assert.equal(await cell(grid.store, 0, "name"), "linked");
+  } finally {
+    grid.close();
+    await sym.dispose();
+  }
+
+  const book = path.join(folder, "multi.xlsx");
+  await writeWorkbook(book, {
+    sheets: [
+      {
+        name: "First",
+        rows: [xlsxRow(1, [xlsxCell("A1", { t: "inlineStr", is: "a" })]), xlsxRow(2, [xlsxCell("A2", { v: 1 })])],
+      },
+      {
+        name: "Second",
+        rows: [
+          xlsxRow(1, [xlsxCell("A1", { t: "inlineStr", is: "b" })]),
+          xlsxRow(2, [xlsxCell("A2", { v: 2 })]),
+          xlsxRow(3, [xlsxCell("A3", { v: 3 })]),
+        ],
+      },
+    ],
+  });
+  const wb = tableFile(book, { editable: false });
+  try {
+    const out = path.join(folder, "second.csv");
+    assert.equal(await wb.saveAs(out, undefined, "Second"), 2);
+    assert.equal(await readFile(out, "utf8"), "b\n2\n3\n");
+  } finally {
+    await wb.dispose();
+  }
 });

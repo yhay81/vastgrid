@@ -22,13 +22,13 @@ import "./app.css";
 /** What `/files` answers. */
 interface Listing {
   files: string[];
-  save: boolean;
 }
 
-/** The file and sheet shown. */
+/** The file and sheet shown, and the id of its entry in `history.state`. */
 interface Place {
   file: string | null;
   sheet: string | null;
+  id: string;
 }
 
 /** What `sessionStorage` keeps of the grid of an entry of the history. */
@@ -41,20 +41,9 @@ interface View {
 const KEEP_DELAY = 250;
 
 const transport = httpTransport("/api", { events: "/api/events" });
-const ja = navigator.language.startsWith("ja");
-const messages = messagesFor(navigator.language);
-
-function readPlace(): Place {
-  const params = new URLSearchParams(location.search);
-  return { file: params.get("file"), sheet: params.get("sheet") };
-}
-
-function addressOf(place: Place) {
-  const params = new URLSearchParams();
-  if (place.file !== null) params.set("file", place.file);
-  if (place.sheet !== null) params.set("sheet", place.sheet);
-  return `/?${params}`;
-}
+const locale = navigator.language || "en";
+const ja = locale.toLowerCase().startsWith("ja");
+const messages = messagesFor(locale);
 
 /** The id of the entry of the history shown, which it is given the first time. */
 function entryId(): string {
@@ -65,6 +54,18 @@ function entryId(): string {
   const id = crypto.randomUUID();
   history.replaceState({ id }, "");
   return id;
+}
+
+function readPlace(): Place {
+  const params = new URLSearchParams(location.search);
+  return { file: params.get("file"), sheet: params.get("sheet"), id: entryId() };
+}
+
+function addressOf(place: { file: string | null; sheet: string | null }) {
+  const params = new URLSearchParams();
+  if (place.file !== null) params.set("file", place.file);
+  if (place.sheet !== null) params.set("sheet", place.sheet);
+  return `/?${params}`;
 }
 
 function readView(id: string): View {
@@ -87,11 +88,20 @@ function writeView(id: string, view: View) {
 function useSheets(store: GridStore) {
   const sheets = useSyncExternalStore(store.subscribe, () => store.getSnapshot().table?.sheets);
   const sheet = useSyncExternalStore(store.subscribe, () => store.getSnapshot().table?.sheet);
-  return { sheets: sheets?.filter((item) => !item.hidden) ?? [], sheet };
+  return { sheets: sheets ?? [], sheet };
 }
 
-function Grid({ file, sheet, onSheet }: { file: string; sheet: string | null; onSheet: (sheet: string) => void }) {
-  const [id] = useState(entryId);
+function Grid({
+  id,
+  file,
+  sheet,
+  onSheet,
+}: {
+  id: string;
+  file: string;
+  sheet: string | null;
+  onSheet: (sheet: string) => void;
+}) {
   const [view] = useState(() => readView(id));
   const store = useCreateGridStore({
     transport,
@@ -140,7 +150,7 @@ function Grid({ file, sheet, onSheet }: { file: string; sheet: string | null; on
               aria-pressed={item.name === sheets.sheet}
               onClick={() => item.name !== sheets.sheet && onSheet(item.name)}
             >
-              {item.name}
+              {item.hidden ? `${item.name} (${ja ? "非表示" : "hidden"})` : item.name}
             </button>
           ))}
         </nav>
@@ -150,6 +160,7 @@ function Grid({ file, sheet, onSheet }: { file: string; sheet: string | null; on
         toolbar
         statusBar
         checkboxes
+        locale={locale}
         messages={messages}
         aria-label={file}
         className="vastgrid-grid"
@@ -158,10 +169,12 @@ function Grid({ file, sheet, onSheet }: { file: string; sheet: string | null; on
   );
 }
 
+const initialPlace = readPlace();
+
 function App() {
   const [listing, setListing] = useState<Listing | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
-  const [place, setPlace] = useState(readPlace);
+  const [place, setPlace] = useState(initialPlace);
   useEffect(() => {
     fetch("/files")
       .then(async (response) => {
@@ -173,9 +186,10 @@ function App() {
     window.addEventListener("popstate", back);
     return () => window.removeEventListener("popstate", back);
   }, []);
-  const go = (next: Place) => {
-    history.pushState(null, "", addressOf(next));
-    setPlace(next);
+  const go = (next: { file: string | null; sheet: string | null }) => {
+    const id = crypto.randomUUID();
+    history.pushState({ id }, "", addressOf(next));
+    setPlace({ ...next, id });
   };
   const file = place.file ?? listing?.files[0] ?? null;
   useEffect(() => {
@@ -188,8 +202,8 @@ function App() {
     return (
       <p className="vastgrid-message">
         {ja
-          ? "CSV・TSV・Parquet・JSON Lines・Excel のファイルがありません。"
-          : "There are no CSV, TSV, Parquet, JSON Lines or Excel files."}
+          ? "CSV・TSV・Parquet・JSON Lines・Excel・DuckDB のファイルがありません。"
+          : "There are no CSV, TSV, Parquet, JSON Lines, Excel or DuckDB files."}
       </p>
     );
   }
@@ -212,12 +226,7 @@ function App() {
           </select>
         </div>
       )}
-      <Grid
-        key={`${file}\u0000${place.sheet ?? ""}`}
-        file={file}
-        sheet={place.sheet}
-        onSheet={(sheet) => go({ file, sheet })}
-      />
+      <Grid key={place.id} id={place.id} file={file} sheet={place.sheet} onSheet={(sheet) => go({ file, sheet })} />
     </div>
   );
 }

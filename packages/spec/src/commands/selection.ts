@@ -2,7 +2,7 @@
 import { searchImplies } from "../fold.js";
 import { canonicalJson } from "../hash.js";
 import type { Plan } from "../plan.js";
-import { type Checked, checkRowKey, partsOf, sameKey } from "../state.js";
+import { type Checked, checkRowKey, keyText, partsOf } from "../state.js";
 import {
   booleanArgument,
   type Command,
@@ -41,11 +41,21 @@ function setChecked(run: Run, command: Command, check: boolean) {
   if (!covers(current, run.plan)) fail("", "unknown_state", "The rows of this view may not match the checked rows.");
   // In the exclude mode, the listed keys are the rows that are not checked.
   const listed = current.mode === "include" ? check : !check;
-  const next = current.keys.filter((key) => listed || !keys.some((item) => sameKey(item, key)));
   if (listed) {
-    for (const key of keys) if (!next.some((item) => sameKey(item, key))) next.push(key);
+    const next = [...current.keys];
+    const seen = new Set(next.map(keyText));
+    for (const key of keys) {
+      const id = keyText(key);
+      if (!seen.has(id)) {
+        seen.add(id);
+        next.push(key);
+      }
+    }
+    run.session.checked = { ...current, keys: next };
+  } else {
+    const drop = new Set(keys.map(keyText));
+    run.session.checked = { ...current, keys: current.keys.filter((key) => !drop.has(keyText(key))) };
   }
-  run.session.checked = { ...current, keys: next };
 }
 
 function moveCommand(run: Run, command: Command, to: "home" | "end" | null) {
@@ -129,16 +139,17 @@ export const SELECTION_HANDLERS = {
 
   "select.columns"(run, command) {
     takes(command, ["from", "to", "mode"]);
+    const fromName = stringArgument(command, "from");
+    const toName = stringArgument(command, "to");
+    const mode = choice(command, "mode", MODES, "replace");
     const grid = run.grid();
-    const position = (member: string) => {
-      const name = stringArgument(command, member);
+    const position = (member: string, name: string) => {
       const col = grid.index.get(name);
       if (col === undefined) fail(`/${member}`, "unknown_column", `"${name}" is not a displayed column.`);
       return col;
     };
-    const from = position("from");
-    const to = position("to");
-    const mode = choice(command, "mode", MODES, "replace");
+    const from = position("from", fromName);
+    const to = position("to", toName);
     const row = grid.active.row;
     const focus = { row, col: to };
     if (mode === "extend") {

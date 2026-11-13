@@ -60,16 +60,16 @@ export async function createTable(connection: DuckDBConnection, name: string, ta
 
 const EPOCHS = { s: "epoch", ms: "epoch_ms", us: "epoch_us", ns: "epoch_ns" };
 
-/**
- * Reads exact numbers and times as their text, which is how JSON writes them (§2.2), and dates and timestamps as
- * counts from 1970-01-01, which `jsonOf` writes. Strings get a leading "." that `jsonOf` removes:
- * `@duckdb/node-api` 2.0.0-r.1 decodes text with a `TextDecoder` that drops a U+FEFF at the start of a value.
- */
 /** DuckDB's infinities as the counts of §2.2. */
 function infinities(sql: string, count: number | bigint) {
   return `WHEN ${sql} = 'infinity' THEN ${count} WHEN ${sql} = '-infinity' THEN -${count}`;
 }
 
+/**
+ * Reads exact numbers and times as their text, which is how JSON writes them (§2.2), and dates and timestamps as
+ * counts from 1970-01-01, which `jsonOf` writes. Strings get a leading "." that `jsonOf` removes:
+ * `@duckdb/node-api` 2.0.0-r.1 decodes text with a `TextDecoder` that drops a U+FEFF at the start of a value.
+ */
 export function output(column: Column, sql: string): string {
   switch (column.type) {
     case "date":

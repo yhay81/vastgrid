@@ -64,7 +64,9 @@ export class TextFitter {
   fit(text: string, maxWidth: number): string {
     if (maxWidth <= 0 || text === "") return "";
     // Cells never show more than a few hundred characters; skip measuring the rest.
-    const source = text.length > 400 ? text.slice(0, 400) : text;
+    let limit = 400;
+    if (text.length > limit && isHighSurrogate(text.charCodeAt(limit - 1))) limit--;
+    const source = text.length > limit ? text.slice(0, limit) : text;
     if (source === text && this.width(text) <= maxWidth) return text;
     const key = `${Math.floor(maxWidth)}\u0001${source}`;
     const cached = this.fits.get(key);
@@ -138,9 +140,12 @@ export class TextFitter {
   /** Length of the first line of `text` (one paragraph) in `maxWidth`, at a place where it may break. */
   private breakAt(text: string, maxWidth: number) {
     if (text === "" || this.width(text) <= maxWidth) return text.length;
-    // A character is at least a pixel wide, so a line has at most `maxWidth` characters.
+    const full = this.width(text);
     let low = 0;
-    let high = Math.min(text.length, Math.ceil(maxWidth));
+    let high = Math.min(
+      text.length,
+      Math.max(Math.ceil(maxWidth), Math.ceil((text.length * maxWidth) / Math.max(1, full)) * 2 + 8),
+    );
     while (low < high) {
       const middle = (low + high + 1) >> 1;
       if (this.context.measureText(text.slice(0, middle)).width <= maxWidth) low = middle;
