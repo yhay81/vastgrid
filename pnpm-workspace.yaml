@@ -18,7 +18,7 @@ catalog:
   # The bindings of that DuckDB, at its version: the VS Code extension loads them itself.
   "@duckdb/node-bindings": 2.0.0-r.1
   "@uwdata/flechette": 2.7.1
-  "@vitejs/plugin-react": 6.2.1
+  "@vitejs/plugin-react": 6.3.0
   react: 19.3.1
   react-dom: 19.3.1
   # Vite+ (vp): Oxlint, Oxfmt, Vitest, Rolldown and Vite Task. Its core is Vite 8 with Rolldown, which also takes the
