@@ -13,30 +13,33 @@ vi.mock(import("node:fs/promises"), async (original) => {
 
 const crossDevice = Object.assign(new Error("The session is on another filesystem"), { code: "EXDEV" });
 
-test("on another volume, Parquet copies from the verified handle even when the source path changes", async () => {
-  const local = await setUp({ allowFile: (file) => path.basename(file) === "visible.parquet" });
-  try {
-    const visible = path.join(local.workspace, "visible.parquet");
-    const hidden = path.join(local.workspace, "hidden.parquet");
-    const columns = [{ name: "value", type: "integer" as const }];
-    await writeParquet(visible, { columns, rows: [[10]] });
-    await writeParquet(hidden, { columns, rows: [[99]] });
-    vi.mocked(link).mockImplementationOnce(async () => {
-      await rename(visible, path.join(local.workspace, "original.parquet"));
-      await symlink(hidden, visible);
-      throw crossDevice;
-    });
-    const opened = await local.client.open("visible.parquet");
-    assert.equal(opened.status, "ready");
-    assert.deepEqual((await local.client.rows(opened)).rows, [[10]]);
-    assert.equal((await local.client.error("open", { ref: "visible.parquet" })).code, "not_allowed");
-    const sourceHandles = await Promise.all(vi.mocked(open).mock.results.map((result) => result.value));
-    assert.ok(sourceHandles.length > 0 && sourceHandles.every((handle) => handle.fd === -1));
-  } finally {
-    vi.clearAllMocks();
-    await local.tearDown();
-  }
-});
+test.each(["EXDEV", "EPERM"])(
+  "Parquet copies the verified file after %s even when the source path changes",
+  async (code) => {
+    const local = await setUp({ allowFile: (file) => path.basename(file) === "visible.parquet" });
+    try {
+      const visible = path.join(local.workspace, "visible.parquet");
+      const hidden = path.join(local.workspace, "hidden.parquet");
+      const columns = [{ name: "value", type: "integer" as const }];
+      await writeParquet(visible, { columns, rows: [[10]] });
+      await writeParquet(hidden, { columns, rows: [[99]] });
+      vi.mocked(link).mockImplementationOnce(async () => {
+        await rename(visible, path.join(local.workspace, "original.parquet"));
+        await symlink(hidden, visible);
+        throw Object.assign(new Error("Cannot create a hard link"), { code });
+      });
+      const opened = await local.client.open("visible.parquet");
+      assert.equal(opened.status, "ready");
+      assert.deepEqual((await local.client.rows(opened)).rows, [[10]]);
+      assert.equal((await local.client.error("open", { ref: "visible.parquet" })).code, "not_allowed");
+      const sourceHandles = await Promise.all(vi.mocked(open).mock.results.map((result) => result.value));
+      assert.ok(sourceHandles.length > 0 && sourceHandles.every((handle) => handle.fd === -1));
+    } finally {
+      vi.clearAllMocks();
+      await local.tearDown();
+    }
+  },
+);
 
 test("a different inode linked during Parquet open is refused before DuckDB reads it", async () => {
   const local = await setUp({ allowFile: (file) => path.basename(file) === "visible.parquet" });
@@ -47,9 +50,9 @@ test("a different inode linked during Parquet open is refused before DuckDB read
     await writeParquet(visible, { columns, rows: [[10]] });
     await writeParquet(hidden, { columns, rows: [[99]] });
     const fs = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
-    vi.mocked(link).mockImplementationOnce(async (source, target) => {
-      await rename(hidden, visible);
-      await fs.link(source, target);
+    vi.mocked(link).mockImplementationOnce(async (_, target) => {
+      // Directly link the replacement so the race does not depend on replacing an open file on Windows.
+      await fs.link(hidden, target);
     });
     const info = await local.client.open("visible.parquet");
     assert.equal(info.status, "error");
