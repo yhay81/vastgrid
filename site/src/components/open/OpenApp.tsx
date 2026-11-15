@@ -1,4 +1,4 @@
-import { type DragEvent, useEffect, useRef, useState } from "react";
+import { type DragEvent, useEffect, useEffectEvent, useRef, useState } from "react";
 import { createGridStore, DataGrid, GridProvider, type GridStore, useGridSelector, workerTransport } from "vastgrid";
 import { ja } from "vastgrid/locales/ja";
 import "vastgrid/styles.css";
@@ -183,6 +183,14 @@ export default function OpenApp({ language: pageLanguage }: { language: Language
       fail(error instanceof Error ? error.message : undefined);
     }
   };
+
+  const openInitialSample = useEffectEvent(() => open({ sample: SAMPLE_ROWS }));
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("sample")) {
+      // oxlint-disable-next-line react/set-state-in-effect -- starts the sample's Web Worker on mount from ?sample.
+      openInitialSample();
+    }
+  }, []);
 
   const drop = (event: DragEvent) => {
     event.preventDefault();

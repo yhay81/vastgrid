@@ -1,6 +1,8 @@
 # <img src="docs/images/logo.svg" alt="" width="32" height="32"> vastgrid
 
 [![npm](https://img.shields.io/npm/v/vastgrid)](https://www.npmjs.com/package/vastgrid)
+[![PyPI](https://img.shields.io/pypi/v/vastgrid)](https://pypi.org/project/vastgrid/)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/yhay81.vastgrid-vscode?label=VS%20Code)](https://marketplace.visualstudio.com/items?itemName=yhay81.vastgrid-vscode)
 [![CI](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml/badge.svg)](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/yhay81/vastgrid)](LICENSE)
 

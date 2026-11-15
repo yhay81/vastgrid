@@ -40,12 +40,11 @@ function compareDecimal(a: string, b: string): number {
 /** Orders two values of one kind (§3.1), or null when they do not compare. */
 function compare(a: Value, b: Value): number | null {
   if (a.value === null || b.value === null) return null;
-  if (NUMERIC.has(a.type) || NUMERIC.has(b.type) || (typeof a.value === "number" && typeof b.value === "number")) {
-    const float =
-      a.type === "float" || b.type === "float" || typeof a.value === "number" || typeof b.value === "number";
-    if (float && !(typeof a.value === "string" && typeof b.value === "string")) {
-      const x = floatOf(a.value);
-      const y = floatOf(b.value);
+  if (NUMERIC.has(a.type) || NUMERIC.has(b.type)) {
+    if (!NUMERIC.has(a.type) || !NUMERIC.has(b.type)) return null;
+    if (a.type === "float" || b.type === "float") {
+      const x = a.type === "float" ? floatOf(a.value) : Number(a.value);
+      const y = b.type === "float" ? floatOf(b.value) : Number(b.value);
       // NaN is the greatest number (§3.1).
       if (Number.isNaN(x) || Number.isNaN(y)) return Number.isNaN(x) ? (Number.isNaN(y) ? 0 : 1) : -1;
       return x < y ? -1 : x > y ? 1 : 0;

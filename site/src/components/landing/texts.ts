@@ -15,6 +15,7 @@ export type IconName =
   | "shield"
   | "braces"
   | "engine"
+  | "github"
   | "arrow"
   | "copy"
   | "check";
@@ -37,9 +38,15 @@ interface Texts {
   news: Link & { tag: string };
   title: [plain: string, accent: string];
   lead: string;
-  actions: { start: Link; demo: Link; open: Link };
+  actions: { start: Link; demo: Link; open: Link; github: Link };
   install: { command: string; copy: string; copied: string };
-  window: { title: string; live: string; caption: string };
+  window: {
+    title: string;
+    viewsLabel: string;
+    views: { all: string; grouped: string; pivot: string; formulas: string };
+    live: string;
+    caption: string;
+  };
   statsLabel: string;
   stats: { value: string; label: string }[];
   builtOn: { label: string; items: string[] };
@@ -83,14 +90,22 @@ export const texts: Record<Language, Texts> = {
       start: { text: "Get started", href: "/getting-started/" },
       demo: { text: "Try the demo", href: "/demo/" },
       open: { text: "Open a file", href: "/open/" },
+      github: { text: "GitHub", href: github },
     },
     install: { command: "npm install vastgrid vastgrid-js", copy: "Copy the command", copied: "Copied" },
     window: {
       title: "orders · 100,000 rows",
+      viewsLabel: "Preset views",
+      views: {
+        all: "All rows",
+        grouped: "Group by country",
+        pivot: "Pivot",
+        formulas: "Formulas & rules",
+      },
       live: "Live, in a Web Worker",
       caption:
-        "100,000 made-up orders, made by the memory engine in a Web Worker of this page. Open a column's menu (▾) " +
-        "to sort, filter or group, drag across cells to see their sum below, and press ⌘F or Ctrl+F to find.",
+        "100,000 made-up orders, made by the memory engine in a Web Worker of this page. Switch views above, open a " +
+        "column's menu (▾) to sort, filter or group, drag across cells to see their sum below, and press ⌘F or Ctrl+F to find.",
     },
     statsLabel: "vastgrid in numbers",
     stats: [
@@ -258,14 +273,22 @@ export const texts: Record<Language, Texts> = {
       start: { text: "はじめる", href: "/ja/getting-started/" },
       demo: { text: "デモを試す", href: "/ja/demo/" },
       open: { text: "ファイルを開く", href: "/ja/open/" },
+      github: { text: "GitHub", href: github },
     },
     install: { command: "npm install vastgrid vastgrid-js", copy: "コマンドをコピー", copied: "コピーしました" },
     window: {
       title: "orders · 10 万行",
+      viewsLabel: "表示の切り替え",
+      views: {
+        all: "すべての行",
+        grouped: "国ごとに集計",
+        pivot: "クロス集計",
+        formulas: "数式と条件書式",
+      },
       live: "ライブ・Web Worker の中",
       caption:
-        "架空の注文 10 万件を、このページの Web Worker の中でメモリエンジンが作っています。列のメニュー（▾）で" +
-        "並べ替え・絞り込み・グループ化、セルの上をドラッグすると下に合計が出て、⌘F か Ctrl+F で検索できます。",
+        "架空の注文 10 万件を、このページの Web Worker の中でメモリエンジンが作っています。上のボタンで表示を切り替えるか、" +
+        "列のメニュー（▾）で並べ替え・絞り込み・グループ化、セルの上をドラッグすると下に合計が出て、⌘F か Ctrl+F で検索できます。",
     },
     statsLabel: "数字で見る vastgrid",
     stats: [

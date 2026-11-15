@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- `vastgrid`: conditional style rules compare `decimal` and `bigint` columns with integer and float values without
+  throwing.
+
 ## 0.4.1 — 2026-11-13
 
 ### Fixes
