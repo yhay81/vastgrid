@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Documentation
+
+- `vastgrid` website: link directly to the million-row sample, add a guide to opening large CSV and Parquet
+  files, and make GitHub links in the demo and file viewer open in a new tab to preserve the current grid.
+
 ### Fixes
 
 - `vastgrid`: conditional style rules compare `decimal` and `bigint` columns with integer and float values without

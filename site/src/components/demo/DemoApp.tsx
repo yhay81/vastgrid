@@ -10,6 +10,7 @@ import {
 import { ja } from "vastgrid/locales/ja";
 import "vastgrid/styles.css";
 import { type Language, type Theme, useAppPrefs } from "../app-prefs.ts";
+import { GitHubLink } from "../GitHubLink.tsx";
 
 const ORDER_ROWS = 200_000;
 
@@ -119,7 +120,7 @@ export default function DemoApp({ language: pageLanguage }: { language: Language
             </select>
           </label>
           <a href={language === "ja" ? "/ja/getting-started/" : "/getting-started/"}>{t.docs}</a>
-          <a href="https://github.com/yhay81/vastgrid">GitHub</a>
+          <GitHubLink language={language} />
         </div>
         <p className="demo__note">{t.note}</p>
       </header>

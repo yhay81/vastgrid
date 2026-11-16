@@ -1197,3 +1197,8 @@ main:has(.lp-hero) {
     color: HighlightText;
   }
 }
+.lp-evidence {
+  margin-block: 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+}

@@ -6,17 +6,22 @@
 [![CI](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml/badge.svg)](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/yhay81/vastgrid)](LICENSE)
 
-vastgrid opens huge CSV, TSV, Parquet, JSON Lines and Excel files and DuckDB databases like a spreadsheet, lets people fix them, and
-saves them safely. It is a canvas data grid for React with engines for the browser and Node.js, and the same grid
-comes as a command, a VS Code extension, an MCP App and a Jupyter widget.
+**Open huge CSV and Parquet files like a spreadsheet. Keep your data on your computer.**
 
-**[Try the demo](https://vastgrid.yhay81.com/demo/)** · [Open a file in the browser](https://vastgrid.yhay81.com/open/) · [Documentation](https://vastgrid.yhay81.com) · [日本語](README.ja.md)
+vastgrid lets you scroll, sort, filter, group and edit large tables with familiar spreadsheet controls.
+Use it in your browser, VS Code or terminal, or embed the same canvas grid in React, an MCP App or Jupyter.
+It also reads TSV, JSON Lines, Excel files and DuckDB databases. Free and MIT licensed.
+
+**[Try 1,000,000 rows — no install](https://vastgrid.yhay81.com/open/?sample=1)** · [Open your file](https://vastgrid.yhay81.com/open/) · [Documentation](https://vastgrid.yhay81.com) · [日本語](README.ja.md)
+
+Useful for your next data task? [Star vastgrid on GitHub](https://github.com/yhay81/vastgrid) to find it again.
 
 [![A Parquet file of 100,000,000 rows sorted by price in vastgrid-cli, with a selection and its sum in the status bar](docs/images/grid.jpg)](https://vastgrid.yhay81.com/demo/)
 
-- **Any size.** Rows are read a block at a time as you scroll, and Parquet files are read in place, also over HTTP
-  Range requests. A 100-million-row Parquet file sorts on DuckDB with its first rows ready in under a second.
-  Cells are drawn on a canvas, and scrolling renders no React.
+- **Built for large files.** Rows are read a block at a time as you scroll, and Parquet files are read in place,
+  also over HTTP Range requests. In the [M2 Pro benchmark](https://vastgrid.yhay81.com/about/performance/),
+  DuckDB returned the first sorted rows of a 100-million-row Parquet file in 953 ms; the remaining view took
+  another 3 seconds to build. Cells are drawn on a canvas, and scrolling renders no React.
 - **A spreadsheet's way of working.** Excel's keys and selections, sorting, filters, conditions, search and find,
   groups, pivots and totals, formulas, formats, copy, cut, paste and fill.
 - **Edits you can trust.** Typed input is checked against the column's type, writes are checked for conflicts and
@@ -30,6 +35,23 @@ comes as a command, a VS Code extension, an MCP App and a Jupyter widget.
 - **Nine languages** (English, Japanese, Chinese in simplified and traditional characters, Korean, Spanish,
   Brazilian Portuguese, French and German), each its own import (`vastgrid/locales/ja`); light and dark themes
   through CSS variables, ARIA grid semantics and full keyboard operation.
+
+## Try it in a minute
+
+1. [Open the million-row sample](https://vastgrid.yhay81.com/open/?sample=1). No account, install or upload.
+2. Open the `unit_price` column menu (▾), then choose **Sort descending**.
+3. Select a range of prices to see its sum, or press **Ctrl+End / ⌘+End** to reach the last row.
+
+The sample runs in your browser's memory engine. The 100-million-row benchmark uses DuckDB on the computer;
+it is a different workload. For files that exceed browser memory, use the CLI or VS Code:
+
+```sh
+npx vastgrid-cli sales.parquet
+```
+
+Requires Node.js 22.18 or later. Replace `sales.parquet` with your file's path.
+[Choose how to open a large file](https://vastgrid.yhay81.com/guides/open-large-files/) or explore the
+[200,000-row demo](https://vastgrid.yhay81.com/demo/) for editing and grouping.
 
 ## Where to use it
 
