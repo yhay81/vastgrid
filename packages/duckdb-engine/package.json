@@ -45,7 +45,7 @@
   "dependencies": {
     "@duckdb/node-api": "catalog:",
     "fzstd": "0.1.1",
-    "hyparquet": "1.32.0",
+    "hyparquet": "1.33.0",
     "vastgrid-spec": "workspace:*",
     "vastgrid-sql": "workspace:*"
   },
