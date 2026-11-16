@@ -3,6 +3,7 @@ import { createGridStore, DataGrid, GridProvider, type GridStore, useGridSelecto
 import { ja } from "vastgrid/locales/ja";
 import "vastgrid/styles.css";
 import { type Language, type Theme, useAppPrefs } from "../app-prefs.ts";
+import { GitHubLink } from "../GitHubLink.tsx";
 
 const SAMPLE_ROWS = 1_000_000;
 
@@ -254,7 +255,7 @@ export default function OpenApp({ language: pageLanguage }: { language: Language
             </select>
           </label>
           <a href={language === "ja" ? "/ja/getting-started/" : "/getting-started/"}>{t.docs}</a>
-          <a href="https://github.com/yhay81/vastgrid">GitHub</a>
+          <GitHubLink language={language} />
         </div>
         <p className="demo__note">{t.note}</p>
         {failure && (

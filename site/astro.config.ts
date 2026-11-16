@@ -57,6 +57,7 @@ export default defineConfig({
           label: "Start here",
           translations: { ja: "はじめに" },
           items: [
+            "guides/open-large-files",
             "getting-started",
             { label: "Live demo", translations: { ja: "デモ" }, link: "/demo/" },
             { label: "Open a file", translations: { ja: "ファイルを開く" }, link: "/open/" },
