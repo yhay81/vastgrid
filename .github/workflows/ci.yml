@@ -54,7 +54,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: true
       # Collect coverage once, in place of this matrix entry's ordinary test run.
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@v10.4.0
         if: matrix.os == 'ubuntu-latest' && matrix.node == 26
       # anywidget reads static/widget.js at import time, including in the Python engine tests.
       - run: pnpm run build
@@ -80,7 +80,7 @@ jobs:
           node-version-file: .node-version
           cache: true
       # The Python package and its tests; the TypeScript tests of packages/notebook run it with uv.
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@v10.4.0
       # The grid's module that the package carries (static/widget.js).
       - run: pnpm run build
       - run: uv run --frozen ruff check && uv run --frozen ruff format --check && uv run --frozen pytest
