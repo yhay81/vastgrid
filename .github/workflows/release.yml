@@ -24,7 +24,7 @@ jobs:
         with:
           node-version-file: .node-version
           run-install: false
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@v10.4.0
       - run: node scripts/release.mjs check "${GITHUB_REF_NAME#v}"
       - run: pnpm install --frozen-lockfile
       - run: pnpm run lint
@@ -121,7 +121,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@v10.4.0
       - uses: actions/download-artifact@v8
         with:
           name: python

@@ -1,0 +1,33 @@
+name: Resolve dependency update lockfiles
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  resolve:
+    if: github.head_ref == 'dependabot/npm_and_yarn/development-9c2b012ce7'
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Resolve the toolchain and development dependencies in sequence
+        run: |
+          manager=$(node -p 'require("./package.json").packageManager')
+          resolve_lock() {
+            npm exec --yes --package="$manager" -- pnpm install --lockfile-only --no-frozen-lockfile --ignore-scripts
+            git hash-object pnpm-lock.yaml | sed "s/^/LOCKHASH$1 /"
+            base64 -w 240 pnpm-lock.yaml | sed "s/^/LOCKDATA$1 /"
+          }
+          for manifest in package.json site/package.json packages/vscode/package.json; do
+            git show fed9183c2d9edb781f405ab73d26cb18ed36a2f8:"$manifest" > "$manifest"
+          done
+          sed -i 's/"@vitest\/coverage-v8": "5.0.5"/"@vitest\/coverage-v8": "5.1.0"/' package.json
+          resolve_lock 75
+          git restore package.json site/package.json packages/vscode/package.json
+          resolve_lock 72
