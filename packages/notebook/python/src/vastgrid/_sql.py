@@ -847,8 +847,19 @@ class _Compiler:
             result = f"quantile_cont({column}, {number_text(measure.p)}){where}"
             if measure.type["type"] == "time":
                 return result
-            count = f"CAST(CAST(epoch_us({result}) AS VARCHAR) AS BIGINT)"
-            return f"(CASE WHEN {count} >= epoch_us({FIRST_DATE}) THEN {result} END)"
+            # Integer ranks select the original value exactly. Between ranks the specification
+            # interpolates epoch microseconds in double precision, then rounds halves away from zero.
+            rank = f"({number_text(measure.p)}::DOUBLE * (count({column}){where} - 1))"
+            micros = f"CAST(epoch_us({column}) AS DOUBLE)"
+            if measure.column is not None and measure.column.get("unit") == "ns":
+                micros = f"(CAST(epoch_ns({column}) AS DOUBLE) / 1000)"
+            interpolated = f"quantile_cont({micros}, {number_text(measure.p)}){where}"
+            count = f"TRY_CAST(round({interpolated}) AS BIGINT)"
+            make = "make_timestamptz" if measure.type["type"] == "timestamptz" else "make_timestamp"
+            return (
+                f"(CASE WHEN {rank} = floor({rank}) THEN {result} "
+                f"WHEN {count} BETWEEN epoch_us({FIRST_DATE}) AND 9223372036854775806 THEN {make}({count}) END)"
+            )
         name = "approx_quantile" if measure.approx else "quantile_cont"
         return f"{name}(CAST({column} AS DOUBLE), {number_text(measure.p)}){where}"
 

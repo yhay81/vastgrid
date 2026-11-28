@@ -83,7 +83,7 @@ jobs:
       - uses: astral-sh/setup-uv@v10.4.0
       # The grid's module that the package carries (static/widget.js).
       - run: pnpm run build
-      - run: uv run --frozen ruff check && uv run --frozen ruff format --check && uv run --frozen pytest
+      - run: uv run --locked ruff check && uv run --frozen ruff format --check && uv run --frozen pytest
         working-directory: packages/notebook/python
       - run: pnpm test packages/notebook/test
       - run: pnpm exec playwright install --with-deps chromium

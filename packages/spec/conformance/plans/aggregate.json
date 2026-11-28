@@ -72,6 +72,14 @@
   },
   "cases": [
     {
+      "id": "aggregate.temporal-quantile-integer-rank",
+      "section": "3.8",
+      "description": "An integer rank keeps the exact microsecond at the upper end of the finite range.",
+      "table": "temporal_limits",
+      "plan": { "aggregate": { "keys": [], "measures": [{ "name": "last", "fn": "quantile", "column": "t", "p": 1 }] } },
+      "expect": { "rowCount": 1, "rows": [["+294247-01-10 04:00:54.775806"]] }
+    },
+    {
       "id": "aggregate.temporal-quantile-overflow",
       "section": "3.8",
       "description": "A temporal quantile rounded beyond the finite 64-bit count gives null, not an infinity or an error.",
