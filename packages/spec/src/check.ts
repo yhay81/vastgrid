@@ -448,12 +448,13 @@ class Checker {
       if (isNull(arg.type) || (arg.kind === "literal" && arg.value === null)) continue;
       result = result === null ? arg.type : this.unify(result, arg.type, path);
     }
-    for (const arg of args) {
-      if (isNull(arg.type) || !(arg.kind === "literal" && arg.value === null)) continue;
-      if (result === null) result = arg.type;
-      else if (result.type !== arg.type.type) {
-        result = this.unify(result, arg.type.type === "decimal" ? decimal(1, 0) : arg.type, path);
-      }
+    const typedNulls = args.filter((arg) => !isNull(arg.type) && arg.kind === "literal" && arg.value === null);
+    const mixedDecimalNull = result !== null || typedNulls.some((arg) => arg.type.type !== "decimal");
+    for (const arg of typedNulls) {
+      const nullType: ValueType =
+        mixedDecimalNull && arg.type.type === "decimal" ? decimal(1, 0) : (arg.type as ValueType);
+      if (result === null) result = nullType;
+      else if (result.type !== nullType.type) result = this.unify(result, nullType, path);
     }
     if (result === null) fail(path, "type", "The type of these values cannot be decided: give a null literal a type.");
     for (const arg of args) {

@@ -19,10 +19,12 @@ import type { GridStore } from "../core/store.js";
 import { LocaleContext, SaveContext } from "./context.js";
 import { useGridSelector, useGridStore } from "./hooks.js";
 
-/** What the grid asks of the editor while it handles a key. */
+/** What the grid asks of the editor while it handles a key or pointer gesture. */
 export interface EditorControl {
   /** Places the editor over the editor's cell and gives it the focus, before the key's text arrives. */
   open(): void;
+  /** Commits an open editor before a grid pointer gesture; false when the draft refuses to close. */
+  finish(): boolean;
 }
 
 /** Whether an editor of the session is for the same cell as another. */
@@ -38,7 +40,7 @@ function fit(textarea: HTMLTextAreaElement) {
 
 /** Places the editor's box over the cell of the session's editor, hidden while the cell is scrolled away. */
 function place(box: HTMLDivElement | null, store: GridStore, canvas: GridCanvas) {
-  const current = store.getSnapshot().session.editor;
+  const current = store.currentSession().editor;
   if (!box || !current) return;
   const at = store.getSnapshot().displayed.findIndex((item) => item.column.name === current.column);
   if (at < 0) return;
@@ -81,16 +83,77 @@ export function CellEditor({ canvas, scrollerRef, announce, ref }: CellEditorPro
   const open = editor !== undefined && column >= 0;
   const error = problem && sameCell(problem.editor, editor) ? problem.text : null;
 
-  useImperativeHandle(
-    ref,
-    () => ({
-      open: () => {
-        place(boxRef.current, store, canvas);
-        textareaRef.current?.focus({ preventScroll: true });
-      },
-    }),
-    [store, canvas],
-  );
+  const change = (text: string) => {
+    if (store.currentSession().editor) store.dispatchSync({ command: "edit.change", text });
+  };
+
+  const reportFailure = (current: Editor, failure: unknown) => {
+    const commandError = failure instanceof CommandError ? failure : null;
+    // Into the selection, the column that refuses the text may be another than the editor's.
+    const targetColumn =
+      typeof commandError?.details?.column === "string" ? commandError.details.column : current.column;
+    if (commandError?.reason === "invalid_value") {
+      setProblem({ editor: current, text: messages.invalidValue(targetColumn) });
+    } else if (commandError?.reason === "read_only") {
+      const text = targetColumn === current.column ? messages.readOnly : messages.readOnlyColumn(targetColumn);
+      setProblem({ editor: current, text });
+    } else {
+      announce(messages.failed(failure instanceof Error ? failure.message : String(failure)));
+    }
+  };
+
+  /**
+   * Writes the text (`edit.commit`), with `selection` into every selected cell (§6.5.2); resolves with whether it
+   * was written.
+   */
+  const commit = async (move: "up" | "down" | "left" | "right" | null, cells: "editor" | "selection" = "editor") => {
+    const textarea = textareaRef.current;
+    const current = store.currentSession().editor;
+    if (!textarea || !current) return false;
+    setProblem(null);
+    change(textarea.value);
+    const outcome = await store.dispatch(
+      cells === "selection" ? { command: "edit.commit", move, cells } : { command: "edit.commit", move },
+    );
+    if (outcome.ok) return true;
+    reportFailure(current, outcome.error);
+    if (document.activeElement === scrollerRef.current || document.activeElement === document.body) {
+      textareaRef.current?.focus({ preventScroll: true });
+    }
+    return false;
+  };
+
+  useImperativeHandle(ref, () => ({
+    open: () => {
+      const current = store.currentSession().editor;
+      const textarea = textareaRef.current;
+      if (textarea && current) {
+        shown.current = current;
+        textarea.value = current.text;
+        textarea.setSelectionRange(current.text.length, current.text.length);
+        textarea.style.height = "";
+      }
+      place(boxRef.current, store, canvas);
+      textarea?.focus({ preventScroll: true });
+      if (textarea) fit(textarea);
+    },
+    finish: () => {
+      const current = store.currentSession().editor;
+      const textarea = textareaRef.current;
+      if (!current || !textarea) return true;
+      setProblem(null);
+      change(textarea.value);
+      const outcome = store.dispatchSync({ command: "edit.commit", move: null });
+      if (outcome.ok) return true;
+      if (outcome.error instanceof CommandError && outcome.error.reason === "not_loaded") {
+        void commit(null);
+        return false;
+      }
+      reportFailure(current, outcome.error);
+      textarea.focus({ preventScroll: true });
+      return false;
+    },
+  }));
 
   // Over its cell, and again at every frame the canvas draws (scrolling, resizing).
   // The editor's row and column, which it does not read, place it again when it moves to another cell.
@@ -119,42 +182,16 @@ export function CellEditor({ canvas, scrollerRef, announce, ref }: CellEditorPro
     }
   }, [editor, scrollerRef]);
 
-  const change = (text: string) => {
-    if (store.getSnapshot().session.editor) store.dispatchSync({ command: "edit.change", text });
-  };
-
-  /**
-   * Writes the text (`edit.commit`), with `selection` into every selected cell (§6.5.2); resolves with whether it
-   * was written.
-   */
-  const commit = async (move: "up" | "down" | "left" | "right" | null, cells: "editor" | "selection" = "editor") => {
-    const textarea = textareaRef.current;
-    const current = store.getSnapshot().session.editor;
-    if (!textarea || !current) return false;
-    setProblem(null);
-    change(textarea.value);
-    const outcome = await store.dispatch(
-      cells === "selection" ? { command: "edit.commit", move, cells } : { command: "edit.commit", move },
-    );
-    if (outcome.ok) return true;
-    const error = outcome.error instanceof CommandError ? outcome.error : null;
-    // Into the selection, the column that refuses the text may be another than the editor's.
-    const column = typeof error?.details?.column === "string" ? error.details.column : current.column;
-    if (error?.reason === "invalid_value") setProblem({ editor: current, text: messages.invalidValue(column) });
-    else if (error?.reason === "read_only") {
-      const text = column === current.column ? messages.readOnly : messages.readOnlyColumn(column);
-      setProblem({ editor: current, text });
-    } else announce(messages.failed(outcome.error.message));
-    if (document.activeElement === scrollerRef.current || document.activeElement === document.body) {
-      textareaRef.current?.focus({ preventScroll: true });
-    }
-    return false;
-  };
-
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     // The grid does not handle keys typed into the editor.
     event.stopPropagation();
-    if (!open || event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (!open) return;
+    const composing = event.nativeEvent.isComposing || event.keyCode === 229;
+    if (composing) {
+      // Safari can fire compositionend before the confirming Enter keydown (keyCode 229): prevent inserting a newline.
+      if (event.key === "Enter" && !event.nativeEvent.isComposing) event.preventDefault();
+      return;
+    }
     const textarea = event.currentTarget;
     const apple = isApple();
     const stamp = stampText(event, apple, new Date());

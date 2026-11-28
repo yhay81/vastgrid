@@ -79,6 +79,22 @@
               "minimum": 0,
               "maximum": 1
             }
+          },
+          "if": {
+            "properties": {
+              "fn": {
+                "const": "quantile"
+              }
+            },
+            "required": ["fn"]
+          },
+          "then": {
+            "required": ["p"]
+          },
+          "else": {
+            "not": {
+              "required": ["p"]
+            }
           }
         }
       }

@@ -806,3 +806,27 @@ test("a file in folders named like key=value has its own columns, not ones made 
     assert.deepEqual((await client.rows(info)).rows, [[1, "a"]], name);
   }
 });
+
+test("cancelling a write while it is completing never reports cancelled after applying edits", async () => {
+  await writeFile(path.join(workspace, "mut.csv"), "id,name\n1,Apple\n");
+  const info = await client.open("mut.csv");
+  const writePromise = context.engine.handle({
+    v: 2,
+    id: 99_991,
+    op: "write",
+    table: info.table,
+    revision: info.revision,
+    updates: [{ key: { rowId: 0 }, column: "name", value: "Pear", previous: "Apple" }],
+  });
+  // Immediately send cancel in the next microtask/turn while write completes.
+  await Promise.resolve();
+  await context.engine.handle({ v: 2, id: 99_992, op: "cancel", request: 99_991 });
+  const res = (await writePromise) as { result?: { updated: number }; error?: { code: string } };
+  if (res.error) {
+    assert.equal(res.error.code, "cancelled");
+    assert.deepEqual((await client.rows(info)).rows, [[1, "Apple"]]);
+  } else {
+    assert.equal(res.result?.updated, 1);
+    assert.deepEqual((await client.rows(info)).rows, [[1, "Pear"]]);
+  }
+});

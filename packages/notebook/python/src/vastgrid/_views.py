@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import math
 import threading
 from collections import OrderedDict
 from collections.abc import Callable
@@ -325,6 +326,7 @@ class Views:
                 aggregates += [
                     f"count(*) {finite}",
                     f"sum({number}) {finite}",
+                    f"sum({number} * 5.421010862427522e-20) {finite}",
                     f"min({number}) {finite}",
                     f"max({number}) {finite}",
                 ]
@@ -333,6 +335,7 @@ class Views:
         at = 0
         count = numeric_count = 0
         total = 0.0
+        scaled_total = 0.0
         low = float("inf")
         high = float("-inf")
         for column in columns:
@@ -341,23 +344,27 @@ class Views:
             if column["type"] not in _NUMERIC:
                 continue
             numbers = int(values[at])
-            part, least, most = values[at + 1], values[at + 2], values[at + 3]
-            at += 4
+            part, scaled_part, least, most = values[at + 1], values[at + 2], values[at + 3], values[at + 4]
+            at += 5
             if numbers == 0:
                 continue
             numeric_count += numbers
             total += float(part)
+            scaled_total += float(scaled_part)
             low = min(low, float(least))
             high = max(high, float(most))
         if numeric_count == 0:
             return {**empty, "count": count}
+        if not math.isfinite(total):
+            total = scaled_total * 2.0**64
+        average = total / numeric_count if math.isfinite(total) else (scaled_total / numeric_count) * 2.0**64
         return {
             "count": count,
             "numericCount": numeric_count,
-            "sum": float_json(total),
-            "min": low,
-            "max": high,
-            "average": float_json(total / numeric_count),
+            "sum": None if math.isnan(total) else float_json(total + 0.0),
+            "min": low + 0.0,
+            "max": high + 0.0,
+            "average": None if math.isnan(average) else float_json(average + 0.0),
         }
 
     def find(self, table: Table, request: Json, running: Running) -> Json | None:

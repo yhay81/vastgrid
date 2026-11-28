@@ -146,14 +146,14 @@ export function excelSerial(value: string, type: LogicalType): number | null {
 
 const numericText = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
 
-/** A number for numeric text that a double holds exactly as written (at most 15 significant digits). */
+/** A number for numeric text that Excel and a double hold without losing digits (at most 15 digits, below 1e15). */
 function exactNumber(text: string): number | null {
   if (!numericText.test(text)) return null;
   const mantissa = text.replace(/^[+-]/, "").replace(/e.*$/i, "").replace(".", "");
   const significant = mantissa.replace(/^0+/, "").replace(/0+$/, "");
   if (significant.length > 15) return null;
   const number = Number(text);
-  return Number.isFinite(number) ? number : null;
+  return Number.isFinite(number) && Math.abs(number) < 1e15 ? number : null;
 }
 
 function escapeXml(text: string) {

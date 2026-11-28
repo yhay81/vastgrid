@@ -53,7 +53,7 @@ def table_column(name: str, sql_type: str) -> dict[str, Any]:
     """The column of the table that a source column is (§2.1): its logical type, with `sourceType`, and `readOnly`
     for the types that are read as their text (lists, structs, maps, unions, JSON, enums, bit strings and others)."""
     upper = sql_type.upper()
-    decimal = _DECIMAL.match(upper)
+    decimal = _DECIMAL.fullmatch(upper)
     if decimal:
         kind: dict[str, Any] | None = {"type": "decimal", "precision": int(decimal[1]), "scale": int(decimal[2])}
     elif upper in _WIDE:
@@ -72,14 +72,21 @@ def source_expression(name: str, sql_type: str, column: dict[str, Any], source_s
     plans mean the same on every source (§3). Values of more than 38 digits read as null (§2.1)."""
     quoted = quote_identifier(name) if source_sql is None else source_sql
     target = duckdb_type(column)
+    upper = sql_type.upper()
     if column.get("readOnly") and column["type"] == "string":
         return f"CAST({quoted} AS VARCHAR)"
-    if sql_type.upper() in ("TIMESTAMP_S", "TIMESTAMP_MS"):
+    if upper in ("TIMESTAMP_S", "TIMESTAMP_MS"):
         # Even isfinite() widens to microseconds and can throw on valid 64-bit source counts.
         return f"(CASE WHEN TRY_CAST({quoted} AS TIMESTAMP) IS NOT NULL THEN {quoted} END)"
-    if sql_type.upper() == target:
-        return quoted
-    return f"TRY_CAST({quoted} AS {target})" if column["type"] == "decimal" else f"CAST({quoted} AS {target})"
+    if upper == target:
+        base = quoted
+    else:
+        base = f"TRY_CAST({quoted} AS {target})" if column["type"] == "decimal" else f"CAST({quoted} AS {target})"
+    if column["type"] == "date":
+        return f"(CASE WHEN {base} BETWEEN {FIRST_DATE} AND {LAST_DATE} OR NOT isfinite({base}) THEN {base} END)"
+    if column["type"] == "time":
+        return f"(CASE WHEN {base} < TIME '24:00:00' THEN {base} END)"
+    return base
 
 
 _EPOCHS = {
@@ -178,7 +185,7 @@ def accept_key_value(value: Any, column: dict[str, Any]) -> Any | None:
     if column["type"] == "decimal":
         if not isinstance(value, str):
             return None
-        match = _DECIMAL_VALUE.match(value)
+        match = _DECIMAL_VALUE.fullmatch(value)
         if not match:
             return None
         scale = column.get("scale") or 0

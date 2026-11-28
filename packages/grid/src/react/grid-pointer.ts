@@ -30,10 +30,19 @@ interface PointerOptions {
   columns: readonly DisplayedColumn[];
   toggleCheck: (row: number) => void;
   dispatchCheck: (command: GridCommand) => void;
+  finishEditor: () => boolean;
 }
 
 /** Pointer gestures and their state: selection, column moves and resizing, and scrolling during a drag. */
-export function useGridPointer({ canvas, store, scrollerRef, columns, toggleCheck, dispatchCheck }: PointerOptions) {
+export function useGridPointer({
+  canvas,
+  store,
+  scrollerRef,
+  columns,
+  toggleCheck,
+  dispatchCheck,
+  finishEditor,
+}: PointerOptions) {
   const { geometry } = canvas;
   const drag = useRef<Drag | null>(null);
   const follow = useRef<{ frame: number; x: number; y: number } | null>(null);
@@ -62,6 +71,10 @@ export function useGridPointer({ canvas, store, scrollerRef, columns, toggleChec
     const { x, y } = point(event);
     // Clicks on the scroll bars scroll.
     if (x > scroller.clientWidth || y > scroller.clientHeight) return;
+    if (!finishEditor()) {
+      event.preventDefault();
+      return;
+    }
     scroller.focus({ preventScroll: true });
     event.preventDefault();
     const hit: Hit = geometry.hit(x, y);

@@ -458,22 +458,54 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
     case "least":
     case "greatest": {
       const casts = types.map((from) => caster(from, type));
-      const compare = comparer(type, type);
       const greatest = expr.fn === "greatest";
+      if (type.type === "float") {
+        const compare = comparer(type, type);
+        return (row) => {
+          let best: JsonValue = null;
+          for (let index = 0; index < args.length; index++) {
+            const raw = args[index](row);
+            if (raw === null) continue;
+            const value = casts[index](raw);
+            if (value === null) continue;
+            if (best === null) best = value;
+            else {
+              const order = compare(value, best);
+              if (greatest ? order > 0 : order < 0) best = value;
+            }
+          }
+          return best;
+        };
+      }
+      // Comparisons depend on logical type and decimal scale, independent of the number of operands.
+      const distinct: ValueType[] = [];
+      const groups = types.map((candidate) => {
+        const index = distinct.findIndex(
+          (other) => other.type === candidate.type && scaleOf(other) === scaleOf(candidate),
+        );
+        if (index >= 0) return index;
+        distinct.push(candidate);
+        return distinct.length - 1;
+      });
+      const compares = distinct.map((left) => distinct.map((right) => comparer(left, right)));
       return (row) => {
         let best: JsonValue = null;
+        let bestIndex = -1;
         for (let index = 0; index < args.length; index++) {
           const raw = args[index](row);
           if (raw === null) continue;
-          const value = casts[index](raw);
-          if (value === null) continue;
-          if (best === null) best = value;
-          else {
-            const order = compare(value, best);
-            if (greatest ? order > 0 : order < 0) best = value;
+          if (bestIndex < 0) {
+            best = raw;
+            bestIndex = index;
+          } else {
+            const order = compares[groups[index]][groups[bestIndex]](raw, best);
+            if (greatest ? order > 0 : order < 0) {
+              best = raw;
+              bestIndex = index;
+            }
           }
         }
-        return best;
+        return bestIndex < 0 ? null : casts[bestIndex](best);
       };
     }
     case "add":
@@ -659,7 +691,7 @@ function call(expr: CallExpr, read: ColumnReader): RowValue {
         if (y === null) return null;
         const z = c(row);
         if (z === null) return null;
-        return y === "" ? x : (x as string).replaceAll(y as string, z as string);
+        return y === "" ? x : (x as string).replaceAll(y as string, () => z as string);
       };
     case "contains":
     case "starts_with":

@@ -156,8 +156,17 @@ export async function write(table: Table, request: Json, running: Running) {
     }
     // Row-backed writes materialize a whole column, which can uncover an invalid source value.
     if (!table.vectors) valuesOf(table, index);
-    staged.set(cellKey, update.value);
-    if (index === keyColumn) keys?.move?.(row, update.value);
+    let writtenValue = update.value;
+    if (typeof writtenValue === "string") {
+      if (column.type === "decimal" && /^-0(?:\.0+)?$/.test(writtenValue)) {
+        writtenValue = writtenValue.slice(1);
+      } else if (column.type === "bigint") {
+        const whole = BigInt(writtenValue);
+        writtenValue = whole >= -9007199254740991n && whole <= 9007199254740991n ? Number(whole) : whole.toString();
+      }
+    }
+    staged.set(cellKey, writtenValue);
+    if (index === keyColumn) keys?.move?.(row, writtenValue);
   }
   if (updates.length === 0) return { updated: 0, edits: { ...table.edits } };
   // The host's rows, Arrow columns and files stay as they were: writes change the engine's own values.

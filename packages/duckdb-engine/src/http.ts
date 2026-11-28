@@ -31,6 +31,10 @@ export interface HttpHandlerOptions {
   maxBody?: number;
   /** Milliseconds between the comments that keep a stream of events open. 15 seconds by default. */
   keepAlive?: number;
+  /** Host headers accepted on non-loopback or reverse-proxied deployments (`example.com`, `example.com:8080`). */
+  allowedHosts?: string[];
+  /** Browser origins (`https://app.example.com`) explicitly permitted to call this handler cross-origin. */
+  allowedOrigins?: string[];
 }
 
 type Json = Record<string, unknown>;
@@ -47,6 +51,68 @@ function sendJson(response: ServerResponse, status: number, body: unknown) {
 function invalid(response: ServerResponse, status: number, message: string, reason: string) {
   // No request was read, so none is answered (§8.1).
   sendJson(response, status, { v: 2, id: null, error: { code: "invalid_request", message, path: "", reason } });
+}
+
+function forbidden(response: ServerResponse, message: string) {
+  sendJson(response, 403, { v: 2, id: null, error: { code: "not_allowed", message } });
+}
+
+function isLoopbackAddress(address: string | undefined) {
+  if (!address) return false;
+  return (
+    address === "::1" ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(address) ||
+    /^::ffff:127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/i.test(address)
+  );
+}
+
+function isLoopbackHost(host: string) {
+  return /^(?:localhost|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[::1\])(?::\d{1,5})?$/i.test(host);
+}
+
+function checkRequestOrigin(
+  request: IncomingMessage,
+  options: HttpHandlerOptions,
+  originAllowed: boolean,
+): string | null {
+  const host = typeof request.headers.host === "string" ? request.headers.host.trim() : undefined;
+  if (options.allowedHosts) {
+    if (!host) return "The Host header is missing.";
+    const bare = host.startsWith("[") ? host.replace(/\]:\d+$/, "]") : host.replace(/:\d+$/, "");
+    const allowed = options.allowedHosts.some(
+      (entry) => entry.toLowerCase() === host.toLowerCase() || entry.toLowerCase() === bare.toLowerCase(),
+    );
+    if (!allowed) return "The Host header is not allowed.";
+  } else if (host !== undefined) {
+    const localAddress = request.socket?.localAddress;
+    if ((localAddress === undefined || isLoopbackAddress(localAddress)) && !isLoopbackHost(host)) {
+      return "Loopback requests require a loopback Host header.";
+    }
+  }
+  const origin = typeof request.headers.origin === "string" ? request.headers.origin.trim() : undefined;
+  const fetchSite =
+    typeof request.headers["sec-fetch-site"] === "string"
+      ? request.headers["sec-fetch-site"].trim().toLowerCase()
+      : undefined;
+  if (!originAllowed && fetchSite !== undefined && fetchSite !== "same-origin" && fetchSite !== "none") {
+    return "Cross-origin browser requests are not allowed.";
+  }
+  if (origin !== undefined && !originAllowed) {
+    if (!host || origin === "null") return "The Origin header is not allowed.";
+    let parsed: URL;
+    let expected: URL;
+    try {
+      parsed = new URL(origin);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "The Origin header is not allowed.";
+      expected = new URL(`${parsed.protocol}//${host}`);
+    } catch {
+      return "The Origin header is not allowed.";
+    }
+    if (parsed.origin === "null" || parsed.origin !== expected.origin) {
+      return "The Origin header does not match Host.";
+    }
+  }
+  return null;
 }
 
 const utf8 = new TextDecoder("utf-8", { fatal: true });
@@ -115,6 +181,7 @@ export function createHttpHandler(engine: DuckDBEngine, options: HttpHandlerOpti
   const events = options.events ?? `${prefix}events`;
   const exportsPath = options.exports ?? `${prefix}exports/`;
   const limit = options.maxBody ?? 64 * 1024 * 1024;
+  const allowedOrigins = new Set(options.allowedOrigins?.map((item) => item.toLowerCase()));
   const handle = async (
     request: IncomingMessage,
     response: ServerResponse,
@@ -132,17 +199,45 @@ export function createHttpHandler(engine: DuckDBEngine, options: HttpHandlerOpti
       invalid(response, 400, "The request URL is not valid.", "syntax");
       return;
     }
-    if (url.pathname === events && request.method === "GET") {
+    const preflight =
+      request.method === "OPTIONS" && typeof request.headers["access-control-request-method"] === "string";
+    const isEvents = url.pathname === events && (request.method === "GET" || preflight);
+    const isExport = exportName !== undefined && (request.method === "GET" || request.method === "HEAD" || preflight);
+    if (!isEvents && !isExport && url.pathname !== base) {
+      if (next) next();
+      else invalid(response, 404, "There is nothing at this path.", "syntax");
+      return;
+    }
+    response.setHeader?.("vary", "Origin, Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site");
+    const origin = request.headers.origin;
+    const originAllowed = typeof origin === "string" && allowedOrigins.has(origin.trim().toLowerCase());
+    const originProblem = checkRequestOrigin(request, options, originAllowed);
+    if (originProblem) {
+      forbidden(response, originProblem);
+      return;
+    }
+    if (originAllowed) {
+      response.setHeader("access-control-allow-origin", origin);
+      response.setHeader("access-control-expose-headers", "Content-Disposition");
+    }
+    if (preflight) {
+      const methods = isEvents ? ["GET"] : isExport ? ["GET", "HEAD"] : ["POST"];
+      if (!originAllowed || !methods.includes(request.headers["access-control-request-method"] as string)) {
+        forbidden(response, "This cross-origin request is not allowed.");
+        return;
+      }
+      const headers = request.headers["access-control-request-headers"];
+      if (typeof headers === "string") response.setHeader("access-control-allow-headers", headers);
+      response.writeHead(204, { "access-control-allow-methods": methods.join(", "), "cache-control": "no-store" });
+      response.end();
+      return;
+    }
+    if (isEvents) {
       streamEvents(engine, response, options.keepAlive ?? 15_000);
       return;
     }
-    if (url.pathname.startsWith(exportsPath) && (request.method === "GET" || request.method === "HEAD")) {
+    if (isExport) {
       sendExport(engine, exportName as string, request, response);
-      return;
-    }
-    if (url.pathname !== base) {
-      if (next) next();
-      else invalid(response, 404, "There is nothing at this path.", "syntax");
       return;
     }
     if (request.method !== "POST") {

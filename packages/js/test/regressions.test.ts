@@ -208,4 +208,19 @@ test("write rejects empty updates on read-only tables and matches decimal rowKey
   });
   assert.deepEqual(written, { updated: 4, edits: { version: 1, cells: 2 } });
   assert.deepEqual((await client.rows(rw, {})).rows[0], ["3.00", "Kobe"]);
+
+  // Writing "-0.00" normalizes the stored decimal so subsequent edits using the Arrow-read "0.00" succeed.
+  await client.result("write", {
+    table: rw.table,
+    revision: rw.revision,
+    updates: [{ key: { rowId: 1 }, column: "price", value: "-0.00", previous: "2.00" }],
+  });
+  const readBack = (await client.rows(rw, {})).rows[1][0];
+  assert.equal(readBack, "0.00");
+  await client.result("write", {
+    table: rw.table,
+    revision: rw.revision,
+    updates: [{ key: { rowId: 1 }, column: "price", value: "4.50", previous: readBack }],
+  });
+  assert.equal((await client.rows(rw, {})).rows[1][0], "4.50");
 });

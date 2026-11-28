@@ -1,19 +1,26 @@
 # <img src="docs/images/logo.svg" alt="" width="32" height="32"> vastgrid
 
 [![npm](https://img.shields.io/npm/v/vastgrid)](https://www.npmjs.com/package/vastgrid)
+[![PyPI](https://img.shields.io/pypi/v/vastgrid)](https://pypi.org/project/vastgrid/)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/yhay81.vastgrid-vscode?label=VS%20Code)](https://marketplace.visualstudio.com/items?itemName=yhay81.vastgrid-vscode)
 [![CI](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml/badge.svg)](https://github.com/yhay81/vastgrid/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/yhay81/vastgrid)](LICENSE)
 
-vastgrid は、巨大な CSV・TSV・Parquet・JSON Lines・Excel のファイルや DuckDB のデータベースを表計算ソフトのように開き、直し、安全に保存できるようにします。
-React のキャンバスのデータグリッドに、ブラウザーと Node.js のエンジンが付き、同じグリッドをコマンド・VS Code の拡張機能・MCP App・
-Jupyter のウィジェットとしても使えます。
+**巨大な CSV・Parquet を、表計算ソフトのように。データは手元のコンピューターで扱えます。**
 
-**[デモを試す](https://vastgrid.yhay81.com/ja/demo/)** · [ブラウザーでファイルを開く](https://vastgrid.yhay81.com/ja/open/) · [ドキュメント](https://vastgrid.yhay81.com/ja/) · [English](README.md)
+vastgrid は、大きな表をスクロール・並べ替え・絞り込み・集計・編集できる、無料の MIT ライセンスのツールです。
+ブラウザー、VS Code、ターミナルですぐに使え、同じキャンバスのグリッドを React・MCP App・Jupyter にも組み込めます。
+TSV・JSON Lines・Excel のファイルや DuckDB のデータベースにも対応しています。
+
+**[100 万行を試す — インストール不要](https://vastgrid.yhay81.com/ja/open/?sample=1)** · [手元のファイルを開く](https://vastgrid.yhay81.com/ja/open/) · [ドキュメント](https://vastgrid.yhay81.com/ja/) · [English](README.md)
+
+次のデータ作業にも使えそうなら、[GitHub でスター](https://github.com/yhay81/vastgrid)を付けて、あとで見つけやすくできます。
 
 [![1 億行の Parquet ファイルを価格で並べ替え、選んだセルの合計をステータスバーに出した vastgrid-cli](docs/images/grid.jpg)](https://vastgrid.yhay81.com/ja/demo/)
 
-- **どんな大きさでも開ける。** 行はスクロールに合わせて、まとまりごとに読みます。Parquet はファイルのまま読み、HTTP の Range
-  要求でも読めます。1 億行の Parquet を DuckDB で並べ替えると、1 秒かからずに最初の行がそろいます。セルはキャンバスに描き、
+- **大きなファイルを扱える。** 行はスクロールに合わせて、まとまりごとに読みます。Parquet はファイルのまま読み、HTTP の Range
+  要求でも読めます。[M2 Pro での計測](https://vastgrid.yhay81.com/ja/about/performance/)では、DuckDB が 1 億行の
+  Parquet を並べ替えた最初の行を 953 ms で返し、残りのビューをさらに 3 秒で構築しました。セルはキャンバスに描き、
   スクロールで React は描画しません。
 - **表計算ソフトの操作。** Excel のキー操作と範囲の選択、並べ替え、絞り込み、条件、検索、グループ、ピボット、集計行、計算式、
   書式、コピー・切り取り・貼り付け・埋める操作。
@@ -27,6 +34,23 @@ Jupyter のウィジェットとしても使えます。
 - **9 つの言語**の表示（英語・日本語・中国語の簡体字と繁体字・韓国語・スペイン語・ブラジルのポルトガル語・フランス語・
   ドイツ語）。言語ごとに別の import（`vastgrid/locales/ja`）です。CSS 変数によるライトとダーク、ARIA のグリッドの役割と
   キーボードだけでの操作。
+
+## まずは 1 分で試す
+
+1. [100 万行のサンプルを開きます](https://vastgrid.yhay81.com/ja/open/?sample=1)。登録・インストール・アップロードは不要です。
+2. `unit_price` 列のメニュー（▾）から、降順で並べ替えます。
+3. 価格の範囲を選んで合計を確かめるか、**Ctrl+End / ⌘+End** で最後の行まで移動します。
+
+サンプルはブラウザーのメモリエンジンで動きます。1 億行の計測は手元の DuckDB を使った別の条件です。
+ブラウザーのメモリに収まらないファイルは、CLI や VS Code で開けます。
+
+```sh
+npx vastgrid-cli sales.parquet
+```
+
+Node.js 22.18 以降が必要です。`sales.parquet` は手元のファイルのパスに置き換えてください。
+[大きなファイルの開き方](https://vastgrid.yhay81.com/ja/guides/open-large-files/)や、編集・集計を試せる
+[20 万行のデモ](https://vastgrid.yhay81.com/ja/demo/)もあります。
 
 ## 使える場所
 

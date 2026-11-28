@@ -19,8 +19,9 @@ const INT32_MAX = 2147483647;
 const INT64_MIN = -9223372036854775808n;
 const INT64_MAX = 9223372036854775807n;
 
-const integerText = /^-?(0|[1-9][0-9]*)$/;
+const integerText = /^-?(?:0|[1-9][0-9]*)$/;
 const decimalText = /^-?(0|[1-9][0-9]*)(?:\.([0-9]+))?$/;
+const negativeZeroDecimal = /^-0(?:\.0+)?$/;
 const uuidText = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const base64Text = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 const surrogate = /[\uD800-\uDFFF]/;
@@ -118,8 +119,8 @@ export function isTimestampText(text: string, unit: TimestampUnit = "us"): boole
 }
 
 /**
- * The fixed-point decimal digits of a finite number whose exponent is in `[-38, 20]` (expanding JS's `1e-7` to
- * `"0.0000001"`), or null outside that range.
+ * The fixed-point decimal digits of a finite number whose exponent is in `[-38, 37]` (expanding JS's `1e-7` to
+ * `"0.0000001"` and `1e+21` to `"1000000000000000000000"`), or null outside that range.
  */
 export function exactNumberText(value: number): string | null {
   if (!Number.isFinite(value)) return null;
@@ -129,8 +130,9 @@ export function exactNumberText(value: number): string | null {
   const sign = value < 0 ? "-" : "";
   const [mantissa, expPart] = Math.abs(value).toExponential().split("e");
   const exponent = Number(expPart);
-  if (exponent < -38 || exponent >= 21) return null;
+  if (exponent < -38 || exponent >= 38) return null;
   const digits = mantissa.replace(".", "");
+  if (exponent >= 0) return `${sign}${digits}${"0".repeat(exponent - digits.length + 1)}`;
   return `${sign}0.${"0".repeat(-exponent - 1)}${digits}`;
 }
 
@@ -220,6 +222,12 @@ export function sameCellValue(a: JsonValue, b: JsonValue, type: ValueType): bool
       const x = wholeOf(a);
       const y = wholeOf(b);
       return x !== null && x === y;
+    }
+    case "decimal": {
+      if (typeof a !== "string" || typeof b !== "string" || !decimalText.test(a) || !decimalText.test(b)) {
+        return false;
+      }
+      return (negativeZeroDecimal.test(a) ? a.slice(1) : a) === (negativeZeroDecimal.test(b) ? b.slice(1) : b);
     }
     case "float": {
       if (
@@ -392,12 +400,12 @@ export function fromBase64(text: string): Uint8Array {
   return bytes;
 }
 
-/** DuckDB's text of bytes: printable ASCII as it is, and `\xHH` for a backslash and the other bytes. */
+/** DuckDB's text of bytes: printable ASCII as it is, and `\xHH` for quotes, a backslash and the other bytes. */
 function bytesText(bytes: Uint8Array): string {
   let text = "";
   for (const byte of bytes) {
     text +=
-      byte >= 0x20 && byte <= 0x7e && byte !== 0x5c
+      byte >= 0x20 && byte <= 0x7e && byte !== 0x22 && byte !== 0x27 && byte !== 0x5c
         ? String.fromCharCode(byte)
         : `\\x${byte.toString(16).toUpperCase().padStart(2, "0")}`;
   }

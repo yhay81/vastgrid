@@ -161,7 +161,7 @@ function Editor({ sheet, onSheet }: { sheet: string | undefined; onSheet: (sheet
       if (command !== "save") return;
       event.preventDefault();
       event.stopPropagation();
-      const written = store.getSnapshot().session.editor
+      const written = store.currentSession().editor
         ? store.dispatch({ command: "edit.commit" })
         : Promise.resolve({ ok: true });
       void written.then((outcome) => {

@@ -14,9 +14,9 @@ const t = texts[language];
 // Selections on the sheet behind the hero, beside the texts: the column from the middle, the row, and how many
 // columns and rows they cover. The first one grows by its fill handle, as a drag in a spreadsheet would.
 const ranges = [
-  { column: -5, row: 9, columns: 2, rows: 2 },
-  { column: 4, row: 6, columns: 1, rows: 1 },
-  { column: 4, row: 13, columns: 2, rows: 3 },
+  { column: -5, row: 7, columns: 2, rows: 2 },
+  { column: 4, row: 5, columns: 1, rows: 1 },
+  { column: 4, row: 11, columns: 2, rows: 3 },
 ];
 
 const site = "https://vastgrid.yhay81.com";
@@ -55,12 +55,16 @@ const structured = {
       </h1>
       <p class="lp-hero__lead">{t.lead}</p>
       <div class="lp-actions">
-        <a class="lp-button lp-button--primary" href={t.actions.start.href}>
-          {t.actions.start.text}
+        <a class="lp-button lp-button--primary" href={t.actions.demo.href}>
+          {t.actions.demo.text}
           <Icon name="arrow" size={18} />
         </a>
-        <a class="lp-button" href={t.actions.demo.href}>{t.actions.demo.text}</a>
-        <a class="lp-button lp-button--ghost" href={t.actions.open.href}>{t.actions.open.text}</a>
+        <a class="lp-button" href={t.actions.open.href}>{t.actions.open.text}</a>
+        <a class="lp-button" href={t.actions.start.href}>{t.actions.start.text}</a>
+        <a class="lp-button lp-button--ghost" href={t.actions.github.href}>
+          <Icon name="github" size={18} />
+          {t.actions.github.text}
+        </a>
       </div>
       <Command command={t.install.command} copy={t.install.copy} copied={t.install.copied} class="lp-hero__install" />
       <figure class="lp-showcase">
@@ -68,18 +72,76 @@ const structured = {
           <div class="lp-window__bar">
             <img src="/favicon.svg" width="16" height="16" alt="" />
             <span class="lp-window__title">{t.window.title}</span>
+            <div
+              class="lp-window__views"
+              role="toolbar"
+              aria-label={t.window.viewsLabel}
+              aria-controls="lp-live-grid"
+              {...({ focusgroup: "toolbar wrap" } as Record<string, string>)}
+            >
+              <div class="lp-window__group" role="group" aria-label={t.window.viewsLabel}>
+                <button type="button" data-preset="all" aria-pressed="true">{t.window.views.all}</button>
+                <button type="button" data-preset="grouped" aria-pressed="false">{t.window.views.grouped}</button>
+                <button type="button" data-preset="pivot" aria-pressed="false">{t.window.views.pivot}</button>
+                <button type="button" data-preset="formulas" aria-pressed="false">{t.window.views.formulas}</button>
+              </div>
+            </div>
             <span class="lp-window__live">
               <span class="lp-window__dot" aria-hidden="true" />
               <span class="lp-window__label">{t.window.live}</span>
             </span>
           </div>
-          <div class="lp-window__grid">
+          <div id="lp-live-grid" class="lp-window__grid" data-view="all">
             <LiveGrid client:only="react" locale={language} />
           </div>
         </div>
         <figcaption>{t.window.caption}</figcaption>
       </figure>
       <script type="application/ld+json" set:html={JSON.stringify(structured)} />
+      <script>
+        const bar = document.querySelector<HTMLElement>(".lp-window__views");
+        const grid = document.getElementById("lp-live-grid");
+        if (bar && grid) {
+          const items = [...bar.querySelectorAll<HTMLButtonElement>("button[data-preset]")];
+          for (const button of items) {
+            button.addEventListener("click", () => {
+              const preset = button.dataset.preset;
+              if (!preset) return;
+              for (const item of items) item.setAttribute("aria-pressed", String(item === button));
+              grid.dataset.view = preset;
+              grid.dispatchEvent(new CustomEvent("lp-view", { detail: preset }));
+            });
+          }
+          grid.addEventListener("lp-view-clear", () => {
+            delete grid.dataset.view;
+            for (const item of items) item.setAttribute("aria-pressed", "false");
+          });
+          if (!("focusGroup" in HTMLElement.prototype)) {
+            items.forEach((item, index) => {
+              item.tabIndex = index === 0 ? 0 : -1;
+            });
+            bar.addEventListener("focusin", ({ target }) => {
+              if (target instanceof HTMLButtonElement && items.includes(target)) {
+                for (const item of items) item.tabIndex = item === target ? 0 : -1;
+              }
+            });
+            bar.addEventListener("keydown", (event) => {
+              const current = document.activeElement;
+              const index = current instanceof HTMLButtonElement ? items.indexOf(current) : -1;
+              if (index < 0) return;
+              const rtl = getComputedStyle(bar).direction === "rtl";
+              let next = -1;
+              if (event.key === "ArrowRight") next = (index + (rtl ? -1 : 1) + items.length) % items.length;
+              else if (event.key === "ArrowLeft") next = (index + (rtl ? 1 : -1) + items.length) % items.length;
+              else if (event.key === "Home") next = 0;
+              else if (event.key === "End") next = items.length - 1;
+              if (next < 0) return;
+              event.preventDefault();
+              items[next].focus();
+            });
+          }
+        }
+      </script>
     </section>
   ) : (
     <Default />

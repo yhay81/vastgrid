@@ -76,6 +76,7 @@ async function replace(table: LoadedTable, dialect: CsvDialect, edits: CsvEdits,
     path.dirname(table.path),
     `.${path.basename(table.path)}.${randomBytes(6).toString("hex")}.tmp`,
   );
+  let renamed = false;
   try {
     const { records } = await rewriteCsv({
       source: table.path,
@@ -92,11 +93,12 @@ async function replace(table: LoadedTable, dialect: CsvDialect, edits: CsvEdits,
     if ((await fileRevision(table.path)) !== table.fileState) throw fileChanged();
     await chmod(temporary, (await stat(table.path)).mode);
     await rename(temporary, table.path);
+    renamed = true;
     table.fileState = await fileRevision(table.path);
     return records;
   } catch (error) {
-    await rm(temporary, { force: true });
-    if (signal?.aborted) throw cancelled();
+    if (!renamed) await rm(temporary, { force: true });
+    if (!renamed && signal?.aborted) throw cancelled();
     if (error instanceof CsvSaveError) {
       throw new EngineError(error.code === "encoding" ? "invalid_value" : "save_unsupported", error.message);
     }

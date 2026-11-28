@@ -402,6 +402,7 @@ function typedLiteral(type: LogicalType, text: string, range: Range): Expr {
     case "timestamptz":
       return { lit: fromTemporalTextForm(text), type };
     default:
+      if (type === "decimal" && /^-0(?:\.0+)?$/.test(text)) return { lit: text.slice(1), type };
       return { lit: text, type };
   }
 }
@@ -416,7 +417,8 @@ function numberLiteral(text: string, range: Range): Expr {
   if (!/[eE]/.test(digits)) {
     const [whole, fraction = ""] = digits.split(".");
     const integer = whole.replace(/^0+(?=.)/, "") || "0";
-    const exact = `${negative ? "-" : ""}${integer}${fraction ? `.${fraction}` : ""}`;
+    const zero = integer === "0" && /^0*$/.test(fraction);
+    const exact = `${negative && !zero ? "-" : ""}${integer}${fraction ? `.${fraction}` : ""}`;
     if (!digits.includes(".")) {
       const value = Number(exact);
       if (Number.isSafeInteger(value)) return { lit: value === 0 ? 0 : value };
@@ -478,6 +480,7 @@ interface Part {
   expr: Expr;
   type: TypedExpr["type"];
   range: Range;
+  bareNumber?: boolean;
 }
 
 export function call(fn: FunctionName, ...args: Expr[]): Expr {
@@ -517,7 +520,7 @@ class Compiler {
   compile(node: Syntax): Part {
     switch (node.kind) {
       case "number":
-        return this.check(numberLiteral(node.text, node), node);
+        return { ...this.check(numberLiteral(node.text, node), node), bareNumber: true };
       case "literal":
         return this.check(node.expr, node);
       case "name":
@@ -628,19 +631,33 @@ class Compiler {
   /** A whole number written with a point (`3.0`) as an integer. */
   private whole(arg: Part): Part {
     const expr = arg.expr;
-    if ("lit" in expr && expr.type === "decimal" && typeof expr.lit === "string" && /^-?\d+\.0+$/.test(expr.lit)) {
+    if (
+      arg.bareNumber &&
+      "lit" in expr &&
+      expr.type === "decimal" &&
+      typeof expr.lit === "string" &&
+      /^-?\d+\.0+$/.test(expr.lit)
+    ) {
       const value = Number(expr.lit);
       if (Number.isSafeInteger(value)) return this.check({ lit: value === 0 ? 0 : value }, arg.range);
     }
     return arg;
   }
 
-  /** A `bin` width written with a point (`0.25`) as a number literal. */
+  /** A `bin` width written as digits (`0.25`, `100000000000000000000`) as a number literal when lossless. */
   private binWidth(arg: Part): Part {
     const expr = arg.expr;
-    if ("lit" in expr && expr.type === "decimal" && typeof expr.lit === "string" && expr.lit.includes(".")) {
+    if (
+      arg.bareNumber &&
+      "lit" in expr &&
+      (expr.type === "decimal" || expr.type === "bigint") &&
+      typeof expr.lit === "string"
+    ) {
+      const normalized = expr.lit.includes(".") ? expr.lit.replace(/\.?0+$/, "") : expr.lit;
       const value = Number(expr.lit);
-      if (Number.isFinite(value)) return this.check({ lit: value === 0 ? 0 : value }, arg.range);
+      if (Number.isFinite(value) && exactNumberText(value) === (normalized === "-0" ? "0" : normalized)) {
+        return this.check({ lit: value === 0 ? 0 : value }, arg.range);
+      }
     }
     return arg;
   }

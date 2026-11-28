@@ -9,7 +9,7 @@ description: vastgrid-js のメモリエンジンと vastgrid-duckdb の DuckDB 
 | --- | --- | --- |
 | 動く場所 | ページ、Web Worker、Node.js | Node.js |
 | 表 | 型付き JSON の行、Arrow、CSV、TSV、JSON Lines、Excel、Parquet のファイル | CSV、TSV、JSON、JSON Lines、Parquet のファイル（圧縮も）、Excel ブック、DuckDB データベース |
-| 大きさ | ページのメモリに収まる範囲（`maxBytes`）。Parquet は行グループごとに読む | 制限なし。DuckDB がディスクに退避し、Parquet はその場で読む |
+| 大きさ | ページのメモリに収まる範囲（`maxBytes`）。Parquet は行グループごとに読む | DuckDB がディスクに退避し、Parquet は行番号で読む |
 | セルの書き込み | `editable: true` を付けた表 | どのファイルも。書き込んだ値はファイルとは別に持つ |
 | ファイルへの保存 | なし | CSV と TSV（`saveFiles: true` のとき） |
 | 書き出し | CSV、TSV、JSON、Excel をファイルのバイト列で返す | CSV、TSV、Parquet、JSON、Excel をサーバーに書く |
@@ -194,6 +194,7 @@ Node.js の `http` リクエストのハンドラー `(request, response, next?)
 | `exports` | `string` | `path` + `exports/` | target なしの書き出しをダウンロードするパスの接頭辞。 |
 | `maxBody` | `number` | 64 MiB | リクエスト本文の上限。超えると 413。 |
 | `keepAlive` | `number` | 15,000 | イベントのストリームを保つコメントを送る間隔（ミリ秒）。 |
+| `allowedOrigins` | `string[]` | 同一オリジン | ブラウザーからのリクエストと、イベント・エクスポートを含む応答の読み取りを許可する追加のオリジン。`https://app.example.com` のように指定します。 |
 
 | ルート | 応答 |
 | --- | --- |
@@ -211,7 +212,7 @@ Node.js の `http` リクエストのハンドラー `(request, response, next?)
 | TSV | `.tsv`、`.tab`、`.tsv.gz`、`.tsv.zst`、`.tab.gz`、`.tab.zst` | CSV と同じ |
 | JSON Lines | `.jsonl`、`.ndjson`、`.jsonl.gz`、`.jsonl.zst`、`.ndjson.gz`、`.ndjson.zst` | DuckDB に読み込みます |
 | JSON | `.json`、`.json.gz`、`.json.zst` | DuckDB に読み込みます |
-| Parquet | `.parquet`、`.pq` | その場で、行番号で読みます |
+| Parquet | `.parquet`、`.pq` | 専用のハードリンクを使い、行番号で読みます。別ボリュームなどでリンクを作れない場合は一時コピーを読みます |
 | Excel | `.xlsx`、`.xlsm` | シートを DuckDB に読み込みます。`open` の `read` で `sheet`、`headerRow`、`keepEmptyRows`、`keepEmptyColumns` を選びます |
 | DuckDB | `.duckdb`、`.ddb` | 表を DuckDB に読み込みます（その間だけデータベースを読み取り専用で接続します）。表が `sheets` になり（`main` 以外のスキーマは `schema.name`。ビューは含みません）、`open` の `read.sheet` で選びます |
 

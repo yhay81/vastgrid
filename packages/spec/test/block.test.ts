@@ -7,6 +7,9 @@ import {
   decimal,
   Endianness,
   field,
+  float32,
+  float64,
+  int16,
   int8,
   largeUtf8,
   Table,
@@ -16,6 +19,8 @@ import {
   tableToIPC,
   timeMillisecond,
   timestamp,
+  uint8,
+  uint16,
   uint32,
   utf8,
   utf8View,
@@ -344,6 +349,34 @@ test("columns of several record batches read as one, from a stream or a file", (
     );
     assert.deepEqual(Array.from(read.values[4].numbers as BigInt64Array).slice(0, 3), [0n, 1_000_000n, -1_000_000n]);
   }
+});
+
+test("multiple Arrow batches preserve numeric buffers across physical widths", () => {
+  const options = { maxBatchRows: 1 };
+  const read = readColumns(
+    tableToIPC(
+      tableFromColumns({
+        u8: columnFromValues([255, 0], uint8(), options),
+        i16: columnFromValues([-32768, 32767], int16(), options),
+        u16: columnFromValues([65535, 0], uint16(), options),
+        u32: columnFromValues([4294967295, 0], uint32(), options),
+        f32: columnFromValues([1.25, -0.5], float32(), options),
+        f64: columnFromValues([-1e300, 1e-100], float64(), options),
+      }),
+      { format: "stream" },
+    ) as Uint8Array,
+  );
+  assert.deepEqual(
+    read.values.map((column) => column.numbers && [...column.numbers]),
+    [
+      [255, 0],
+      [-32768, 32767],
+      [65535, 0],
+      [4294967295n, 0n],
+      [1.25, -0.5],
+      [-1e300, 1e-100],
+    ],
+  );
 });
 
 test("decimals that do not fit 64 bits have no numbers, and read by their digits", () => {

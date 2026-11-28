@@ -7,7 +7,7 @@
 import { copyFile, mkdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { type Handler, RequestIds } from "vastgrid/core";
-import { DuckDBEngine, type DuckDBEngineOptions, tableFormatOf } from "vastgrid-duckdb";
+import { defaultTempDirectory, DuckDBEngine, type DuckDBEngineOptions, tableFormatOf } from "vastgrid-duckdb";
 import type { HostMessage, ViewMessage } from "./messages.js";
 
 type Json = Record<string, unknown>;
@@ -19,8 +19,8 @@ export interface KeptFile {
 }
 
 export interface TableFileOptions {
-  /** Where the engines of the file keep their files: a folder of their own inside, deleted when they close. */
-  tempDirectory: string;
+  /** Where the engines of the file keep their files: a private folder by default, deleted when they close. */
+  tempDirectory?: string;
   /** Lets the file be edited and saved (CSV and TSV only): VS Code trusts the workspace. */
   editable: boolean;
   /**
@@ -161,6 +161,7 @@ export class TableFile {
   private readonly views = new Set<ViewState>();
   private readonly editListeners = new Set<(view: FileView) => void>();
   private readonly keyListeners = new Set<(key: FileKey) => void>();
+  private readonly reloadListeners = new Set<() => void>();
   /** The writes since the file was read, saved or reverted, for backups. */
   private written: Written[] = [];
   /** The file that the table of each revision written has. */
@@ -222,6 +223,14 @@ export class TableFile {
     };
   }
 
+  /** Follows a webview's reload of the file on disk, which discards written cells (§7.6). */
+  onReload(listener: () => void): () => void {
+    this.reloadListeners.add(listener);
+    return () => {
+      this.reloadListeners.delete(listener);
+    };
+  }
+
   /** Calls listeners of the editor, whose failures are logged: they never stop an answer. */
   private tell<T>(listeners: Set<(value: T) => void>, value: T) {
     for (const listener of listeners) {
@@ -252,11 +261,14 @@ export class TableFile {
     const made = (async () => {
       // The engine reads the file where it really is, and no other file.
       const file = await realpath(this.file);
-      await mkdir(this.options.tempDirectory, { recursive: true });
+      const tempDirectory = this.options.tempDirectory ?? (await defaultTempDirectory("vastgrid-vscode"));
+      if (this.options.tempDirectory !== undefined) {
+        await mkdir(tempDirectory, { recursive: true, mode: 0o700 });
+      }
       const engine = await DuckDBEngine.create({
         ...this.options.engine,
         allowedDirectories: [...new Set([path.dirname(this.file), path.dirname(file)])],
-        tempDirectory: this.options.tempDirectory,
+        tempDirectory,
         saveFiles: this.editable,
         resolve: (ref) => {
           if (ref !== this.ref) throw new Error(`This editor opens ${this.ref} only.`);
@@ -551,6 +563,24 @@ export class TableFile {
       case "reload":
       case "info": {
         if (message.op !== "info" && typeof result.table === "string") view.tables.add(result.table);
+        if (message.op === "reload") {
+          if (running.anchor !== null) {
+            const previousAnchor = running.anchor;
+            const info = await this.request(running, "open", { ref: this.ref });
+            running.anchor = info.table as string;
+            await this.request(running, "close", { table: previousAnchor }).catch(() => {});
+          }
+          this.written = [];
+          this.files.clear();
+          this.restore = null;
+          for (const other of this.views) {
+            if (other !== view && other.running === running && other.sheets.sheet === view.sheets.sheet) {
+              this.closeHandles(other);
+              other.post({ vastgrid: "restart" } satisfies HostMessage);
+            }
+          }
+          this.tell(this.reloadListeners, undefined);
+        }
         const capabilities: Json = { ...(result.capabilities as Json), write: this.editable, save: false };
         if (!this.options.exportTo) delete capabilities.export;
         return { ...answer, result: { ...result, capabilities } };
@@ -598,6 +628,7 @@ export class TableFile {
     this.stopEvents = null;
     this.editListeners.clear();
     this.keyListeners.clear();
+    this.reloadListeners.clear();
     if (engine) await (await engine.catch(() => null))?.engine.dispose();
   }
 }

@@ -65,9 +65,12 @@ export interface SlicedFile {
 /** Rows and columns a sheet can have in Excel. */
 const MAX_ROWS = 1_048_576;
 const MAX_COLUMNS = 16_384;
-/** Largest ZIP central directory and largest workbook part (other than sheets) read into memory. */
+/** Largest ZIP central directory, workbook metadata part, sheet text, XML tag and cell text. */
 const MAX_DIRECTORY = 64 * 1024 * 1024;
-const MAX_PART = 2 * 1024 * 1024 * 1024;
+const MAX_PART = 128 * 1024 * 1024;
+const MAX_SHEET_CHARS = 2 * 1024 * 1024 * 1024;
+const MAX_TAG_BUFFER = 16 * 1024 * 1024;
+const MAX_CELL_CHARS = 1024 * 1024;
 /** The bytes that `blobSource` reads at a time. */
 const SLICE_BYTES = 256 * 1024;
 
@@ -193,6 +196,8 @@ async function readZipDirectory(source: WorkbookSource): Promise<Map<string, Zip
     if (locator < 0 || tailView.u32(locator) !== 0x07064b50)
       throw new WorkbookError("The workbook is damaged (its ZIP directory cannot be found).");
     const at = tailView.u64(locator + 8);
+    if (at < 0 || at + 56 > size)
+      throw new WorkbookError("The workbook is damaged (its ZIP directory cannot be found).");
     const record = await source.bytes(at, at + 56);
     const recordView = viewOf(record);
     if (record.length < 56 || recordView.u32(0) !== 0x06064b50)
@@ -201,7 +206,12 @@ async function readZipDirectory(source: WorkbookSource): Promise<Map<string, Zip
     directorySize = recordView.u64(40);
     directoryOffset = recordView.u64(48);
   }
-  if (directorySize > MAX_DIRECTORY || directoryOffset + directorySize > size)
+  if (
+    directoryOffset < 0 ||
+    directorySize < 0 ||
+    directorySize > MAX_DIRECTORY ||
+    directoryOffset + directorySize > size
+  )
     throw new WorkbookError("The workbook is damaged (its ZIP directory is invalid).");
   const directory = await source.bytes(directoryOffset, directoryOffset + directorySize);
   const view = viewOf(directory);
@@ -218,30 +228,39 @@ async function readZipDirectory(source: WorkbookSource): Promise<Map<string, Zip
     const extraLength = view.u16(at + 30);
     const commentLength = view.u16(at + 32);
     let offset = view.u32(at + 42);
-    const name = utf8.decode(directory.subarray(at + 46, at + 46 + nameLength));
-    // ZIP64 sizes and offsets are in an extra field, in this order, for the values that overflowed.
     let extra = at + 46 + nameLength;
     const extraEnd = extra + extraLength;
+    const nextAt = extraEnd + commentLength;
+    if (nextAt > directory.length) throw new WorkbookError("The workbook is damaged (its ZIP directory is invalid).");
+    const name = utf8.decode(directory.subarray(at + 46, extra));
+    // ZIP64 sizes and offsets are in an extra field, in this order, for the values that overflowed.
     while (extra + 4 <= extraEnd) {
       const id = view.u16(extra);
       const length = view.u16(extra + 2);
+      const fieldEnd = extra + 4 + length;
+      if (fieldEnd > extraEnd) throw new WorkbookError("The workbook is damaged (its ZIP directory is invalid).");
       if (id === 0x0001) {
         let field = extra + 4;
         if (entrySize === 0xffffffff) {
+          if (field + 8 > fieldEnd) throw new WorkbookError("The workbook is damaged (its ZIP directory is invalid).");
           entrySize = view.u64(field);
           field += 8;
         }
         if (compressedSize === 0xffffffff) {
+          if (field + 8 > fieldEnd) throw new WorkbookError("The workbook is damaged (its ZIP directory is invalid).");
           compressedSize = view.u64(field);
           field += 8;
         }
-        if (offset === 0xffffffff) offset = view.u64(field);
+        if (offset === 0xffffffff) {
+          if (field + 8 > fieldEnd) throw new WorkbookError("The workbook is damaged (its ZIP directory is invalid).");
+          offset = view.u64(field);
+        }
       }
-      extra += 4 + length;
+      extra = fieldEnd;
     }
     if (flags & 1) throw new WorkbookError("The workbook is encrypted, which is not supported.");
     entries.set(name.toLowerCase(), { name, method, compressedSize, size: entrySize, offset });
-    at = extraEnd + commentLength;
+    at = nextAt;
   }
   return entries;
 }
@@ -260,13 +279,27 @@ async function* entryText(
   source: WorkbookSource,
   entry: ZipEntry,
   onRead?: (bytes: number) => void,
+  maxChars = MAX_SHEET_CHARS,
 ): AsyncGenerator<string> {
   if (entry.method !== 0 && entry.method !== 8) {
     throw new WorkbookError(`The workbook uses a compression method that is not supported (${entry.method}).`);
   }
+  if (entry.offset < 0 || entry.compressedSize < 0) {
+    throw new WorkbookError(`The workbook is damaged (${entry.name} cannot be found).`);
+  }
   const start = await dataOffset(source, entry);
+  if (start < 0 || start + entry.compressedSize > source.size) {
+    throw new WorkbookError(`The workbook is damaged (${entry.name} is truncated).`);
+  }
+  const limit =
+    entry.method === 8 ? Math.min(maxChars, Math.max(64 * 1024 * 1024, entry.compressedSize * 200)) : maxChars;
+  let chars = 0;
   try {
-    yield* source.text(start, start + entry.compressedSize, entry.method === 8, onRead);
+    for await (const chunk of source.text(start, start + entry.compressedSize, entry.method === 8, onRead)) {
+      chars += chunk.length;
+      if (chars > limit) throw new WorkbookError(`The workbook part ${entry.name} is too large to read.`);
+      yield chunk;
+    }
   } catch (error) {
     if (error instanceof WorkbookError) throw error;
     throw new WorkbookError(`The workbook is damaged (${entry.name} cannot be read: ${(error as Error).message}).`);
@@ -297,7 +330,13 @@ async function scanXml(
     let position = 0;
     for (;;) {
       const open = buffer.indexOf("<", position);
-      if (open < 0) break;
+      if (open < 0) {
+        if (position < buffer.length) {
+          handler.text(buffer.slice(position));
+          position = buffer.length;
+        }
+        break;
+      }
       if (buffer.startsWith("<!--", open)) {
         const end = buffer.indexOf("-->", open + 4);
         if (end < 0) break;
@@ -313,12 +352,19 @@ async function scanXml(
         position = end + 3;
         continue;
       }
+      if (buffer.startsWith("<?", open)) {
+        const end = buffer.indexOf("?>", open + 2);
+        if (end < 0) break;
+        if (open > position) handler.text(buffer.slice(position, open));
+        position = end + 2;
+        continue;
+      }
       const close = findTagClose(buffer, open + 1);
       if (close < 0) break;
       if (open > position) handler.text(buffer.slice(position, open));
       position = close + 1;
       const first = buffer.charCodeAt(open + 1);
-      if (first === 63 || first === 33) continue; // <? and <!
+      if (first === 33) continue; // <!
       if (first === 47) {
         handler.close(localName(buffer.slice(open + 2, close).trim()));
         continue;
@@ -333,6 +379,9 @@ async function scanXml(
       if (selfClosing) handler.close(localName(name));
     }
     buffer = buffer.slice(position);
+    if (buffer.length > MAX_TAG_BUFFER) {
+      throw new WorkbookError("The workbook is damaged (an XML tag is too large).");
+    }
     const waiting = hooks.afterChunk?.();
     if (waiting) await waiting;
   }
@@ -442,7 +491,7 @@ async function readPart(source: WorkbookSource, entries: Map<string, ZipEntry>, 
   const entry = partFor(entries, name);
   if (!entry) return false;
   if (entry.size > MAX_PART) throw new WorkbookError(`The workbook part ${entry.name} is too large to read.`);
-  await scanXml(entryText(source, entry), handler);
+  await scanXml(entryText(source, entry, undefined, MAX_PART), handler);
   return true;
 }
 
@@ -542,7 +591,11 @@ class RichText {
   }
 
   text(text: string) {
-    if (this.inText) this.value += text;
+    if (!this.inText) return;
+    if (this.value.length + text.length > MAX_CELL_CHARS) {
+      throw new WorkbookError("The workbook part has a cell whose text is too large.");
+    }
+    this.value += text;
   }
 
   take() {
@@ -677,6 +730,7 @@ function typeOf(kinds: number): LogicalType {
 }
 
 const DAY = 86_400_000;
+const YEAR_10000 = Date.UTC(10000, 0, 1);
 
 function two(value: number) {
   return value < 10 ? `0${value}` : String(value);
@@ -689,7 +743,9 @@ function timeText(date: Date) {
 }
 
 function dateText(date: Date) {
-  return `${String(date.getUTCFullYear()).padStart(4, "0")}-${two(date.getUTCMonth() + 1)}-${two(date.getUTCDate())}`;
+  const year = date.getUTCFullYear();
+  const formatted = year > 9999 ? `+${String(year).padStart(6, "0")}` : String(year).padStart(4, "0");
+  return `${formatted}-${two(date.getUTCMonth() + 1)}-${two(date.getUTCDate())}`;
 }
 
 /**
@@ -698,9 +754,13 @@ function dateText(date: Date) {
  * Times are rounded to milliseconds.
  */
 export function serialDate(serial: number, style: DateStyle, date1904: boolean): { kind: number; text: string } {
-  const date = new Date(serialTime(serial, date1904));
-  if (style === DateStyle.Time && serial < 1) return { kind: Kind.time, text: timeText(date) };
-  if (date.getTime() % DAY === 0) return { kind: Kind.date, text: dateText(date) };
+  if (style === DateStyle.Time && serial < 1) {
+    const ms = Math.min(DAY - 1, Math.max(0, Math.round(serial * DAY)));
+    return { kind: Kind.time, text: timeText(new Date(ms)) };
+  }
+  const instant = serialTime(serial, date1904);
+  const date = new Date(instant);
+  if (instant % DAY === 0) return { kind: Kind.date, text: dateText(date) };
   return { kind: Kind.dateTime, text: `${dateText(date)} ${timeText(date)}` };
 }
 
@@ -876,7 +936,12 @@ export async function convertSheet(
         kind = Kind.text;
       } else {
         const style = styles[cellStyle] ?? DateStyle.None;
-        if (style !== DateStyle.None && number >= 0 && number < MAX_SERIAL) {
+        if (
+          style !== DateStyle.None &&
+          number >= 0 &&
+          number < MAX_SERIAL &&
+          ((style === DateStyle.Time && number < 1) || serialTime(number, workbook.date1904) < YEAR_10000)
+        ) {
           const date = serialDate(number, style, workbook.date1904);
           field = date.text;
           kind = date.kind;
@@ -1017,8 +1082,12 @@ export async function convertSheet(
         else if (name === "row") emitRow();
       },
       text(text) {
-        if (inValue) value += text;
-        else if (inInline) inline.text(text);
+        if (inValue) {
+          if (value.length + text.length > MAX_CELL_CHARS) {
+            throw new WorkbookError(`The sheet "${chosen.name}" has a cell whose value is too large.`);
+          }
+          value += text;
+        } else if (inInline) inline.text(text);
       },
     },
     {

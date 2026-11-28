@@ -6,8 +6,10 @@
  * as a preview of them is loaded, while the rest loads (§9).
  */
 import { createHash } from "node:crypto";
-import { open as openFile, readdir, rm, stat } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { type FileHandle, link, lstat, open as openFile, readdir, realpath, rm, stat } from "node:fs/promises";
 import path from "node:path";
+import { pipeline } from "node:stream/promises";
 import type { DuckDBConnection } from "@duckdb/node-api";
 import type { Column } from "vastgrid-spec";
 import { quoteIdentifier } from "vastgrid-sql";
@@ -57,6 +59,16 @@ export async function findTableFiles(folders: readonly string[], limit: number):
 /** Bytes at the start of a file that its revision covers. */
 const REVISION_HEAD_BYTES = 64 * 1024;
 
+async function revisionOf(handle: FileHandle) {
+  const info = await handle.stat({ bigint: true });
+  const head = Buffer.allocUnsafe(
+    Number(info.size < BigInt(REVISION_HEAD_BYTES) ? info.size : BigInt(REVISION_HEAD_BYTES)),
+  );
+  const { bytesRead } = await handle.read(head, 0, head.length, 0);
+  const hash = createHash("sha1").update(head.subarray(0, bytesRead)).digest("hex").slice(0, 16);
+  return `${info.size}:${info.mtimeNs}:${hash}`;
+}
+
 /**
  * A file's revision: its size, its modification time and a hash of its first 64 KiB, so that a file rewritten with
  * the same size within the resolution of its modification time still counts as changed. A DuckDB database's covers
@@ -75,13 +87,7 @@ export async function fileRevision(file: string): Promise<string> {
     revision = `${info.size}:${info.mtimeNs}:locked`;
   } else {
     try {
-      const info = await handle.stat({ bigint: true });
-      const head = Buffer.allocUnsafe(
-        Number(info.size < BigInt(REVISION_HEAD_BYTES) ? info.size : BigInt(REVISION_HEAD_BYTES)),
-      );
-      const { bytesRead } = await handle.read(head, 0, head.length, 0);
-      const hash = createHash("sha1").update(head.subarray(0, bytesRead)).digest("hex").slice(0, 16);
-      revision = `${info.size}:${info.mtimeNs}:${hash}`;
+      revision = await revisionOf(handle);
     } finally {
       await handle.close();
     }
@@ -162,6 +168,7 @@ function relationAliases(
 
 export interface TableOptions {
   previewRows: number;
+  disposeSignal: AbortSignal;
   /** Called when the state that `TableInfo` reports changes: while loading, and once the load ends. */
   onChange: (table: LoadedTable, change: "progress" | "revision") => void;
   log?: (message: string, error?: unknown) => void;
@@ -403,9 +410,12 @@ export class LoadedTable {
   }
 
   private async load() {
-    if (this.format === "parquet" && (await this.readParquetInPlace())) return;
     if (this.format === "duckdb") return this.loadDatabase();
     let source = this.path;
+    if (this.format === "parquet") {
+      source = await this.pinParquet();
+      if (await this.readParquetInPlace(source)) return;
+    }
     let workbook = "";
     if (this.format === "csv" || this.format === "tsv") {
       const encoding = await detectEncoding(this.path);
@@ -514,12 +524,49 @@ export class LoadedTable {
   }
 
   /**
+   * DuckDB reopens its Parquet file on every scan. Give it a private name for the authorized file so renaming the
+   * original or replacing it with a symlink cannot redirect an existing view. A hard link keeps random reads cheap
+   * even for huge files; on volumes that cannot be linked, copy from the same verified open handle.
+   */
+  private async pinParquet(): Promise<string> {
+    const target = this.session.file(`${this.session.createName("parquet")}.parquet`);
+    const handle = await openFile(this.path, "r");
+    this.tempFiles.push(target);
+    try {
+      const original = await handle.stat({ bigint: true });
+      const matches = async (file: string) => {
+        const info = await lstat(file, { bigint: true });
+        return info.isFile() && info.dev === original.dev && info.ino === original.ino;
+      };
+      const changed = () => new EngineError("file_changed", "The Parquet file changed while it was being opened.");
+      if (!(await matches(this.path)) || (await realpath(this.path)) !== this.path) throw changed();
+      if ((await revisionOf(handle)) !== this.fileState) throw changed();
+      try {
+        await link(this.path, target);
+      } catch (error) {
+        const { code } = error as NodeJS.ErrnoException;
+        if (!["EXDEV", "EPERM", "EACCES", "ENOTSUP", "EMLINK", "ENOSYS"].includes(code ?? "")) throw error;
+        await pipeline(
+          handle.createReadStream({ start: 0, autoClose: false }),
+          createWriteStream(target, { flags: "wx" }),
+          { signal: this.options.disposeSignal },
+        );
+        return target;
+      }
+      if (!(await matches(target))) throw changed();
+      return target;
+    } finally {
+      await handle.close();
+    }
+  }
+
+  /**
    * Reads a Parquet file in place, by its row numbers. Gives false for a file with a column named like those row
    * numbers (`file_row_number`), which is loaded as a table instead.
    */
-  private async readParquetInPlace(): Promise<boolean> {
+  private async readParquetInPlace(source: string): Promise<boolean> {
     return this.session.withConnection(undefined, async (connection) => {
-      const file = quoteLiteral(this.path);
+      const file = quoteLiteral(source);
       const sources = await this.describe(connection, `SELECT * FROM read_parquet(${file}, hive_partitioning=false)`);
       if (sources.some((column) => column.name.toLowerCase() === "file_row_number")) return false;
       const columns = uniqueColumns(sources);

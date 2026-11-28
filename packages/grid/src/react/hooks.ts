@@ -78,12 +78,13 @@ export function useGridRows(range: {
   columns: readonly string[];
 }): (JsonValue | undefined)[][] {
   const store = useGridStore();
+  const view = useGridSelector((snapshot) => snapshot.view);
   const version = useSyncExternalStore(store.subscribeRows, store.getRowsVersion, store.getRowsVersion);
   const { start, end, columns } = range;
   const names = columns.join("\u0000");
   useEffect(() => {
     store.ensure(start, end, names === "" ? [] : names.split("\u0000"));
-  }, [store, start, end, names]);
+  }, [store, view, version, start, end, names]);
   return readRows(store, version, start, end, columns);
 }
 

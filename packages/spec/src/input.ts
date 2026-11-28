@@ -107,8 +107,8 @@ function clockText(text: string, digits: number): string | null {
  * real calendar day (even before checking `[FIRST_DAY, LAST_DAY]`, so UTC offsets on boundary days can be applied).
  */
 function civilDays(text: string): number | null {
-  const match = /^([+-][0-9]{6}|[0-9]{4,6})[-/.]([0-9]{1,2})[-/.]([0-9]{1,2})( \(BC\)| BC)?$/i.exec(text);
-  if (!match) return null;
+  const match = /^([+-][0-9]{6}|[0-9]{1,6})[-/.]([0-9]{1,2})[-/.]([0-9]{1,2})( \(BC\)| BC)?$/i.exec(text);
+  if (!match || (!match[4] && match[1].length < 4)) return null;
   let year = Number(match[1]);
   if (match[4]) {
     if (!/^[0-9]/.test(match[1]) || year < 1) return null;

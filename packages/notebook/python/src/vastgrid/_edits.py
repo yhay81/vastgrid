@@ -97,24 +97,10 @@ class Edits:
                 path="/rowKey",
                 reason="syntax",
             )
-        indexes: list[int] = []
-        for at, update in enumerate(updates):
-            index = next((i for i, column in enumerate(columns) if column["name"] == update["column"]), -1)
-            if index < 0 or not _is_writable(columns[index]):
-                raise EngineError(
-                    "read_only",
-                    f"The cells of {quoted(update['column'])} are not written (§7.1).",
-                    details={"column": update["column"]},
-                )
-            if not holds_duck_value(update["value"], columns[index]):
-                raise EngineError(
-                    "invalid_value",
-                    f"{quoted(update['value'])} is not a value of {quoted(update['column'])}.",
-                    path=f"/updates/{at}/value",
-                    reason="type",
-                    details={"update": at},
-                )
-            indexes.append(index)
+        indexes = [
+            next((i for i, column in enumerate(columns) if column["name"] == update["column"]), -1)
+            for update in updates
+        ]
         if not updates:
             return {"updated": 0, "edits": self.state}
 
@@ -124,7 +110,7 @@ class Edits:
             staged_keys: dict[int, Any] = {}
             known: dict[int, set[int]] = {}
             for update, index, row in zip(updates, indexes, initial_rows, strict=True):
-                if "previous" in update and row is not None:
+                if "previous" in update and index >= 0 and row is not None:
                     known.setdefault(index, set()).add(row)
             cached = {index: self._read_cells(cursor, relation, index, rows) for index, rows in known.items()}
             key_index = (
@@ -134,12 +120,26 @@ class Edits:
             )
             for at, update in enumerate(updates):
                 col_index = indexes[at]
+                if col_index < 0 or not _is_writable(columns[col_index]):
+                    raise EngineError(
+                        "read_only",
+                        f"The cells of {quoted(update['column'])} are not written (§7.1).",
+                        details={"column": update["column"]},
+                    )
                 column = columns[col_index]
                 row = self._row_of_with_staged(
                     cursor, relation, update["key"], initial_rows[at], key_column, staged_keys
                 )
                 if row is None:
                     raise EngineError("edit_conflict", "No row has this key now.", details={"update": at})
+                if not holds_duck_value(update["value"], column):
+                    raise EngineError(
+                        "invalid_value",
+                        f"{quoted(update['value'])} is not a value of {quoted(update['column'])}.",
+                        path=f"/updates/{at}/value",
+                        reason="type",
+                        details={"update": at},
+                    )
                 if "previous" in update:
                     values = cached.setdefault(col_index, {})
                     if row not in values:

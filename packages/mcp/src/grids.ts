@@ -76,6 +76,10 @@ function eventKey(event: Json) {
   return `${String(event.event)}\u0000${String(event.table)}\u0000${String(event.hash ?? "")}`;
 }
 
+function isObject(value: unknown): value is Json {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 /**
  * An App that shows a grid: the engine under the App's own request ids, the tables it opened through the engine,
  * and the events of those tables.
@@ -317,11 +321,55 @@ export class Grid {
   /** Answers a request message of an App (§8), and keeps the tables it opens for their events. */
   async message(clientId: string, message: unknown, signal?: AbortSignal): Promise<Json | undefined> {
     const client = this.client(clientId);
+    if (isObject(message)) {
+      const op = message.op;
+      if (op === "open") {
+        const wrongRef = typeof message.ref === "string" && message.ref !== this.file;
+        const read = message.read;
+        // The App echoes the sheet from GridState even when the agent opened the default.
+        // Keep the original open options so both handles share the same table and edits.
+        const sheet = this.sheet ?? this.store.getSnapshot().table?.sheet;
+        const matchesSheet =
+          isObject(read) && read.sheet === sheet && Object.keys(read).length === 1 && typeof read.sheet === "string";
+        const wrongRead = isObject(read)
+          ? !matchesSheet && (this.sheet !== undefined || Object.keys(read).length > 0)
+          : read === undefined && this.sheet !== undefined;
+        if (wrongRef || wrongRead) {
+          return typeof message.id === "number"
+            ? { v: 2, id: message.id, error: { code: "not_allowed", message: `This grid opens ${this.file} only.` } }
+            : undefined;
+        }
+        if (this.sheet === undefined && matchesSheet) {
+          const { read: _read, ...defaultOpen } = message;
+          message = defaultOpen;
+        }
+      } else if (op !== "cancel" && typeof message.table === "string" && !client.tables.has(message.table)) {
+        return typeof message.id === "number"
+          ? { v: 2, id: message.id, error: { code: "table_not_found", message: "The table is closed or unknown." } }
+          : undefined;
+      }
+    }
     const answer = (await client.engine.handle(message, { signal })) as Json | undefined;
-    const op = (message as Json | null)?.op;
-    const result = answer?.result as Json | undefined;
+    const op = isObject(message) ? message.op : undefined;
+    const result = isObject(answer?.result) ? answer.result : undefined;
     if ((op === "open" || op === "reload") && typeof result?.table === "string") client.tables.add(result.table);
-    if (op === "close" && answer && answer.error === undefined) client.tables.delete((message as Json).table as string);
+    if (op === "close" && answer && answer.error === undefined && isObject(message)) {
+      client.tables.delete(message.table as string);
+    }
+    if (op === "reload" && answer && answer.error === undefined) {
+      const before = this.store.getSnapshot();
+      await this.store.reload().catch(() => {});
+      await this.settled(signal).catch(() => {});
+      const after = this.store.getSnapshot();
+      if (after.document !== before.document) this.bump("document", clientId);
+      if (after.session !== before.session) this.bump("session", clientId);
+      for (const [otherId, other] of this.clients) {
+        if (otherId === clientId) continue;
+        for (const table of other.tables) {
+          await other.engine.handle({ v: 2, id: 0, op: "reload", table }).catch(() => {});
+        }
+      }
+    }
     return answer;
   }
 

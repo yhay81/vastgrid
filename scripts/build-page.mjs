@@ -58,8 +58,8 @@ export async function buildHtmlPage(root, define = {}) {
     return file ? textOf(file) : "";
   };
   // Neither may end the element that holds it.
-  const script = output(".js").replaceAll("</script", "<\\/script");
-  const styles = output(".css").replaceAll("</style", "<\\/style");
+  const script = output(".js").replace(/<\/script/gi, "<\\/script");
+  const styles = output(".css").replace(/<\/style/gi, "<\\/style");
   const page = readFileSync(new URL("app/index.html", root), "utf8")
     .replace("<!--styles-->", () => `<style>${styles}</style>`)
     .replace("<!--script-->", () => `<script type="module">${script}</script>`);

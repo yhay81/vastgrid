@@ -535,3 +535,107 @@ test("both engines read the same sheets of a workbook with the same read options
   assert.deepEqual(plain.columns, [{ name: "a", type: "integer" }]);
   assert.equal(plain.sheets, undefined);
 });
+
+test("matches on Parquet v2 binary stats/maps, wide decimal arithmetic, overflow summarize, __proto__, and extreme dates", async () => {
+  const pqFile = path.join(context.workspace, "v2_binary.parquet");
+  const instance = await DuckDBInstance.create(":memory:");
+  const conn = await instance.connect();
+  await conn.run(
+    `COPY (
+      SELECT
+        '\\x80\\xff'::BLOB AS b,
+        [10, 20] AS arr,
+        MAP {'\\x80\\x22'::BLOB: 7} AS mp,
+        CAST('100000000000000001' AS BIGINT) AS big_i,
+        CAST('3.00000000000000000000' AS DECIMAL(25, 20)) AS wide_d,
+        CAST('10000000000000000000000000000' AS DECIMAL(38, 0)) AS d38_0,
+        CAST('-5000000000000000000000000000.2500000000' AS DECIMAL(38, 10)) AS d38_10,
+        'abcdef' AS "__proto__"
+    ) TO '${pqFile}' (FORMAT parquet, PARQUET_VERSION V2)`,
+  );
+  const extremeDb = path.join(context.workspace, "extreme.duckdb");
+  const dbInst = await DuckDBInstance.create(extremeDb);
+  const dbConn = await dbInst.connect();
+  await dbConn.run(
+    "CREATE TABLE ext AS SELECT make_date(-1000000, 1, 1) AS d, TIME '24:00:00' AS tm, 1 AS v UNION ALL SELECT DATE '2024-01-02', TIME '12:00:00', 2",
+  );
+  await dbConn.run("CREATE TABLE inf_sum AS SELECT unnest([1e308, 1e308, -1e308, -1e308]) AS f");
+  dbConn.closeSync();
+  dbInst.closeSync();
+  conn.closeSync();
+  instance.closeSync();
+
+  const pqBytes = await readFile(pqFile);
+  const memSend = sender(
+    memoryEngine({
+      tables: {
+        pq: { parquet: new Blob([pqBytes as BlobPart]) },
+        inf: { columns: [{ name: "f", type: "float" }], rows: [[1e308], [1e308], [-1e308], [-1e308]] },
+      },
+    }),
+  );
+  const duckdbSend: Send = (op, members) => context.client.send(op, members);
+
+  const memPq = (await memSend("open", { ref: "pq" })).result as TableInfo;
+  const duckPq = await context.client.open("v2_binary.parquet");
+  const widePlan = {
+    derive: [
+      { name: "m", expr: { fn: "mod", args: [{ col: "big_i" }, { col: "wide_d" }] } },
+      { name: "s", expr: { fn: "add", args: [{ col: "d38_0" }, { col: "d38_10" }] } },
+      { name: "g", expr: { fn: "greatest", args: [{ col: "d38_0" }, { col: "d38_10" }] } },
+    ],
+  };
+  assert.deepEqual(differences(await answer(memSend, memPq, widePlan), await answer(duckdbSend, duckPq, widePlan)), []);
+  const checkRows = await page(duckdbSend, duckPq, widePlan, 0, 1, ["m", "s", "g"]);
+  assert.deepEqual(checkRows.rows, [["2.00000000000000000000", "4999999999999999999999999999.7500000000", null]]);
+
+  // "__proto__" truncation preserves Object.prototype and its own enumerable key.
+  const protoRes = await duckdbSend("rows", {
+    table: duckPq.table,
+    revision: duckPq.revision,
+    plan: {},
+    start: 0,
+    end: 1,
+    columns: ["__proto__"],
+    textLimit: 3,
+  });
+  const truncated = (protoRes.result as { truncated?: Record<string, number[]> }).truncated;
+  assert.deepEqual(truncated, { ["__proto__"]: [0] });
+
+  // Overflowing float summarize never emits "NaN" and matches memoryEngine.
+  const duckInf = await context.client.open("extreme.duckdb", { sheet: "inf_sum" });
+  const memInf = (await memSend("open", { ref: "inf" })).result as TableInfo;
+  const duckSummary = await duckdbSend("summarize", {
+    table: duckInf.table,
+    revision: duckInf.revision,
+    plan: {},
+    ranges: [[0, 4]],
+    columns: ["f"],
+  });
+  const memSummary = await memSend("summarize", {
+    table: memInf.table,
+    revision: memInf.revision,
+    plan: {},
+    ranges: [[0, 4]],
+    columns: ["f"],
+  });
+  assert.deepEqual(duckSummary.result, memSummary.result);
+
+  // Out-of-§2.2 DATE and TIME '24:00:00' clamp to null in rows and pivot without failing.
+  const duckExt = await context.client.open("extreme.duckdb", { sheet: "ext" });
+  assert.deepEqual((await page(duckdbSend, duckExt, {}, 0, 2, ["d", "tm"])).rows, [
+    [null, null],
+    ["2024-01-02", "12:00:00"],
+  ]);
+  const pivoted = await duckdbSend("rows", {
+    table: duckExt.table,
+    revision: duckExt.revision,
+    plan: {
+      aggregate: { keys: [], measures: [{ name: "s", fn: "sum", column: "v" }], pivot: { columns: ["d", "tm"] } },
+    },
+    start: 0,
+    end: 1,
+    columns: [],
+  });
+  assert.ok(pivoted.result, JSON.stringify(pivoted.error));
+});

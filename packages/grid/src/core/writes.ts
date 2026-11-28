@@ -99,6 +99,7 @@ export class CommandWriter {
   reset() {
     this.writeVersions.clear();
     this.dropWritten(() => true);
+    if (this.failure) this.setFailure(null);
   }
 
   /** A row as commands read it, with the values of writes that its rows do not hold yet. */
@@ -252,6 +253,16 @@ export class CommandWriter {
         throw error;
       }
       if (op === "write") {
+        const currentTable = this.host.table();
+        if (
+          client !== this.host.client() ||
+          !currentTable ||
+          currentTable.table !== table.table ||
+          currentTable.revision !== table.revision
+        ) {
+          this.dropWritten((other) => other === write);
+          continue;
+        }
         const core =
           name === "history.undo"
             ? { command: "history.undone" as const }

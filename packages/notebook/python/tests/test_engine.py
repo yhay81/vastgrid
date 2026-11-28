@@ -8,6 +8,7 @@ import json
 import threading
 import time
 import zipfile
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ import polars
 import pyarrow as pa
 import pytest
 
+import vastgrid._table as tables
 from vastgrid import Engine, Source
 from vastgrid._edits import Edits
 from vastgrid._messages import ProtocolError, check_request
@@ -214,6 +216,54 @@ def test_sheets_of_a_workbook(engine: Engine, tmp_path: Path) -> None:
     assert client.error("open", ref="book", read={"sheet": "Missing"})["code"] in ("not_found", "load_failed")
 
 
+def test_excel_header_range_uses_only_the_selected_sheet_values(engine: Engine, tmp_path: Path) -> None:
+    path = tmp_path / "book.xlsx"
+    workbook(path, {"First": [["different"]], "Report": [["preamble", 0, 0], ["x", "y"], [1, 2], []]})
+    engine.add("book", Source(path=str(path), format="xlsx"))
+    client = Client(engine)
+    info = client.result("open", ref="book", read={"sheet": "Report", "headerRow": 2, "keepEmptyRows": True})
+    assert [column["name"] for column in info["columns"]] == ["x", "y"]
+    assert client.rows(info) == [[1, 2]]
+    empty = client.result("open", ref="book", read={"sheet": "Report", "headerRow": 10})
+    assert empty["columns"] == [] and empty["rowCount"] == 0
+
+
+def test_excel_header_range_bounds_relationship_xml(engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    path = tmp_path / "large-rels.xlsx"
+    workbook(path, {"Report": [["preamble"], ["x"], [1]]})
+    # Leave the workbook under the limit while padding its relationships.
+    with zipfile.ZipFile(path) as archive:
+        parts = {name: archive.read(name) for name in archive.namelist()}
+    parts["xl/_rels/workbook.xml.rels"] += b" " * 2048
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, content in parts.items():
+            archive.writestr(name, content)
+    monkeypatch.setattr(tables, "_MAX_WORKBOOK_XML", 1024)
+    engine.add("book", Source(path=str(path), format="xlsx"))
+    error = Client(engine).error("open", ref="book", read={"headerRow": 2})
+    assert error["code"] == "load_failed" and "maximum uncompressed size" in error["message"]
+
+
+@pytest.mark.parametrize("reload_named", [False, True])
+@pytest.mark.parametrize("named_first", [False, True])
+def test_reload_follows_sheet_reordering_without_mixing_named_and_default_handles(
+    engine: Engine, tmp_path: Path, reload_named: bool, named_first: bool
+) -> None:
+    path = tmp_path / "book.xlsx"
+    workbook(path, {"First": [["n"], [1]], "Second": [["n"], [2]]})
+    engine.add("book", Source(path=str(path), format="xlsx"))
+    client = Client(engine)
+    handles = {}
+    for named in (named_first, not named_first):
+        handles[named] = client.result("open", ref="book", read={"sheet": "First"} if named else {})
+    assert handles[False]["revision"] == handles[True]["revision"]
+    workbook(path, {"Second": [["n"], [20]], "First": [["n"], [10]]})
+    fresh = client.result("reload", table=handles[reload_named]["table"])
+    assert client.rows(fresh) == [[10 if reload_named else 20]]
+    assert client.rows(client.result("open", ref="book")) == [[20]]
+    assert client.rows(client.result("open", ref="book", read={"sheet": "First"})) == [[10]]
+
+
 def test_tables_of_a_duckdb_database(engine: Engine, tmp_path: Path) -> None:
     client = Client(engine)
     path = tmp_path / "shop.duckdb"
@@ -272,6 +322,17 @@ def test_dataframes_arrow_tables_and_relations(engine: Engine) -> None:
         info = client.result("open", ref=ref)
         assert client.rows(info) == [["Tokyo", 1], ["Osaka", 2]], ref
         assert info["capabilities"]["write"] is True
+
+
+def test_pandas_column_names_do_not_act_as_methods_or_arrow_metadata(engine: Engine) -> None:
+    names = ["to_frame", "num_columns", "num_rows", "column_names", "rename_columns", "A", "a"]
+    frame = pandas.DataFrame([range(len(names))], columns=names)
+    engine.add("collision", Source(data=frame))
+    client = Client(engine)
+    info = client.result("open", ref="collision")
+    assert [column["name"] for column in info["columns"]] == names
+    assert client.rows(info) == [list(range(len(names)))]
+    assert frame.columns.tolist() == names
 
 
 def test_refusals_closing_and_reloading(engine: Engine) -> None:
@@ -443,3 +504,86 @@ def test_mixed_in_and_lambda_column_bins(engine: Engine) -> None:
         ]
     }
     assert client.rows(opened, plan, ["matches", "bin"]) == [[True, 40.0], [False, -20.0], [None, None]]
+
+
+def test_wide_decimal_ops_overflow_summarize_corrupt_parquet_and_write_error_order(
+    engine: Engine, tmp_path: Path
+) -> None:
+    client = Client(engine)
+    wide = pa.table(
+        {
+            "big_i": pa.array([100000000000000001], type=pa.int64()),
+            "wide_d": pa.array([Decimal("3.00000000000000000000")], type=pa.decimal128(25, 20)),
+            "d38_0": pa.array([Decimal("10000000000000000000000000000")], type=pa.decimal128(38, 0)),
+            "d38_10": pa.array([Decimal("-5000000000000000000000000000.2500000000")], type=pa.decimal128(38, 10)),
+        }
+    )
+    engine.add("wide", Source(data=wide))
+    opened = client.result("open", ref="wide")
+    plan = {
+        "derive": [
+            {"name": "m", "expr": {"fn": "mod", "args": [{"col": "big_i"}, {"col": "wide_d"}]}},
+            {"name": "s", "expr": {"fn": "add", "args": [{"col": "d38_0"}, {"col": "d38_10"}]}},
+            {"name": "g", "expr": {"fn": "greatest", "args": [{"col": "d38_0"}, {"col": "d38_10"}]}},
+        ]
+    }
+    assert client.rows(opened, plan, ["m", "s", "g"]) == [
+        [Decimal("2.00000000000000000000"), Decimal("4999999999999999999999999999.7500000000"), None]
+    ]
+
+    # Summarize on [1e308, 1e308, -1e308, -1e308] never returns "NaN" and averages via scaled fallback.
+    engine.add("inf_sum", Source(data=pa.table({"f": [1e308, 1e308, -1e308, -1e308]})))
+    inf_info = client.result("open", ref="inf_sum")
+    summary = client.result(
+        "summarize",
+        table=inf_info["table"],
+        revision=inf_info["revision"],
+        plan={},
+        ranges=[[0, 4]],
+        columns=["f"],
+    )
+    assert summary == {"count": 4, "numericCount": 4, "sum": 0.0, "min": -1e308, "max": 1e308, "average": 0.0}
+
+    # Corrupt Parquet reports load_failed without internal path leak, and open.read delimiter works.
+    bad_pq = tmp_path / "corrupt.parquet"
+    bad_pq.write_bytes(b"not a parquet file")
+    engine.add("bad_pq", Source(path=str(bad_pq), format="parquet"))
+    bad_err = client.error("open", ref="bad_pq")
+    assert bad_err["code"] == "load_failed"
+
+    semi_csv = tmp_path / "semi.csv"
+    semi_csv.write_text("a;b\n1;2\n", "utf-8")
+    engine.add("semi", Source(path=str(semi_csv), format="csv"))
+    semi_info = client.result("open", ref="semi", read={"delimiter": ";"})
+    assert [c["name"] for c in semi_info["columns"]] == ["a", "b"]
+    assert client.rows(semi_info) == [[1, 2]]
+
+    # Oversized workbook XML is rejected as load_failed rather than reading unbounded memory.
+    bomb_xlsx = tmp_path / "bomb.xlsx"
+    with zipfile.ZipFile(bomb_xlsx, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("xl/workbook.xml", b"<workbook>" + b" " * (4 * 1024 * 1024) + b"</workbook>")
+    engine.add("bomb", Source(path=str(bomb_xlsx), format="xlsx"))
+    assert client.error("open", ref="bomb")["code"] == "load_failed"
+
+    # Mixed edit_conflict on update 0 + invalid_value on update 1 reports edit_conflict first, matching TS/JS.
+    engine.add("ord", Source(data=pa.table({"x": [1, 2]})))
+    ord_info = client.result("open", ref="ord")
+    err = client.error(
+        "write",
+        table=ord_info["table"],
+        revision=ord_info["revision"],
+        updates=[
+            {"key": {"rowId": 0}, "column": "x", "value": 10, "previous": 999},
+            {"key": {"rowId": 1}, "column": "x", "value": "bad"},
+        ],
+    )
+    assert err["code"] == "edit_conflict"
+    assert (
+        client.error(
+            "write",
+            table=ord_info["table"],
+            revision=ord_info["revision"],
+            updates=[{"key": {"rowId": 0}, "column": "x", "value": "1\n"}],
+        )["code"]
+        == "invalid_value"
+    )

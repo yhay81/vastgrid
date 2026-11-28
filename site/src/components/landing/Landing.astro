@@ -89,6 +89,7 @@ export function Sales() {
         ))
       }
     </ul>
+    <p class="lp-evidence"><a href={t.evidence.href}>{t.evidence.text}</a></p>
     <p class="lp-built">
       <span class="lp-built__label">{t.builtOn.label}</span>
       {t.builtOn.items.map((item) => <span class="lp-chip">{item}</span>)}

@@ -3283,6 +3283,86 @@
       }
     },
     {
+      "id": "editing.begin-and-change-key-column",
+      "section": "6.5",
+      "description": "After its rows are evicted, an editor on the key column still uses the source row ID when the new value duplicates another key.",
+      "state": {
+        "document": {
+          "kind": "vastgrid/document",
+          "version": 2,
+          "rowKey": "id"
+        }
+      },
+      "context": {
+        "extends": "orders",
+        "rows": [
+          {
+            "start": 0,
+            "keys": [
+              {
+                "value": 1
+              },
+              {
+                "value": 2
+              }
+            ],
+            "rowIds": [
+              4,
+              3
+            ],
+            "columns": [
+              "id",
+              "region"
+            ],
+            "values": [
+              [
+                1,
+                "Tokyo"
+              ],
+              [
+                2,
+                "Tokyo"
+              ]
+            ]
+          }
+        ]
+      },
+      "commands": [
+        {
+          "command": "edit.begin",
+          "text": "2"
+        },
+        {
+          "context": {
+            "extends": "orders",
+            "rows": []
+          }
+        },
+        {
+          "command": "edit.commit"
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "op": "write",
+            "revision": "r1",
+            "rowKey": "id",
+            "updates": [
+              {
+                "key": {
+                  "rowId": 4
+                },
+                "column": "id",
+                "value": 2,
+                "previous": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "id": "editing.paste-changes-row-keys",
       "section": "6.5.1",
       "description": "When a paste changes the key column, all its changed cells use their source row IDs, including a row whose key is unchanged and becomes a duplicate.",

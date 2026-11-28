@@ -60,8 +60,10 @@ temporary folder.
 
 ## What it does
 
-- **Opening.** Parquet files are read in place, by their row numbers, so that any block of a 100-million-row file
-  reads in tens of milliseconds. Delimited and JSON files, the sheets of workbooks and the tables of DuckDB
+- **Opening.** Parquet files are read by row number through a private hard link, so that any block of a
+  100-million-row file reads in tens of milliseconds. If the temporary directory is on a different volume
+  or the file system does not allow hard links, opening a file first copies it to the temporary directory.
+  Delimited and JSON files, the sheets of workbooks and the tables of DuckDB
   databases are loaded into a database of the engine's session; the first rows are readable at once while the rest loads (§9), and `progress` and
   `view` events tell when the table has loaded. Text encodings (UTF-16, Shift_JIS, EUC-JP and others) are found
   and converted, including gzip and zstd files, and files whose types change late fall back to wider types.

@@ -236,10 +236,10 @@ export class Summary {
     return {
       count,
       numericCount,
-      sum: floatJson(sum + 0),
+      sum: Number.isNaN(sum) ? null : floatJson(sum + 0),
       min: this.min + 0,
       max: this.max + 0,
-      average: floatJson(average + 0),
+      average: Number.isNaN(average) ? null : floatJson(average + 0),
     };
   }
 }

@@ -32,6 +32,9 @@ grid
 | `name` | ファイルの名前、または `"table"` | 表の名前。スクリーンリーダーが読み上げる |
 | `workers` | 4 | 表の要求に並行して答えるスレッドの数 |
 
+`grid.sheet` でシートを切り替えられます。グリッドを開いている間は、別のシートに移っても編集内容が残ります。
+`grid.edits`、`grid.to_arrow()`、`grid.export(...)` は選択中のシートを対象にします。
+
 JupyterLab 4.6 と Jupyter Notebook 7.6（ipywidgets 8）で試験しています。anywidget を使えるほかの環境（VS Code のノートブック、Google Colab、marimo）はまだ試験していません。
 
 ## ファイルと表

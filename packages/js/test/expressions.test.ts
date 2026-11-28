@@ -34,6 +34,36 @@ const TOTAL = {
 };
 const OVER_5 = { fn: "gt", args: [{ col: "total" }, { lit: "5", type: "decimal" }] };
 
+test("replace inserts every replacement literally", async () => {
+  const client = new Client({ strings: single({ type: "string" }, ["x.x", null]) });
+  const info = await client.open("strings");
+  for (const replacement of ["$&", "$$", "$'", "$`"]) {
+    const expr = { fn: "replace", args: [{ col: "x" }, { lit: "x" }, { lit: replacement }] };
+    const read = await client.rows(info, { derive: [{ name: "replaced", expr }] }, { columns: ["replaced"] });
+    assert.deepEqual(read.rows, [[replacement + "." + replacement], [null]]);
+  }
+});
+
+test("least and greatest accept wide expressions with mixed exact scales and nulls", async () => {
+  const client = new Client({ numbers: single({ type: "integer" }, [9, -4, null]) });
+  const info = await client.open("numbers");
+  const args = [
+    ...Array.from({ length: 997 }, () => ({ col: "x" })),
+    { lit: "2.5", type: "decimal" },
+    { lit: "2.51", type: "decimal" },
+  ];
+  for (const [fn, expected] of [
+    ["least", ["2.50", "-4.00", "2.50"]],
+    ["greatest", ["9.00", "2.51", "2.51"]],
+  ] as const) {
+    const read = await client.rows(info, { derive: [{ name: "value", expr: { fn, args } }] }, { columns: ["value"] });
+    assert.deepEqual(
+      read.rows,
+      expected.map((value) => [value]),
+    );
+  }
+});
+
 test("a view derives, filters and sorts by a derived column, and reads it as its type", async () => {
   const client = new Client({ orders: ORDERS });
   const info = await client.open("orders");

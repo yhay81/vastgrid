@@ -123,6 +123,50 @@ test("another name for 127.0.0.1 reaches nothing, with the cookie or without", a
   assert.equal((await send("/files", { headers: { host: `localhost:${served.port}`, cookie } })).status, 200);
 });
 
+test("Fetch Metadata and Origin headers reject sibling loopback ports and cross-site reads while allowing top-level navigation", async () => {
+  // Another port on 127.0.0.1 sends SameSite=Strict cookies with Sec-Fetch-Site: same-site; non-navigational reads fail with 403 before auth.
+  for (const target of ["/files", "/api/events"]) {
+    const sameSite = await send(target, {
+      headers: { cookie, "sec-fetch-site": "same-site", "sec-fetch-mode": "cors", "sec-fetch-dest": "empty" },
+    });
+    assert.equal(sameSite.status, 403, target);
+    assert.match(String(sameSite.headers.vary), /Sec-Fetch-Site/);
+  }
+  const crossOriginPost = await send("/api", {
+    method: "POST",
+    headers: { cookie, origin: `http://127.0.0.1:${served.port + 1}`, "sec-fetch-site": "same-site" },
+    body: { v: 2, id: ++id, op: "open", ref: "data/orders.csv" },
+  });
+  assert.equal(crossOriginPost.status, 403);
+  const opaqueOriginPost = await send("/api", {
+    method: "POST",
+    headers: { cookie, origin: "null" },
+    body: { v: 2, id: ++id, op: "open", ref: "data/orders.csv" },
+  });
+  assert.equal(opaqueOriginPost.status, 403);
+  // Embedding `/` in an iframe from another port is rejected too.
+  const framed = await send("/", {
+    headers: { cookie, "sec-fetch-site": "same-site", "sec-fetch-mode": "navigate", "sec-fetch-dest": "iframe" },
+  });
+  assert.equal(framed.status, 403);
+
+  // Same-origin fetches and top-level link clicks (`Sec-Fetch-Mode: navigate`) succeed.
+  const sameOriginFiles = await send("/files", {
+    headers: {
+      cookie,
+      origin: `http://127.0.0.1:${served.port}`,
+      "sec-fetch-site": "same-origin",
+      "sec-fetch-mode": "cors",
+      "sec-fetch-dest": "empty",
+    },
+  });
+  assert.equal(sameOriginFiles.status, 200);
+  const topNav = await send(`/?token=${TOKEN}`, {
+    headers: { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document" },
+  });
+  assert.equal(topNav.status, 303);
+});
+
 test("the list holds the table files of the folders, two folders deep, by their names from the current folder", async () => {
   const answer = await send("/files", { headers: { cookie } });
   assert.equal(answer.status, 200);

@@ -117,6 +117,9 @@ async function scan(handle: FileHandle, job: CsvRewrite, size: number): Promise<
     const empty = fieldCount === 0 && end === recordStart;
     endField(end);
     if (line >= firstData && !(empty && job.columns > 1)) {
+      if (fieldCount > job.columns) {
+        throw new CsvSaveError("layout", "A record has more fields than the table has columns.");
+      }
       if (fields) layouts.set(row, { start: recordStart, fields, end });
       row++;
     }

@@ -37,6 +37,9 @@ grid
 | `name` | the file's name, or `"table"` | the table's name, which the grid reads it by and screen readers say |
 | `workers` | 4 | the threads that answer the grid's requests side by side |
 
+Set `grid.sheet` to switch sheets. Each sheet keeps its edits while the grid is open.
+`grid.edits`, `grid.to_arrow()` and `grid.export(...)` use the selected sheet.
+
 The environments are JupyterLab 4.6 and Jupyter Notebook 7.6 (with ipywidgets 8): both are tested (below). Other
 hosts of anywidget (VS Code's notebooks, Google Colab, marimo) are not tested yet.
 

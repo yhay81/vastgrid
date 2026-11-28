@@ -26,6 +26,7 @@ import traitlets
 from ._engine import Engine
 from ._engine_types import Source, relation_column
 from ._errors import EngineError
+from ._export import excel_number_format
 from ._session import Running, new_database
 from ._sql import view_column
 from ._table import file_format
@@ -105,7 +106,12 @@ def _displayed_columns(
     raw_settings = (document or {}).get("columns") if isinstance(document, dict) else None
     if not isinstance(raw_settings, list):
         return list(columns), {}
-    settings_list = [item for item in raw_settings if isinstance(item, dict) and isinstance(item.get("name"), str)]
+    settings_list: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
+    for item in raw_settings:
+        if isinstance(item, dict) and isinstance(item.get("name"), str) and item["name"] not in seen_names:
+            seen_names.add(item["name"])
+            settings_list.append(item)
     by_setting: dict[str, dict[str, Any]] = {item["name"]: item for item in settings_list}
     by_name = {column["name"]: column for column in columns}
     listed = [
@@ -152,6 +158,7 @@ class Grid(anywidget.AnyWidget):
         height: int = 480,
         locale: str = "en",
         name: str | None = None,
+        document: dict[str, Any] | None = None,
         workers: int = 4,
     ) -> None:
         if isinstance(data, (str, os.PathLike)):
@@ -166,23 +173,41 @@ class Grid(anywidget.AnyWidget):
         else:
             source = Source(data=data)
             name = name or "table"
-        super().__init__(ref=name, name=name, sheet=sheet, height=height, locale=locale)
+        super().__init__(ref=name, name=name, sheet=sheet, height=height, locale=locale, document=document)
         self._engine = Engine(_shared_database().cursor())
         self._engine.add(name, source)
-        # The kernel's own handle keeps the table, and its written cells, while the grid lives.
-        opened = self._engine.handle({"v": 2, "id": 0, "op": "open", "ref": name})
-        if opened is None or "error" in opened:
-            error = (opened or {}).get("error", {})
+        # Keep one handle per visited sheet so its edits survive when the page switches sheets.
+        try:
+            info = self._open_sheet(sheet)
+        except EngineError:
             self._engine.close()
             super().close()
-            raise EngineError(error.get("code", "load_failed"), error.get("message", "The table could not be read."))
-        self._table_id: str = opened["result"]["table"]
+            raise
+        self._default_sheet = info.get("sheet")
+        self._sheet_handles = {None: info["table"], self._default_sheet: info["table"]}
         self._pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="vastgrid")
         self._unsubscribe = self._engine.subscribe(self._event)
         self._closed = False
         self.on_msg(self._receive)
         _grids.add(self)
         self._follow_cell()
+
+    def _open_sheet(self, sheet: str | None) -> dict[str, Any]:
+        request = {"v": 2, "id": 0, "op": "open", "ref": self.ref}
+        if sheet is not None:
+            request["read"] = {"sheet": sheet}
+        opened = self._engine.handle(request)
+        if opened is None or "error" in opened:
+            error = (opened or {}).get("error", {})
+            raise EngineError(error.get("code", "load_failed"), error.get("message", "The table could not be read."))
+        return opened["result"]
+
+    @traitlets.validate("sheet")
+    def _check_sheet(self, proposal: dict[str, Any]) -> str | None:
+        sheet = proposal["value"]
+        if not self._closed and self._default_sheet is not None and sheet not in self._sheet_handles:
+            self._sheet_handles[sheet] = self._open_sheet(sheet)["table"]
+        return sheet
 
     def _follow_cell(self) -> None:
         """Closes the grids that this grid's cell made when it ran before."""
@@ -217,7 +242,7 @@ class Grid(anywidget.AnyWidget):
             self._post(response)
 
     def _event(self, event: dict[str, Any]) -> None:
-        if event.get("table") != self._table_id:
+        if event.get("table") not in self._sheet_handles.values():
             self._post(event)
 
     def _post(self, message: dict[str, Any]) -> None:
@@ -242,7 +267,8 @@ class Grid(anywidget.AnyWidget):
     def _table(self):
         if self._closed:
             raise ValueError("The grid is closed.")
-        return self._engine.handles[self._table_id]
+        sheet = self.sheet if self._default_sheet is not None else None
+        return self._engine.handles[self._sheet_handles[sheet]]
 
     def to_arrow(self, *, view: bool = False) -> pa.Table:
         """The table with the written cells, as a PyArrow table, in row order; with `view`, the grid's view: its
@@ -269,9 +295,13 @@ class Grid(anywidget.AnyWidget):
             columns, _ = _displayed_columns(v.sql.columns, self.document)
             if not columns:
                 return pa.table({"_": pa.nulls(v.row_count)}).select([])
-            selected = ", ".join(
-                f"{view_column(v.sql, column['name'])} AS c{index}" for index, column in enumerate(columns)
-            )
+            selected_parts: list[str] = []
+            for index, column in enumerate(columns):
+                expr = view_column(v.sql, column["name"])
+                if column.get("type") == "float":
+                    expr = f"CAST({expr} AS {'FLOAT' if column.get('bits') == 32 else 'DOUBLE'})"
+                selected_parts.append(f"{expr} AS c{index}")
+            selected = ", ".join(selected_parts)
             cursor = self._engine.session.cursor()
             try:
                 arrow = cursor.sql(
@@ -309,16 +339,24 @@ class Grid(anywidget.AnyWidget):
         running = Running()
 
         def write_view(v: View) -> int:
+            number_formats: list[str | None] | None = None
             if view:
                 columns, settings = _displayed_columns(v.sql.columns, self.document)
                 headers = [
                     (settings.get(column["name"], {}).get("format") or {}).get("label") or column["name"]
                     for column in columns
                 ]
+                if fmt == "xlsx" and columns:
+                    codes = [
+                        excel_number_format(column["type"], settings.get(column["name"], {}).get("format"))
+                        for column in columns
+                    ]
+                    if any(code is not None for code in codes):
+                        number_formats = codes
             else:
                 columns = v.sql.columns
                 headers = [column["name"] for column in columns]
-            write_export(self._engine.session, v, fmt, columns, headers, None, temporary, running)
+            write_export(self._engine.session, v, fmt, columns, headers, number_formats, temporary, running)
             return v.row_count
 
         try:

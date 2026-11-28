@@ -87,6 +87,11 @@ test("style rules evaluate the conditions that the menus write, with nulls as §
   assert.equal(rule(and(parts(columns[1], "gt", "4")))(reader(row)), true);
   assert.equal(rule(and(parts(columns[2], "between", "10.5", "10.50")))(reader(row)), true);
   assert.equal(rule(and(parts(columns[2], "lt", "9.99")))(reader(row)), false);
+  // Exact decimal columns compare with integer/bigint literals and columns exactly, and with floats as floats (§3.1).
+  assert.equal(rule({ fn: "gt", args: [{ col: "price" }, { lit: 10 }] })(reader(row)), true);
+  assert.equal(rule({ fn: "gt", args: [{ col: "price" }, { col: "qty" }] })(reader(row)), true);
+  assert.equal(rule({ fn: "eq", args: [{ col: "price" }, { lit: 10.5 }] })(reader(row)), true);
+  assert.equal(rule({ fn: "gt", args: [{ col: "qty" }, { lit: "x" }] })(reader(row)), null);
   assert.equal(rule(and(parts(columns[0], "contains", "KY")))(reader(row)), true);
   assert.equal(rule(and(parts(columns[0], "notContains", "ky")))(reader(row)), false);
   // Non-ASCII code points (`İ`, `É`, astral emoji) fold code point by code point (§3.4).

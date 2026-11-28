@@ -9,6 +9,7 @@ import struct
 from pathlib import Path
 from typing import Any
 
+import duckdb
 import pandas
 import polars
 import pyarrow as pa
@@ -17,6 +18,7 @@ import pytest
 
 import vastgrid._widget as widget
 from vastgrid import Grid, show
+from vastgrid._errors import EngineError
 
 
 class Page:
@@ -119,6 +121,48 @@ def test_the_notebook_reads_the_view_and_exports_it(no_cell: None, tmp_path: Pat
         grid.close()
 
 
+@pytest.mark.parametrize("initial", [None, "First"])
+def test_sheet_switch_keeps_page_edits_and_python_exports_in_sync(
+    initial: str | None, no_cell: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "two.duckdb"
+    with duckdb.connect(str(path)) as db:
+        db.execute('CREATE TABLE "First" AS SELECT 11 AS n')
+        db.execute('CREATE TABLE "Second" AS SELECT 22 AS n')
+    grid = Grid(path, sheet=initial)
+    page = Page(grid, monkeypatch)
+    try:
+        for sheet, value in [("First", 111), ("Second", 222)]:
+            grid.sheet = sheet
+            info = page.request("open", ref=grid.ref, read={"sheet": sheet})["result"]
+            assert (
+                page.request(
+                    "write",
+                    table=info["table"],
+                    revision=info["revision"],
+                    updates=[{"key": {"rowId": 0}, "column": "n", "value": value}],
+                )["result"]["updated"]
+                == 1
+            )
+            assert page.request("close", table=info["table"])["result"] is None
+            assert grid.edits["cells"] == 1
+            assert grid.to_arrow(view=True)["n"].to_pylist() == [value]
+            assert grid.export(tmp_path / "view.csv") == 1
+            assert (tmp_path / "view.csv").read_text() == f"n\n{value}\n"
+        with pytest.raises(EngineError, match="Missing"):
+            grid.sheet = "Missing"
+        assert grid.sheet == "Second" and grid.to_arrow()["n"].to_pylist() == [222]
+        grid.sheet = None
+        assert grid.edits["cells"] == 1
+        assert grid.to_arrow()["n"].to_pylist() == [111]
+        again = page.request("open", ref=grid.ref)["result"]
+        assert again["sheet"] == "First" and again["edits"]["cells"] == 1
+        grid.sheet = "Second"
+        assert grid.to_arrow()["n"].to_pylist() == [222]
+    finally:
+        grid.close()
+
+
 def test_zero_column_and_case_colliding_views(no_cell: None, tmp_path: Path) -> None:
     empty = Grid(pa.table({"removed": [1, 2, 3]}).drop(["removed"]))
     colliding = Grid(pa.table({"a": [1, 2], "A": [10, 20]}))
@@ -184,3 +228,48 @@ def test_a_cell_run_again_closes_the_grids_it_made(monkeypatch: pytest.MonkeyPat
         first.to_arrow()
     widget._close_all()
     assert other._closed and again._closed
+
+
+def test_view_to_arrow_respects_displayed_columns_pivot_and_export_timezone(no_cell: None, tmp_path: Path) -> None:
+    grid = Grid(
+        pa.table(
+            {
+                "k": ["A", "A", "B"],
+                "p": ["x", "y", "x"],
+                "v": pa.array([1.5, 2.5, 3.0], type=pa.float32()),
+                "ts": pa.array([0, 0, 0], type=pa.timestamp("us", tz="UTC")),
+            }
+        ),
+        document={
+            "timeZone": "Asia/Tokyo",
+            "columns": [{"name": "p", "hidden": True}],
+        },
+    )
+    try:
+        shown = grid.to_arrow(view=True)
+        assert shown.column_names == ["k", "v", "ts"]
+        assert shown.schema.field("v").type == pa.float32()
+
+        grid.document = {
+            "timeZone": "Asia/Tokyo",
+            "plan": {
+                "aggregate": {
+                    "keys": ["k"],
+                    "measures": [{"name": "s", "fn": "sum", "column": "v"}],
+                    "pivot": {"columns": ["p"]},
+                }
+            },
+        }
+        pivoted = grid.to_arrow(view=True)
+        assert pivoted.column_names == ["k", "x / s", "y / s"]
+        assert pivoted.to_pydict() == {"k": ["A", "B"], "x / s": [1.5, 3.0], "y / s": [2.5, None]}
+
+        grid.document = {"columns": [{"name": "v", "format": {"number": {"fractionDigits": 3}}}]}
+        xlsx_path = tmp_path / "formatted.xlsx"
+        grid.export(xlsx_path)
+        import zipfile
+
+        with zipfile.ZipFile(xlsx_path) as zf:
+            assert "0.000" in zf.read("xl/styles.xml").decode("utf-8")
+    finally:
+        grid.close()

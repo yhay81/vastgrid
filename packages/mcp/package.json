@@ -1,6 +1,6 @@
 {
   "name": "vastgrid-mcp",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "vastgrid's MCP server and MCP App: huge CSV, TSV, Parquet, JSON Lines, Excel and DuckDB files in a grid inside the chat, read by DuckDB on the server, with the agent reading and changing the same view and cells that the person sees.",
   "keywords": [
     "mcp",

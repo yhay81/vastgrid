@@ -18,6 +18,10 @@ class Source:
     path: str | None = None
     format: str | None = None
     sheet: str | None = None
+    header_row: int | None = None
+    delimiter: str | None = None
+    keep_empty_rows: bool | None = None
+    keep_empty_columns: bool | None = None
 
 
 @dataclass

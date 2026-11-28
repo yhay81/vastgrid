@@ -374,7 +374,7 @@ export class Views {
         ? await this.session.withConnection(signal, (connection) =>
             this.read(connection, view, columns, start, end, limit),
           )
-        : { rows: [], rowIds: view.sql.rowIds ? [] : null, truncated: {} };
+        : { rows: [], rowIds: view.sql.rowIds ? [] : null, truncated: {} as Record<string, number[]> };
     const ready = table.status === "ready" && view.ready;
     const result: Json = {
       view: {
@@ -427,7 +427,14 @@ export class Views {
         rows[row][index] = value;
         if (cut) cuts.push(row);
       }
-      if (cuts.length > 0) truncated[column.name] = cuts;
+      if (cuts.length > 0) {
+        Object.defineProperty(truncated, column.name, {
+          value: cuts,
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        });
+      }
     });
     const rowIds = view.sql.rowIds ? (data[columns.length] ?? []).map((value) => Number(value)) : null;
     return { rows, rowIds, truncated };
@@ -523,6 +530,7 @@ export class Views {
         parts.push(
           `count(*) ${finite}`,
           `sum(${number}) ${finite}`,
+          `sum(${number} * 5.421010862427522e-20) ${finite}`,
           `min(${number}) ${finite}`,
           `max(${number}) ${finite}`,
         );
@@ -538,21 +546,32 @@ export class Views {
     let count = 0;
     let numericCount = 0;
     let sum = 0;
+    let scaledSum = 0;
     let min = Number.POSITIVE_INFINITY;
     let max = Number.NEGATIVE_INFINITY;
     for (const column of columns) {
       count += Number(values[at++]);
       if (!NUMERIC.has(column.type)) continue;
       const numbers = Number(values[at++]);
-      const [total, low, high] = [values[at++], values[at++], values[at++]];
+      const [total, scaled, low, high] = [values[at++], values[at++], values[at++], values[at++]];
       if (numbers === 0) continue;
       numericCount += numbers;
       sum += Number(total);
+      scaledSum += Number(scaled);
       min = Math.min(min, Number(low));
       max = Math.max(max, Number(high));
     }
     if (numericCount === 0) return { ...empty, count };
-    return { count, numericCount, sum: floatJson(sum), min, max, average: floatJson(sum / numericCount) };
+    if (!Number.isFinite(sum)) sum = scaledSum * 2 ** 64;
+    const average = Number.isFinite(sum) ? sum / numericCount : (scaledSum / numericCount) * 2 ** 64;
+    return {
+      count,
+      numericCount,
+      sum: Number.isNaN(sum) ? null : floatJson(sum + 0),
+      min,
+      max,
+      average: Number.isNaN(average) ? null : floatJson(average + 0),
+    };
   }
 
   /**

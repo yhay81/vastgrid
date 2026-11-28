@@ -15,6 +15,7 @@ export type IconName =
   | "shield"
   | "braces"
   | "engine"
+  | "github"
   | "arrow"
   | "copy"
   | "check";
@@ -37,11 +38,18 @@ interface Texts {
   news: Link & { tag: string };
   title: [plain: string, accent: string];
   lead: string;
-  actions: { start: Link; demo: Link; open: Link };
+  actions: { start: Link; demo: Link; open: Link; github: Link };
   install: { command: string; copy: string; copied: string };
-  window: { title: string; live: string; caption: string };
+  window: {
+    title: string;
+    viewsLabel: string;
+    views: { all: string; grouped: string; pivot: string; formulas: string };
+    live: string;
+    caption: string;
+  };
   statsLabel: string;
   stats: { value: string; label: string }[];
+  evidence: Link;
   builtOn: { label: string; items: string[] };
   apps: {
     heading: string;
@@ -76,21 +84,28 @@ export const texts: Record<Language, Texts> = {
     news: { tag: "New", text: "vastgrid for VS Code is on the Marketplace and Open VSX", href: "/apps/vscode/" },
     title: ["Open huge tables", "like a spreadsheet"],
     lead:
-      "vastgrid is a canvas data grid for CSV, TSV, Parquet, JSON Lines and Excel files and DuckDB databases of any " +
-      "size. Scroll a hundred million rows, sort, filter and group the whole file, and save your edits with every " +
-      "other byte kept as it was.",
+      "Explore large CSV and Parquet files with familiar spreadsheet controls. Sort, filter, group and edit " +
+      "on your computer, in the browser, VS Code or a terminal. Free and open source, with a React grid you can embed.",
     actions: {
       start: { text: "Get started", href: "/getting-started/" },
-      demo: { text: "Try the demo", href: "/demo/" },
+      demo: { text: "Try 1 million rows", href: "/open/?sample=1" },
       open: { text: "Open a file", href: "/open/" },
+      github: { text: "Star on GitHub", href: github },
     },
-    install: { command: "npm install vastgrid vastgrid-js", copy: "Copy the command", copied: "Copied" },
+    install: { command: "npx vastgrid-cli sales.parquet", copy: "Copy the command", copied: "Copied" },
     window: {
       title: "orders · 100,000 rows",
+      viewsLabel: "Preset views",
+      views: {
+        all: "All rows",
+        grouped: "Group by country",
+        pivot: "Pivot",
+        formulas: "Formulas & rules",
+      },
       live: "Live, in a Web Worker",
       caption:
-        "100,000 made-up orders, made by the memory engine in a Web Worker of this page. Open a column's menu (▾) " +
-        "to sort, filter or group, drag across cells to see their sum below, and press ⌘F or Ctrl+F to find.",
+        "100,000 made-up orders, made by the memory engine in a Web Worker of this page. Switch views above, open a " +
+        "column's menu (▾) to sort, filter or group, drag across cells to see their sum below, and press ⌘F or Ctrl+F to find.",
     },
     statsLabel: "vastgrid in numbers",
     stats: [
@@ -99,6 +114,7 @@ export const texts: Record<Language, Texts> = {
       { value: "60 fps", label: "while scrolling: no React render, no dropped frame" },
       { value: "9 languages", label: "and an ARIA grid that works with the keyboard alone" },
     ],
+    evidence: { text: "M2 Pro measurements, methods and limits →", href: "/about/performance/" },
     builtOn: {
       label: "Built on",
       items: ["DuckDB", "Apache Arrow", "Parquet", "React", "Web Workers", "MCP Apps", "anywidget"],
@@ -233,7 +249,7 @@ export const texts: Record<Language, Texts> = {
       text: "Try the demo's 200,000 orders, or open a file of yours: it stays in your browser.",
       demo: { text: "Try the demo", href: "/demo/" },
       open: { text: "Open a file", href: "/open/" },
-      github: { text: "GitHub", href: github },
+      github: { text: "Star on GitHub", href: github },
       note: [
         "Coming from vastgrid 0.1? See ",
         { text: "Migrating from 0.1", href: "/migrating-from-0-1/" },
@@ -251,21 +267,28 @@ export const texts: Record<Language, Texts> = {
     },
     title: ["巨大な表を、", "表計算ソフトのように。"],
     lead:
-      "vastgrid は、どんな大きさの CSV・TSV・Parquet・JSON Lines・Excel のファイルや DuckDB のデータベースも" +
-      "開ける、キャンバスに描くデータグリッドです。1 億行をスクロールし、ファイル全体を並べ替え・絞り込み・" +
-      "グループ化して、編集はほかのバイトをそのまま残して保存します。",
+      "大きな CSV・Parquet を、いつもの表計算ソフトの感覚で。手元のブラウザー・VS Code・ターミナルで、" +
+      "並べ替え・絞り込み・集計・編集ができます。無料のオープンソースで、React にも組み込めます。",
     actions: {
       start: { text: "はじめる", href: "/ja/getting-started/" },
-      demo: { text: "デモを試す", href: "/ja/demo/" },
+      demo: { text: "100 万行を試す", href: "/ja/open/?sample=1" },
       open: { text: "ファイルを開く", href: "/ja/open/" },
+      github: { text: "GitHub でスター", href: github },
     },
-    install: { command: "npm install vastgrid vastgrid-js", copy: "コマンドをコピー", copied: "コピーしました" },
+    install: { command: "npx vastgrid-cli sales.parquet", copy: "コマンドをコピー", copied: "コピーしました" },
     window: {
       title: "orders · 10 万行",
+      viewsLabel: "表示の切り替え",
+      views: {
+        all: "すべての行",
+        grouped: "国ごとに集計",
+        pivot: "クロス集計",
+        formulas: "数式と条件書式",
+      },
       live: "ライブ・Web Worker の中",
       caption:
-        "架空の注文 10 万件を、このページの Web Worker の中でメモリエンジンが作っています。列のメニュー（▾）で" +
-        "並べ替え・絞り込み・グループ化、セルの上をドラッグすると下に合計が出て、⌘F か Ctrl+F で検索できます。",
+        "架空の注文 10 万件を、このページの Web Worker の中でメモリエンジンが作っています。上のボタンで表示を切り替えるか、" +
+        "列のメニュー（▾）で並べ替え・絞り込み・グループ化、セルの上をドラッグすると下に合計が出て、⌘F か Ctrl+F で検索できます。",
     },
     statsLabel: "数字で見る vastgrid",
     stats: [
@@ -274,6 +297,7 @@ export const texts: Record<Language, Texts> = {
       { value: "60 fps", label: "スクロール中も React は描画せず、フレームを落としません" },
       { value: "9 言語", label: "ARIA のグリッドで、キーボードだけでも操作できます" },
     ],
+    evidence: { text: "M2 Pro での計測条件・結果・制限を見る →", href: "/ja/about/performance/" },
     builtOn: {
       label: "使っている技術",
       items: ["DuckDB", "Apache Arrow", "Parquet", "React", "Web Workers", "MCP Apps", "anywidget"],
@@ -406,7 +430,7 @@ export const texts: Record<Language, Texts> = {
       text: "デモの 20 万件の注文を試すか、手元のファイルを開いてください。ファイルはブラウザーの外に出ません。",
       demo: { text: "デモを試す", href: "/ja/demo/" },
       open: { text: "ファイルを開く", href: "/ja/open/" },
-      github: { text: "GitHub", href: github },
+      github: { text: "GitHub でスター", href: github },
       note: [
         "vastgrid 0.1 からは",
         { text: "0.1 からの移行", href: "/ja/migrating-from-0-1/" },

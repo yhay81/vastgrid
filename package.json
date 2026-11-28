@@ -17,6 +17,7 @@
     "format": "pnpm run build:ts && vp check --fix",
     "dev": "pnpm --filter vastgrid-files-example dev",
     "bench": "vpx --conditions=vastgrid-source packages/duckdb-engine/bench/open.ts",
+    "growth:snapshot": "node scripts/growth-snapshot.mjs",
     "e2e": "vpx scripts/e2e.ts",
     "size": "node scripts/bundle-size.mjs",
     "pack-check": "node scripts/pack-check.mjs",

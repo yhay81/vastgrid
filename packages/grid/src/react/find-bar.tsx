@@ -54,7 +54,10 @@ export function FindBar({
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // Keys that end an IME's composition are the IME's.
-    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (event.nativeEvent.isComposing || event.keyCode === 229) {
+      if (event.key === "Enter" && event.target === inputRef.current) event.preventDefault();
+      return;
+    }
     if (event.key === "Escape") {
       event.preventDefault();
       close();
